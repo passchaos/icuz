@@ -1,0 +1,18 @@
+.{
+    .name = .icuz,
+    .version = "0.1.0",
+    .fingerprint = 0xcf63_077d_c29e_7f76,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{},
+    .paths = .{
+        ".gitignore",
+        "LICENSE",
+        "README.md",
+        "THIRD_PARTY_NOTICES.md",
+        "build.zig",
+        "build.zig.zon",
+        "licenses",
+        "src",
+        "tools",
+    },
+}
