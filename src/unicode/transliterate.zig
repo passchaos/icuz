@@ -11,6 +11,9 @@ const properties = @import("properties.zig");
 const script = @import("script/root.zig");
 const case_mapping = @import("case/root.zig");
 
+/// CLDR release the compiled transform tables come from.
+pub const cldr_version = "48";
+
 pub const Transform = enum {
     latin_ascii,
     fullwidth_halfwidth,
@@ -1856,4 +1859,9 @@ test "Hex-Any keeps malformed escapes" {
     const out = try transliterateByNameAlloc(allocator, "\\uZZZZ", "Hex-Any");
     defer allocator.free(out);
     try testing.expectEqualStrings("\\uZZZZ", out);
+}
+
+test "transliteration data version" {
+    const testing = @import("std").testing;
+    try testing.expectEqualStrings("48", cldr_version);
 }
