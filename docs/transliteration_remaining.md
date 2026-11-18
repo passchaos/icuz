@@ -7,7 +7,7 @@ Status after the CLDR 48 rule-engine push:
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
 - 310 conformance fixtures: 30 official CLDR test-data files and 280 PyICU
   differential fixtures.
-- Blob format CJTR v18 (36-byte transform records with `filter_set`,
+- Blob format CJTR v19 (36-byte transform records with `filter_set`,
   `final_case`, `next_transform`, `pre_transform`, and per-pass operation
   offsets).
 - Two-step pipelines work: a leading component runs via `pre_transform`,
@@ -15,11 +15,17 @@ Status after the CLDR 48 rule-engine push:
   The two Ethiopic geminate pipelines and the six FONIPA-to-Amharic
   pipelines (`kk-am`, `my-am`, `ro-am`, `si-am`, `xh-am`, `zu-am`) use
   this path.
-- Ordered step programs (blob format CJTR v12) execute arbitrary
-  `::NFD;` / `::Transform;` / `::Lower;` / `::NFC;` sequences. All 138 pure
-  CLDR pipelines whose components are compiled are auto-discovered,
-  including the Indic script-to-script and script-to-Latin chains, the
-  `X-Arabic` / `X-ur` families, and the `Latin-*` pipelines.
+- Ordered step programs (blob format CJTR v12, extended in v19) execute
+  arbitrary `::NFD;` / `::Transform;` / `::Lower;` / `::NFC;` sequences.
+  All 138 pure CLDR pipelines whose components are compiled are
+  auto-discovered, including the Indic script-to-script and script-to-Latin
+  chains, the `X-Arabic` / `X-ur` families, and the `Latin-*` pipelines.
+  Rule-based transforms with interleaved steps compile the same way:
+  rule sections become RUN_TABLE steps, transform references become
+  component or named-engine steps, and `::[set] step;` filters scope the
+  following compound steps until a rule segment resets them (CJTR v19).
+  This covers `it-am`, `it-ja`, `ja_Latn-ko`, `ja_Latn-ru`,
+  `Han-Spacedhan`, `Latin-Katakana`, `Latin-Bopomofo`, and `de-ASCII`.
 - Repeated-sequence collapse rules (`($var) $var+ > $1`) compile to a
   collapse entry that emits the first unit and consumes the rest.
 - The reverse direction is compiled compositionally: `A ← B` and
@@ -56,15 +62,15 @@ python3 tools/unicode/verify_committed.py
 
 ## 1. General segment/pipeline engine
 
-The v12 step program covers arbitrary `::` sequences. Remaining gaps:
+The v19 step program covers arbitrary `::` sequences and interleaves rule
+sections with steps. Remaining gaps:
 
-- Transform references with arguments, e.g.
-  `::Latin-NumericPinyin(NumericPinyin-Latin);` in `Latin-Bopomofo.xml`.
-- Transform-reference steps inside rule-based transforms, e.g.
-  `::[:Latin:] fullwidth-halfwidth();` in `it-am` / `it-ja`,
-  `:: fullwidth-halfwidth;` and `::[...] nfkc;` in `Han-Spacedhan`, and
-  `::[set] Halfwidth-Fullwidth;` in `Katakana-Latin-BGN`. These need a
-  step program that interleaves rule-table sections with steps.
+- Reverse compilation of rule files with steps: the reverse direction
+  currently uses the table-only path, so `Bopo-Latn` does not run the
+  inverse `NumericPinyin-Latin` step of `Latin-Bopomofo`.
+- `Katakana-Latin-BGN` uses the native katakana builder, which applies its
+  own halfwidth conversion instead of the `::[set] Halfwidth-Fullwidth;`
+  step.
 - Pipelines whose components are not compiled (for example
   `und_FONIPA-ar`, `es_FONIPA-ja`, `und_FONIPA-fa`).
 
@@ -95,23 +101,20 @@ Embedded case calls (`&Any-Lower($1)` / `&Any-Upper($1)`) are compiled;
 friends) plus a real `Any-Title` step. General embedded transform calls
 (`&SomeTransform($1)`) remain unsupported.
 
-## 3. Filter expressions with transform arguments
+## 3. Filtered compound steps
 
 Property-based input filters (`:: [:Ethiopic:] ;`,
 `[[:Arabic:][:Block=Arabic:]...]`) compile, including nested negated
-classes and properties. The remaining gap is a filter followed by a
-transform reference: `::[:Latin:] fullwidth-halfwidth();` in `it-am`,
-`it-ja`, `ja_Latn-ko`, and `ja_Latn-ru`, and `::[...] nfkc` in
-`Han-Spacedhan`. Those need the general segment/pipeline engine from
-section 1.
+classes and properties. Filtered steps (`::[set] transform();`,
+`::[set] nfkc;`) are compiled into SET_FILTER operations that scope the
+following compound steps; a rule segment resets the filter, matching ICU.
 
 ## 4. Pinyin tone placement
 
-`Latin-NumericPinyin` compiles 0 entries and `NumericPinyin-Latin` 4;
-`Latin-Bopomofo` then fails two tone-mark cases because it expects the
-compound `::Latin-NumericPinyin(NumericPinyin-Latin);` step. The tone
-"hopping" rules need the segment engine (section 1) plus context
-coverage for the tone-position classes.
+Resolved: `Latin-NumericPinyin` and `NumericPinyin-Latin` are named
+engines, and `Latin-Bopomofo` runs the compound
+`::Latin-NumericPinyin(NumericPinyin-Latin);` step as the forward named
+engine. `Bopo-Latn` still uses the table-only reverse path.
 
 ## 5. Candidate additions already validated
 

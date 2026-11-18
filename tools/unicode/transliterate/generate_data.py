@@ -499,39 +499,26 @@ def classify_pass_operations(rules: str, reverse: bool = False):
     directives = []
     last_rule = -1
     first_rule = -1
+    variables = parse_variables(rules)
     for index, raw in enumerate(rules.splitlines()):
         line = strip_comment(raw).strip()
         if not line:
             continue
         if line.startswith("::"):
-            directive = line[2:].strip().rstrip(";").strip()
-            normalized = re.sub(r"\s+", "", directive).upper()
-            form = None
-            post_form = None
-            parenthesized = re.fullmatch(r"\(\s*(NFK?[CD])\s*\)", normalized)
-            if parenthesized:
-                form = NORMALIZATION_FORMS.get(parenthesized.group(1))
-            elif normalized.startswith("NFKD"):
-                form = 3
-            elif normalized.startswith("NFKC"):
-                form = 4
-            elif normalized.startswith("NFD"):
-                form = 1
-            elif normalized.startswith("NFC"):
-                form = 2
-            match = re.search(r"\(\s*(NFK?[CD])\s*\)", normalized)
-            if form is not None:
-                if match:
-                    post_form = NORMALIZATION_FORMS.get(match.group(1))
-                directives.append((index, "norm", form, post_form))
+            parsed = step_directive(
+                line[2:].strip().rstrip(";").strip(),
+                variables,
+            )
+            if parsed is None or parsed[0] == "filter":
                 continue
-            operation = case_operation(directive)
-            if operation:
-                directives.append((index, "case", operation, None))
-                continue
-            if normalized in ("NULL", "(NULL)", "NULL()", "(NULL)()"):
-                # Null directives split passes but perform no operation.
+            if parsed[0] == "normalize":
+                directives.append((index, "norm", parsed[2], parsed[3]))
+            elif parsed[0] == "case":
+                directives.append((index, "case", parsed[2], None))
+            elif parsed[0] == "null":
                 directives.append((index, "null", 0, None))
+            else:
+                directives.append((index, "transform", 0, None))
         elif not VARIABLE_DEF.match(line):
             if first_rule < 0:
                 first_rule = index
@@ -614,6 +601,205 @@ def detect_reverse_normalization(rules: str):
     """
     pre, post, _ = classify_normalization(rules, reverse=True)
     return pre, post
+
+
+# Named engines implemented by the runtime, in the same order as
+# `named_transform_names` in src/unicode/transliterate.zig.
+NAMED_TRANSFORMS = [
+    "NFC",
+    "NFD",
+    "NFKC",
+    "NFKD",
+    "Any-Lower",
+    "Any-Upper",
+    "Any-Title",
+    "nl-Title",
+    "Any-Null",
+    "Hex-Any",
+    "Any-Hex",
+    "Name-Any",
+    "Any-Name",
+    "Latin-NumericPinyin",
+    "NumericPinyin-Latin",
+]
+
+STEP_KIND_TRANSFORM = 0
+STEP_KIND_NORMALIZE = 1
+STEP_KIND_LOWER = 2
+STEP_KIND_UPPER = 3
+STEP_KIND_TITLE = 4
+STEP_KIND_RUN_TABLE = 5
+STEP_KIND_SET_FILTER = 6
+STEP_KIND_NAMED = 7
+STEP_FILTER_CLEAR = 0xFFFFFFFF
+
+
+def step_directive(text: str, variables: dict[str, str]):
+    """Parse one compound step directive.
+
+    Returns one of ``("filter", set)``, ``("null",)``,
+    ``("normalize", filter, form, post_form)``, ``("case", filter, op)``, or
+    ``("transform", filter, name, reverse_name)``. ``filter`` is the optional
+    per-step class; a bare class is a global filter directive.
+    """
+    body = text.strip()
+    filter_set = None
+    if body.startswith("["):
+        index = 0
+        depth = 0
+        end = None
+        while index < len(body):
+            character = body[index]
+            if character == "\\":
+                index += 2
+                continue
+            if character == "[":
+                depth += 1
+            elif character == "]":
+                depth -= 1
+                if depth == 0:
+                    end = index + 1
+                    break
+            index += 1
+        if end is None:
+            return None
+        parsed = parse_class_set(body[:end], variables)
+        if parsed is None or parsed[1]:
+            return None
+        filter_set = parsed[0]
+        body = body[end:].strip()
+        if not body:
+            return ("filter", filter_set)
+    normalized = re.sub(r"\s+", "", body).upper()
+    if normalized in ("NULL", "(NULL)", "NULL()", "(NULL)()"):
+        return ("null",) if filter_set is None else None
+    form = None
+    post_form = None
+    parenthesized = re.fullmatch(r"\(\s*(NFK?[CD])\s*\)", normalized)
+    if parenthesized:
+        form = NORMALIZATION_FORMS.get(parenthesized.group(1))
+    elif normalized.startswith("NFKD"):
+        form = 3
+    elif normalized.startswith("NFKC"):
+        form = 4
+    elif normalized.startswith("NFD"):
+        form = 1
+    elif normalized.startswith("NFC"):
+        form = 2
+    if form is not None:
+        match = re.search(r"\(\s*(NFK?[CD])\s*\)", normalized)
+        if match:
+            post_form = NORMALIZATION_FORMS.get(match.group(1))
+        return ("normalize", filter_set, form, post_form)
+    operation = case_operation(body)
+    if operation:
+        return ("case", filter_set, operation)
+    match = re.fullmatch(
+        r"([A-Za-z0-9_./\-]+?)\s*(?:\(\s*([A-Za-z0-9_./\-]*)\s*\))?",
+        body,
+    )
+    if match is None:
+        return None
+    return ("transform", filter_set, match.group(1), match.group(2) or None)
+
+
+def detect_step_compilation(rules: str, variables: dict[str, str]) -> bool:
+    """True when a rule file needs an interleaved step program."""
+    for raw in rules.splitlines():
+        line = strip_comment(raw).strip()
+        if not line.startswith("::"):
+            continue
+        parsed = step_directive(line[2:].strip().rstrip(";").strip(), variables)
+        if parsed is None:
+            # Reverse-direction filters such as `:: ( [set] ) ;` do not
+            # affect the forward compound.
+            continue
+        if parsed[0] == "transform":
+            return True
+        if parsed[0] in ("normalize", "case") and parsed[1] is not None:
+            return True
+    return False
+
+
+def resolve_step_transform(name: str, name_to_index: dict[str, int]):
+    target = PIPELINE_COMPONENTS.get(name, name)
+    if target in name_to_index:
+        return STEP_KIND_TRANSFORM, name_to_index[target]
+    # ICU transform references are case-insensitive (`fullwidth-halfwidth`).
+    lowered = target.lower()
+    for candidate, index in name_to_index.items():
+        if candidate.lower() == lowered:
+            return STEP_KIND_TRANSFORM, index
+    for index, candidate in enumerate(NAMED_TRANSFORMS):
+        if candidate.lower() == lowered:
+            return STEP_KIND_NAMED, index
+    return None
+
+
+def compile_step_program(
+    rules: str,
+    variables: dict[str, str],
+    name_to_index: dict[str, int],
+    rule_passes: set[int],
+):
+    """Compile a rule file with interleaved steps into a step program.
+
+    Rule sections between directives become RUN_TABLE steps that execute the
+    transform's own table passes; normalization, case, and transform
+    directives become their matching steps. Returns ``(steps, global_filter)``
+    or None when a directive cannot be compiled.
+    """
+    steps: list[tuple[int, int, int, object]] = []
+    global_filter = None
+    pass_index = 0
+    section_start = 0
+
+    def flush(end: int) -> None:
+        if end <= section_start:
+            return
+        if any(pass_index in rule_passes for pass_index in range(section_start, end)):
+            steps.append((STEP_KIND_RUN_TABLE, section_start, end - section_start, 0))
+
+    for raw in rules.splitlines():
+        line = strip_comment(raw).strip()
+        if not line.startswith("::"):
+            continue
+        parsed = step_directive(line[2:].strip().rstrip(";").strip(), variables)
+        if parsed is None:
+            # Reverse-direction filters are not part of the forward compound.
+            continue
+        kind = parsed[0]
+        if kind == "filter":
+            if global_filter is None:
+                global_filter = parsed[1]
+            continue
+        if kind == "null":
+            pass_index += 1
+            continue
+        flush(pass_index + 1)
+        pass_index += 1
+        section_start = pass_index
+        if kind == "normalize":
+            _, filter_set, form, _post_form = parsed
+            if filter_set is not None:
+                steps.append((STEP_KIND_SET_FILTER, 0, 0, filter_set))
+            steps.append((STEP_KIND_NORMALIZE, 0, 0, form))
+        elif kind == "case":
+            _, filter_set, operation = parsed
+            if filter_set is not None:
+                steps.append((STEP_KIND_SET_FILTER, 0, 0, filter_set))
+            steps.append((STEP_KIND_LOWER + operation - 1, 0, 0, 0))
+        elif kind == "transform":
+            _, filter_set, name, _reverse_name = parsed
+            resolved = resolve_step_transform(name, name_to_index)
+            if resolved is None:
+                return None
+            step_kind, value = resolved
+            if filter_set is not None:
+                steps.append((STEP_KIND_SET_FILTER, 0, 0, filter_set))
+            steps.append((step_kind, 0, 0, value))
+    flush(max(rule_passes) + 1 if rule_passes else 0)
+    return steps, global_filter
 
 
 # Components whose rule sets need engine features that are not compiled yet
@@ -2567,25 +2753,20 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
         if not line:
             continue
         if line.startswith("::"):
-            # CLDR's ::Null; and ::(null); directives close the current pass:
-            # rules that follow see the output of the rules before it. In the
-            # reverse direction ICU applies the passes in reverse order.
-            directive = re.sub(
-                r"\s+",
-                "",
-                line[2:].strip().rstrip(";").strip().lower(),
+            # Every compound step directive (Null, normalization, case, and
+            # transform references, including filtered steps) closes the
+            # current pass; bare filters do not. In the reverse direction ICU
+            # applies the passes in reverse order.
+            parsed_directive = step_directive(
+                line[2:].strip().rstrip(";").strip(),
+                variables,
             )
-            if directive in ("null", "(null)", "null()", "(null)()"):
-                pass_index += 1
-            elif re.fullmatch(
-                r"nfk?[cd](\(nfk?[cd]\)|\(\))?",
-                directive,
+            if parsed_directive is not None and parsed_directive[0] in (
+                "null",
+                "normalize",
+                "case",
+                "transform",
             ):
-                # Mid-rule normalization directives also split passes.
-                pass_index += 1
-            elif case_operation(directive):
-                # Mid-rule case directives split passes so the case mapping
-                # applies to the text produced by the preceding rules.
                 pass_index += 1
             continue
         if VARIABLE_DEF.match(line):
@@ -3089,7 +3270,7 @@ def render_blob(
     specs: list[tuple[str, int, int]],
     tables: list[list[tuple]],
     filters: list[frozenset[int] | None],
-    step_lists: list[list[tuple[int, int]] | None],
+    step_lists: list[list[tuple[int, int, int, object]] | None],
     pass_op_lists: list[dict[int, tuple[int, int]]],
 ) -> bytes:
     names = bytearray()
@@ -3311,18 +3492,23 @@ def render_blob(
             form, case = filtered_ops.get(pass_index, (0, 0))
             pass_op_section.append((form & 0x0F) | ((case & 0x0F) << 4))
 
-    step_pool: list[tuple[int, int]] = []
+    step_pool: list[tuple[int, int, int, object]] = []
     step_records: list[tuple[int, int]] = []
     for steps in step_lists:
         if not steps:
             step_records.append((0, 0))
             continue
         step_records.append((len(step_pool), len(steps)))
-        step_pool.extend(steps)
+        for kind, a, b, value in steps:
+            if isinstance(value, frozenset):
+                # Step filters become set indices; resolve them before the
+                # header records the set/range counts.
+                value = add_set(sorted(value))
+            step_pool.append((kind, a, b, value))
     header = bytearray(b"CJTR")
     header += struct.pack(
         "<B3BH7IH",
-        18,
+        19,
         CLDR_VERSION,
         0,
         0,
@@ -3371,8 +3557,8 @@ def render_blob(
             pass_op_offsets[index],
         )
     step_bytes = bytearray()
-    for kind, value in step_pool:
-        step_bytes += struct.pack("<BBHI", kind, 0, 0, value)
+    for kind, a, b, value in step_pool:
+        step_bytes += struct.pack("<BBHI", kind, a, b, value)
     entry_bytes = bytearray()
     for entry in entries:
         entry_bytes += struct.pack("<IBIBIIBBHIBBIBB", *entry)
@@ -3476,12 +3662,16 @@ def main() -> int:
             changed = True
     all_transforms += discovered
 
+    name_to_index = {name: index for index, (name, *_rest) in enumerate(all_transforms)}
+
     pass_op_lists: list[dict[int, int]] = []
     for name, source, builder in all_transforms:
         rules = rules_for(source)
         builder_pre = 0
         builder_post = 0
         builder_ops: dict[int, int] = {}
+        builder_steps = None
+        builder_step_filter = None
         if builder == "latin":
             table = latin_ascii_entries(rules)
         elif builder == "fullwidth":
@@ -3516,6 +3706,23 @@ def main() -> int:
                 builder_post,
                 builder_ops,
             ) = table_entries_with_contexts(rules)
+            variables = parse_variables(rules)
+            if detect_step_compilation(rules, variables):
+                rule_passes = {entry[4] for entry in table}
+                compiled = compile_step_program(
+                    rules,
+                    variables,
+                    name_to_index,
+                    rule_passes,
+                )
+                if compiled is not None:
+                    builder_steps, builder_step_filter = compiled
+                    # The step program carries every normalization and case
+                    # directive explicitly, so the record-level fields must
+                    # not apply them a second time.
+                    builder_pre = 0
+                    builder_post = 0
+                    builder_ops = {}
         elif builder == "katakana":
             table, _, _, builder_ops = table_entries_with_contexts(rules)
         else:
@@ -3529,7 +3736,7 @@ def main() -> int:
             filtered_normalization = 0
             transform_filter = parse_filter(rules, parse_variables(rules))
         else:
-            pending_steps.append(None)
+            pending_steps.append(builder_steps)
             if builder == "katakana":
                 pre_normalization = 5
                 post_normalization = 0
@@ -3561,6 +3768,14 @@ def main() -> int:
                 if transform_filter and pre_normalization != 5
                 else 0
             )
+            if builder_steps is not None:
+                # The step program carries every compound directive in order.
+                pre_normalization = 0
+                post_normalization = 0
+                final_case = 0
+                next_name = None
+                filtered_normalization = 0
+                transform_filter = builder_step_filter
         specs.append(
             (
                 name,
@@ -3613,22 +3828,26 @@ def main() -> int:
         spec[6] = specs[last_index][6]
         specs[index] = tuple(spec)
 
-    step_lists: list[list[tuple[int, int]] | None] = []
+    step_lists: list[list[tuple[int, int, int, object]] | None] = []
     for steps in pending_steps:
         if steps is None:
             step_lists.append(None)
             continue
-        resolved_steps: list[tuple[int, int]] = []
-        for kind, value in steps:
+        resolved_steps: list[tuple[int, int, int, object]] = []
+        for step in steps:
+            if len(step) == 4:
+                resolved_steps.append(step)
+                continue
+            kind, value = step
             if kind != PIPELINE_STEP_TRANSFORM:
-                resolved_steps.append((kind, int(value)))
+                resolved_steps.append((kind, 0, 0, int(value)))
                 continue
             target = PIPELINE_COMPONENTS.get(value, value)
             if target not in name_to_index:
                 raise SystemExit(
                     f"pipeline step {value!r} is not compiled"
                 )
-            resolved_steps.append((kind, name_to_index[target]))
+            resolved_steps.append((kind, 0, 0, name_to_index[target]))
         step_lists.append(resolved_steps)
 
     (out_dir / "data.bin").write_bytes(

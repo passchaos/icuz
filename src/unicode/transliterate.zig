@@ -77,7 +77,7 @@ const pass_norm_offset = targets_offset + @as(usize, target_count) * 4;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJTR") or
-        data[4] != 18 or data[5] != 48 or data[6] != 0 or data[7] != 0)
+        data[4] != 19 or data[5] != 48 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid transliteration data");
     }
@@ -993,46 +993,194 @@ fn runComponentAlloc(
 
 const Step = struct {
     kind: u8,
+    a: u8,
+    b: u8,
     value: u32,
 };
 
+const step_kind_transform = 0;
+const step_kind_normalize = 1;
+const step_kind_lower = 2;
+const step_kind_upper = 3;
+const step_kind_title = 4;
+const step_kind_run_table = 5;
+const step_kind_set_filter = 6;
+const step_kind_named = 7;
+const step_filter_clear = 0xFFFF_FFFF;
+
 fn stepAt(index: usize) Step {
     const base = step_offset + index * 8;
-    return .{ .kind = data[base], .value = readU32(base + 4) };
+    return .{
+        .kind = data[base],
+        .a = data[base + 1],
+        .b = data[base + 2],
+        .value = readU32(base + 4),
+    };
+}
+
+/// One executable step operation, independent of any step filter.
+const StepOperation = union(enum) {
+    transform: usize,
+    named: u32,
+    normalize: normalization.Form,
+    case: u8,
+    table: struct { transform_index: usize, start: u8, count: u8 },
+};
+
+/// Apply a step operation to the whole text.
+fn applyStepOperationAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    operation: StepOperation,
+) Error![]u8 {
+    return switch (operation) {
+        .transform => |index| runComponentAlloc(allocator, text, index),
+        .named => |index| blk: {
+            if (index >= named_transform_names.len) {
+                return error.UnknownTransform;
+            }
+            break :blk try transliterateByNameAlloc(
+                allocator,
+                text,
+                named_transform_names[index],
+            );
+        },
+        .normalize => |form| blk: {
+            const normalized = try normalization.normalizeFormAlloc(
+                allocator,
+                text,
+                form,
+            );
+            break :blk normalized orelse try allocator.dupe(u8, text);
+        },
+        .case => |value| switch (value) {
+            1 => try case_mapping.fullLowerAlloc(allocator, text, .{}),
+            2 => try case_mapping.fullUpperAlloc(allocator, text, .{}),
+            3 => try case_mapping.fullTitleAlloc(allocator, text, .{}),
+            else => error.UnknownTransform,
+        },
+        .table => |range| blk: {
+            var codepoints = try decodeAlloc(allocator, text);
+            defer codepoints.deinit(allocator);
+            var final = try runPassesRangeAlloc(
+                allocator,
+                codepoints.items,
+                range.transform_index,
+                range.start,
+                range.count,
+                0,
+            );
+            defer final.deinit(allocator);
+            break :blk try encodeCodepointsAlloc(allocator, final.items);
+        },
+    };
+}
+
+/// Apply a step operation inside the current step filter, if any. Text
+/// outside the filter passes through unchanged, matching ICU's filtered
+/// step semantics.
+fn applyFilteredStepOperationAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    operation: StepOperation,
+    filter_set: u32,
+) Error![]u8 {
+    if (filter_set == step_filter_clear) {
+        return applyStepOperationAlloc(allocator, text, operation);
+    }
+    var codepoints = try decodeAlloc(allocator, text);
+    defer codepoints.deinit(allocator);
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    var index: usize = 0;
+    while (index < codepoints.items.len) {
+        const contained = setContains(filter_set, codepoints.items[index]);
+        const start = index;
+        while (index < codepoints.items.len and
+            setContains(filter_set, codepoints.items[index]) == contained)
+        {
+            index += 1;
+        }
+        const run = codepoints.items[start..index];
+        if (!contained) {
+            for (run) |codepoint| {
+                try appendCodepoint(allocator, &output, codepoint);
+            }
+            continue;
+        }
+        const run_text = try encodeCodepointsAlloc(allocator, run);
+        defer allocator.free(run_text);
+        const converted = try applyStepOperationAlloc(
+            allocator,
+            run_text,
+            operation,
+        );
+        defer allocator.free(converted);
+        try output.appendSlice(allocator, converted);
+    }
+    return output.toOwnedSlice(allocator);
+}
+
+fn stepOperation(step: Step, transform_index: usize) StepOperation {
+    return switch (step.kind) {
+        step_kind_transform => .{ .transform = step.value },
+        step_kind_named => .{ .named = step.value },
+        step_kind_normalize => .{ .normalize = switch (step.value) {
+            1 => .nfd,
+            2 => .nfc,
+            3 => .nfkd,
+            4 => .nfkc,
+            else => .nfc,
+        } },
+        step_kind_lower => .{ .case = 1 },
+        step_kind_upper => .{ .case = 2 },
+        step_kind_title => .{ .case = 3 },
+        step_kind_run_table => .{ .table = .{
+            .transform_index = transform_index,
+            .start = step.a,
+            .count = step.b,
+        } },
+        else => .{ .transform = step.value },
+    };
 }
 
 fn runStepProgramAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
     record: TransformRecord,
+    transform_index: usize,
 ) Error![]u8 {
     var current = try allocator.dupe(u8, text);
     errdefer allocator.free(current);
+    var current_filter: u32 = step_filter_clear;
     var index: usize = record.step_start;
     const end = index + record.step_count;
     while (index < end) : (index += 1) {
         const step = stepAt(index);
-        const next: []u8 = switch (step.kind) {
-            0 => try runComponentAlloc(allocator, current, step.value),
-            1 => blk: {
-                const form: normalization.Form = switch (step.value) {
-                    1 => .nfd,
-                    2 => .nfc,
-                    3 => .nfkd,
-                    4 => .nfkc,
-                    else => .nfc,
-                };
-                const normalized = try normalization.normalizeFormAlloc(
+        const next: []u8 = if (step.kind == step_kind_set_filter)
+            blk: {
+                current_filter = step.value;
+                break :blk try allocator.dupe(u8, current);
+            }
+        else
+            blk: {
+                // ICU's step filters scope the consecutive compound steps;
+                // a rule segment runs unfiltered and clears the step filter.
+                const filter = if (step.kind == step_kind_run_table)
+                    step_filter_clear
+                else
+                    current_filter;
+                const result = try applyFilteredStepOperationAlloc(
                     allocator,
                     current,
-                    form,
+                    stepOperation(step, transform_index),
+                    filter,
                 );
-                break :blk normalized orelse try allocator.dupe(u8, current);
-            },
-            2 => try case_mapping.fullLowerAlloc(allocator, current, .{}),
-            3 => try case_mapping.fullUpperAlloc(allocator, current, .{}),
-            else => try allocator.dupe(u8, current),
-        };
+                if (step.kind == step_kind_run_table) {
+                    current_filter = step_filter_clear;
+                }
+                break :blk result;
+            };
         allocator.free(current);
         current = next;
     }
@@ -1043,10 +1191,11 @@ fn runFilteredProgramAlloc(
     allocator: std.mem.Allocator,
     run: []const u21,
     record: TransformRecord,
+    transform_index: usize,
 ) Error![]u8 {
     const run_text = try encodeCodepointsAlloc(allocator, run);
     defer allocator.free(run_text);
-    return runStepProgramAlloc(allocator, run_text, record);
+    return runStepProgramAlloc(allocator, run_text, record, transform_index);
 }
 
 /// Execute an ordered pipeline program. A global filter restricts the
@@ -1058,7 +1207,7 @@ fn runStepsAlloc(
 ) Error![]u8 {
     const record = transformAt(transform_index);
     if (record.filter_set == 0) {
-        return runStepProgramAlloc(allocator, text, record);
+        return runStepProgramAlloc(allocator, text, record, transform_index);
     }
     var codepoints = try decodeAlloc(allocator, text);
     defer codepoints.deinit(allocator);
@@ -1088,6 +1237,7 @@ fn runStepsAlloc(
             allocator,
             run,
             record,
+            transform_index,
         );
         defer allocator.free(converted);
         try output.appendSlice(allocator, converted);
@@ -1199,15 +1349,35 @@ fn runPassesAlloc(
     filter_set: u32,
 ) Error!std.ArrayList(u21) {
     const record = transformAt(transform_index);
-    const pass_count: usize = @max(record.pass_count, 1);
+    return runPassesRangeAlloc(
+        allocator,
+        codepoints,
+        transform_index,
+        0,
+        @max(record.pass_count, 1),
+        filter_set,
+    );
+}
+
+/// Run passes `[start_pass, start_pass + count)` of a transform.
+fn runPassesRangeAlloc(
+    allocator: std.mem.Allocator,
+    codepoints: []const u21,
+    transform_index: usize,
+    start_pass: usize,
+    count: usize,
+    filter_set: u32,
+) Error!std.ArrayList(u21) {
+    const record = transformAt(transform_index);
+    const pass_end = start_pass + count;
     // Leading normalization directives can leave empty passes; the global
     // filter belongs to the first pass that actually contains rules.
     const first_pass: usize = blk: {
-        for (0..pass_count) |pass| {
+        for (start_pass..pass_end) |pass| {
             const range = transformPassRange(transform_index, @intCast(pass));
             if (range.end > range.start) break :blk pass;
         }
-        break :blk 0;
+        break :blk start_pass;
     };
     var current: []const u21 = codepoints;
     var pass_output: ?std.ArrayList(u21) = null;
@@ -1217,8 +1387,8 @@ fn runPassesAlloc(
     // its empty-source insertion rules and mapping rules. Empty passes (for
     // example around normalization directives) are skipped without scanning
     // the text, but their operations still run.
-    var pass: usize = 0;
-    while (pass < pass_count) : (pass += 1) {
+    var pass: usize = start_pass;
+    while (pass < pass_end) : (pass += 1) {
         const operation = passOperation(record, pass);
         if (operation.normalization != 0) {
             const normalized = try normalizedListAlloc(
@@ -3833,6 +4003,52 @@ test "mid-rule case directives apply between rule sections" {
     const latin = try transliterateByNameAlloc(allocator, "a", "chr-chr_FONIPA");
     defer allocator.free(latin);
     try testing.expectEqualStrings("a", latin);
+}
+
+test "transform-reference steps run in compound order" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    // it-am applies NFD, lowercases, converts fullwidth Latin to ASCII, then
+    // runs the mapping rules.
+    const amharic = try transliterateByNameAlloc(
+        allocator,
+        "\u{FF21}\u{FF22}",
+        "it-am",
+    );
+    defer allocator.free(amharic);
+    try testing.expectEqualStrings("\u{12A0}\u{1265}", amharic);
+
+    // Latin-Katakana applies the same fullwidth step before its rules.
+    const katakana = try transliterateByNameAlloc(
+        allocator,
+        "\u{FF21}\u{FF22}",
+        "Latin-Katakana",
+    );
+    defer allocator.free(katakana);
+    try testing.expectEqualStrings("\u{30A2}\u{30D6}", katakana);
+
+    // Han-Spacedhan's NFKC step is scoped to Han runs; fullwidth Latin
+    // outside the filter stays fullwidth while its rules still apply.
+    const spaced = try transliterateByNameAlloc(
+        allocator,
+        "\u{FF21}\u{FF61}",
+        "Han-Spacedhan",
+    );
+    defer allocator.free(spaced);
+    try testing.expectEqualStrings("\u{FF21}.", spaced);
+
+    // Latin-Bopomofo runs the named tone-number engine between rule passes.
+    const bopomofo = try transliterateByNameAlloc(
+        allocator,
+        "ni3 hao3",
+        "Latin-Bopomofo",
+    );
+    defer allocator.free(bopomofo);
+    try testing.expectEqualStrings(
+        "\u{310B}\u{3127}\u{2C7} \u{310F}\u{3120}\u{2C7}",
+        bopomofo,
+    );
 }
 
 test "CLDR transform conformance" {
