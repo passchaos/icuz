@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 254 compiled table transforms plus 13 named engines (`NFC`, `NFD`,
+- 255 compiled table transforms plus 13 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 258 conformance fixtures: 30 official CLDR test-data files and 228 PyICU
+- 259 conformance fixtures: 30 official CLDR test-data files and 229 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -66,12 +66,12 @@ Known failing transforms (PyICU differential fixtures):
 
 | `Bopo-Latn` | 19 | reverse-direction rules |
 
-`Greek-Latin`, `Latin-Greek`, `Hebrew-Latin`, `ug-ug_FONIPA`, and
-`Maldivian-Latin/BGN` now pass their PyICU fixtures after output-context
-stripping, nested-context order fixes, insertion rules merged into the
-main rule-order scan, and the context builder for `ug-ug_FONIPA`.
-`Latin-Hebrew` needs repeated negated classes (`[^[:ccc=0:]]*`) inside a
-source sequence. `Bopo-Latn` needs the Pinyin tone engine. `nl-Title` is
+`Greek-Latin`, `Latin-Greek`, `Hebrew-Latin`, `Latin-Hebrew`,
+`ug-ug_FONIPA`, and `Maldivian-Latin/BGN` now pass their PyICU fixtures
+after output-context stripping, nested-context order fixes, insertion
+rules merged into the main rule-order scan, repeated negated source groups
+with capture, numeric `ccc=` values, and the context builder for
+`ug-ug_FONIPA`. `Bopo-Latn` needs the Pinyin tone engine. `nl-Title` is
 implemented as a named engine on top of Any-Title plus the Dutch `IJ`
 digraph fix.
 

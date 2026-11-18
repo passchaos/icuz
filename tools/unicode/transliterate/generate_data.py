@@ -151,6 +151,7 @@ TRANSFORMS = (
     ("Greek-Latin", "Greek-Latin", "context"),
     ("Latin-Greek", "Greek-Latin", "reverse_context"),
     ("Hebrew-Latin", "Hebrew-Latin", "context"),
+    ("Latin-Hebrew", "Hebrew-Latin", "reverse_context"),
     ("az-Title", "az-Title", "context"),
     ("el-Title", "el-Title", "context"),
     ("lt-Title", "lt-Title", "context"),
@@ -1325,7 +1326,10 @@ def property_codepoints(name: str):
         ccc_name = key[4:].strip().replace("-", "_").replace(" ", "_")
         ccc_value = CCC_ALIASES.get(ccc_name)
         if ccc_value is None:
-            return None
+            if ccc_name.isdigit():
+                ccc_value = int(ccc_name)
+            else:
+                return None
         for codepoint in range(0x110000):
             if unicodedata.combining(chr(codepoint)) == ccc_value:
                 result.append(codepoint)
@@ -2100,6 +2104,81 @@ def parse_negated_source(text: str, variables: dict[str, str]):
     return value
 
 
+NEGATED_REPEAT_CAPTURE = re.compile(
+    r"^(.*?)\(\s*(\[.*?\]|\$[A-Za-z0-9_]+)\s*([*+]?)\s*\)(.*)$",
+    re.S,
+)
+
+
+def parse_negated_repeat_capture(
+    source_text: str,
+    target_text: str,
+    variables: dict[str, str],
+):
+    """Parse `prefix ([^class]*|+) suffix -> target $1` sources."""
+    text = source_text.strip()
+    open_pos = find_unquoted(text, "(")
+    if open_pos is None:
+        return None
+    close_pos = find_unquoted(text, ")")
+    if close_pos is None or close_pos <= open_pos:
+        return None
+    if find_unquoted(text[close_pos + 1 :], "(") is not None:
+        return None
+    inner = text[open_pos + 1 : close_pos].strip()
+    if inner.startswith("$"):
+        raw = variables.get(inner)
+        if raw is None:
+            return None
+        raw = raw.strip()
+        if not raw or raw[-1] not in "*+":
+            return None
+        quantifier = raw[-1]
+        class_text = raw[:-1].strip()
+    else:
+        if not inner or inner[-1] not in "*+":
+            return None
+        quantifier = inner[-1]
+        class_text = inner[:-1].strip()
+    excluded = parse_negated_source(class_text, variables)
+    if excluded is None:
+        return None
+    prefix_text = text[:open_pos].strip()
+    suffix_text = text[close_pos + 1 :].strip()
+    prefix_terms = (
+        parse_source_terms(prefix_text, variables)
+        if prefix_text
+        else []
+    )
+    suffix_terms = (
+        parse_source_terms(suffix_text, variables)
+        if suffix_text
+        else []
+    )
+    if prefix_terms is None or suffix_terms is None:
+        return None
+    prefixes = expand_source_terms(prefix_terms) if prefix_terms else [()]
+    suffixes = expand_source_terms(suffix_terms) if suffix_terms else [()]
+    if prefixes is None or suffixes is None:
+        return None
+    segments = target_text.split("$1")
+    target: list[int] = []
+    for index, segment in enumerate(segments):
+        if index > 0:
+            target.append(0x110000)
+        codepoints, syntax = parse_side_with_variables(segment, variables)
+        if syntax:
+            return None
+        target.extend(codepoints)
+    return (
+        prefixes,
+        suffixes,
+        frozenset(excluded),
+        1 if quantifier == "+" else 0,
+        target,
+    )
+
+
 def strip_output_context(text: str) -> str:
     """Remove the output-side context from a bidirectional rule target.
 
@@ -2275,6 +2354,35 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
         embedded = None
         source_expression = source_text
         if "$1" in right:
+            negated_repeat = parse_negated_repeat_capture(
+                source_text,
+                right,
+                variables,
+            )
+            if negated_repeat is not None:
+                prefixes, suffixes, excluded, minimum, target = negated_repeat
+                for prefix in prefixes:
+                    for suffix in suffixes:
+                        for before in before_alts:
+                            for after in after_alts:
+                                entries.append(
+                                    (
+                                        pass_index,
+                                        prefix,
+                                        tuple(target),
+                                        before,
+                                        after,
+                                        priority,
+                                        reprocess,
+                                        None,
+                                        None,
+                                        0,
+                                        None,
+                                        (excluded, minimum, suffix),
+                                    )
+                                )
+                priority += 1
+                continue
             stripped = strip_whole_group(source_text)
             if stripped is not None:
                 source_expression = stripped
@@ -2412,6 +2520,8 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             (pass_index - entry[0],) + entry[1:] for entry in entries
         ]
     def entry_category(item):
+        if len(item) > 11 and item[11] is not None:
+            return 1
         if len(item) > 10 and item[10] is not None:
             return 3
         if len(item) > 7 and (
@@ -2438,6 +2548,7 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
         collapse = entry[8] if len(entry) > 8 else None
         case_call = entry[9] if len(entry) > 9 else 0
         negated_set = entry[10] if len(entry) > 10 else None
+        negated_repeat = entry[11] if len(entry) > 11 else None
         result.append(
             (
                 source,
@@ -2451,6 +2562,7 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
                 case_call,
                 negated_set,
                 entry[5],
+                negated_repeat,
             )
         )
     return result
@@ -2646,8 +2758,24 @@ def render_blob(
             case_call = entry[8] if len(entry) > 8 else 0
             negated_set = entry[9] if len(entry) > 9 else None
             entry_priority = entry[10] if len(entry) > 10 else 0
+            negated_repeat = entry[11] if len(entry) > 11 else None
             pass_count = max(pass_count, entry_pass + 1)
-            if negated_set is not None:
+            source2_offset = 0
+            source2_len = 0
+            repeat_minimum = 0
+            repeat_set_index = 0
+            if negated_repeat is not None:
+                excluded, repeat_minimum, suffix = negated_repeat
+                source_offset = len(sources) // 4
+                for codepoint in source:
+                    sources.extend(struct.pack("<I", codepoint))
+                source_len = len(source)
+                source2_offset = len(sources) // 4
+                for codepoint in suffix:
+                    sources.extend(struct.pack("<I", codepoint))
+                source2_len = len(suffix)
+                repeat_set_index = add_set(sorted(excluded))
+            elif negated_set is not None:
                 source_offset = add_set(sorted(negated_set))
                 source_len = 1
             elif collapse is not None:
@@ -2687,8 +2815,13 @@ def render_blob(
                     (8 if collapse is not None else 0) |
                     (16 if case_call else 0) |
                     (32 if case_call == 2 else 0) |
-                    (64 if negated_set is not None else 0),
+                    (64 if negated_set is not None else 0) |
+                    (128 if negated_repeat is not None else 0),
                     entry_priority,
+                    source2_offset,
+                    source2_len,
+                    repeat_minimum,
+                    repeat_set_index,
                 )
             )
         transform_records.append(
@@ -2720,7 +2853,7 @@ def render_blob(
     header = bytearray(b"CJTR")
     header += struct.pack(
         "<B3BH7IH",
-        14,
+        15,
         CLDR_VERSION,
         0,
         0,
@@ -2773,7 +2906,7 @@ def render_blob(
         step_bytes += struct.pack("<BBHI", kind, 0, 0, value)
     entry_bytes = bytearray()
     for entry in entries:
-        entry_bytes += struct.pack("<IBIBIIBBH", *entry)
+        entry_bytes += struct.pack("<IBIBIIBBHIBBI", *entry)
     set_bytes = bytearray()
     for offset, count in set_records:
         set_bytes += struct.pack("<II", offset, count)

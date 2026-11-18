@@ -53,7 +53,7 @@ const step_count = readU32(40);
 const transform_offset = header_len;
 const step_offset = transform_offset + @as(usize, transform_count) * 36;
 const entry_offset = step_offset + @as(usize, step_count) * 8;
-const set_offset = entry_offset + @as(usize, entry_count) * 22;
+const set_offset = entry_offset + @as(usize, entry_count) * 32;
 const range_offset = set_offset + @as(usize, set_count) * 8;
 const context_offset = range_offset + @as(usize, range_count) * 8;
 const context_element_offset = context_offset + @as(usize, context_count) * 8;
@@ -75,7 +75,7 @@ const targets_offset = sources_offset + @as(usize, source_count) * 4;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJTR") or
-        data[4] != 14 or data[5] != 48 or data[6] != 0 or data[7] != 0)
+        data[4] != 15 or data[5] != 48 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid transliteration data");
     }
@@ -111,6 +111,12 @@ const Entry = struct {
     pass: u8,
     flags: u8,
     priority: u16,
+    source2_offset: u32,
+    source2_len: u8,
+    repeat_set: u32,
+    repeat_min: u8,
+    repeat_start: u32,
+    repeat_len: u32,
 };
 
 fn readU16(offset: usize) u16 {
@@ -227,7 +233,7 @@ fn findTransformByName(name: []const u8) ?usize {
 }
 
 fn entryAt(index: usize) Entry {
-    const base = entry_offset + index * 22;
+    const base = entry_offset + index * 32;
     return .{
         .source_offset = readU32(base),
         .source_len = data[base + 4],
@@ -238,12 +244,30 @@ fn entryAt(index: usize) Entry {
         .pass = data[base + 18],
         .flags = data[base + 19],
         .priority = readU16(base + 20),
+        .source2_offset = readU32(base + 22),
+        .source2_len = data[base + 26],
+        .repeat_min = data[base + 27],
+        .repeat_set = readU32(base + 28),
+        .repeat_start = 0,
+        .repeat_len = 0,
     };
+}
+
+/// First source codepoint of an entry without materializing the whole record;
+/// used by the binary search in the literal range.
+fn entryFirstCodepoint(index: usize) u21 {
+    const base = entry_offset + index * 32;
+    return @intCast(readU32(sources_offset + readU32(base) * 4));
 }
 
 fn sourceCodepoint(entry: Entry, index: usize) u21 {
     return @intCast(readU32(sources_offset +
         (@as(usize, entry.source_offset) + index) * 4));
+}
+
+fn sourceCodepoint2(entry: Entry, index: usize) u21 {
+    return @intCast(readU32(sources_offset +
+        (@as(usize, entry.source2_offset) + index) * 4));
 }
 
 fn targetCodepoint(entry: Entry, index: usize) u21 {
@@ -451,7 +475,7 @@ fn negatedStart(range: EntryRange) usize {
 
 fn mappingStart(range: EntryRange) usize {
     var start = range.start;
-    while (start < range.end and entryAt(start).flags & 77 != 0) : (start += 1) {}
+    while (start < range.end and entryAt(start).flags & 205 != 0) : (start += 1) {}
     return start;
 }
 
@@ -460,7 +484,7 @@ fn hasInsertions(range: EntryRange) bool {
     while (index < range.end) : (index += 1) {
         const flags = entryAt(index).flags;
         if (flags & 1 != 0) return true;
-        if (flags & 77 == 0) break;
+        if (flags & 205 == 0) break;
     }
     return false;
 }
@@ -482,7 +506,7 @@ fn applyInsertions(
             var entry_index = range.start;
             while (entry_index < range.end) : (entry_index += 1) {
                 const entry = entryAt(entry_index);
-                if (entry.flags & 77 == 0) break;
+                if (entry.flags & 205 == 0) break;
                 if (entry.flags & 1 == 0) continue;
                 if (!contextMatches(
                     entry.before_context,
@@ -538,7 +562,59 @@ fn findMatchInRange(
     while (lead < literals_start) : (lead += 1) {
         const entry = entryAt(lead);
         var candidate: ?Entry = null;
-        if (entry.flags & 1 != 0) {
+        if (entry.flags & 128 != 0) {
+            // Repeated negated class in the middle of a source sequence.
+            const prefix_len = @as(usize, entry.source_len);
+            const suffix_len = @as(usize, entry.source2_len);
+            if (index + prefix_len > codepoints.len) continue;
+            var prefix_ok = true;
+            for (0..prefix_len) |offset| {
+                if (sourceCodepoint(entry, offset) !=
+                    codepoints[index + offset])
+                {
+                    prefix_ok = false;
+                    break;
+                }
+            }
+            if (!prefix_ok) continue;
+            const run_start = index + prefix_len;
+            var consumed: usize = 0;
+            while (run_start + consumed < codepoints.len and
+                consumed < 255 and
+                !setContains(entry.repeat_set, codepoints[run_start + consumed]))
+            {
+                consumed += 1;
+            }
+            if (consumed < entry.repeat_min) continue;
+            const suffix_start = run_start + consumed;
+            if (suffix_start + suffix_len > codepoints.len) continue;
+            var suffix_ok = true;
+            for (0..suffix_len) |offset| {
+                if (sourceCodepoint2(entry, offset) !=
+                    codepoints[suffix_start + offset])
+                {
+                    suffix_ok = false;
+                    break;
+                }
+            }
+            if (!suffix_ok) continue;
+            if (!contextMatches(entry.before_context, before, before.len, false)) {
+                continue;
+            }
+            if (!contextMatches(
+                entry.after_context,
+                codepoints,
+                suffix_start + suffix_len,
+                true,
+            )) {
+                continue;
+            }
+            var matched = entry;
+            matched.source_len = @intCast(prefix_len + consumed + suffix_len);
+            matched.repeat_start = @intCast(prefix_len);
+            matched.repeat_len = @intCast(consumed);
+            candidate = matched;
+        } else if (entry.flags & 1 != 0) {
             // Empty-source insertion rule: contexts see the current output
             // prefix and the remaining input.
             if (!contextMatches(entry.before_context, before, before.len, false)) {
@@ -635,7 +711,7 @@ fn findMatchInRange(
     var high = literals_end;
     while (low < high) {
         const middle = low + (high - low) / 2;
-        if (sourceCodepoint(entryAt(middle), 0) < first) {
+        if (entryFirstCodepoint(middle) < first) {
             low = middle + 1;
         } else {
             high = middle;
@@ -781,6 +857,33 @@ fn applyPassAlloc(
         steps += 1;
         if (steps > max_steps) break;
         if (findMatchInRange(range, work.items, index, work.items[0..index], filter_set)) |entry| {
+            if (entry.flags & 128 != 0) {
+                var mapped = std.ArrayList(u21).empty;
+                defer mapped.deinit(allocator);
+                for (0..@as(usize, entry.target_len)) |offset| {
+                    const codepoint = targetCodepoint(entry, offset);
+                    if (codepoint == 0x110000) {
+                        for (0..@as(usize, entry.repeat_len)) |run_index| {
+                            try mapped.append(
+                                allocator,
+                                work.items[
+                                    index + entry.repeat_start + run_index
+                                ],
+                            );
+                        }
+                    } else {
+                        try mapped.append(allocator, codepoint);
+                    }
+                }
+                try work.replaceRange(
+                    allocator,
+                    index,
+                    entry.source_len,
+                    mapped.items,
+                );
+                index += mapped.items.len;
+                continue;
+            }
             if (entry.flags & 1 != 0) {
                 const target_len: usize = entry.target_len;
                 for (0..target_len) |offset| {
@@ -2327,6 +2430,11 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/latin_interindic_conformance.bin"),
         .magic = "CJLI".*,
         .name = "Latin-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_hebrew_conformance.bin"),
+        .magic = "CJLH".*,
+        .name = "Latin-Hebrew",
     },
     .{
         .bytes = @embedFile("transliterate/thailogical_latin_conformance.bin"),
