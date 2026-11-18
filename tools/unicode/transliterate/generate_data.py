@@ -117,6 +117,13 @@ TRANSFORMS = (
 CONFORMANCE = (
     # (transform name, fixture path, magic, excluded source strings)
     (
+        "de-ASCII",
+        "common/testData/transforms/de-t-de-d0-ascii.txt",
+        b"CJD3",
+        frozenset(),
+        "de_ascii_official_conformance.bin",
+    ),
+    (
         "Latin-ASCII",
         "common/testData/transforms/und-t-und-latn-d0-ascii.txt",
         b"CJAS",
