@@ -2,13 +2,14 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 297 compiled table transforms plus 15 named engines (`NFC`, `NFD`,
+- 298 compiled table transforms plus 15 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 302 conformance fixtures: 30 official CLDR test-data files and 272 PyICU
+- 303 conformance fixtures: 30 official CLDR test-data files and 273 PyICU
   differential fixtures.
-- Blob format CJTR v11 (28-byte transform records with `filter_set`,
-  `final_case`, `next_transform`, and `pre_transform`).
+- Blob format CJTR v17 (36-byte transform records with `filter_set`,
+  `final_case`, `next_transform`, `pre_transform`, and per-pass
+  normalization offsets).
 - Two-step pipelines work: a leading component runs via `pre_transform`,
   then the transform's own rules, then the optional `next_transform`.
   The two Ethiopic geminate pipelines and the six FONIPA-to-Amharic
@@ -28,6 +29,10 @@ Status after the CLDR 48 rule-engine push:
 - Reverse global filters (`:: (set) ;`) are compiled; filtered transforms
   run their passes and normalization per input run, matching ICU's
   compound-filter behavior.
+- Normalization directives between rule sections compile to per-pass
+  normalization forms (CJTR v17): the engine normalizes the intermediate
+  text before the following pass, matching ICU's compound steps. Leading
+  and trailing directives become the pre- and post-normalization instead.
 - Property classes accept long general-category names
   (`[:Uppercase_Letter:]`, `[:Mark:]`), binary approximations
   (`Cased`, `Case_Ignorable`, `Soft_Dotted`, `Ideographic`,
@@ -59,19 +64,17 @@ context-specific rules precedence when both match. A naive
 "context entries first" sort regresses Armenian, Spanish, and Kirghiz,
 so the real specificity model is still needed.
 
-Known failing transforms (PyICU differential fixtures):
-
-| Transform | Failures | Main symptom |
-|---|---|---|
-
-| `Bopo-Latn` | 19 | reverse-direction rules |
+Known failing transforms (PyICU differential fixtures): none. Every
+compiled transform passes its fixture; the remaining gaps are transforms
+that are not compiled yet (see section 1).
 
 `Greek-Latin`, `Latin-Greek`, `Hebrew-Latin`, `Latin-Hebrew`,
-`ug-ug_FONIPA`, and `Maldivian-Latin/BGN` now pass their PyICU fixtures
+`ug-ug_FONIPA`, and `Maldivian-Latin/BGN` pass their PyICU fixtures
 after output-context stripping, nested-context order fixes, insertion
 rules merged into the main rule-order scan, repeated negated source groups
 with capture, numeric `ccc=` values, and the context builder for
-`ug-ug_FONIPA`. `Bopo-Latn` needs the Pinyin tone engine. `nl-Title` is
+`ug-ug_FONIPA`. `Bopo-Latn` and `zh_Latn_PINYIN-ru` pass after the Pinyin
+tone engines and per-pass normalization were compiled. `nl-Title` is
 implemented as a named engine on top of Any-Title plus the Dutch `IJ`
 digraph fix.
 
@@ -127,11 +130,15 @@ coverage for the tone-position classes.
   engines (tone-mark placement and tone-digit movement) and pass their
   fixtures.
 - `Latin-Bopomofo` and `Bopo-Latn` compile and pass their fixtures.
-  `zh_Latn_PINYIN-ru` still needs the full Pinyin syllable engine; the
-  `my/pl/sat/sk/xh/zu-chr` pipelines need more `und_FONIPA-chr` coverage.
+  `zh_Latn_PINYIN-ru` passes its PyICU fixture now that mid-rule
+  normalization directives normalize the intermediate text before the
+  following pass (the Pinyin tone pass NFD-decomposes, removes tone marks,
+  then NFC-recomposes before the syllabify and mapping passes).
+  The `my/pl/sat/sk/xh/zu-chr` pipelines need more `und_FONIPA-chr`
+  coverage.
 - `dsb-dsb_FONIPA` passes after mid-rule normalization directives were
-  made pass boundaries and the global filter was moved to the first
-  non-empty pass.
+  compiled as per-pass normalization steps and the global filter was moved
+  to the first non-empty pass.
 - `kk-am`, `my-am`, `ro-am`, `si-am`, `xh-am`, and `zu-am` pass their
   PyICU pipeline fixtures.
 

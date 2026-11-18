@@ -49,6 +49,7 @@ const set_count = readU32(22);
 const range_count = readU32(26);
 const context_count = readU32(30);
 const context_element_count = readU32(34);
+const pass_norm_count = readU16(38);
 const step_count = readU32(40);
 const transform_offset = header_len;
 const step_offset = transform_offset + @as(usize, transform_count) * 36;
@@ -72,14 +73,15 @@ const names_length = blk: {
 
 const sources_offset = names_offset + names_length;
 const targets_offset = sources_offset + @as(usize, source_count) * 4;
+const pass_norm_offset = targets_offset + @as(usize, target_count) * 4;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJTR") or
-        data[4] != 16 or data[5] != 48 or data[6] != 0 or data[7] != 0)
+        data[4] != 17 or data[5] != 48 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid transliteration data");
     }
-    if (targets_offset + @as(usize, target_count) * 4 != data.len) {
+    if (pass_norm_offset + @as(usize, pass_norm_count) != data.len) {
         @compileError("invalid transliteration data lengths");
     }
 }
@@ -99,6 +101,7 @@ const TransformRecord = struct {
     pre_transform: u32,
     step_start: u32,
     step_count: u16,
+    pass_norm_offset: u16,
 };
 
 const Entry = struct {
@@ -145,6 +148,7 @@ fn transformAt(index: usize) TransformRecord {
         .pre_transform = readU32(base + 24),
         .step_start = readU32(base + 28),
         .step_count = readU16(base + 32),
+        .pass_norm_offset = readU16(base + 34),
     };
 }
 
@@ -1128,6 +1132,16 @@ fn normalizationFormFromId(value: u8) normalization.Form {
     };
 }
 
+/// Normalization form a transform applies before `pass`, or 0 when the pass
+/// runs on the previous pass's output unchanged. CLDR rule files place
+/// normalization directives between rule sections; ICU compiles those into
+/// compound steps that normalize the intermediate text.
+fn passNormalizationForm(record: TransformRecord, pass: usize) u8 {
+    if (record.pass_norm_offset == 0xFFFF) return 0;
+    if (pass >= record.pass_count) return 0;
+    return data[pass_norm_offset + @as(usize, record.pass_norm_offset) + pass];
+}
+
 /// Run every pass of a transform over `codepoints`, returning the final
 /// codepoint sequence. `filter_set` restricts which codepoints may start a
 /// match; only the first pass consults it.
@@ -1151,12 +1165,31 @@ fn runPassesAlloc(
     var current: []const u21 = codepoints;
     var pass_output: ?std.ArrayList(u21) = null;
     defer if (pass_output) |*value| value.deinit(allocator);
+    var norm_output: ?[]u21 = null;
+    defer if (norm_output) |value| allocator.free(value);
 
-    // Each pass applies its empty-source insertion rules, then its mapping
-    // rules. Empty passes (for example around normalization directives) are
-    // skipped without scanning the text.
+    // Each pass applies its per-pass normalization, then its empty-source
+    // insertion rules and mapping rules. Empty passes (for example around
+    // normalization directives) are skipped without scanning the text.
     var pass: usize = 0;
     while (pass < pass_count) : (pass += 1) {
+        const norm_form = passNormalizationForm(record, pass);
+        if (norm_form != 0) {
+            const normalized = try normalization.normalizeCodepointsAlloc(
+                allocator,
+                current,
+                normalizationFormFromId(norm_form),
+            );
+            if (normalized) |value| {
+                if (norm_output) |previous| allocator.free(previous);
+                if (pass_output) |*owned| {
+                    owned.deinit(allocator);
+                    pass_output = null;
+                }
+                norm_output = value;
+                current = value;
+            }
+        }
         const range = transformPassRange(transform_index, @intCast(pass));
         if (range.end == range.start) continue;
         const next = try applyPassAlloc(
@@ -1168,6 +1201,10 @@ fn runPassesAlloc(
         if (pass_output) |*value| value.deinit(allocator);
         pass_output = next;
         current = next.items;
+        if (norm_output) |value| {
+            allocator.free(value);
+            norm_output = null;
+        }
     }
     if (pass_output) |value| {
         pass_output = null;
@@ -1175,7 +1212,7 @@ fn runPassesAlloc(
     }
     var output = std.ArrayList(u21).empty;
     errdefer output.deinit(allocator);
-    try output.appendSlice(allocator, codepoints);
+    try output.appendSlice(allocator, current);
     return output;
 }
 
@@ -2684,6 +2721,11 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/latin_interindic_conformance.bin"),
         .magic = "CJLI".*,
         .name = "Latin-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/zh_latn_pinyin_ru_conformance.bin"),
+        .magic = "CJZP".*,
+        .name = "zh_Latn_PINYIN-ru",
     },
     .{
         .bytes = @embedFile("transliterate/bopo_latn_conformance.bin"),

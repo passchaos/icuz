@@ -145,6 +145,7 @@ TRANSFORMS = (
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
     ("ug-ug_FONIPA", "ug-ug_FONIPA", "context"),
+    ("zh_Latn_PINYIN-ru", "zh_Latn_PINYIN-ru", "context"),
     ("Latin-Bopomofo", "Latin-Bopomofo", "context"),
     ("Bopo-Latn", "Latin-Bopomofo", "reverse_context"),
     ("ja_Latn-ko", "ja_Latn-ko", "context"),
@@ -454,26 +455,69 @@ def normalization_directives(rules: str):
     return directives, last_rule
 
 
+def first_rule_line(rules: str) -> int:
+    """Return the line index of the first rule, or -1 when there is none."""
+    for index, raw in enumerate(rules.splitlines()):
+        line = strip_comment(raw).strip()
+        if not line or line.startswith("::") or VARIABLE_DEF.match(line):
+            continue
+        return index
+    return -1
+
+
+def classify_normalization(rules: str, reverse: bool = False):
+    """Split normalization directives into pre, post, and per-pass forms.
+
+    ICU compiles a rule file into a compound of normalization and rule steps.
+    The forward direction applies each directive's bare form where it appears;
+    the reverse direction reverses the step order and uses the parenthesized
+    form. A leading normalization becomes the pre-normalization, a trailing
+    one the post-normalization, and directives between rule sections become
+    per-pass normalization forms (pass index -> form id).
+    """
+    directives, last_rule = normalization_directives(rules)
+    if not directives:
+        return 0, 0, {}
+    first_rule = first_rule_line(rules)
+    total = len(directives)
+    pre = 0
+    post = 0
+    pass_norms: dict[int, int] = {}
+    for position, (index, form, post_form) in enumerate(directives, start=1):
+        first_step = position == 1 and (first_rule < 0 or index < first_rule)
+        last_step = position == total and index > last_rule
+        if reverse:
+            value = post_form if post_form is not None else form
+            if last_step and pre == 0:
+                pre = value
+            elif first_step and post == 0:
+                post = value
+            else:
+                pass_norms[total - position + 1] = value
+        else:
+            if first_step and pre == 0:
+                pre = form
+            elif last_step and post == 0:
+                post = form
+            else:
+                pass_norms[position] = form
+    return pre, post, pass_norms
+
+
 def detect_pre_normalization(rules: str) -> int:
     """Map the transform's first normalization directive to the input form."""
     directives, _ = normalization_directives(rules)
-    return directives[0][1] if directives else 0
+    if not directives:
+        return 0
+    first_rule = first_rule_line(rules)
+    if first_rule >= 0 and directives[0][0] > first_rule:
+        return 0
+    return directives[0][1]
 
 
 def detect_post_normalization(rules: str) -> int:
     """Map the forward direction's output normalization form."""
-    directives, last_rule = normalization_directives(rules)
-    if not directives:
-        return 0
-    # Bidirectional transforms place a second normalization directive between
-    # the forward and reverse rule sections; the first parenthetical form
-    # describes the forward output.
-    if len(directives) >= 2 and directives[0][2] is not None:
-        return directives[0][2]
-    index, form, post_form = directives[-1]
-    if post_form is not None and index > last_rule:
-        return post_form
-    return form if index > last_rule else 0
+    return classify_normalization(rules, reverse=False)[1]
 
 
 def detect_reverse_normalization(rules: str):
@@ -483,13 +527,7 @@ def detect_reverse_normalization(rules: str):
     directive written `NFD (NFC)` uses NFD forward and NFC in reverse; the
     parenthesized form therefore wins when the pass order is flipped.
     """
-    directives, _ = normalization_directives(rules)
-    if not directives:
-        return 0, 0
-    _, form, post_form = directives[-1]
-    pre = post_form if post_form is not None else form
-    _, form, post_form = directives[0]
-    post = post_form if post_form is not None else form
+    pre, post, _ = classify_normalization(rules, reverse=True)
     return pre, post
 
 
@@ -2076,6 +2114,11 @@ def unquote_literals(text: str) -> str:
     index = 0
     while index < len(text):
         character = text[index]
+        if character == "\\" and not quoted:
+            # Preserve escapes such as \' so they do not toggle quoting.
+            output.append(text[index : index + 2])
+            index += 2
+            continue
         if character == "'":
             if quoted and index + 1 < len(text) and text[index + 1] == "'":
                 output.append("\\u0027")
@@ -2384,6 +2427,10 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
     entries = []
     priority = 0
     pass_index = 0
+    pre_normalization, post_normalization, pass_norms = classify_normalization(
+        rules,
+        reverse,
+    )
     for raw in rules.splitlines():
         line = strip_comment(raw)
         line = line.replace("\u200e", "").replace("\u200f", "")
@@ -2810,7 +2857,7 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
                 context_capture,
             )
         )
-    return result
+    return result, pre_normalization, post_normalization, pass_norms
 
 
 def find_unquoted(text: str, needle: str):
@@ -2905,6 +2952,7 @@ def render_blob(
     tables: list[list[tuple]],
     filters: list[frozenset[int] | None],
     step_lists: list[list[tuple[int, int]] | None],
+    pass_norm_lists: list[dict[int, int]],
 ) -> bytes:
     names = bytearray()
     name_records: list[tuple[int, int]] = []
@@ -3093,6 +3141,36 @@ def render_blob(
         )
         entry_start += len(table)
 
+    # One byte per pass records an optional normalization form applied before
+    # that pass (0 = none). Directives between rule sections use this; the
+    # leading and trailing directives become pre/post normalization instead.
+    pass_norm_section = bytearray()
+    pass_norm_offsets: list[int] = []
+    for record_index, (record, norms) in enumerate(
+        zip(transform_records, pass_norm_lists)
+    ):
+        pass_count = record[3]
+        filtered_norms = {
+            index: form
+            for index, form in norms.items()
+            if index > 0
+        }
+        if filtered_norms:
+            # A normalization directive with no rules after it still runs;
+            # extend the pass count so the runtime reaches it.
+            needed = max(filtered_norms) + 1
+            if needed > pass_count:
+                updated = list(record)
+                updated[3] = needed
+                transform_records[record_index] = tuple(updated)
+                pass_count = needed
+        if not filtered_norms:
+            pass_norm_offsets.append(0xFFFF)
+            continue
+        pass_norm_offsets.append(len(pass_norm_section))
+        for pass_index in range(pass_count):
+            pass_norm_section.append(filtered_norms.get(pass_index, 0))
+
     step_pool: list[tuple[int, int]] = []
     step_records: list[tuple[int, int]] = []
     for steps in step_lists:
@@ -3104,7 +3182,7 @@ def render_blob(
     header = bytearray(b"CJTR")
     header += struct.pack(
         "<B3BH7IH",
-        16,
+        17,
         CLDR_VERSION,
         0,
         0,
@@ -3116,7 +3194,7 @@ def render_blob(
         len(range_pool),
         len(context_records),
         len(context_elements),
-        0,
+        len(pass_norm_section),
     )
     header += struct.pack("<I", len(step_pool))
     transform_bytes = bytearray()
@@ -3150,7 +3228,7 @@ def render_blob(
             pre_transform,
             step_start,
             step_count,
-            0,
+            pass_norm_offsets[index],
         )
     step_bytes = bytearray()
     for kind, value in step_pool:
@@ -3182,6 +3260,7 @@ def render_blob(
         + names
         + sources
         + targets
+        + pass_norm_section
     )
 
 
@@ -3257,8 +3336,12 @@ def main() -> int:
             changed = True
     all_transforms += discovered
 
+    pass_norm_lists: list[dict[int, int]] = []
     for name, source, builder in all_transforms:
         rules = rules_for(source)
+        builder_pre = 0
+        builder_post = 0
+        builder_norms: dict[int, int] = {}
         if builder == "latin":
             table = latin_ascii_entries(rules)
         elif builder == "fullwidth":
@@ -3272,7 +3355,12 @@ def main() -> int:
         elif builder == "reverse_simple":
             table = reverse_table(simple_table_entries(rules))
         elif builder == "reverse_context":
-            table = table_entries_with_contexts(rules, reverse=True)
+            (
+                table,
+                builder_pre,
+                builder_post,
+                builder_norms,
+            ) = table_entries_with_contexts(rules, reverse=True)
         elif builder == "reverse_with_left":
             table = reverse_with_left(rules)
         elif builder == "pipeline":
@@ -3282,9 +3370,14 @@ def main() -> int:
         elif builder == "variables":
             table = table_entries_with_variables(rules)
         elif builder == "context":
-            table = table_entries_with_contexts(rules)
+            (
+                table,
+                builder_pre,
+                builder_post,
+                builder_norms,
+            ) = table_entries_with_contexts(rules)
         elif builder == "katakana":
-            table = table_entries_with_contexts(rules)
+            table, _, _, builder_norms = table_entries_with_contexts(rules)
         else:
             raise SystemExit(f"unknown transform builder {builder!r}")
         if builder == "steps":
@@ -3297,17 +3390,19 @@ def main() -> int:
             transform_filter = parse_filter(rules, parse_variables(rules))
         else:
             pending_steps.append(None)
-            if builder.startswith("reverse"):
+            if builder == "katakana":
+                pre_normalization = 5
+                post_normalization = 0
+            elif builder in ("context", "reverse_context"):
+                pre_normalization = builder_pre
+                post_normalization = builder_post
+            elif builder.startswith("reverse"):
                 pre_normalization, post_normalization = (
                     detect_reverse_normalization(rules)
                 )
             else:
-                pre_normalization = (
-                    5 if builder == "katakana" else detect_pre_normalization(rules)
-                )
-                post_normalization = 0 if builder == "katakana" else (
-                    detect_post_normalization(rules)
-                )
+                pre_normalization = detect_pre_normalization(rules)
+                post_normalization = detect_post_normalization(rules)
             final_case = 0 if builder == "katakana" else detect_final_case(rules)
             next_name = detect_next_transform(rules)
             if builder.startswith("reverse"):
@@ -3335,6 +3430,7 @@ def main() -> int:
         )
         tables.append(table)
         filters.append(transform_filter)
+        pass_norm_lists.append(builder_norms)
 
     name_to_index = {name: index for index, (name, *_rest) in enumerate(specs)}
 
@@ -3357,6 +3453,7 @@ def main() -> int:
             continue
         last_index = name_to_index[last]
         tables[index] = tables[last_index]
+        pass_norm_lists[index] = pass_norm_lists[last_index]
         spec = list(specs[index])
         # The pipeline's own table is the final component's, so it also
         # inherits that component's normalization and case behavior and must
@@ -3387,7 +3484,9 @@ def main() -> int:
             resolved_steps.append((kind, name_to_index[target]))
         step_lists.append(resolved_steps)
 
-    (out_dir / "data.bin").write_bytes(render_blob(specs, tables, filters, step_lists))
+    (out_dir / "data.bin").write_bytes(
+        render_blob(specs, tables, filters, step_lists, pass_norm_lists)
+    )
     for _, fixture_path, magic, excluded, filename in CONFORMANCE:
         (out_dir / filename).write_bytes(
             render_conformance(archive, fixture_path, magic, excluded)
