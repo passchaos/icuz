@@ -145,6 +145,8 @@ TRANSFORMS = (
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
     ("ug-ug_FONIPA", "ug-ug_FONIPA", "context"),
+    ("ja_Latn-ko", "ja_Latn-ko", "context"),
+    ("ru-zh", "ru-zh", "context"),
     ("pl_FONIPA-ja", "pl_FONIPA-ja", "context"),
     ("ro_FONIPA-ja", "ro_FONIPA-ja", "context"),
     ("sk_FONIPA-ja", "sk_FONIPA-ja", "context"),
@@ -492,7 +494,7 @@ def detect_reverse_normalization(rules: str):
 # Components whose rule sets need engine features that are not compiled yet
 # (for example InterIndic-Arabic's `($alif) $alif+ > $1` collapse rule).
 PIPELINE_EXCLUDE_COMPONENTS: set[str] = set()
-PIPELINE_EXCLUDE_NAMES = {"ch-am", "sk-am", "cs-ja", "es-ja", "es_419-am", "es_419-ja", "ug-Latin", "hy_AREVMDA-chr", "my-chr", "pl-chr", "sat-chr", "sk-chr", "xh-chr", "zu-chr"}
+PIPELINE_EXCLUDE_NAMES = {"cs-ja", "es-ja", "es_419-am", "es_419-ja", "ug-Latin", "hy_AREVMDA-chr", "my-chr", "pl-chr", "sat-chr", "sk-chr", "xh-chr", "zu-chr"}
 
 PIPELINE_COMPONENTS = {
     "Amharic-Amharic/Geminate": "am-Ethi-t-am-ethi-m0-geminate",
@@ -726,6 +728,9 @@ def split_rule(line: str):
     index = 0
     while index < len(line):
         character = line[index]
+        if character == "\\" and not quoted:
+            index += 2
+            continue
         if character == "'":
             if quoted and index + 1 < len(line) and line[index + 1] == "'":
                 index += 2
@@ -1942,6 +1947,97 @@ def expand_embedded_group(source_text: str, variables: dict[str, str]):
     return prefixes, group, suffixes
 
 
+MAX_GROUP_COMBINATIONS = 200_000
+
+
+def expand_source_groups(source_text: str, target_text: str, variables):
+    """Expand a source with one or more `(...)` capture groups.
+
+    Returns a list of (source, target) tuples, or None. Targets may refer to
+    any group with `$1`, `$2`, and so on.
+    """
+    parts = []
+    index = 0
+    while index < len(source_text):
+        open_pos = find_unquoted(source_text[index:], "(")
+        if open_pos is None:
+            break
+        open_pos += index
+        close_pos = find_unquoted(source_text[open_pos:], ")")
+        if close_pos is None:
+            return None
+        close_pos += open_pos
+        literal = source_text[index:open_pos].strip()
+        if literal:
+            terms = parse_source_terms(literal, variables)
+            if terms is None:
+                return None
+            alternatives = expand_source_terms(terms)
+            if alternatives is None:
+                return None
+            parts.append(("literal", alternatives))
+        inner = source_text[open_pos + 1 : close_pos].strip()
+        terms = parse_source_terms(inner, variables)
+        if terms is None:
+            return None
+        alternatives = expand_source_terms(terms)
+        if alternatives is None:
+            return None
+        parts.append(("group", alternatives))
+        index = close_pos + 1
+    tail = source_text[index:].strip()
+    if tail:
+        terms = parse_source_terms(tail, variables)
+        if terms is None:
+            return None
+        alternatives = expand_source_terms(terms)
+        if alternatives is None:
+            return None
+        parts.append(("literal", alternatives))
+    if not parts:
+        return None
+    combinations = 1
+    for _, alternatives in parts:
+        combinations *= len(alternatives)
+        if combinations > MAX_GROUP_COMBINATIONS:
+            return None
+    template = re.split(r"(\$[0-9])", target_text)
+    results = []
+
+    def emit(part_index, source, groups):
+        if part_index == len(parts):
+            target = []
+            for piece in template:
+                if re.fullmatch(r"\$[0-9]", piece):
+                    group_index = int(piece[1:]) - 1
+                    if group_index < 0 or group_index >= len(groups):
+                        return
+                    target.extend(groups[group_index])
+                else:
+                    codepoints, syntax = parse_side_with_variables(
+                        piece,
+                        variables,
+                    )
+                    if syntax:
+                        return
+                    target.extend(codepoints)
+            results.append((tuple(source), tuple(target)))
+            return
+        kind, alternatives = parts[part_index]
+        for value in alternatives:
+            if kind == "group":
+                emit(
+                    part_index + 1,
+                    source + list(value),
+                    groups + [list(value)],
+                )
+            else:
+                emit(part_index + 1, source + list(value), groups)
+
+    emit(0, [], [])
+    return results if results else None
+
+
 def class_alternatives(content: str, variables: dict[str, str]):
     """Expand a class body into source alternatives, including strings."""
     split = split_class_strings(content)
@@ -2480,6 +2576,35 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
                                 )
                 priority += 1
                 continue
+            if "$2" in right:
+                expanded = expand_source_groups(
+                    source_text,
+                    right,
+                    variables,
+                )
+                if expanded is not None:
+                    for group_source, group_target in expanded:
+                        for before in before_alts:
+                            for after in after_alts:
+                                entries.append(
+                                    (
+                                        pass_index,
+                                        group_source,
+                                        group_target,
+                                        before,
+                                        after,
+                                        priority,
+                                        reprocess,
+                                        None,
+                                        None,
+                                        0,
+                                        None,
+                                        None,
+                                        False,
+                                    )
+                                )
+                    priority += 1
+                    continue
             stripped = strip_whole_group(source_text)
             if stripped is not None:
                 source_expression = stripped
@@ -2692,6 +2817,9 @@ def find_unquoted(text: str, needle: str):
     index = 0
     while index < len(text):
         character = text[index]
+        if character == "\\" and not quoted:
+            index += 2
+            continue
         if character == "'":
             if quoted and index + 1 < len(text) and text[index + 1] == "'":
                 index += 2
