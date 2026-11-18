@@ -129,6 +129,9 @@ TRANSFORMS = (
     ("Latin-Armenian", "Latin-Armenian", "context"),
     ("Azerbaijani-Latin-BGN", "Azerbaijani-Latin-BGN", "context"),
     ("Latin-Cyrillic", "Cyrillic-Latin", "reverse_context"),
+    ("Latin-Arabic", "Arabic-Latin", "reverse_context"),
+    ("Latin-Syriac", "Syriac-Latin", "reverse_context"),
+    ("Armenian-Latin", "Latin-Armenian", "reverse_context"),
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
     ("ug-ug_FONIPA", "ug-ug_FONIPA", "simple"),
@@ -1125,14 +1128,17 @@ def script_codepoints(name: str):
     target = names.index(zig_name)
     data = (ROOT / "src/unicode/script/data.bin").read_bytes()
     index_count, page_count = struct.unpack_from("<HH", data, 12)
-    page_bytes = data[16 + index_count * 2 :]
+    index_offset = 16
+    pages_offset = index_offset + index_count * 2
     result: list[int] = []
-    for page in range(page_count):
+    # The table deduplicates pages; map every codepoint page through the
+    # index before reading its 256-byte page.
+    for page in range(index_count):
+        slot = struct.unpack_from("<H", data, index_offset + page * 2)[0]
         base = page * 256
-        for offset, value in enumerate(
-            page_bytes[page * 256 : (page + 1) * 256]
-        ):
-            if value == target:
+        page_start = pages_offset + slot * 256
+        for offset in range(256):
+            if data[page_start + offset] == target:
                 result.append(base + offset)
     value = frozenset(result)
     PROPERTY_CACHE[key] = value
@@ -2185,6 +2191,40 @@ def parse_filter(rules: str, variables: dict[str, str]):
     return None
 
 
+def parse_reverse_filter(rules: str, variables: dict[str, str]):
+    """Return the reverse direction's `:: (set) ;` input filter.
+
+    In the forward direction `::[set];` is the global filter; ICU swaps the
+    convention for the reverse direction, where the parenthesized form is
+    the filter that applies to the inverse transform.
+    """
+    for raw in rules.splitlines():
+        line = strip_comment(raw).strip()
+        if not line.startswith("::"):
+            continue
+        directive = line[2:].strip().rstrip(";").strip()
+        upper = directive.upper()
+        if upper.startswith(("NFKD", "NFKC", "NFD", "NFC", "NULL")):
+            continue
+        if not (directive.startswith("(") and directive.endswith(")")):
+            continue
+        inner = directive[1:-1].strip()
+        if not (inner.startswith("[") and inner.endswith("]")):
+            continue
+        split = split_class_strings(inner[1:-1])
+        if split is None:
+            continue
+        content, _ = split
+        parsed = parse_class_set("[" + content + "]", variables)
+        if parsed is None:
+            continue
+        value, negated = parsed
+        if negated:
+            continue
+        return frozenset(codepoint for codepoint in value if codepoint >= 0)
+    return None
+
+
 def render_blob(
     specs: list[tuple[str, int, int]],
     tables: list[list[tuple]],
@@ -2275,6 +2315,7 @@ def render_blob(
         final_case,
         next_name,
         pre_name,
+        filtered_normalization,
     ), table in zip(specs, tables):
         pass_count = 1
         for entry in table:
@@ -2331,6 +2372,7 @@ def render_blob(
                 add_set(sorted(filters[len(transform_records)]))
                 if filters[len(transform_records)] is not None
                 else 0,
+                filtered_normalization,
             )
         )
         entry_start += len(table)
@@ -2364,6 +2406,7 @@ def render_blob(
         next_transform,
         pre_transform,
         filter_set,
+        filtered_normalization,
     ) in enumerate(transform_records):
         name_offset, name_length = name_records[index]
         transform_bytes += struct.pack(
@@ -2377,7 +2420,7 @@ def render_blob(
             post_normalization,
             filter_set,
             final_case,
-            0,
+            filtered_normalization,
             next_transform,
             pre_transform,
         )
@@ -2475,6 +2518,13 @@ def main() -> int:
                 detect_post_normalization(rules)
             )
         final_case = 0 if builder == "katakana" else detect_final_case(rules)
+        if builder.startswith("reverse"):
+            transform_filter = parse_reverse_filter(
+                rules,
+                parse_variables(rules),
+            )
+        else:
+            transform_filter = parse_filter(rules, parse_variables(rules))
         specs.append(
             (
                 name,
@@ -2483,14 +2533,13 @@ def main() -> int:
                 final_case,
                 detect_next_transform(rules),
                 None,
+                # Reverse filters apply to the input side; normalization must
+                # then run on filtered spans instead of the whole output.
+                1 if builder.startswith("reverse") and transform_filter else 0,
             )
         )
         tables.append(table)
-        filters.append(
-            None
-            if builder.startswith("reverse")
-            else parse_filter(rules, parse_variables(rules))
-        )
+        filters.append(transform_filter)
 
     name_to_index = {name: index for index, (name, *_rest) in enumerate(specs)}
 
@@ -2522,6 +2571,7 @@ def main() -> int:
         spec[3] = specs[last_index][3]
         spec[4] = None
         spec[5] = first
+        spec[6] = specs[last_index][6]
         specs[index] = tuple(spec)
 
     (out_dir / "data.bin").write_bytes(render_blob(specs, tables, filters))

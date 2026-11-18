@@ -91,6 +91,7 @@ const TransformRecord = struct {
     post_normalization: u8,
     filter_set: u32,
     final_case: u8,
+    filtered_normalization: bool,
     next_transform: u32,
     pre_transform: u32,
 };
@@ -126,6 +127,7 @@ fn transformAt(index: usize) TransformRecord {
         .post_normalization = data[base + 13],
         .filter_set = readU32(base + 14),
         .final_case = data[base + 18],
+        .filtered_normalization = data[base + 19] != 0,
         .next_transform = readU32(base + 20),
         .pre_transform = readU32(base + 24),
     };
@@ -725,12 +727,185 @@ fn tableAlloc(
     return chained;
 }
 
+fn normalizationFormFromId(value: u8) normalization.Form {
+    return switch (value) {
+        1 => .nfd,
+        2 => .nfc,
+        3 => .nfkd,
+        4 => .nfkc,
+        else => .nfc,
+    };
+}
+
+/// Run every pass of a transform over `codepoints`, returning the final
+/// codepoint sequence. `filter_set` restricts which codepoints may start a
+/// match; only the first pass consults it.
+fn runPassesAlloc(
+    allocator: std.mem.Allocator,
+    codepoints: []const u21,
+    transform_index: usize,
+    filter_set: u32,
+) Error!std.ArrayList(u21) {
+    const record = transformAt(transform_index);
+    const pass_count: usize = @max(record.pass_count, 1);
+    var current: []const u21 = codepoints;
+    var pass_output: ?std.ArrayList(u21) = null;
+    defer if (pass_output) |*value| value.deinit(allocator);
+
+    // Each pass applies its empty-source insertion rules, then its mapping
+    // rules. Every pass except the last writes intermediate codepoints.
+    var pass: usize = 0;
+    while (pass < pass_count) : (pass += 1) {
+        const range = transformPassRange(transform_index, @intCast(pass));
+        var pass_input: []const u21 = current;
+        var inserted: ?std.ArrayList(u21) = null;
+        defer if (inserted) |*value| value.deinit(allocator);
+        if (hasInsertions(range)) {
+            inserted = try applyInsertions(allocator, current, range);
+            pass_input = inserted.?.items;
+        }
+        const next = try applyPassAlloc(
+            allocator,
+            pass_input,
+            range,
+            if (pass == 0) filter_set else 0,
+        );
+        if (pass + 1 == pass_count) return next;
+        if (pass_output) |*value| value.deinit(allocator);
+        pass_output = next;
+        current = next.items;
+    }
+    unreachable;
+}
+
+fn encodeCodepointsAlloc(
+    allocator: std.mem.Allocator,
+    codepoints: []const u21,
+) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    for (codepoints) |codepoint| {
+        try appendCodepoint(allocator, &output, codepoint);
+    }
+    return output.toOwnedSlice(allocator);
+}
+
+/// Apply the trailing case transform and output normalization. Takes ownership
+/// of `raw` and returns a newly owned slice.
+fn applyFinalCaseAndNormalization(
+    allocator: std.mem.Allocator,
+    raw: []u8,
+    record: TransformRecord,
+) Error![]u8 {
+    var value = raw;
+    if (record.final_case != 0) {
+        const cased = if (record.final_case == 1)
+            try case_mapping.fullLowerAlloc(allocator, value, .{})
+        else
+            try case_mapping.fullUpperAlloc(allocator, value, .{});
+        allocator.free(value);
+        value = cased;
+    }
+    if (record.post_normalization == 0) return value;
+    const post_normalized = try normalization.normalizeFormAlloc(
+        allocator,
+        value,
+        normalizationFormFromId(record.post_normalization),
+    );
+    if (post_normalized) |normalized| {
+        allocator.free(value);
+        return normalized;
+    }
+    return value;
+}
+
+/// Reverse transforms use an input-side global filter. ICU splits the input
+/// into maximal filtered runs and runs the whole compound (including its
+/// normalization steps) on each run, so unfiltered characters such as Arabic
+/// marks are never reordered by the final normalization.
+fn filteredRunAlloc(
+    allocator: std.mem.Allocator,
+    run: []const u21,
+    record: TransformRecord,
+    transform_index: usize,
+) Error![]u8 {
+    const run_text = try encodeCodepointsAlloc(allocator, run);
+    defer allocator.free(run_text);
+    var normalized: ?[]u8 = null;
+    defer if (normalized) |value| allocator.free(value);
+    var input: []const u8 = run_text;
+    if (record.pre_normalization != 0) {
+        normalized = try normalization.normalizeFormAlloc(
+            allocator,
+            run_text,
+            normalizationFormFromId(record.pre_normalization),
+        );
+        if (normalized) |value| input = value;
+    }
+    var run_codepoints = try decodeAlloc(allocator, input);
+    defer run_codepoints.deinit(allocator);
+    var final = try runPassesAlloc(
+        allocator,
+        run_codepoints.items,
+        transform_index,
+        0,
+    );
+    defer final.deinit(allocator);
+    const raw = try encodeCodepointsAlloc(allocator, final.items);
+    return applyFinalCaseAndNormalization(allocator, raw, record);
+}
+
+fn filteredTableCoreAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    transform_index: usize,
+) Error![]u8 {
+    const record = transformAt(transform_index);
+    var codepoints = try decodeAlloc(allocator, text);
+    defer codepoints.deinit(allocator);
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    var index: usize = 0;
+    while (index < codepoints.items.len) {
+        const contained = setContains(
+            record.filter_set,
+            codepoints.items[index],
+        );
+        const start = index;
+        while (index < codepoints.items.len and
+            setContains(record.filter_set, codepoints.items[index]) ==
+                contained)
+        {
+            index += 1;
+        }
+        const run = codepoints.items[start..index];
+        if (!contained) {
+            for (run) |codepoint| {
+                try appendCodepoint(allocator, &output, codepoint);
+            }
+            continue;
+        }
+        const converted = try filteredRunAlloc(
+            allocator,
+            run,
+            record,
+            transform_index,
+        );
+        defer allocator.free(converted);
+        try output.appendSlice(allocator, converted);
+    }
+    return output.toOwnedSlice(allocator);
+}
+
 fn tableCoreAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
     transform_index: usize,
 ) Error![]u8 {
     const record = transformAt(transform_index);
+    if (record.filtered_normalization) {
+        return filteredTableCoreAlloc(allocator, text, transform_index);
+    }
     var normalized: ?[]u8 = null;
     var source = text;
     if (record.pre_normalization == 5) {
@@ -754,87 +929,26 @@ fn tableCoreAlloc(
         }
         source = normalized.?;
     } else if (record.pre_normalization != 0) {
-        const form: normalization.Form = switch (record.pre_normalization) {
-            1 => .nfd,
-            2 => .nfc,
-            3 => .nfkd,
-            4 => .nfkc,
-            else => .nfc,
-        };
-        normalized = try normalization.normalizeFormAlloc(allocator, text, form);
+        normalized = try normalization.normalizeFormAlloc(
+            allocator,
+            text,
+            normalizationFormFromId(record.pre_normalization),
+        );
         if (normalized) |value| source = value;
     }
     defer if (normalized) |value| allocator.free(value);
 
     var codepoints = try decodeAlloc(allocator, source);
     defer codepoints.deinit(allocator);
-
-    const pass_count: usize = @max(record.pass_count, 1);
-    var current: []const u21 = codepoints.items;
-    var pass_output: ?std.ArrayList(u21) = null;
-    defer if (pass_output) |*value| value.deinit(allocator);
-
-    // Each pass applies its empty-source insertion rules, then its mapping
-    // rules. Every pass except the last writes intermediate codepoints; the
-    // final pass emits UTF-8 directly.
-    var pass: usize = 0;
-    while (pass < pass_count) : (pass += 1) {
-        const range = transformPassRange(transform_index, @intCast(pass));
-        var pass_input: []const u21 = current;
-        var inserted: ?std.ArrayList(u21) = null;
-        defer if (inserted) |*value| value.deinit(allocator);
-        if (hasInsertions(range)) {
-            inserted = try applyInsertions(allocator, current, range);
-            pass_input = inserted.?.items;
-        }
-        var next = try applyPassAlloc(
-            allocator,
-            pass_input,
-            range,
-            if (pass == 0) record.filter_set else 0,
-        );
-        if (pass + 1 == pass_count) {
-            defer next.deinit(allocator);
-            var output = std.ArrayList(u8).empty;
-            errdefer output.deinit(allocator);
-            for (next.items) |codepoint| {
-                try appendCodepoint(allocator, &output, codepoint);
-            }
-            var raw = try output.toOwnedSlice(allocator);
-            if (record.final_case != 0) {
-                const cased = if (record.final_case == 1)
-                    try case_mapping.fullLowerAlloc(allocator, raw, .{})
-                else
-                    try case_mapping.fullUpperAlloc(allocator, raw, .{});
-                allocator.free(raw);
-                raw = cased;
-            }
-            if (record.post_normalization == 0) return raw;
-            const form: normalization.Form = switch (
-                record.post_normalization
-            ) {
-                1 => .nfd,
-                2 => .nfc,
-                3 => .nfkd,
-                4 => .nfkc,
-                else => .nfc,
-            };
-            const post_normalized = try normalization.normalizeFormAlloc(
-                allocator,
-                raw,
-                form,
-            );
-            if (post_normalized) |value| {
-                allocator.free(raw);
-                return value;
-            }
-            return raw;
-        }
-        if (pass_output) |*value| value.deinit(allocator);
-        pass_output = next;
-        current = next.items;
-    }
-    unreachable;
+    var final = try runPassesAlloc(
+        allocator,
+        codepoints.items,
+        transform_index,
+        record.filter_set,
+    );
+    defer final.deinit(allocator);
+    const raw = try encodeCodepointsAlloc(allocator, final.items);
+    return applyFinalCaseAndNormalization(allocator, raw, record);
 }
 
 fn namedTableAlloc(
@@ -1849,6 +1963,21 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/zu_am_conformance.bin"),
         .magic = "CJPZ".*,
         .name = "zu-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_arabic_conformance.bin"),
+        .magic = "CJLQ".*,
+        .name = "Latin-Arabic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_syriac_conformance.bin"),
+        .magic = "CJLS".*,
+        .name = "Latin-Syriac",
+    },
+    .{
+        .bytes = @embedFile("transliterate/armenian_latin_conformance.bin"),
+        .magic = "CJAR".*,
+        .name = "Armenian-Latin",
     },
 };
 

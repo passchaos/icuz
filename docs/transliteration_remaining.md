@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 94 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
+- 97 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 96 conformance fixtures: 30 official CLDR test-data files and 66 PyICU
+- 99 conformance fixtures: 30 official CLDR test-data files and 69 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -18,6 +18,9 @@ Status after the CLDR 48 rule-engine push:
   `A ↔ B` become `B -> A`, pass order is reversed, `::(null);`,
   `::null;`, and `::null();` all split passes, and reverse normalization
   uses the parenthesized form of `NFD (NFC)` directives.
+- Reverse global filters (`:: (set) ;`) are compiled; filtered transforms
+  run their passes and normalization per input run, matching ICU's
+  compound-filter behavior.
 - Property classes accept long general-category names
   (`[:Uppercase_Letter:]`, `[:Mark:]`), binary approximations
   (`Cased`, `Case_Ignorable`, `Soft_Dotted`, `Ideographic`,
@@ -62,17 +65,16 @@ Known failing transforms (PyICU differential fixtures):
 | Transform | Failures | Main symptom |
 |---|---|---|
 | `Greek-Latin` | 19 | final sigma `ς` loses the `U+0331` disambiguator; `Χ` + lowercase yields `CH` instead of `Ch` |
-| `Latin-Arabic` | 19 | reverse-direction rules |
-| `Latin-Syriac` | 19 | reverse-direction rules |
 | `Latin-Hebrew` | 20 | reverse-direction rules |
 | `Maldivian-Latin-BGN` | 19 | direction/rule coverage |
 | `ug-ug_FONIPA` | 20 | context/rule coverage |
 | `Bopo-Latn` | 19 | reverse-direction rules |
 
 `Greek-Latin` needs script property classes, which are implemented, plus
-the specificity model above. `Latin-Arabic`, `Latin-Syriac`, `Latin-Hebrew`,
-and `Bopo-Latn` need reverse directions of transforms whose forward rules
-are not yet compiled.
+the specificity model above. `Latin-Hebrew` and `Bopo-Latn` need reverse
+directions of transforms whose forward rules are not yet compiled.
+`Latin-Arabic`, `Latin-Syriac`, and `Armenian-Latin` now pass their PyICU
+fixtures after the reverse-filter and per-run normalization work.
 
 ## 3. Script_Extensions based filters
 
