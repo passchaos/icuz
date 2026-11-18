@@ -92,15 +92,16 @@ need without pulling in a font or layout engine.
   Hiragana-Katakana, Persian-Latin-BGN, nv-nv_FONIPA, si-si_FONIPA,
   es-es_FONIPA, xh-xh_FONIPA, vec-vec_FONIPA, ro-ro_FONIPA,
   Arabic-Latin-BGN, Armenian-Latin-BGN, Thaana-Latin, Syriac-Latin,
-  CanadianAboriginal-Latin, and
-  NFC/NFD/NFKC/NFKD transforms. Sixty-one
+  CanadianAboriginal-Latin, tr-Lower, az-Lower, el-Lower, el-Upper,
+  lt-Lower, lt-Upper, and
+  NFC/NFD/NFKC/NFKD transforms. Sixty-seven
   transforms are compiled; twenty-four ship official CLDR conformance
-  fixtures, and twenty-nine (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and thirty-five (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
   Venetian FONIPA, Romanian FONIPA, Arabic-Latin-BGN, Armenian-Latin-BGN,
-  Thaana-Latin, Syriac-Latin, CanadianAboriginal-Latin,
-  a Kazakh FONIPA validation fixture, Hiragana-Katakana,
+  Thaana-Latin, Syriac-Latin, CanadianAboriginal-Latin, the six
+  case transforms, a Kazakh FONIPA validation fixture, Hiragana-Katakana,
   and Persian-Latin-BGN) ship ICU
   differential fixtures generated with PyICU. Transforms can be selected by CLDR name through
   `transliterateByNameAlloc`. The table compiler expands character classes,
@@ -112,7 +113,8 @@ need without pulling in a font or layout engine.
   cursor reprocessing (`|`), output post-normalization, multi-definition
   variable lines (including multi-line classes), quoted and ignored
   whitespace, output-aware rule contexts, ICU input filters (`:: [set] ;`),
-  ICU rule-order priority, XML
+  trailing `::Any-Lower;`/`::Any-Upper;` case steps, `ccc=` property
+  classes, ICU rule-order priority, XML
   comment stripping, and `::Null;` multi-pass pipelines.
 - Embedded, version-pinned generated data plus conformance fixtures.
 

@@ -9,6 +9,7 @@ const std = @import("std");
 const normalization = @import("normalization/root.zig");
 const properties = @import("properties.zig");
 const script = @import("script/root.zig");
+const case_mapping = @import("case/root.zig");
 
 pub const Transform = enum {
     latin_ascii,
@@ -44,7 +45,7 @@ const range_count = readU32(26);
 const context_count = readU32(30);
 const context_element_count = readU32(34);
 const transform_offset = header_len;
-const entry_offset = transform_offset + @as(usize, transform_count) * 18;
+const entry_offset = transform_offset + @as(usize, transform_count) * 20;
 const set_offset = entry_offset + @as(usize, entry_count) * 20;
 const range_offset = set_offset + @as(usize, set_count) * 8;
 const context_offset = range_offset + @as(usize, range_count) * 8;
@@ -66,7 +67,7 @@ const targets_offset = sources_offset + @as(usize, source_count) * 4;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJTR") or
-        data[4] != 8 or data[5] != 48 or data[6] != 0 or data[7] != 0)
+        data[4] != 9 or data[5] != 48 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid transliteration data");
     }
@@ -84,6 +85,7 @@ const TransformRecord = struct {
     pre_normalization: u8,
     post_normalization: u8,
     filter_set: u32,
+    final_case: u8,
 };
 
 const Entry = struct {
@@ -106,7 +108,7 @@ fn readU32(offset: usize) u32 {
 }
 
 fn transformAt(index: usize) TransformRecord {
-    const base = transform_offset + index * 18;
+    const base = transform_offset + index * 20;
     return .{
         .name_offset = readU16(base),
         .name_len = data[base + 2],
@@ -116,6 +118,7 @@ fn transformAt(index: usize) TransformRecord {
         .pre_normalization = data[base + 12],
         .post_normalization = data[base + 13],
         .filter_set = readU32(base + 14),
+        .final_case = data[base + 18],
     };
 }
 
@@ -672,7 +675,15 @@ fn tableAlloc(
             for (next.items) |codepoint| {
                 try appendCodepoint(allocator, &output, codepoint);
             }
-            const raw = try output.toOwnedSlice(allocator);
+            var raw = try output.toOwnedSlice(allocator);
+            if (record.final_case != 0) {
+                const cased = if (record.final_case == 1)
+                    try case_mapping.fullLowerAlloc(allocator, raw, .{})
+                else
+                    try case_mapping.fullUpperAlloc(allocator, raw, .{});
+                allocator.free(raw);
+                raw = cased;
+            }
             if (record.post_normalization == 0) return raw;
             const form: normalization.Form = switch (
                 record.post_normalization
@@ -1290,6 +1301,36 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/canadian_latin_conformance.bin"),
         .magic = "CJCA".*,
         .name = "CanadianAboriginal-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tr_lower_conformance.bin"),
+        .magic = "CJT2".*,
+        .name = "tr-Lower",
+    },
+    .{
+        .bytes = @embedFile("transliterate/az_lower_conformance.bin"),
+        .magic = "CJAZ".*,
+        .name = "az-Lower",
+    },
+    .{
+        .bytes = @embedFile("transliterate/el_lower_conformance.bin"),
+        .magic = "CJEL".*,
+        .name = "el-Lower",
+    },
+    .{
+        .bytes = @embedFile("transliterate/el_upper_conformance.bin"),
+        .magic = "CJEU".*,
+        .name = "el-Upper",
+    },
+    .{
+        .bytes = @embedFile("transliterate/lt_lower_conformance.bin"),
+        .magic = "CJLL".*,
+        .name = "lt-Lower",
+    },
+    .{
+        .bytes = @embedFile("transliterate/lt_upper_conformance.bin"),
+        .magic = "CJLU".*,
+        .name = "lt-Upper",
     },
 };
 

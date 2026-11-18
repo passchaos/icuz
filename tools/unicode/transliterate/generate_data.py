@@ -91,6 +91,12 @@ TRANSFORMS = (
     ("Thaana-Latin", "Thaana-Latin", "reverse_simple"),
     ("Syriac-Latin", "Syriac-Latin", "context"),
     ("CanadianAboriginal-Latin", "CanadianAboriginal-Latin", "reverse_simple"),
+    ("tr-Lower", "tr-Lower", "context"),
+    ("az-Lower", "az-Lower", "context"),
+    ("el-Lower", "el-Lower", "context"),
+    ("el-Upper", "el-Upper", "context"),
+    ("lt-Lower", "lt-Lower", "context"),
+    ("lt-Upper", "lt-Upper", "context"),
 )
 
 CONFORMANCE = (
@@ -321,6 +327,31 @@ def detect_post_normalization(rules: str) -> int:
     if post_form is not None and index > last_rule:
         return post_form
     return form if index > last_rule else 0
+
+
+def detect_final_case(rules: str) -> int:
+    """Detect a trailing ::Any-Lower; (1) or ::Any-Upper; (2) directive."""
+    final_case = 0
+    for raw in rules.splitlines():
+        line = strip_comment(raw).strip()
+        if not line:
+            continue
+        if line.startswith("::"):
+            directive = line[2:].strip().rstrip(";").strip()
+            normalized = directive.upper().replace("()", "").strip()
+            if normalized in ("ANY-LOWER", "ANY-UPPER"):
+                final_case = 1 if normalized == "ANY-LOWER" else 2
+                continue
+            if normalized.startswith(("NFKD", "NFKC", "NFD", "NFC")):
+                continue
+            if normalized == "NULL" or directive.startswith("["):
+                continue
+            return 0
+        if VARIABLE_DEF.match(line):
+            continue
+        if final_case != 0:
+            return 0
+    return final_case
 
 
 def checked_zip(path: Path) -> zipfile.ZipFile:
@@ -773,6 +804,27 @@ def fullwidth_entries(rules: str):
 PROPERTY_CACHE: dict[str, frozenset[int]] = {}
 COMPLEMENT_CACHE: dict[int, frozenset[int]] = {}
 ALL_CODEPOINTS = frozenset(range(0x110000))
+CCC_ALIASES = {
+    "not_reordered": 0,
+    "overlay": 1,
+    "nukta": 7,
+    "kana_voicing": 8,
+    "virama": 9,
+    "attached_below": 202,
+    "attached_above": 214,
+    "attached_above_right": 216,
+    "below_left": 218,
+    "below": 220,
+    "below_right": 222,
+    "left": 224,
+    "right": 226,
+    "above_left": 228,
+    "above": 230,
+    "above_right": 232,
+    "double_below": 233,
+    "double_above": 234,
+    "iota_subscript": 240,
+}
 
 
 def complement_set(value: frozenset[int]) -> frozenset[int]:
@@ -798,6 +850,14 @@ def property_codepoints(name: str):
         prefix = key.upper()
         for codepoint in range(0x110000):
             if unicodedata.category(chr(codepoint)).startswith(prefix):
+                result.append(codepoint)
+    elif key.startswith("ccc="):
+        ccc_name = key[4:].strip().replace("-", "_").replace(" ", "_")
+        ccc_value = CCC_ALIASES.get(ccc_name)
+        if ccc_value is None:
+            return None
+        for codepoint in range(0x110000):
+            if unicodedata.combining(chr(codepoint)) == ccc_value:
                 result.append(codepoint)
     else:
         return None
@@ -1695,7 +1755,7 @@ def render_blob(
 ) -> bytes:
     names = bytearray()
     name_records: list[tuple[int, int]] = []
-    for name, _, _ in specs:
+    for name, _, _, _ in specs:
         name_records.append((len(names), len(name)))
         names.extend(name.encode("utf-8"))
 
@@ -1768,7 +1828,7 @@ def render_blob(
     entries: list[tuple[int, int, int, int, int, int, int]] = []
     transform_records: list[tuple[int, int, int, int]] = []
     entry_start = 0
-    for (name, pre_normalization, post_normalization), table in zip(
+    for (name, pre_normalization, post_normalization, final_case), table in zip(
         specs, tables
     ):
         pass_count = 1
@@ -1820,6 +1880,7 @@ def render_blob(
                 pre_normalization,
                 pass_count,
                 post_normalization,
+                final_case,
                 add_set(sorted(filters[len(transform_records)]))
                 if filters[len(transform_records)] is not None
                 else 0,
@@ -1830,7 +1891,7 @@ def render_blob(
     header = bytearray(b"CJTR")
     header += struct.pack(
         "<B3BBB7IH",
-        8,
+        9,
         CLDR_VERSION,
         0,
         0,
@@ -1852,11 +1913,12 @@ def render_blob(
         pre_normalization,
         pass_count,
         post_normalization,
+        final_case,
         filter_set,
     ) in enumerate(transform_records):
         name_offset, name_length = name_records[index]
         transform_bytes += struct.pack(
-            "<HBBIIBBI",
+            "<HBBIIBBIBB",
             name_offset,
             name_length,
             pass_count,
@@ -1865,6 +1927,8 @@ def render_blob(
             pre_normalization,
             post_normalization,
             filter_set,
+            final_case,
+            0,
         )
     entry_bytes = bytearray()
     for entry in entries:
@@ -1917,7 +1981,7 @@ def main() -> int:
     width_forward, width_reverse = fullwidth_entries(
         rules_for("Fullwidth-Halfwidth")
     )
-    specs: list[tuple[str, int]] = []
+    specs: list[tuple[str, int, int, int]] = []
     tables: list[list[tuple]] = []
     filters: list[frozenset[int] | None] = []
     for name, source, builder in TRANSFORMS:
@@ -1948,7 +2012,8 @@ def main() -> int:
         post_normalization = 0 if builder == "katakana" else (
             detect_post_normalization(rules)
         )
-        specs.append((name, pre_normalization, post_normalization))
+        final_case = 0 if builder == "katakana" else detect_final_case(rules)
+        specs.append((name, pre_normalization, post_normalization, final_case))
         tables.append(table)
         filters.append(parse_filter(rules, parse_variables(rules)))
 
@@ -1958,7 +2023,8 @@ def main() -> int:
             render_conformance(archive, fixture_path, magic, excluded)
         )
     counts = ", ".join(
-        f"{name}={len(table)}" for (name, _, _), table in zip(specs, tables)
+        f"{name}={len(table)}"
+        for (name, _, _, _), table in zip(specs, tables)
     )
     print(counts, file=sys.stderr)
     return 0
