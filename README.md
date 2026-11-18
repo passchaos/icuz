@@ -100,7 +100,7 @@ need without pulling in a font or layout engine.
   Traditional-Simplified, Hans-Hant, Hant-Hans, the Ethiopic geminate
   pipelines, and
   NFC/NFD/NFKC/NFKD transforms. Eighty-six
-  transforms are compiled; twenty-nine ship official CLDR conformance
+  transforms are compiled; thirty ship official CLDR conformance
   fixtures, and fifty-eight (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,

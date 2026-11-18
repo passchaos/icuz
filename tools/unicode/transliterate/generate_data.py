@@ -129,6 +129,13 @@ TRANSFORMS = (
 CONFORMANCE = (
     # (transform name, fixture path, magic, excluded source strings)
     (
+        "my-my_FONIPA",
+        "common/testData/transforms/my-fonipa-t-my.txt",
+        b"CJM3",
+        frozenset(),
+        "my_fonipa_official.bin",
+    ),
+    (
         "de-ASCII",
         "common/testData/transforms/de-t-de-d0-ascii.txt",
         b"CJD3",
