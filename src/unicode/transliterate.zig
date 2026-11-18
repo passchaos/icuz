@@ -1016,7 +1016,7 @@ fn anyHexAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
             var buffer: [6]u8 = undefined;
             const formatted = std.fmt.bufPrint(
                 &buffer,
-                "\\u{x:0>4}",
+                "\\u{X:0>4}",
                 .{codepoint},
             ) catch unreachable;
             try output.appendSlice(allocator, formatted);
@@ -1024,7 +1024,7 @@ fn anyHexAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
             var buffer: [10]u8 = undefined;
             const formatted = std.fmt.bufPrint(
                 &buffer,
-                "\\U{x:0>8}",
+                "\\U{X:0>8}",
                 .{codepoint},
             ) catch unreachable;
             try output.appendSlice(allocator, formatted);
@@ -1889,7 +1889,7 @@ test "transform discovery" {
     try testing.expectEqualStrings("aB", decoded);
     const encoded = try transliterateByNameAlloc(allocator, "\u{00e9}", "Any-Hex");
     defer allocator.free(encoded);
-    try testing.expectEqualStrings("\\u00e9", encoded);
+    try testing.expectEqualStrings("\\u00E9", encoded);
 
     const identity = try transliterateByNameAlloc(allocator, "abc", "Any-Null");
     defer allocator.free(identity);
