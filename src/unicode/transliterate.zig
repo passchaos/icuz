@@ -1853,6 +1853,11 @@ test "transform discovery" {
     try testing.expect(transformIndex("Latin-ASCII") != null);
     try testing.expect(transformIndex("NFC") == null);
     try testing.expect(transformIndex("No-Such-Transform") == null);
+    try testing.expect(!hasTransform(""));
+    try testing.expectError(
+        error.UnknownTransform,
+        transliterateByNameAlloc(allocator, "abc", ""),
+    );
     try testing.expect(transformIndex("ru-ru_Latn/BGN") != null);
     try testing.expect(!hasTransform("No-Such-Transform"));
     var found = false;
