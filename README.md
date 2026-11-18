@@ -115,7 +115,9 @@ need without pulling in a font or layout engine.
   and Persian-Latin-BGN) ship ICU
   differential fixtures generated with PyICU, including reverse-direction
   transforms. Transforms can be selected by CLDR name through
-  `transliterateByNameAlloc`. The table compiler expands character classes,
+  `transliterateByNameAlloc`; ICU's `NFC`, `NFD`, `NFKC`, `NFKD`,
+  `Any-Lower`, and `Any-Upper` names dispatch to the normalization and
+  case engines. The table compiler expands character classes,
   Unicode properties, set operations, multi-codepoint set elements,
   multi-element prefix/suffix contexts with word-boundary handling, optional
   and repeated context elements, whole-source and embedded capture groups

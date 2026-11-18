@@ -867,6 +867,17 @@ pub fn transliterateAlloc(
 
 /// Transliterate UTF-8 `text` with a compiled CLDR transform selected by its
 /// CLDR name, for example `"Russian-Latin-BGN"` or `"Amharic-Latin-BGN"`.
+fn namedFormAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    form: normalization.Form,
+) Error![]u8 {
+    if (try normalization.normalizeFormAlloc(allocator, text, form)) |value| {
+        return value;
+    }
+    return allocator.dupe(u8, text);
+}
+
 pub fn transliterateByNameAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -876,6 +887,16 @@ pub fn transliterateByNameAlloc(
     if (std.mem.eql(u8, name, "Latin-ASCII")) {
         if (isAscii(text)) return allocator.dupe(u8, text);
         return latinAsciiAlloc(allocator, text);
+    }
+    if (std.mem.eql(u8, name, "NFC")) return namedFormAlloc(allocator, text, .nfc);
+    if (std.mem.eql(u8, name, "NFD")) return namedFormAlloc(allocator, text, .nfd);
+    if (std.mem.eql(u8, name, "NFKC")) return namedFormAlloc(allocator, text, .nfkc);
+    if (std.mem.eql(u8, name, "NFKD")) return namedFormAlloc(allocator, text, .nfkd);
+    if (std.mem.eql(u8, name, "Any-Lower")) {
+        return case_mapping.fullLowerAlloc(allocator, text, .{});
+    }
+    if (std.mem.eql(u8, name, "Any-Upper")) {
+        return case_mapping.fullUpperAlloc(allocator, text, .{});
     }
     const transform_index = findTransformByName(name) orelse
         return error.UnknownTransform;
@@ -1588,4 +1609,25 @@ fn checkTransformConformance(
     }
     if (offset != fixture.len) return error.InvalidFixture;
     if (failures != 0) return error.TestUnexpectedResult;
+}
+
+test "named normalization and case transforms" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const nfd = try transliterateByNameAlloc(allocator, "\u{00e9}", "NFD");
+    defer allocator.free(nfd);
+    try testing.expectEqualStrings("e\u{0301}", nfd);
+
+    const nfc = try transliterateByNameAlloc(allocator, "e\u{0301}", "NFC");
+    defer allocator.free(nfc);
+    try testing.expectEqualStrings("\u{00e9}", nfc);
+
+    const upper = try transliterateByNameAlloc(allocator, "stra\u{00df}e", "Any-Upper");
+    defer allocator.free(upper);
+    try testing.expectEqualStrings("STRASSE", upper);
+
+    const lower = try transliterateByNameAlloc(allocator, "\u{0130}", "Any-Lower");
+    defer allocator.free(lower);
+    try testing.expectEqualStrings("i\u{0307}", lower);
 }
