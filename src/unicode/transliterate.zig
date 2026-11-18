@@ -970,6 +970,23 @@ fn hexAnyAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
     errdefer output.deinit(allocator);
     var index: usize = 0;
     while (index < text.len) {
+        if (text[index] == '\\' and index + 2 < text.len and
+            text[index + 1] == 'x' and text[index + 2] == '{')
+        {
+            if (std.mem.indexOfScalarPos(u8, text, index + 3, '}')) |close| {
+                const digits = text[index + 3 .. close];
+                if (digits.len >= 1 and digits.len <= 6) {
+                    if (std.fmt.parseInt(u21, digits, 16)) |value| {
+                        var buffer: [4]u8 = undefined;
+                        if (std.unicode.utf8Encode(value, &buffer)) |length| {
+                            try output.appendSlice(allocator, buffer[0..length]);
+                            index = close + 1;
+                            continue;
+                        } else |_| {}
+                    } else |_| {}
+                }
+            }
+        }
         if (text[index] == '\\' and index + 1 < text.len) {
             const kind = text[index + 1];
             const digits: usize = if (kind == 'u') 4 else if (kind == 'U') 8 else 0;
@@ -1887,6 +1904,13 @@ test "transform discovery" {
     );
     defer allocator.free(decoded);
     try testing.expectEqualStrings("aB", decoded);
+    const braced = try transliterateByNameAlloc(
+        allocator,
+        "\\x{1F600}",
+        "Hex-Any",
+    );
+    defer allocator.free(braced);
+    try testing.expectEqualStrings("\u{1F600}", braced);
     const encoded = try transliterateByNameAlloc(allocator, "\u{00e9}", "Any-Hex");
     defer allocator.free(encoded);
     try testing.expectEqualStrings("\\u00E9", encoded);
