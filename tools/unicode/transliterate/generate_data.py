@@ -98,6 +98,8 @@ TRANSFORMS = (
     ("lt-Upper", "lt-Upper", "context"),
     ("tr-Upper", "tr-Upper", "context"),
     ("az-Upper", "az-Upper", "context"),
+    ("de-ASCII", "de-ASCII", "context"),
+    ("Any-Publishing", "Any-Publishing", "context"),
     ("Korean-Latin-BGN", "Korean-Latin-BGN", "context"),
     ("Kirghiz-Latin-BGN", "Kirghiz-Latin-BGN", "context"),
     ("Latin-Armenian", "Latin-Armenian", "context"),

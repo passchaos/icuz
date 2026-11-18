@@ -95,16 +95,16 @@ need without pulling in a font or layout engine.
   CanadianAboriginal-Latin, tr-Lower, az-Lower, tr-Upper, az-Upper,
   el-Lower, el-Upper, lt-Lower, lt-Upper, Korean-Latin-BGN, Kirghiz-Latin-BGN, Latin-Armenian,
   Azerbaijani-Latin-BGN, Latin-Cyrillic, Latin-Thaana,
-  Latin-CanadianAboriginal, and
+  Latin-CanadianAboriginal, de-ASCII, Any-Publishing, and
   NFC/NFD/NFKC/NFKD transforms. Seventy-four
   transforms are compiled; twenty-eight ship official CLDR conformance
-  fixtures, and forty-eight (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and fifty (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
   Venetian FONIPA, Romanian FONIPA, Arabic-Latin-BGN, Armenian-Latin-BGN,
   Thaana-Latin, Syriac-Latin, CanadianAboriginal-Latin, the six
   case transforms (including tr/az Upper), Korean-Latin-BGN,
-  Kirghiz-Latin-BGN, Latin-Armenian,
+  Kirghiz-Latin-BGN, Latin-Armenian, de-ASCII, Any-Publishing,
   Azerbaijani-Latin-BGN, Latin-Cyrillic, Latin-Thaana,
   Latin-CanadianAboriginal, Georgian-Latin, Latin-Georgian,
   Halfwidth-Fullwidth, Fullwidth-Halfwidth, a Kazakh FONIPA validation
