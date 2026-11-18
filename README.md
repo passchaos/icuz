@@ -97,10 +97,10 @@ need without pulling in a font or layout engine.
   Azerbaijani-Latin-BGN, Latin-Cyrillic, Latin-Thaana,
   Latin-CanadianAboriginal, de-ASCII, Any-Publishing,
   Katakana-Hiragana, Pashto-Latin-BGN, Simplified-Traditional,
-  Traditional-Simplified, and
+  Traditional-Simplified, Hans-Hant, Hant-Hans, and
   NFC/NFD/NFKC/NFKD transforms. Seventy-four
   transforms are compiled; twenty-eight ship official CLDR conformance
-  fixtures, and fifty-five (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and fifty-seven (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
   Venetian FONIPA, Romanian FONIPA, Arabic-Latin-BGN, Armenian-Latin-BGN,

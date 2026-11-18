@@ -54,6 +54,7 @@ const names_offset = context_element_offset +
     @as(usize, context_element_count) * 8;
 
 const names_length = blk: {
+    @setEvalBranchQuota(100_000);
     var maximum: usize = 0;
     for (0..transform_count) |index| {
         const record = transformAt(index);
@@ -1475,6 +1476,16 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/trad_simp_conformance.bin"),
         .magic = "CJZ2".*,
         .name = "Traditional-Simplified",
+    },
+    .{
+        .bytes = @embedFile("transliterate/hans_hant_conformance.bin"),
+        .magic = "CJZ3".*,
+        .name = "Hans-Hant",
+    },
+    .{
+        .bytes = @embedFile("transliterate/hant_hans_conformance.bin"),
+        .magic = "CJZ4".*,
+        .name = "Hant-Hans",
     },
 };
 

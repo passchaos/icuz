@@ -103,6 +103,8 @@ TRANSFORMS = (
     ("Katakana-Hiragana", "Hiragana-Katakana", "reverse_context"),
     ("Simplified-Traditional", "Simplified-Traditional", "simple"),
     ("Traditional-Simplified", "Simplified-Traditional", "reverse_with_left"),
+    ("Hans-Hant", "Simplified-Traditional", "simple"),
+    ("Hant-Hans", "Simplified-Traditional", "reverse_with_left"),
     ("Pashto-Latin-BGN", "Pashto-Latin-BGN", "context"),
     ("Korean-Latin-BGN", "Korean-Latin-BGN", "context"),
     ("Kirghiz-Latin-BGN", "Kirghiz-Latin-BGN", "context"),
