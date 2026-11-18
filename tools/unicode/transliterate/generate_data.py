@@ -78,6 +78,16 @@ TRANSFORMS = (
     ("zu-zu_FONIPA", "zu-zu_FONIPA", "context"),
     ("InterIndic-Tamil", "InterIndic-Tamil", "context"),
     ("Hiragana-Katakana", "Hiragana-Katakana", "context"),
+    (
+        "Ethiopic-Latin/Aethiopica_Geminate",
+        "und-Ethi-t-und-latn-m0-aethiopi-geminate",
+        "pipeline",
+    ),
+    (
+        "Ethiopic-Latin/IES_JES_1964_Geminate",
+        "und-Ethi-t-und-latn-m0-ies-jes-1964-geminate",
+        "pipeline",
+    ),
     ("Persian-Latin-BGN", "Persian-Latin-BGN", "context"),
     ("nv-nv_FONIPA", "nv-nv_FONIPA", "context"),
     ("si-si_FONIPA", "si-si_FONIPA", "context"),
@@ -379,6 +389,28 @@ def detect_post_normalization(rules: str) -> int:
     if post_form is not None and index > last_rule:
         return post_form
     return form if index > last_rule else 0
+
+
+PIPELINE_COMPONENTS = {
+    "Amharic-Amharic/Geminate": "am-Ethi-t-am-ethi-m0-geminate",
+    "Ethiopic-Latin/Aethiopica": "und-Ethi-t-und-latn-m0-aethiopi",
+    "Ethiopic-Latin/IES_JES_1964": "und-Ethi-t-und-latn-m0-ies-jes-1964",
+}
+
+
+def detect_pipeline(rules: str):
+    components = []
+    for raw in rules.splitlines():
+        line = strip_comment(raw).strip()
+        if not line or VARIABLE_DEF.match(line):
+            continue
+        if not line.startswith("::"):
+            return None
+        directive = line[2:].strip().rstrip(";").strip()
+        if directive.upper().startswith(("NFKD", "NFKC", "NFD", "NFC")):
+            return None
+        components.append(directive)
+    return components if len(components) >= 2 else None
 
 
 def detect_next_transform(rules: str):
@@ -2012,7 +2044,7 @@ def render_blob(
 ) -> bytes:
     names = bytearray()
     name_records: list[tuple[int, int]] = []
-    for name, _, _, _, _ in specs:
+    for name, *_rest in specs:
         name_records.append((len(names), len(name)))
         names.extend(name.encode("utf-8"))
 
@@ -2086,7 +2118,7 @@ def render_blob(
     transform_records: list[tuple[int, int, int, int]] = []
     entry_start = 0
     transform_index_by_name = {
-        name: index for index, (name, _, _, _, _) in enumerate(specs)
+        name: index for index, (name, *_rest) in enumerate(specs)
     }
     for (
         name,
@@ -2094,6 +2126,7 @@ def render_blob(
         post_normalization,
         final_case,
         next_name,
+        pre_name,
     ), table in zip(specs, tables):
         pass_count = 1
         for entry in table:
@@ -2146,6 +2179,7 @@ def render_blob(
                 post_normalization,
                 final_case,
                 transform_index_by_name.get(next_name, 0xFFFFFFFF),
+                transform_index_by_name.get(pre_name, 0xFFFFFFFF),
                 add_set(sorted(filters[len(transform_records)]))
                 if filters[len(transform_records)] is not None
                 else 0,
@@ -2156,7 +2190,7 @@ def render_blob(
     header = bytearray(b"CJTR")
     header += struct.pack(
         "<B3BBB7IH",
-        10,
+        11,
         CLDR_VERSION,
         0,
         0,
@@ -2180,11 +2214,12 @@ def render_blob(
         post_normalization,
         final_case,
         next_transform,
+        pre_transform,
         filter_set,
     ) in enumerate(transform_records):
         name_offset, name_length = name_records[index]
         transform_bytes += struct.pack(
-            "<HBBIIBBIBBI",
+            "<HBBIIBBIBBII",
             name_offset,
             name_length,
             pass_count,
@@ -2196,6 +2231,7 @@ def render_blob(
             final_case,
             0,
             next_transform,
+            pre_transform,
         )
     entry_bytes = bytearray()
     for entry in entries:
@@ -2269,6 +2305,8 @@ def main() -> int:
             table = table_entries_with_contexts(rules, reverse=True)
         elif builder == "reverse_with_left":
             table = reverse_with_left(rules)
+        elif builder == "pipeline":
+            table = []
         elif builder == "variables":
             table = table_entries_with_variables(rules)
         elif builder == "context":
@@ -2291,6 +2329,7 @@ def main() -> int:
                 post_normalization,
                 final_case,
                 detect_next_transform(rules),
+                None,
             )
         )
         tables.append(table)
@@ -2300,6 +2339,21 @@ def main() -> int:
             else parse_filter(rules, parse_variables(rules))
         )
 
+    name_to_index = {name: index for index, (name, *_rest) in enumerate(specs)}
+    for index, (name, source, builder) in enumerate(TRANSFORMS):
+        if builder != "pipeline":
+            continue
+        components = detect_pipeline(rules_for(source))
+        if components is None or components[-1] not in PIPELINE_COMPONENTS:
+            continue
+        last_name = PIPELINE_COMPONENTS[components[-1]]
+        if last_name not in name_to_index:
+            continue
+        tables[index] = tables[name_to_index[last_name]]
+        spec = list(specs[index])
+        spec[5] = PIPELINE_COMPONENTS.get(components[0])
+        specs[index] = tuple(spec)
+
     (out_dir / "data.bin").write_bytes(render_blob(specs, tables, filters))
     for _, fixture_path, magic, excluded, filename in CONFORMANCE:
         (out_dir / filename).write_bytes(
@@ -2307,7 +2361,7 @@ def main() -> int:
         )
     counts = ", ".join(
         f"{name}={len(table)}"
-        for (name, _, _, _, _), table in zip(specs, tables)
+        for (name, *_rest), table in zip(specs, tables)
     )
     print(counts, file=sys.stderr)
     return 0

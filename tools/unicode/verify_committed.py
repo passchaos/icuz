@@ -40,7 +40,7 @@ BLOBS = (
     Blob("src/unicode/bidi/data.bin", b"CJB1", 1, "9e9f9937100d6019f7308743916c3606bdb31c9cc4f142eb605becf45a210c3f"),
     Blob("src/unicode/canonical/combining_class.bin", b"CJC1", 1, "336130546fc300108806f5ae23144cda93da13488a810946357304b5a12f5fcc"),
     Blob("src/unicode/charset/data.bin", b"CJCS", 1, "965bd7d7e6084e49d6a5a04f350807c0c2cdeececeacfa78103d928f45f71575"),
-    Blob("src/unicode/transliterate/data.bin", b"CJTR", 10, "1a3558fe95c18a25ed617cb766cfa15656c95a2e78237f92e2fab627fb7cf43d", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/data.bin", b"CJTR", 11, "9131ab45bf57189c81498a4dbd34ad4a655fcfe5571045bec2732ad8eb614027", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/georgian_bgn_conformance.bin", b"CJTG", 1, "e8d6ea181123ec5175c7b4d92e1591febcdc9ea0ee2800d075e5bbd4f81acf62", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/hebrew_bgn_conformance.bin", b"CJTH", 1, "c8e0869ef80a3608d0d98f8d07f291e3863a4c7d6b08bf3bd50fe7242459af51", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/russian_bgn_conformance.bin", b"CJRU", 1, "bd90c67fe72c02a91305a394c3506158d1b2fd39d307ec57838df20594d2e6e2", version=(48, 0, 0)),
@@ -126,6 +126,8 @@ BLOBS = (
     Blob("src/unicode/transliterate/de_ascii_official_conformance.bin", b"CJD3", 1, "d9ec3797121f2cffd12b169531ab7d81cf317cf375ea02c233323f84febd56fe", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/hans_hant_conformance.bin", b"CJZ3", 1, "7be3c4963de95654994740cf40d16c32d47b3d86a1ea9c2c93eb6bfaf402e138", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/hant_hans_conformance.bin", b"CJZ4", 1, "ed5e01c8135348782960d3c4ac6b7d33a1dd377b4121094c6de68e27763e9500", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/eth_gem_aeth_conformance.bin", b"CJEG", 1, "01e92e83c76b4e85c0868b8101235a16111e923348fa9c07f710630643717427", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/eth_gem_ies_conformance.bin", b"CJE6", 1, "4dbc0df749f2820821e1aa79360097f1d701fc875ebfa39ee734cc96dba89fe9", version=(48, 0, 0)),
     Blob("src/unicode/collation/data.bin", b"CJCL", 2, "3db525f5696955768d63797c465d31285efe0d4cd4db243bd944c178a13f135d"),
     Blob("src/unicode/collation/tailorings.bin", b"CJTL", 4, "800f27cae2d4a13f0618dd57d5475b8cc3f00c705c43ac1f30232bb5430aff96", version=(48, 0, 0)),
     Blob("src/unicode/collation/conformance_non_ignorable.bin", b"CJCT", 1, "46c35a76dc144f13fbd96723a2e676a5561b2739e7bb15d58f193f538ab3841a"),
@@ -177,7 +179,7 @@ GENERATORS = {
     "tools/unicode/format/generate_dates.py": "de6d58352b8793fee777752b980d27561e6ca400cb4710b95c9fda9b54999e45",
     "tools/unicode/format/generate_misc.py": "35d08acef5a6b7c23bbbe3b13977a2085f02df3985185068a68fe59e0625b0e1",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
-    "tools/unicode/transliterate/generate_data.py": "537b744929009cfa002573900062ee81af7160fcf14228b7f7adae26982c7be6",
+    "tools/unicode/transliterate/generate_data.py": "8e4ef0a00ed63768b644c4a7bb23786bca7a569e4092d203d7e9e5e82f8e2d9f",
     "tools/unicode/break/generate_dictionaries.py": "bdbd4c4e9c999b4cea6a8924b08c72a49719c857e26dea82fc50940ee145e264",
     "tools/unicode/break/generate_word_conformance.py": "3c2467ffc38b2467cbbc0d895e76b8862774c48567aa3ad26b9681605df3a5ff",
     "tools/unicode/transliterate/generate_icu_conformance.py": "8876436eceee3b32b62a441559a13c4fba76da00dbb2bd18320116696719ee1e",
@@ -359,13 +361,13 @@ def check_layout(blob: Blob, data: bytes) -> None:
         ) = struct.unpack_from("<BB7I", data, 8)
         names_length = 0
         for index in range(transform_count):
-            name_offset, name_len, _, _, _, _, _, _, _, _, _ = struct.unpack_from(
-                "<HBBIIBBIBBI", data, 40 + index * 24
+            name_offset, name_len, _, _, _, _, _, _, _, _, _, _ = struct.unpack_from(
+                "<HBBIIBBIBBII", data, 40 + index * 28
             )
             names_length = max(names_length, name_offset + name_len)
         assert (
             40
-            + transform_count * 24
+            + transform_count * 28
             + entry_count * 20
             + set_count * 8
             + range_count * 8
@@ -376,7 +378,7 @@ def check_layout(blob: Blob, data: bytes) -> None:
             + target_count * 4
             == len(data)
         )
-    elif magic in (b"CJTG", b"CJTH", b"CJRU", b"CJGR", b"CJKA", b"CJAM", b"CJKZ", b"CJTM", b"CJUA", b"CJBY", b"CJMO", b"CJBU", b"CJMC", b"CJRS", b"CJSG", b"CJGE", b"CJE3", b"CJE4", b"CJE5", b"CJBK", b"CJE7", b"CJSL", b"CJMF", b"CJB2", b"CJYL", b"CJAL", b"CJIA", b"CJDE", b"CJIB", b"CJIG", b"CJIU", b"CJIO", b"CJIE", b"CJIK", b"CJIM", b"CJIX", b"CJCH", b"CJZU", b"CJKK", b"CJTA", b"CJHK", b"CJPE", b"CJN2", b"CJSF", b"CJEF", b"CJHF", b"CJVF", b"CJOF", b"CJAB", b"CJHA", b"CJTN", b"CJSY", b"CJCA", b"CJT2", b"CJAZ", b"CJEL", b"CJEU", b"CJLL", b"CJLU", b"CJKO", b"CJKI", b"CJLA", b"CJA2", b"CJLC", b"CJTT", b"CJC2", b"CJGG", b"CJG3", b"CJHW", b"CJFW", b"CJAS", b"CJK3", b"CJH3", b"CJP3", b"CJTU", b"CJAU", b"CJD2", b"CJAP", b"CJKH", b"CJPB", b"CJZ1", b"CJZ2", b"CJD3", b"CJZ3", b"CJZ4"):
+    elif magic in (b"CJTG", b"CJTH", b"CJRU", b"CJGR", b"CJKA", b"CJAM", b"CJKZ", b"CJTM", b"CJUA", b"CJBY", b"CJMO", b"CJBU", b"CJMC", b"CJRS", b"CJSG", b"CJGE", b"CJE3", b"CJE4", b"CJE5", b"CJBK", b"CJE7", b"CJSL", b"CJMF", b"CJB2", b"CJYL", b"CJAL", b"CJIA", b"CJDE", b"CJIB", b"CJIG", b"CJIU", b"CJIO", b"CJIE", b"CJIK", b"CJIM", b"CJIX", b"CJCH", b"CJZU", b"CJKK", b"CJTA", b"CJHK", b"CJPE", b"CJN2", b"CJSF", b"CJEF", b"CJHF", b"CJVF", b"CJOF", b"CJAB", b"CJHA", b"CJTN", b"CJSY", b"CJCA", b"CJT2", b"CJAZ", b"CJEL", b"CJEU", b"CJLL", b"CJLU", b"CJKO", b"CJKI", b"CJLA", b"CJA2", b"CJLC", b"CJTT", b"CJC2", b"CJGG", b"CJG3", b"CJHW", b"CJFW", b"CJAS", b"CJK3", b"CJH3", b"CJP3", b"CJTU", b"CJAU", b"CJD2", b"CJAP", b"CJKH", b"CJPB", b"CJZ1", b"CJZ2", b"CJD3", b"CJZ3", b"CJZ4", b"CJEG", b"CJE6"):
         case_count = struct.unpack_from("<I", data, 8)[0]
         offset = 12
         for _ in range(case_count):
