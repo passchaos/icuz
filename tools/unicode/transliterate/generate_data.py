@@ -86,6 +86,8 @@ TRANSFORMS = (
     ("xh-xh_FONIPA", "xh-xh_FONIPA", "context"),
     ("vec-vec_FONIPA", "vec-vec_FONIPA", "context"),
     ("ro-ro_FONIPA", "ro-ro_FONIPA", "context"),
+    ("Arabic-Latin-BGN", "Arabic-Latin-BGN", "context"),
+    ("Armenian-Latin-BGN", "Armenian-Latin-BGN", "context"),
 )
 
 CONFORMANCE = (
