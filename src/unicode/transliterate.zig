@@ -440,7 +440,7 @@ fn transformPassRange(transform_index: usize, pass_index: u8) EntryRange {
 /// pass, before the sorted literal-source entries.
 fn mappingStart(range: EntryRange) usize {
     var start = range.start;
-    while (start < range.end and entryAt(start).flags & 5 != 0) : (start += 1) {}
+    while (start < range.end and entryAt(start).flags & 13 != 0) : (start += 1) {}
     return start;
 }
 
@@ -449,7 +449,7 @@ fn hasInsertions(range: EntryRange) bool {
     while (index < range.end) : (index += 1) {
         const flags = entryAt(index).flags;
         if (flags & 1 != 0) return true;
-        if (flags & 5 == 0) break;
+        if (flags & 13 == 0) break;
     }
     return false;
 }
@@ -471,7 +471,7 @@ fn applyInsertions(
             var entry_index = range.start;
             while (entry_index < range.end) : (entry_index += 1) {
                 const entry = entryAt(entry_index);
-                if (entry.flags & 5 == 0) break;
+                if (entry.flags & 13 == 0) break;
                 if (entry.flags & 1 == 0) continue;
                 if (!contextMatches(
                     entry.before_context,
@@ -523,6 +523,49 @@ fn findMatchInRange(
     var lead = range.start;
     while (lead < literals_start) : (lead += 1) {
         const entry = entryAt(lead);
+        if (entry.flags & 8 != 0) {
+            // A collapse entry matches one unit (base plus trailing marks)
+            // and consumes any immediately following units, emitting only
+            // the first one.
+            if (!setContains(entry.source_offset, first)) continue;
+            var consumed: usize = 1;
+            while (index + consumed < codepoints.len and
+                properties.isMark(codepoints[index + consumed]))
+            {
+                consumed += 1;
+            }
+            const unit_length = @min(consumed, 255);
+            while (index + consumed < codepoints.len and
+                setContains(entry.source_offset, codepoints[index + consumed]))
+            {
+                consumed += 1;
+                while (index + consumed < codepoints.len and
+                    properties.isMark(codepoints[index + consumed]))
+                {
+                    consumed += 1;
+                }
+            }
+            if (!contextMatches(
+                entry.before_context,
+                before,
+                before.len,
+                false,
+            )) {
+                continue;
+            }
+            if (!contextMatches(
+                entry.after_context,
+                codepoints,
+                index + consumed,
+                true,
+            )) {
+                continue;
+            }
+            var matched = entry;
+            matched.source_len = @intCast(consumed);
+            matched.target_len = @intCast(unit_length);
+            return matched;
+        }
         if (entry.flags & 4 == 0) continue;
         // A repeated class source consumes the longest run in the set.
         var consumed: usize = 0;
@@ -676,8 +719,14 @@ fn applyPassAlloc(
         if (steps > max_steps) break;
         if (findMatchInRange(range, work.items, index, work.items[0..index], filter_set)) |entry| {
             const target_len: usize = entry.target_len;
-            for (0..target_len) |offset| {
-                target_buffer[offset] = targetCodepoint(entry, offset);
+            if (entry.flags & 8 != 0) {
+                for (0..target_len) |offset| {
+                    target_buffer[offset] = work.items[index + offset];
+                }
+            } else {
+                for (0..target_len) |offset| {
+                    target_buffer[offset] = targetCodepoint(entry, offset);
+                }
             }
             try work.replaceRange(
                 allocator,
@@ -2140,6 +2189,96 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/latin_interindic_conformance.bin"),
         .magic = "CJLI".*,
         .name = "Latin-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/bengali_arabic_conformance.bin"),
+        .magic = "CJAA".*,
+        .name = "Bengali-Arabic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/bengali_ur_conformance.bin"),
+        .magic = "CJAO".*,
+        .name = "Bengali-ur",
+    },
+    .{
+        .bytes = @embedFile("transliterate/devanagari_arabic_conformance.bin"),
+        .magic = "CJAQ".*,
+        .name = "Devanagari-Arabic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/devanagari_ur_conformance.bin"),
+        .magic = "CJA5".*,
+        .name = "Devanagari-ur",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gujarati_arabic_conformance.bin"),
+        .magic = "CJA6".*,
+        .name = "Gujarati-Arabic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gujarati_ur_conformance.bin"),
+        .magic = "CJBG".*,
+        .name = "Gujarati-ur",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gurmukhi_arabic_conformance.bin"),
+        .magic = "CJBH".*,
+        .name = "Gurmukhi-Arabic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gurmukhi_ur_conformance.bin"),
+        .magic = "CJBV".*,
+        .name = "Gurmukhi-ur",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kannada_arabic_conformance.bin"),
+        .magic = "CJBW".*,
+        .name = "Kannada-Arabic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kannada_ur_conformance.bin"),
+        .magic = "CJB9".*,
+        .name = "Kannada-ur",
+    },
+    .{
+        .bytes = @embedFile("transliterate/malayalam_arabic_conformance.bin"),
+        .magic = "CJCB".*,
+        .name = "Malayalam-Arabic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/malayalam_ur_conformance.bin"),
+        .magic = "CJCN".*,
+        .name = "Malayalam-ur",
+    },
+    .{
+        .bytes = @embedFile("transliterate/oriya_arabic_conformance.bin"),
+        .magic = "CJCO".*,
+        .name = "Oriya-Arabic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/oriya_ur_conformance.bin"),
+        .magic = "CJC0".*,
+        .name = "Oriya-ur",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tamil_arabic_conformance.bin"),
+        .magic = "CJC3".*,
+        .name = "Tamil-Arabic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tamil_ur_conformance.bin"),
+        .magic = "CJDF".*,
+        .name = "Tamil-ur",
+    },
+    .{
+        .bytes = @embedFile("transliterate/telugu_arabic_conformance.bin"),
+        .magic = "CJDG".*,
+        .name = "Telugu-Arabic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/telugu_ur_conformance.bin"),
+        .magic = "CJDR".*,
+        .name = "Telugu-ur",
     },
     .{
         .bytes = @embedFile("transliterate/latin_bengali_conformance.bin"),

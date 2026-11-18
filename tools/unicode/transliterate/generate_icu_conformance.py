@@ -152,11 +152,11 @@ def source_strings(rules: str, reverse: bool = False):
                 text = source[: match.start()] + chr(codepoint) + source[match.end() :]
                 text = re.sub(r"\[[^\]]*\]", "", text)
                 text = decode_literal(text)
-                if text:
+                if text and "\x00" not in text:
                     sources.append(text)
         else:
             text = decode_literal(source)
-            if text:
+            if text and "\x00" not in text:
                 sources.append(text)
     return sources
 

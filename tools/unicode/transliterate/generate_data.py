@@ -443,7 +443,7 @@ def detect_reverse_normalization(rules: str):
 
 # Components whose rule sets need engine features that are not compiled yet
 # (for example InterIndic-Arabic's `($alif) $alif+ > $1` collapse rule).
-PIPELINE_EXCLUDE_COMPONENTS = {"InterIndic-Arabic"}
+PIPELINE_EXCLUDE_COMPONENTS: set[str] = set()
 
 PIPELINE_COMPONENTS = {
     "Amharic-Amharic/Geminate": "am-Ethi-t-am-ethi-m0-geminate",
@@ -2026,6 +2026,35 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             continue
         if VARIABLE_DEF.match(line):
             continue
+        collapse = re.fullmatch(
+            r"\((\$\w+)\)\s+\1\+\s*→\s*\$1\s*;?\s*",
+            line.strip(),
+        )
+        if collapse is not None and not reverse:
+            raw = variables.get(collapse.group(1))
+            parsed = (
+                re.fullmatch(r"(\[.*?\])\s*\[:M:\]\s*\*", raw.strip())
+                if raw is not None
+                else None
+            )
+            if parsed is not None:
+                base = parse_class_set(parsed.group(1), variables)
+                if base is not None and not base[1]:
+                    entries.append(
+                        (
+                            pass_index,
+                            (),
+                            (),
+                            None,
+                            None,
+                            priority,
+                            False,
+                            None,
+                            frozenset(base[0]),
+                        )
+                    )
+                    priority += 1
+                    continue
         parts = split_rule(line)
         if parts is None:
             continue
@@ -2230,8 +2259,18 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
     for entry in entries:
         pass_index, source, target, before, after, _, reprocess = entry[:7]
         repeat = entry[7] if len(entry) > 7 else None
+        collapse = entry[8] if len(entry) > 8 else None
         result.append(
-            (source, target, before, after, pass_index, reprocess, repeat)
+            (
+                source,
+                target,
+                before,
+                after,
+                pass_index,
+                reprocess,
+                repeat,
+                collapse,
+            )
         )
     return result
 
@@ -2422,8 +2461,12 @@ def render_blob(
             entry_pass = entry[4] if len(entry) > 4 else 0
             reprocess = entry[5] if len(entry) > 5 else False
             repeat = entry[6] if len(entry) > 6 else None
+            collapse = entry[7] if len(entry) > 7 else None
             pass_count = max(pass_count, entry_pass + 1)
-            if repeat is not None:
+            if collapse is not None:
+                source_offset = add_set(sorted(collapse))
+                source_len = 1
+            elif repeat is not None:
                 repeat_set, repeat_minimum = repeat
                 source_offset = add_set(sorted(repeat_set))
                 source_len = repeat_minimum
@@ -2450,9 +2493,11 @@ def render_blob(
                     before_context,
                     after_context,
                     entry_pass,
-                    (1 if not source and repeat is None else 0) |
+                    (1 if not source and repeat is None and
+                        collapse is None else 0) |
                     (2 if reprocess else 0) |
-                    (4 if repeat is not None else 0),
+                    (4 if repeat is not None else 0) |
+                    (8 if collapse is not None else 0),
                 )
             )
         transform_records.append(

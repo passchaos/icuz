@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 198 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
+- 216 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 199 conformance fixtures: 30 official CLDR test-data files and 169 PyICU
+- 217 conformance fixtures: 30 official CLDR test-data files and 187 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -15,10 +15,12 @@ Status after the CLDR 48 rule-engine push:
   pipelines (`kk-am`, `my-am`, `ro-am`, `si-am`, `xh-am`, `zu-am`) use
   this path.
 - Ordered step programs (blob format CJTR v12) execute arbitrary
-  `::NFD;` / `::Transform;` / `::Lower;` / `::NFC;` sequences. All 91 pure
+  `::NFD;` / `::Transform;` / `::Lower;` / `::NFC;` sequences. All 109 pure
   CLDR pipelines whose components are compiled are auto-discovered,
-  including the Indic script-to-script and script-to-Latin chains and the
-  `Latin-*` pipelines.
+  including the Indic script-to-script and script-to-Latin chains, the
+  `X-Arabic` / `X-ur` families, and the `Latin-*` pipelines.
+- Repeated-sequence collapse rules (`($var) $var+ > $1`) compile to a
+  collapse entry that emits the first unit and consumes the rest.
 - The reverse direction is compiled compositionally: `A ← B` and
   `A ↔ B` become `B -> A`, pass order is reversed, `::(null);`,
   `::null;`, and `::null();` all split passes, and reverse normalization
@@ -45,9 +47,6 @@ python3 tools/unicode/verify_committed.py
 
 The v12 step program covers arbitrary `::` sequences. Remaining gaps:
 
-- `InterIndic-Arabic`'s `($alif) $alif+ > $1` collapse rule needs a
-  repeat-of-sequence matcher; pipelines that use `InterIndic-Arabic`
-  (the `X-Arabic` and `X-ur` families) are excluded until it lands.
 - Transform references with arguments, e.g.
   `::Latin-NumericPinyin(NumericPinyin-Latin);` in `Latin-Bopomofo.xml`.
 - Pipelines whose components are not compiled (for example
