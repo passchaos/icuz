@@ -116,8 +116,8 @@ need without pulling in a font or layout engine.
   differential fixtures generated with PyICU, including reverse-direction
   transforms. Transforms can be selected by CLDR name through
   `transliterateByNameAlloc`; ICU's `NFC`, `NFD`, `NFKC`, `NFKD`,
-  `Any-Lower`, and `Any-Upper` names dispatch to the normalization and
-  case engines. The table compiler expands character classes,
+  `Any-Lower`, `Any-Upper`, and `Any-Title` names dispatch to the
+  normalization and case engines. The table compiler expands character classes,
   Unicode properties, set operations, multi-codepoint set elements,
   multi-element prefix/suffix contexts with word-boundary handling, optional
   and repeated context elements, whole-source and embedded capture groups

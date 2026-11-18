@@ -898,6 +898,9 @@ pub fn transliterateByNameAlloc(
     if (std.mem.eql(u8, name, "Any-Upper")) {
         return case_mapping.fullUpperAlloc(allocator, text, .{});
     }
+    if (std.mem.eql(u8, name, "Any-Title")) {
+        return case_mapping.fullTitleAlloc(allocator, text, .{});
+    }
     const transform_index = findTransformByName(name) orelse
         return error.UnknownTransform;
     return tableAlloc(allocator, text, transform_index);
@@ -1630,4 +1633,12 @@ test "named normalization and case transforms" {
     const lower = try transliterateByNameAlloc(allocator, "\u{0130}", "Any-Lower");
     defer allocator.free(lower);
     try testing.expectEqualStrings("i\u{0307}", lower);
+
+    const title = try transliterateByNameAlloc(
+        allocator,
+        "hello world",
+        "Any-Title",
+    );
+    defer allocator.free(title);
+    try testing.expectEqualStrings("Hello World", title);
 }
