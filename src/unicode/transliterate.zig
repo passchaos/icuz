@@ -1699,6 +1699,11 @@ const conformance_fixtures = [_]struct {
         .magic = "CJM3".*,
         .name = "my-my_FONIPA",
     },
+    .{
+        .bytes = @embedFile("transliterate/am_fonipa_conformance.bin"),
+        .magic = "CJAF".*,
+        .name = "am-am_FONIPA",
+    },
 };
 
 test "transliterate by CLDR name" {

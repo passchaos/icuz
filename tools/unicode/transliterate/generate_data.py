@@ -78,6 +78,7 @@ TRANSFORMS = (
     ("zu-zu_FONIPA", "zu-zu_FONIPA", "context"),
     ("InterIndic-Tamil", "InterIndic-Tamil", "context"),
     ("Hiragana-Katakana", "Hiragana-Katakana", "context"),
+    ("am-am_FONIPA", "am-am_FONIPA", "context"),
     (
         "Ethiopic-Latin/Aethiopica_Geminate",
         "und-Ethi-t-und-latn-m0-aethiopi-geminate",
