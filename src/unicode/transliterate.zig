@@ -1392,6 +1392,21 @@ const conformance_fixtures = [_]struct {
         .magic = "CJAS".*,
         .name = "Latin-ASCII",
     },
+    .{
+        .bytes = @embedFile("transliterate/kirghiz_official_conformance.bin"),
+        .magic = "CJK3".*,
+        .name = "Kirghiz-Latin-BGN",
+    },
+    .{
+        .bytes = @embedFile("transliterate/armenian_official_conformance.bin"),
+        .magic = "CJH3".*,
+        .name = "Armenian-Latin-BGN",
+    },
+    .{
+        .bytes = @embedFile("transliterate/persian_official_conformance.bin"),
+        .magic = "CJP3".*,
+        .name = "Persian-Latin-BGN",
+    },
 };
 
 test "transliterate by CLDR name" {
@@ -1418,11 +1433,11 @@ test "transliterate by CLDR name" {
 
 test "CLDR transform conformance" {
     for (conformance_fixtures) |fixture| {
-        checkTransformConformance(
+        try checkTransformConformance(
             fixture.bytes,
             fixture.magic,
             fixture.name,
-        ) catch {};
+        );
     }
 }
 

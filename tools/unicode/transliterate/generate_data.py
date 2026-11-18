@@ -116,6 +116,27 @@ CONFORMANCE = (
         "latin_ascii_conformance.bin",
     ),
     (
+        "Kirghiz-Latin-BGN",
+        "common/testData/transforms/ky-Latn-t-ky-m0-bgn.txt",
+        b"CJK3",
+        frozenset(),
+        "kirghiz_official_conformance.bin",
+    ),
+    (
+        "Armenian-Latin-BGN",
+        "common/testData/transforms/hy-Latn-t-hy-m0-bgn.txt",
+        b"CJH3",
+        frozenset(),
+        "armenian_official_conformance.bin",
+    ),
+    (
+        "Persian-Latin-BGN",
+        "common/testData/transforms/fa-Latn-t-fa-m0-bgn.txt",
+        b"CJP3",
+        frozenset(),
+        "persian_official_conformance.bin",
+    ),
+    (
         "Georgian-Latin-BGN_1981",
         "common/testData/transforms/ka-Latn-t-ka-m0-bgn-1981.txt",
         b"CJTG",
