@@ -1913,3 +1913,12 @@ test "transliteration data version" {
     const testing = @import("std").testing;
     try testing.expectEqualStrings("48", cldr_version);
 }
+
+test "transform aliases execute" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    for (transform_aliases) |alias| {
+        const out = try transliterateByNameAlloc(allocator, "abc", alias.icu);
+        defer allocator.free(out);
+    }
+}
