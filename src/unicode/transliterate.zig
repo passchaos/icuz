@@ -10,6 +10,7 @@ const normalization = @import("normalization/root.zig");
 const properties = @import("properties.zig");
 const script = @import("script/root.zig");
 const case_mapping = @import("case/root.zig");
+const unicode_name = @import("name.zig");
 
 /// CLDR release the compiled transform tables come from.
 pub const cldr_version = "48";
@@ -133,6 +134,7 @@ fn transformAt(index: usize) TransformRecord {
 const named_transform_names = [_][]const u8{
     "NFC",       "NFD",       "NFKC",      "NFKD",     "Any-Lower",
     "Any-Upper", "Any-Title", "Any-Null",  "Hex-Any",  "Any-Hex",
+    "Name-Any",
 };
 
 /// Number of transforms available by name, including named engines.
@@ -184,7 +186,7 @@ fn isNamedTransform(name: []const u8) bool {
     const names = [_][]const u8{
         "Latin-ASCII", "NFC",     "NFD",       "NFKC",      "NFKD",
         "Any-Lower",   "Any-Upper", "Any-Title", "Any-Null", "Null",
-        "Hex-Any",     "Any-Hex",
+        "Hex-Any",     "Any-Hex",   "Name-Any",
     };
     for (names) |candidate| {
         if (std.mem.eql(u8, name, candidate)) return true;
@@ -1017,6 +1019,31 @@ fn hexAnyAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
     return output.toOwnedSlice(allocator);
 }
 
+fn nameAnyAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    var index: usize = 0;
+    while (index < text.len) {
+        if (text[index] == '\\' and index + 2 < text.len and
+            text[index + 1] == 'N' and text[index + 2] == '{')
+        {
+            if (std.mem.indexOfScalarPos(u8, text, index + 3, '}')) |close| {
+                if (unicode_name.findByName(text[index + 3 .. close])) |codepoint| {
+                    var buffer: [4]u8 = undefined;
+                    if (std.unicode.utf8Encode(codepoint, &buffer)) |length| {
+                        try output.appendSlice(allocator, buffer[0..length]);
+                        index = close + 1;
+                        continue;
+                    } else |_| {}
+                }
+            }
+        }
+        try output.append(allocator, text[index]);
+        index += 1;
+    }
+    return output.toOwnedSlice(allocator);
+}
+
 fn anyHexAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
@@ -1086,6 +1113,7 @@ pub fn transliterateByNameAlloc(
     if (std.mem.eql(u8, name, "Any-Null") or std.mem.eql(u8, name, "Null")) {
         return allocator.dupe(u8, text);
     }
+    if (std.mem.eql(u8, name, "Name-Any")) return nameAnyAlloc(allocator, text);
     if (std.mem.eql(u8, name, "Hex-Any")) return hexAnyAlloc(allocator, text);
     if (std.mem.eql(u8, name, "Any-Hex")) return anyHexAlloc(allocator, text);
     if (aliasTransform(name)) |clrd| {
@@ -1918,6 +1946,21 @@ test "transform discovery" {
     const ascii_hex = try transliterateByNameAlloc(allocator, "A ", "Any-Hex");
     defer allocator.free(ascii_hex);
     try testing.expectEqualStrings("\\u0041\\u0020", ascii_hex);
+
+    const named = try transliterateByNameAlloc(
+        allocator,
+        "\\N{LATIN CAPITAL LETTER A}",
+        "Name-Any",
+    );
+    defer allocator.free(named);
+    try testing.expectEqualStrings("A", named);
+    const unknown_name = try transliterateByNameAlloc(
+        allocator,
+        "\\N{NO SUCH NAME}",
+        "Name-Any",
+    );
+    defer allocator.free(unknown_name);
+    try testing.expectEqualStrings("\\N{NO SUCH NAME}", unknown_name);
 
     const identity = try transliterateByNameAlloc(allocator, "abc", "Any-Null");
     defer allocator.free(identity);
