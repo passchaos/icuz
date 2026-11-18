@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import struct
 import sys
 from pathlib import Path
 
@@ -29,6 +30,10 @@ QUICK_CHECK_PROPERTIES = {
     "NFKC_QC": "nfkc",
     "NFKD_QC": "nfkd",
 }
+
+PAGE_SIZE = 256
+PAGE_COUNT = 0x1100
+QUICK_CHECK_FORMS = ("nfc", "nfd", "nfkc", "nfkd")
 
 
 def checked_text(path: Path, expected_sha256: str) -> str:
@@ -88,21 +93,55 @@ def parse_derived(
     return exclusions, quick_check
 
 
-def render_quick_check_table(
-    lines: list[str],
-    form: str,
-    ranges: list[tuple[int, int, str]],
-) -> None:
-    lines.extend(
-        [
-            f"const {form}_quick_check_ranges = [_]QuickCheckRange{{",
-        ]
-    )
-    for first, last, value in ranges:
-        lines.append(
-            f"    .{{ .first = 0x{first:x}, .last = 0x{last:x}, .value = .{value} }},"
+def build_quick_check_values(
+    quick_check: dict[str, list[tuple[int, int, str]]],
+) -> list[int]:
+    values = [0] * 0x110000
+    for form_index, form in enumerate(QUICK_CHECK_FORMS):
+        shift = form_index * 2
+        for first, last, value in quick_check[form]:
+            bits = 1 if value == "no" else 2
+            for codepoint in range(first, last + 1):
+                values[codepoint] = (values[codepoint] & ~(3 << shift)) | (bits << shift)
+    return values
+
+
+def build_page_table(values: list[int]) -> tuple[list[int], list[bytes]]:
+    pages: list[bytes] = []
+    page_index: dict[bytes, int] = {}
+    index: list[int] = []
+    for page in range(PAGE_COUNT):
+        chunk = bytes(values[page * PAGE_SIZE : (page + 1) * PAGE_SIZE])
+        slot = page_index.get(chunk)
+        if slot is None:
+            slot = len(pages)
+            if slot > 0xFFFF:
+                raise SystemExit("quick-check page table exceeds u16 index space")
+            page_index[chunk] = slot
+            pages.append(chunk)
+        index.append(slot)
+    return index, pages
+
+
+def render_quick_check_blob(values: list[int]) -> bytes:
+    index, pages = build_page_table(values)
+    payload = bytearray(
+        struct.pack(
+            "<4sBBBBHH",
+            b"CJQ1",
+            1,
+            17,
+            0,
+            0,
+            PAGE_COUNT,
+            len(pages),
         )
-    lines.extend(["};", ""])
+    )
+    for slot in index:
+        payload += struct.pack("<H", slot)
+    for page in pages:
+        payload += page
+    return bytes(payload)
 
 
 def render(
@@ -129,56 +168,78 @@ def render(
         f"// UnicodeData.txt SHA-256: {UNICODE_DATA_SHA256}",
         f"// DerivedNormalizationProps.txt SHA-256: {DERIVED_NORMALIZATION_SHA256}",
         "",
+        'const std = @import("std");',
+        "",
         "pub const QuickCheck = enum(u2) { yes, no, maybe };",
         "pub const Form = enum { nfc, nfd, nfkc, nfkd };",
         "",
-        "const QuickCheckRange = struct {",
-        "    first: u21,",
-        "    last: u21,",
-        "    value: QuickCheck,",
-        "};",
+        'const quick_check_data = @embedFile("quick_check.bin");',
+        "const header_len = 12;",
+        "const index_count = readU16(8);",
+        "const page_count = readU16(10);",
+        "const index_offset = header_len;",
+        "const pages_offset = index_offset + @as(usize, index_count) * 2;",
+        "",
+        "comptime {",
+        "    if (quick_check_data.len < header_len or",
+        '        !std.mem.eql(u8, quick_check_data[0..4], "CJQ1") or',
+        "        quick_check_data[4] != 1 or quick_check_data[5] != 17 or",
+        "        quick_check_data[6] != 0 or quick_check_data[7] != 0)",
+        "    {",
+        '        @compileError("invalid Unicode normalization quick-check data");',
+        "    }",
+        "    if (index_count != 0x1100 or",
+        "        pages_offset + @as(usize, page_count) * 256 != quick_check_data.len)",
+        "    {",
+        '        @compileError("invalid Unicode normalization quick-check data lengths");',
+        "    }",
+        "    if (@intFromEnum(QuickCheck.no) != 1 or",
+        "        @intFromEnum(QuickCheck.maybe) != 2 or",
+        "        @intFromEnum(Form.nfc) != 0 or @intFromEnum(Form.nfd) != 1 or",
+        "        @intFromEnum(Form.nfkc) != 2 or @intFromEnum(Form.nfkd) != 3)",
+        "    {",
+        '        @compileError("normalization enums no longer match the quick-check blob");',
+        "    }",
+        "}",
+        "",
+        "inline fn quickCheckValue(codepoint: u21) u8 {",
+        "    if (codepoint < 0x80 or codepoint > 0x10ffff) return 0;",
+        "    const page = @as(usize, codepoint) >> 8;",
+        "    const slot = readU16(index_offset + page * 2);",
+        "    return quick_check_data[",
+        "        pages_offset + @as(usize, slot) * 256 +",
+        "            (@as(usize, codepoint) & 0xff)",
+        "    ];",
+        "}",
+        "",
+        "pub inline fn quickCheck(codepoint: u21, form: Form) QuickCheck {",
+        "    const shift: u3 = @as(u3, @intFromEnum(form)) * 2;",
+        "    return @enumFromInt(@as(u2, @truncate(quickCheckValue(codepoint) >> shift)));",
+        "}",
+        "",
+        "pub fn nfcQuickCheck(codepoint: u21) QuickCheck {",
+        "    return quickCheck(codepoint, .nfc);",
+        "}",
+        "",
+        "pub fn nfdQuickCheck(codepoint: u21) QuickCheck {",
+        "    return quickCheck(codepoint, .nfd);",
+        "}",
+        "",
+        "pub fn nfkcQuickCheck(codepoint: u21) QuickCheck {",
+        "    return quickCheck(codepoint, .nfkc);",
+        "}",
+        "",
+        "pub fn nfkdQuickCheck(codepoint: u21) QuickCheck {",
+        "    return quickCheck(codepoint, .nfkd);",
+        "}",
+        "",
+        "fn readU16(offset: usize) u16 {",
+        '    return std.mem.readInt(u16, quick_check_data[offset..][0..2], .little);',
+        "}",
         "",
     ]
-    for form in ("nfc", "nfd", "nfkc", "nfkd"):
-        render_quick_check_table(lines, form, quick_check[form])
     lines.extend(
         [
-            "fn lookupQuickCheck(ranges: []const QuickCheckRange, codepoint: u21) QuickCheck {",
-            "    var low: usize = 0;",
-            "    var high: usize = ranges.len;",
-            "    while (low < high) {",
-            "        const mid = low + (high - low) / 2;",
-            "        const range = ranges[mid];",
-            "        if (codepoint < range.first) high = mid else if (codepoint > range.last) low = mid + 1 else return range.value;",
-            "    }",
-            "    return .yes;",
-            "}",
-            "",
-            "pub fn quickCheck(codepoint: u21, form: Form) QuickCheck {",
-            "    return switch (form) {",
-            "        .nfc => lookupQuickCheck(&nfc_quick_check_ranges, codepoint),",
-            "        .nfd => lookupQuickCheck(&nfd_quick_check_ranges, codepoint),",
-            "        .nfkc => lookupQuickCheck(&nfkc_quick_check_ranges, codepoint),",
-            "        .nfkd => lookupQuickCheck(&nfkd_quick_check_ranges, codepoint),",
-            "    };",
-            "}",
-            "",
-            "pub fn nfcQuickCheck(codepoint: u21) QuickCheck {",
-            "    return quickCheck(codepoint, .nfc);",
-            "}",
-            "",
-            "pub fn nfdQuickCheck(codepoint: u21) QuickCheck {",
-            "    return quickCheck(codepoint, .nfd);",
-            "}",
-            "",
-            "pub fn nfkcQuickCheck(codepoint: u21) QuickCheck {",
-            "    return quickCheck(codepoint, .nfkc);",
-            "}",
-            "",
-            "pub fn nfkdQuickCheck(codepoint: u21) QuickCheck {",
-            "    return quickCheck(codepoint, .nfkd);",
-            "}",
-            "",
             "const Composition = struct {",
             "    starter: u21,",
             "    combining: u21,",
@@ -242,9 +303,13 @@ def main() -> None:
     exclusions, quick_check = parse_derived(derived_text)
     if not exclusions or not any(quick_check.values()):
         raise SystemExit("missing Unicode 17 normalization properties")
-    Path(sys.argv[3]).write_text(
+    output_path = Path(sys.argv[3])
+    output_path.write_text(
         render(decompositions, combining_classes, exclusions, quick_check),
         encoding="utf-8",
+    )
+    output_path.with_name("quick_check.bin").write_bytes(
+        render_quick_check_blob(build_quick_check_values(quick_check))
     )
 
 

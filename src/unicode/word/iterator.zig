@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const rules = @import("rules.zig");
+const dictionary = @import("dictionary.zig");
 const test_data = @embedFile("conformance.bin");
 
 pub const unicode_version = [3]u8{ 17, 0, 0 };
@@ -59,6 +60,102 @@ pub const Iterator = struct {
                 regional_indicator_count = 0;
             }
             end = current.next;
+        }
+        self.cursor = end;
+        return .{
+            .byte_start = start,
+            .byte_len = end - start,
+            .is_word = is_word,
+        };
+    }
+};
+
+/// Word iterator that applies ICU-style dictionary segmentation to Thai, Lao,
+/// Khmer, Burmese, and CJK runs. Other text uses the UAX #29 default rules.
+pub const DictionaryIterator = struct {
+    text: []const u8,
+    cursor: usize = 0,
+    cached_breaks: [dictionary.max_run_codepoints + 1]usize = undefined,
+    cached_count: usize = 0,
+    cached_index: usize = 0,
+
+    pub fn next(self: *DictionaryIterator) ?Segment {
+        if (self.cursor >= self.text.len) return null;
+        if (self.cached_index < self.cached_count and
+            self.cursor < self.cached_breaks[self.cached_index])
+        {
+            const end = self.cached_breaks[self.cached_index];
+            self.cached_index += 1;
+            return self.makeSegment(self.cursor, end);
+        }
+
+        const first = decode(self.text, self.cursor) orelse return null;
+        const language = dictionary.languageForCodepoint(first.codepoint) orelse {
+            var fallback = Iterator{ .text = self.text[self.cursor..] };
+            const segment = fallback.next() orelse return null;
+            const start = self.cursor;
+            self.cursor = start + segment.byte_len;
+            return .{
+                .byte_start = start,
+                .byte_len = segment.byte_len,
+                .is_word = segment.is_word,
+            };
+        };
+
+        var run_end = first.next;
+        var codepoint_count: usize = 1;
+        while (run_end < self.text.len and
+            codepoint_count < dictionary.max_run_codepoints)
+        {
+            const decoded = decode(self.text, run_end) orelse break;
+            if (!dictionary.isRunCodepoint(language, decoded.codepoint)) break;
+            run_end = decoded.next;
+            codepoint_count += 1;
+        }
+
+        const count = if (language == .cjk)
+            dictionary.segmentCjk(
+                self.text,
+                self.cursor,
+                run_end,
+                &self.cached_breaks,
+            )
+        else
+            dictionary.segmentSoutheastAsian(
+                language,
+                self.text,
+                self.cursor,
+                run_end,
+                &self.cached_breaks,
+            );
+        self.cached_count = count;
+        self.cached_index = 0;
+        if (count == 0 or self.cached_breaks[count - 1] < run_end) {
+            if (count < self.cached_breaks.len) {
+                self.cached_breaks[count] = run_end;
+                self.cached_count += 1;
+            }
+        }
+        if (self.cached_count == 0) {
+            const start = self.cursor;
+            self.cursor = run_end;
+            return self.makeSegment(start, run_end);
+        }
+        const end = self.cached_breaks[0];
+        self.cached_index = 1;
+        return self.makeSegment(self.cursor, end);
+    }
+
+    fn makeSegment(self: *DictionaryIterator, start: usize, end: usize) Segment {
+        var is_word = false;
+        var cursor = start;
+        while (cursor < end) {
+            const decoded = decode(self.text, cursor) orelse break;
+            if (properties(decoded.codepoint).word_anchor) {
+                is_word = true;
+                break;
+            }
+            cursor = decoded.next;
         }
         self.cursor = end;
         return .{
@@ -146,6 +243,16 @@ pub fn assumeValid(text: []const u8) Iterator {
     return .{ .text = text };
 }
 
+pub fn segmentsWithDictionaries(text: []const u8) Error!DictionaryIterator {
+    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    return assumeValidWithDictionaries(text);
+}
+
+pub fn assumeValidWithDictionaries(text: []const u8) DictionaryIterator {
+    std.debug.assert(std.unicode.utf8ValidateSlice(text));
+    return .{ .text = text };
+}
+
 fn breaksAt(
     text: []const u8,
     offset: usize,
@@ -224,6 +331,59 @@ fn decodeBefore(text: []const u8, offset: usize) ?Decoded {
     return decoded;
 }
 
+test "dictionary word segmentation iterator" {
+    const testing = @import("std").testing;
+    const cases = [_]struct {
+        text: []const u8,
+        expected: []const []const u8,
+    }{
+        .{ .text = "ภาษาไทย", .expected = &.{ "ภาษา", "ไทย" } },
+        .{ .text = "ພາສາລາວ", .expected = &.{ "ພາສາ", "ລາວ" } },
+        .{ .text = "ភាសាខ្មែរ", .expected = &.{"ភាសាខ្មែរ"} },
+        .{ .text = "မြန်မာဘာသာ", .expected = &.{"မြန်မာဘာသာ"} },
+        .{
+            .text = "中华人民共和国",
+            .expected = &.{ "中华", "人民", "共和国" },
+        },
+        .{
+            .text = "中华人民共和国日本語東京都",
+            .expected = &.{ "中华", "人民", "共和国", "日本語", "東京", "都" },
+        },
+        .{
+            .text = "ภาษาไทยประเทศไทย",
+            .expected = &.{ "ภาษา", "ไทย", "ประเทศไทย" },
+        },
+        .{ .text = "東京都", .expected = &.{ "東京", "都" } },
+        .{
+            .text = "Hello ภาษาไทย world",
+            .expected = &.{ "Hello", " ", "ภาษา", "ไทย", " ", "world" },
+        },
+        .{ .text = "กรุงเทพฯ", .expected = &.{"กรุงเทพฯ"} },
+        .{ .text = "จริงๆ", .expected = &.{"จริงๆ"} },
+        .{ .text = "ดีๆ", .expected = &.{"ดีๆ"} },
+        .{ .text = "アイウエオ", .expected = &.{"アイウエオ"} },
+        .{ .text = "テストデータ", .expected = &.{ "テスト", "データ" } },
+
+    };
+    for (cases) |case| {
+        var iterator = assumeValidWithDictionaries(case.text);
+        var start: usize = 0;
+        for (case.expected) |expected| {
+            const segment = iterator.next() orelse
+                return error.TestUnexpectedResult;
+            try testing.expectEqual(start, segment.byte_start);
+            const actual = case.text[segment.byte_start..][0..segment.byte_len];
+            try testing.expectEqualStrings(expected, actual);
+            if (!std.mem.eql(u8, expected, " ")) {
+                try testing.expect(segment.is_word);
+            }
+            start = segment.byte_start + segment.byte_len;
+        }
+        try testing.expect(iterator.next() == null);
+        try testing.expectEqual(case.text.len, start);
+    }
+}
+
 test "Unicode 17 word-boundary conformance" {
     if (test_data.len < 12 or !std.mem.eql(u8, test_data[0..4], "CJWT") or
         test_data[4] != 1 or test_data[5] != unicode_version[0] or
@@ -287,4 +447,84 @@ test "Unicode 17 word-boundary conformance" {
         try std.testing.expectEqual(expected_count, actual_count);
     }
     try std.testing.expectEqual(test_data.len, offset);
+}
+
+test "dictionary segmentation conformance" {
+    const fixture = @embedFile("dictionary_conformance.bin");
+    if (fixture.len < 12 or !std.mem.eql(u8, fixture[0..4], "CJDW") or
+        fixture[4] != 1 or fixture[5] != 0 or fixture[6] != 0 or
+        fixture[7] != 0)
+    {
+        return error.InvalidFixture;
+    }
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+    var offset: usize = 12;
+    var failures: usize = 0;
+    for (0..case_count) |case_index| {
+        if (offset + 4 > fixture.len) return error.InvalidFixture;
+        const source_len = std.mem.readInt(
+            u16,
+            fixture[offset..][0..2],
+            .little,
+        );
+        const segment_count = std.mem.readInt(
+            u16,
+            fixture[offset + 2 ..][0..2],
+            .little,
+        );
+        offset += 4;
+        if (offset + source_len + @as(usize, segment_count) * 2 >
+            fixture.len)
+        {
+            return error.InvalidFixture;
+        }
+        const source = fixture[offset..][0..source_len];
+        offset += source_len;
+        const lengths_offset = offset;
+        offset += @as(usize, segment_count) * 2;
+
+        var iterator = assumeValidWithDictionaries(source);
+        var expected_start: usize = 0;
+        var segment_index: usize = 0;
+        while (iterator.next()) |segment| {
+            if (segment_index >= segment_count) {
+                failures += 1;
+                break;
+            }
+            const expected_len = std.mem.readInt(
+                u16,
+                fixture[lengths_offset + segment_index * 2 ..][0..2],
+                .little,
+            );
+            const expected_end = expected_start + expected_len;
+            const actual = source[segment.byte_start..][0..segment.byte_len];
+            if (expected_end > source.len or
+                !std.mem.eql(
+                    u8,
+                    source[expected_start..expected_end],
+                    actual,
+                ))
+            {
+                failures += 1;
+                if (failures <= 20) {
+                    std.debug.print(
+                        "dictionary case {d} segment {d}: expected {s}, got {s}\n",
+                        .{
+                            case_index,
+                            segment_index,
+                            source[expected_start..@min(expected_end, source.len)],
+                            actual,
+                        },
+                    );
+                }
+            }
+            expected_start = expected_end;
+            segment_index += 1;
+        }
+        if (segment_index != segment_count or expected_start != source.len) {
+            failures += 1;
+        }
+    }
+    if (offset != fixture.len) return error.InvalidFixture;
+    if (failures != 0) return error.TestUnexpectedResult;
 }

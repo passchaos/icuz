@@ -772,9 +772,15 @@ test "legacy virama handling is an explicit tailoring" {
         }
     }
 
-    // The long-standing UTF-8 iterator retains the compatibility tailoring.
+    // The long-standing UTF-8 iterator retains the compatibility tailoring
+    // only when the caller explicitly selects it.
     const text = "क੍क";
-    var iterator = assumeValid(text);
+    var default_iterator = assumeValid(text);
+    var default_count: usize = 0;
+    while (default_iterator.next()) |_| default_count += 1;
+    try std.testing.expectEqual(@as(usize, 2), default_count);
+
+    var iterator = assumeValidWithTailoring(text, .legacy_virama_linker);
     try std.testing.expectEqual(text.len, iterator.next().?.byte_len);
     try std.testing.expect(iterator.next() == null);
 }

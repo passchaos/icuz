@@ -1,0 +1,72 @@
+//! Shared helpers for CLDR list, relative-time, and unit formatting.
+
+const std = @import("std");
+const plural = @import("plurals.zig");
+
+pub fn findLocale(locales: anytype, name: []const u8) ?@TypeOf(locales[0]) {
+    if (lookup(locales, name)) |entry| return entry;
+
+    var buffer: [64]u8 = undefined;
+    var length: usize = 0;
+    for (name) |byte| {
+        if (length == buffer.len) break;
+        buffer[length] = if (byte == '-') '_' else byte;
+        length += 1;
+    }
+    if (lookup(locales, buffer[0..length])) |entry| return entry;
+
+    if (std.mem.indexOfAny(u8, name, "-_")) |position| {
+        if (lookup(locales, name[0..position])) |entry| return entry;
+    }
+    return null;
+}
+
+fn lookup(locales: anytype, name: []const u8) ?@TypeOf(locales[0]) {
+    var low: usize = 0;
+    var high = locales.len;
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        const entry = locales[middle];
+        switch (std.mem.order(u8, entry.id, name)) {
+            .lt => low = middle + 1,
+            .gt => high = middle,
+            .eq => return entry,
+        }
+    }
+    return null;
+}
+
+pub fn pluralCategory(locale: []const u8, value: f64) plural.Category {
+    const magnitude = @abs(value);
+    if (magnitude == @floor(magnitude) and
+        magnitude <= @as(f64, @floatFromInt(std.math.maxInt(i64))))
+    {
+        return plural.categoryForInteger(locale, @intFromFloat(magnitude));
+    }
+    var buffer: [64]u8 = undefined;
+    const text = std.fmt.bufPrint(&buffer, "{d}", .{magnitude}) catch
+        return .other;
+    return plural.categoryForDecimalString(locale, text) catch .other;
+}
+
+pub fn replacePlaceholderAlloc(
+    allocator: std.mem.Allocator,
+    pattern: []const u8,
+    value: []const u8,
+) error{OutOfMemory}![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    var index: usize = 0;
+    while (index < pattern.len) {
+        if (pattern[index] == '{' and index + 2 < pattern.len and
+            pattern[index + 2] == '}' and pattern[index + 1] == '0')
+        {
+            try output.appendSlice(allocator, value);
+            index += 3;
+            continue;
+        }
+        try output.append(allocator, pattern[index]);
+        index += 1;
+    }
+    return output.toOwnedSlice(allocator);
+}

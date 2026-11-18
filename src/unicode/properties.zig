@@ -3,17 +3,19 @@
 //! This module exposes only Unicode-defined predicates. Shaping, editor, and
 //! display-width policy belongs in the consuming library.
 
-const grapheme = @import("grapheme/iterator.zig");
 const mark = @import("mark/root.zig");
-const script = @import("script/root.zig");
 
 pub const general_category = @import("properties/general_category.zig");
 pub const aliases = @import("properties/aliases.zig");
 
 pub const Category = general_category.Category;
+pub const BinaryProperty = general_category.BinaryProperty;
 pub const category = general_category.category;
 pub const categoryMask = general_category.categoryMask;
 pub const matchesCategoryMask = general_category.matchesMask;
+pub const has = general_category.has;
+pub const hasBinaryProperty = general_category.has;
+pub const binaryPropertyFromAlias = aliases.binaryPropertyFromAlias;
 
 pub const isWhiteSpace = general_category.isWhiteSpace;
 pub const isAlphabetic = general_category.isAlphabetic;
@@ -23,10 +25,31 @@ pub const isMath = general_category.isMath;
 pub const isDefaultIgnorableCodePoint =
     general_category.isDefaultIgnorableCodePoint;
 
+pub const isIdStart = general_category.isIdStart;
+pub const isIdContinue = general_category.isIdContinue;
+pub const isXidStart = general_category.isXidStart;
+pub const isXidContinue = general_category.isXidContinue;
+pub const isCaseIgnorable = general_category.isCaseIgnorable;
+pub const isCased = general_category.isCased;
+pub const isGraphemeBase = general_category.isGraphemeBase;
+pub const isGraphemeExtend = general_category.isGraphemeExtend;
+pub const isPatternSyntax = general_category.isPatternSyntax;
+pub const isPatternWhiteSpace = general_category.isPatternWhiteSpace;
+pub const isQuotationMark = general_category.isQuotationMark;
+pub const isSoftDotted = general_category.isSoftDotted;
+pub const isTerminalPunctuation = general_category.isTerminalPunctuation;
+pub const isUnifiedIdeograph = general_category.isUnifiedIdeograph;
+pub const isVariationSelector = general_category.isVariationSelector;
+pub const isBidiControl = general_category.isBidiControl;
+pub const isJoinControl = general_category.isJoinControl;
+pub const isEmoji = general_category.isEmoji;
+pub const isEmojiComponent = general_category.isEmojiComponent;
+pub const isEmojiModifierBase = general_category.isEmojiModifierBase;
+pub const isEmojiPresentation = general_category.isEmojiPresentation;
+pub const isExtendedPictographic = general_category.isExtendedPictographic;
+pub const isNoncharacterCodePoint = general_category.isNoncharacterCodePoint;
+
 pub const isNonspacingMark = mark.isNonspacing;
-pub const isVariationSelector = script.isVariationSelector;
-pub const isExtendedPictographic = grapheme.isExtendedPictographic;
-pub const isEmojiPresentation = grapheme.isEmojiPresentation;
 
 /// Exact Unicode 17.0 General_Category=L (Lu, Ll, Lt, Lm, Lo).
 /// Numbers, marks, unassigned codepoints and invalid scalar values are false.

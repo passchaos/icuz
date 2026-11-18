@@ -18,6 +18,20 @@ const canonical_combining_class = @import("./canonical/combining_class.zig");
 const canonical_decomposition = @import("./canonical/decomposition.zig");
 const normalization = @import("./normalization/root.zig");
 const case_mod = @import("./case/root.zig");
+const name_mod = @import("./name.zig");
+const set_mod = @import("./set.zig");
+const utf16_mod = @import("./utf16.zig");
+const collation_mod = @import("./collation/root.zig");
+const idna_mod = @import("./idna.zig");
+const plural_mod = @import("./format/plurals.zig");
+const number_mod = @import("./format/number.zig");
+const dates_mod = @import("./format/dates.zig");
+const message_mod = @import("./format/message.zig");
+const list_mod = @import("./format/list.zig");
+const relative_mod = @import("./format/relative.zig");
+const units_mod = @import("./format/units.zig");
+const charset_mod = @import("./charset.zig");
+const transliterate_mod = @import("./transliterate.zig");
 const properties = @import("./properties.zig");
 const scalar_value = @import("./scalar/root.zig");
 const scalar_cursor = @import("./scalar/cursor.zig");
@@ -145,6 +159,13 @@ pub const normalizeNfcAlloc = normalization.normalizeAlloc;
 pub const normalizeNfdAlloc = normalization.normalizeNfdAlloc;
 pub const normalizeNfkcAlloc = normalization.normalizeNfkcAlloc;
 pub const normalizeNfkdAlloc = normalization.normalizeNfkdAlloc;
+pub const normalizeInto = normalization.normalizeFormInto;
+pub const spanQuickCheckYes = normalization.spanQuickCheckYes;
+pub const normalizeCodepointsAlloc = normalization.normalizeCodepointsAlloc;
+pub const isNormalizedCodepoints = normalization.isNormalizedCodepoints;
+pub const normalizeUtf16Alloc = normalization.normalizeUtf16Alloc;
+pub const isNormalizedUtf16 = normalization.isNormalizedUtf16;
+pub const Normalizer = normalization.Normalizer;
 pub const isNormalizedNfc = normalization.isNormalized;
 pub const isNormalizedNfcAssumeValid = normalization.isNormalizedAssumeValid;
 
@@ -156,6 +177,108 @@ pub const fullCaseFold = case_mod.fullFold;
 pub const lowerAlloc = case_mod.lowerAlloc;
 pub const upperAlloc = case_mod.upperAlloc;
 pub const caseFoldAlloc = case_mod.foldAlloc;
+pub const fullLowerAlloc = case_mod.fullLowerAlloc;
+pub const fullUpperAlloc = case_mod.fullUpperAlloc;
+pub const fullTitleAlloc = case_mod.fullTitleAlloc;
+pub const CaseLocale = case_mod.Locale;
+pub const CaseOptions = case_mod.CaseOptions;
+
+pub const NameType = name_mod.NameType;
+pub const characterName = name_mod.name;
+pub const characterNameInto = name_mod.nameInto;
+pub const characterNameAlloc = name_mod.nameAlloc;
+pub const characterAlias = name_mod.alias;
+pub const firstCharacterAlias = name_mod.firstAlias;
+pub const findCharacterByName = name_mod.findByName;
+
+pub const UnicodeSet = set_mod.Set;
+pub const UnicodeSetRange = set_mod.Range;
+pub const parseUnicodeSet = set_mod.parse;
+pub const unicodeSetFromProperty = set_mod.fromProperty;
+pub const unicodeSetFromCategory = set_mod.fromCategoryMask;
+pub const unicodeSetFromScript = set_mod.fromScript;
+pub const unicodeSetFromScriptExtensions = set_mod.fromScriptExtensions;
+
+pub const utf16 = utf16_mod;
+
+pub const CollationStrength = collation_mod.Strength;
+pub const CollationVariableWeighting = collation_mod.VariableWeighting;
+pub const CollationOptions = collation_mod.Options;
+pub const collationSortKeyAlloc = collation_mod.sortKeyAlloc;
+pub const collationSortKeyCodepointsInto = collation_mod.sortKeyCodepointsInto;
+pub const collationCompare = collation_mod.compare;
+pub const collation_uca_version = collation_mod.uca_version;
+pub const collation_cldr_version = collation_mod.cldr_version;
+
+pub const IdnaOptions = idna_mod.Options;
+pub const idnaToAsciiAlloc = idna_mod.toAsciiAlloc;
+pub const idnaToUnicodeAlloc = idna_mod.toUnicodeAlloc;
+pub const idnaValidate = idna_mod.validate;
+pub const idna_version = idna_mod.idna_version;
+
+pub const PluralCategory = plural_mod.Category;
+pub const pluralCategory = plural_mod.category;
+pub const pluralCategoryForInteger = plural_mod.categoryForInteger;
+pub const pluralCategoryForDecimalString = plural_mod.categoryForDecimalString;
+pub const ordinalPluralCategory = plural_mod.ordinalCategory;
+pub const ordinalPluralCategoryForInteger = plural_mod.ordinalCategoryForInteger;
+pub const ordinalPluralCategoryForDecimalString =
+    plural_mod.ordinalCategoryForDecimalString;
+pub const plural_cldr_version = plural_mod.cldr_version;
+
+pub const NumberStyle = number_mod.Style;
+pub const NumberCompactStyle = number_mod.CompactStyle;
+pub const NumberCurrencyDisplay = number_mod.CurrencyDisplay;
+pub const NumberOptions = number_mod.Options;
+pub const formatNumberAlloc = number_mod.formatAlloc;
+pub const formatIntegerAlloc = number_mod.formatIntegerAlloc;
+pub const formatNumberSkeletonAlloc = number_mod.formatSkeletonAlloc;
+pub const formatNumberSkeletonIntegerAlloc =
+    number_mod.formatSkeletonIntegerAlloc;
+pub const number_cldr_version = number_mod.cldr_version;
+
+pub const DateTime = dates_mod.DateTime;
+pub const DateStyle = dates_mod.Style;
+pub const formatDateAlloc = dates_mod.formatDateAlloc;
+pub const formatTimeAlloc = dates_mod.formatTimeAlloc;
+pub const formatTimeWithZoneAlloc = dates_mod.formatTimeWithZoneAlloc;
+pub const formatDateTimeAlloc = dates_mod.formatDateTimeAlloc;
+pub const formatDatePatternAlloc = dates_mod.formatPatternAlloc;
+pub const dateTimeFromUnixSeconds = dates_mod.fromUnixSeconds;
+pub const date_cldr_version = dates_mod.cldr_version;
+
+pub const MessageArgument = message_mod.Argument;
+pub const MessageNamedArgument = message_mod.NamedArgument;
+pub const MessageArguments = message_mod.Arguments;
+pub const formatMessageAlloc = message_mod.formatAlloc;
+
+pub const CharsetEncoding = charset_mod.Encoding;
+pub const CharsetErrorMode = charset_mod.ErrorMode;
+pub const CharsetOptions = charset_mod.Options;
+pub const CharsetDecoder = charset_mod.Decoder;
+pub const CharsetEncoder = charset_mod.Encoder;
+pub const charsetFromLabel = charset_mod.fromLabel;
+pub const decodeCharsetAlloc = charset_mod.decodeAlloc;
+pub const encodeCharsetAlloc = charset_mod.encodeAlloc;
+pub const convertCharsetAlloc = charset_mod.convertAlloc;
+pub const validateCharset = charset_mod.validate;
+
+pub const Transliteration = transliterate_mod.Transform;
+pub const transliterateAlloc = transliterate_mod.transliterateAlloc;
+
+pub const ListStyle = list_mod.Style;
+pub const ListOptions = list_mod.Options;
+pub const formatListAlloc = list_mod.formatAlloc;
+
+pub const RelativeUnit = relative_mod.Unit;
+pub const RelativeNumeric = relative_mod.Numeric;
+pub const RelativeOptions = relative_mod.Options;
+pub const formatRelativeAlloc = relative_mod.formatAlloc;
+
+pub const Unit = units_mod.Unit;
+pub const UnitStyle = units_mod.Style;
+pub const UnitOptions = units_mod.Options;
+pub const formatUnitAlloc = units_mod.formatAlloc;
 
 pub const GraphemeCluster = grapheme_boundary.Cluster;
 pub const GraphemeClusterIterator = grapheme_boundary.Iterator;
@@ -192,6 +315,22 @@ pub fn wordSegments(text: []const u8) word_boundary.Error!WordBoundaryIterator {
 
 pub fn wordSegmentsAssumeValid(text: []const u8) WordBoundaryIterator {
     return word_boundary.assumeValid(text);
+}
+
+pub const DictionaryWordIterator = word_boundary.DictionaryIterator;
+
+/// Word segmentation that applies ICU break dictionaries to Thai, Lao,
+/// Khmer, Burmese, and CJK runs. Other text uses the UAX #29 rules.
+pub fn wordSegmentsWithDictionaries(
+    text: []const u8,
+) word_boundary.Error!DictionaryWordIterator {
+    return word_boundary.segmentsWithDictionaries(text);
+}
+
+pub fn wordSegmentsWithDictionariesAssumeValid(
+    text: []const u8,
+) DictionaryWordIterator {
+    return word_boundary.assumeValidWithDictionaries(text);
 }
 
 pub const SentenceSegment = sentence_boundary.Segment;
@@ -353,9 +492,36 @@ fn scriptBelongsToRun(codepoint: u21, script: Script, current: Script) bool {
 }
 
 test {
-    _ = word_cursor;
-    _ = sentence_cursor;
+    _ = line_break;
+    _ = grapheme_boundary;
+    _ = word_boundary;
+    _ = sentence_boundary;
+    _ = joining;
+    _ = script_mod;
+    _ = script_extensions;
+    _ = vertical;
+    _ = bidi_paragraph;
+    _ = canonical_combining_class;
+    _ = canonical_decomposition;
     _ = normalization;
     _ = case_mod;
+    _ = name_mod;
+    _ = set_mod;
+    _ = utf16_mod;
+    _ = collation_mod;
+    _ = idna_mod;
+    _ = plural_mod;
+    _ = number_mod;
+    _ = dates_mod;
+    _ = message_mod;
+    _ = charset_mod;
+    _ = transliterate_mod;
+    _ = list_mod;
+    _ = relative_mod;
+    _ = units_mod;
     _ = properties;
+    _ = scalar_value;
+    _ = scalar_cursor;
+    _ = word_cursor;
+    _ = sentence_cursor;
 }

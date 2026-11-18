@@ -1,0 +1,726 @@
+//! CLDR 48 Gregorian date and time formatting.
+
+const std = @import("std");
+const data = @import("dates_data.zig");
+
+pub const cldr_version = "48";
+
+pub const Style = enum { full, long, medium, short };
+
+pub const DateTime = struct {
+    year: i32,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+    nanosecond: u32 = 0,
+    offset_seconds: i32 = 0,
+};
+
+pub const Error = error{ InvalidDate, OutOfMemory };
+
+/// Format a date using the locale's full/long/medium/short date pattern.
+pub fn formatDateAlloc(
+    allocator: std.mem.Allocator,
+    date_time: DateTime,
+    locale_name: []const u8,
+    style: Style,
+) Error![]u8 {
+    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const pattern = switch (style) {
+        .full => locale.date_full,
+        .long => locale.date_long,
+        .medium => locale.date_medium,
+        .short => locale.date_short,
+    };
+    return formatPatternWithLocale(allocator, pattern, date_time, locale, "UTC");
+}
+
+/// Format a time using the locale's time pattern. The zone name defaults to
+/// `UTC`; use `formatTimeWithZoneAlloc` to supply another label.
+pub fn formatTimeAlloc(
+    allocator: std.mem.Allocator,
+    date_time: DateTime,
+    locale_name: []const u8,
+    style: Style,
+) Error![]u8 {
+    return formatTimeWithZoneAlloc(
+        allocator,
+        date_time,
+        locale_name,
+        style,
+        "UTC",
+    );
+}
+
+pub fn formatTimeWithZoneAlloc(
+    allocator: std.mem.Allocator,
+    date_time: DateTime,
+    locale_name: []const u8,
+    style: Style,
+    zone_name: []const u8,
+) Error![]u8 {
+    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const pattern = switch (style) {
+        .full => locale.time_full,
+        .long => locale.time_long,
+        .medium => locale.time_medium,
+        .short => locale.time_short,
+    };
+    return formatPatternWithLocale(
+        allocator,
+        pattern,
+        date_time,
+        locale,
+        zone_name,
+    );
+}
+
+pub fn formatDateTimeAlloc(
+    allocator: std.mem.Allocator,
+    date_time: DateTime,
+    locale_name: []const u8,
+    style: Style,
+    zone_name: []const u8,
+) Error![]u8 {
+    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const date_pattern = switch (style) {
+        .full => locale.date_full,
+        .long => locale.date_long,
+        .medium => locale.date_medium,
+        .short => locale.date_short,
+    };
+    const time_pattern = switch (style) {
+        .full => locale.time_full,
+        .long => locale.time_long,
+        .medium => locale.time_medium,
+        .short => locale.time_short,
+    };
+    const date_time_pattern = switch (style) {
+        .full => locale.date_time_full,
+        .long => locale.date_time_long,
+        .medium => locale.date_time_medium,
+        .short => locale.date_time_short,
+    };
+
+    const date_text = try formatPatternWithLocale(
+        allocator,
+        date_pattern,
+        date_time,
+        locale,
+        zone_name,
+    );
+    defer allocator.free(date_text);
+    const time_text = try formatPatternWithLocale(
+        allocator,
+        time_pattern,
+        date_time,
+        locale,
+        zone_name,
+    );
+    defer allocator.free(time_text);
+
+    return substituteDateTimePattern(
+        allocator,
+        date_time_pattern,
+        date_text,
+        time_text,
+    );
+}
+
+/// Format a custom CLDR date/time pattern.
+pub fn formatPatternAlloc(
+    allocator: std.mem.Allocator,
+    pattern: []const u8,
+    date_time: DateTime,
+    locale_name: []const u8,
+    zone_name: []const u8,
+) Error![]u8 {
+    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    return formatPatternWithLocale(
+        allocator,
+        pattern,
+        date_time,
+        locale,
+        zone_name,
+    );
+}
+
+/// Convert a Unix timestamp plus UTC offset into civil date/time fields.
+pub fn fromUnixSeconds(seconds: i64, offset_seconds: i32) DateTime {
+    const local = seconds + offset_seconds;
+    const days = @divFloor(local, 86400);
+    const seconds_of_day = @mod(local, 86400);
+    const civil = civilFromDays(days);
+    return .{
+        .year = civil.year,
+        .month = civil.month,
+        .day = civil.day,
+        .hour = @intCast(@divFloor(seconds_of_day, 3600)),
+        .minute = @intCast(@divFloor(@mod(seconds_of_day, 3600), 60)),
+        .second = @intCast(@mod(seconds_of_day, 60)),
+        .offset_seconds = offset_seconds,
+    };
+}
+
+fn formatPatternWithLocale(
+    allocator: std.mem.Allocator,
+    pattern: []const u8,
+    date_time: DateTime,
+    locale: data.Locale,
+    zone_name: []const u8,
+) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+
+    var index: usize = 0;
+    while (index < pattern.len) {
+        const byte = pattern[index];
+        if (byte == '\'') {
+            if (index + 1 < pattern.len and pattern[index + 1] == '\'') {
+                try output.append(allocator, '\'');
+                index += 2;
+                continue;
+            }
+            index += 1;
+            while (index < pattern.len) {
+                if (pattern[index] == '\'') {
+                    if (index + 1 < pattern.len and
+                        pattern[index + 1] == '\'')
+                    {
+                        try output.append(allocator, '\'');
+                        index += 2;
+                        continue;
+                    }
+                    index += 1;
+                    break;
+                }
+                try output.append(allocator, pattern[index]);
+                index += 1;
+            }
+            continue;
+        }
+
+        if (isAsciiLetter(byte)) {
+            var end = index;
+            while (end < pattern.len and pattern[end] == byte) end += 1;
+            try appendField(
+                allocator,
+                &output,
+                byte,
+                end - index,
+                date_time,
+                locale,
+                zone_name,
+            );
+            index = end;
+            continue;
+        }
+
+        try output.append(allocator, byte);
+        index += 1;
+    }
+    return output.toOwnedSlice(allocator);
+}
+
+fn appendField(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    field: u8,
+    length: usize,
+    date_time: DateTime,
+    locale: data.Locale,
+    zone_name: []const u8,
+) Error!void {
+    switch (field) {
+        'G' => {
+            const era: usize = if (date_time.year <= 0) 0 else 1;
+            const value = if (length >= 5)
+                locale.era_narrow[era]
+            else if (length == 4)
+                locale.era_wide[era]
+            else
+                locale.era_abbreviated[era];
+            try output.appendSlice(allocator, value);
+        },
+        'y' => {
+            const year: u64 = if (date_time.year <= 0)
+                @intCast(1 - @as(i64, date_time.year))
+            else
+                @intCast(date_time.year);
+            if (length == 2) {
+                try appendPaddedNumber(allocator, output, year % 100, 2, locale);
+            } else {
+                try appendPaddedNumber(
+                    allocator,
+                    output,
+                    year,
+                    @max(length, 1),
+                    locale,
+                );
+            }
+        },
+        'M', 'L' => {
+            const month = @min(@max(date_time.month, 1), 12);
+            if (length <= 2) {
+                try appendPaddedNumber(
+                    allocator,
+                    output,
+                    month,
+                    length,
+                    locale,
+                );
+            } else {
+                const value = if (length == 3)
+                    locale.months_abbreviated[month - 1]
+                else if (length == 4)
+                    locale.months_wide[month - 1]
+                else
+                    locale.months_narrow[month - 1];
+                try output.appendSlice(allocator, value);
+            }
+        },
+        'd' => try appendPaddedNumber(
+            allocator,
+            output,
+            date_time.day,
+            if (length >= 2) 2 else 1,
+            locale,
+        ),
+        'E' => {
+            const day = dayOfWeek(date_time);
+            const value = if (length >= 6)
+                locale.days_short[day]
+            else if (length == 5)
+                locale.days_narrow[day]
+            else if (length == 4)
+                locale.days_wide[day]
+            else
+                locale.days_abbreviated[day];
+            try output.appendSlice(allocator, value);
+        },
+        'a' => {
+            const is_pm = date_time.hour >= 12;
+            const value = if (length >= 5)
+                if (is_pm) locale.pm_narrow else locale.am_narrow
+            else if (length == 4)
+                if (is_pm) locale.pm_wide else locale.am_wide
+            else
+                if (is_pm) locale.pm_abbreviated else locale.am_abbreviated;
+            try output.appendSlice(allocator, value);
+        },
+        'H' => try appendPaddedNumber(
+            allocator,
+            output,
+            date_time.hour,
+            if (length >= 2) 2 else 1,
+            locale,
+        ),
+        'h' => {
+            const hour = if (date_time.hour % 12 == 0)
+                12
+            else
+                date_time.hour % 12;
+            try appendPaddedNumber(
+                allocator,
+                output,
+                hour,
+                if (length >= 2) 2 else 1,
+                locale,
+            );
+        },
+        'm' => try appendPaddedNumber(
+            allocator,
+            output,
+            date_time.minute,
+            if (length >= 2) 2 else 1,
+            locale,
+        ),
+        's' => try appendPaddedNumber(
+            allocator,
+            output,
+            date_time.second,
+            if (length >= 2) 2 else 1,
+            locale,
+        ),
+        'S' => {
+            const digits = @min(length, 9);
+            const divisor = std.math.pow(u32, 10, @intCast(9 - digits));
+            try appendPaddedNumber(
+                allocator,
+                output,
+                date_time.nanosecond / divisor,
+                digits,
+                locale,
+            );
+        },
+        'z' => try output.appendSlice(allocator, zone_name),
+        'Z' => try appendOffset(
+            allocator,
+            output,
+            date_time.offset_seconds,
+            length,
+            locale,
+        ),
+        'X', 'x' => try appendIsoOffset(
+            allocator,
+            output,
+            date_time.offset_seconds,
+            length,
+            field == 'X',
+            locale,
+        ),
+        'D' => try appendPaddedNumber(
+            allocator,
+            output,
+            dayOfYear(date_time),
+            if (length >= 3) 3 else 1,
+            locale,
+        ),
+        'Q', 'q' => {
+            const quarter = (date_time.month - 1) / 3 + 1;
+            if (length <= 2) {
+                try appendPaddedNumber(
+                    allocator,
+                    output,
+                    quarter,
+                    length,
+                    locale,
+                );
+            } else {
+                try output.append(allocator, 'Q');
+                try appendPaddedNumber(allocator, output, quarter, 1, locale);
+            }
+        },
+        else => {},
+    }
+}
+
+fn appendPaddedNumber(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    value: u64,
+    min_digits: usize,
+    locale: data.Locale,
+) Error!void {
+    var buffer: [32]u8 = undefined;
+    const text = std.fmt.bufPrint(&buffer, "{d}", .{value}) catch
+        return error.OutOfMemory;
+    var padding = if (text.len < min_digits) min_digits - text.len else 0;
+    while (padding > 0) : (padding -= 1) {
+        try appendDigit(allocator, output, 0, locale);
+    }
+    for (text) |byte| {
+        try appendDigit(allocator, output, byte - '0', locale);
+    }
+}
+
+fn appendDigit(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    digit: u8,
+    locale: data.Locale,
+) Error!void {
+    const codepoint = locale.digits[@as(usize, digit)];
+    var buffer: [4]u8 = undefined;
+    const length = std.unicode.utf8Encode(codepoint, &buffer) catch
+        unreachable;
+    try output.appendSlice(allocator, buffer[0..length]);
+}
+
+fn appendOffset(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    offset_seconds: i32,
+    length: usize,
+    locale: data.Locale,
+) Error!void {
+    const negative = offset_seconds < 0;
+    const total: u32 = @intCast(if (negative) -offset_seconds else offset_seconds);
+    const hours = total / 3600;
+    const minutes = (total % 3600) / 60;
+
+    if (length == 4) {
+        try output.appendSlice(allocator, "GMT");
+    } else if (length >= 5) {
+        try output.appendSlice(allocator, if (negative) "-" else "+");
+        try appendPaddedNumber(allocator, output, hours, 2, locale);
+        try output.append(allocator, ':');
+        try appendPaddedNumber(allocator, output, minutes, 2, locale);
+        return;
+    }
+
+    try output.append(allocator, if (negative) '-' else '+');
+    try appendPaddedNumber(allocator, output, hours, 2, locale);
+    try appendPaddedNumber(allocator, output, minutes, 2, locale);
+}
+
+fn appendIsoOffset(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    offset_seconds: i32,
+    length: usize,
+    use_z: bool,
+    locale: data.Locale,
+) Error!void {
+    if (offset_seconds == 0 and use_z) {
+        try output.append(allocator, 'Z');
+        return;
+    }
+    const negative = offset_seconds < 0;
+    const total: u32 = @intCast(if (negative) -offset_seconds else offset_seconds);
+    const hours = total / 3600;
+    const minutes = (total % 3600) / 60;
+    const seconds = total % 60;
+
+    try output.append(allocator, if (negative) '-' else '+');
+    try appendPaddedNumber(allocator, output, hours, 2, locale);
+    if (length == 1) return;
+    if (length == 2 or length == 4) {
+        try appendPaddedNumber(allocator, output, minutes, 2, locale);
+        if (length == 4) {
+            try appendPaddedNumber(allocator, output, seconds, 2, locale);
+        }
+        return;
+    }
+    try output.append(allocator, ':');
+    try appendPaddedNumber(allocator, output, minutes, 2, locale);
+    if (length >= 5) {
+        try output.append(allocator, ':');
+        try appendPaddedNumber(allocator, output, seconds, 2, locale);
+    }
+}
+
+fn substituteDateTimePattern(
+    allocator: std.mem.Allocator,
+    pattern: []const u8,
+    date_text: []const u8,
+    time_text: []const u8,
+) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+
+    var index: usize = 0;
+    while (index < pattern.len) {
+        const byte = pattern[index];
+        if (byte == '\'') {
+            if (index + 1 < pattern.len and pattern[index + 1] == '\'') {
+                try output.append(allocator, '\'');
+                index += 2;
+                continue;
+            }
+            index += 1;
+            while (index < pattern.len) {
+                if (pattern[index] == '\'') {
+                    if (index + 1 < pattern.len and
+                        pattern[index + 1] == '\'')
+                    {
+                        try output.append(allocator, '\'');
+                        index += 2;
+                        continue;
+                    }
+                    index += 1;
+                    break;
+                }
+                try output.append(allocator, pattern[index]);
+                index += 1;
+            }
+            continue;
+        }
+        if (byte == '{' and index + 2 < pattern.len and
+            pattern[index + 2] == '}')
+        {
+            const placeholder = pattern[index + 1];
+            if (placeholder == '1') {
+                try output.appendSlice(allocator, date_text);
+                index += 3;
+                continue;
+            }
+            if (placeholder == '0') {
+                try output.appendSlice(allocator, time_text);
+                index += 3;
+                continue;
+            }
+        }
+        try output.append(allocator, byte);
+        index += 1;
+    }
+    return output.toOwnedSlice(allocator);
+}
+
+fn isAsciiLetter(byte: u8) bool {
+    return (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z');
+}
+
+fn dayOfWeek(date_time: DateTime) usize {
+    const days = daysFromCivil(date_time.year, date_time.month, date_time.day);
+    return @intCast(@mod(days + 4, 7));
+}
+
+fn dayOfYear(date_time: DateTime) u64 {
+    const start = daysFromCivil(date_time.year, 1, 1);
+    const current = daysFromCivil(
+        date_time.year,
+        date_time.month,
+        date_time.day,
+    );
+    return @intCast(current - start + 1);
+}
+
+fn daysFromCivil(year: i32, month: u8, day: u8) i64 {
+    var y: i64 = year;
+    if (month <= 2) y -= 1;
+    const era = @divFloor(y, 400);
+    const yoe = y - era * 400;
+    const mp: i64 = if (month > 2) @as(i64, month) - 3 else @as(i64, month) + 9;
+    const doy = @divFloor(153 * mp + 2, 5) + @as(i64, day) - 1;
+    const doe = yoe * 365 + @divFloor(yoe, 4) - @divFloor(yoe, 100) + doy;
+    return era * 146097 + doe - 719468;
+}
+
+const CivilDate = struct {
+    year: i32,
+    month: u8,
+    day: u8,
+};
+
+fn civilFromDays(days: i64) CivilDate {
+    const z = days + 719468;
+    const era = @divFloor(z, 146097);
+    const doe = z - era * 146097;
+    const yoe = @divFloor(
+        doe - @divFloor(doe, 1460) + @divFloor(doe, 36524) -
+            @divFloor(doe, 146096),
+        365,
+    );
+    var year = yoe + era * 400;
+    const doy = doe - (365 * yoe + @divFloor(yoe, 4) - @divFloor(yoe, 100));
+    const mp = @divFloor(5 * doy + 2, 153);
+    const day = doy - @divFloor(153 * mp + 2, 5) + 1;
+    const month = mp + (if (mp < 10) @as(i64, 3) else -9);
+    if (month <= 2) year += 1;
+    return .{
+        .year = @intCast(year),
+        .month = @intCast(month),
+        .day = @intCast(day),
+    };
+}
+
+fn findLocale(locale: []const u8) ?data.Locale {
+    if (lookup(locale)) |result| return result;
+
+    var buffer: [64]u8 = undefined;
+    var len: usize = 0;
+    for (locale) |byte| {
+        if (len == buffer.len) break;
+        buffer[len] = if (byte == '-') '_' else byte;
+        len += 1;
+    }
+    if (lookup(buffer[0..len])) |result| return result;
+    if (std.mem.indexOfAny(u8, locale, "-_")) |position| {
+        if (lookup(locale[0..position])) |result| return result;
+    }
+    return null;
+}
+
+fn lookup(locale: []const u8) ?data.Locale {
+    var low: usize = 0;
+    var high = data.locales.len;
+    while (low < high) {
+        const mid = low + (high - low) / 2;
+        const entry = data.locales[mid];
+        switch (std.mem.order(u8, entry.id, locale)) {
+            .lt => low = mid + 1,
+            .gt => high = mid,
+            .eq => return entry,
+        }
+    }
+    return null;
+}
+
+test "date and time formatting" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const date_time = DateTime{
+        .year = 2026,
+        .month = 11,
+        .day = 18,
+        .hour = 15,
+        .minute = 4,
+        .second = 5,
+    };
+
+    const en_date = try formatDateAlloc(allocator, date_time, "en", .medium);
+    defer allocator.free(en_date);
+    try testing.expectEqualStrings("Nov 18, 2026", en_date);
+
+    const en_full = try formatDateAlloc(allocator, date_time, "en", .full);
+    defer allocator.free(en_full);
+    try testing.expectEqualStrings("Wednesday, November 18, 2026", en_full);
+
+    const en_time = try formatTimeAlloc(allocator, date_time, "en", .medium);
+    defer allocator.free(en_time);
+    try testing.expectEqualStrings("3:04:05\u{202f}PM", en_time);
+
+    const de_date = try formatDateAlloc(allocator, date_time, "de", .medium);
+    defer allocator.free(de_date);
+    try testing.expectEqualStrings("18.11.2026", de_date);
+
+    const de_time = try formatTimeAlloc(allocator, date_time, "de", .medium);
+    defer allocator.free(de_time);
+    try testing.expectEqualStrings("15:04:05", de_time);
+
+    const fr_date = try formatDateAlloc(allocator, date_time, "fr", .medium);
+    defer allocator.free(fr_date);
+    try testing.expectEqualStrings("18 nov. 2026", fr_date);
+
+    const ja_date = try formatDateAlloc(allocator, date_time, "ja", .medium);
+    defer allocator.free(ja_date);
+    try testing.expectEqualStrings("2026/11/18", ja_date);
+}
+
+test "custom patterns and Unix timestamps" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const epoch = fromUnixSeconds(0, 0);
+    try testing.expectEqual(@as(i32, 1970), epoch.year);
+    try testing.expectEqual(@as(u8, 1), epoch.month);
+    try testing.expectEqual(@as(u8, 1), epoch.day);
+    try testing.expectEqual(@as(usize, 4), dayOfWeek(epoch));
+
+    const pattern = try formatPatternAlloc(
+        allocator,
+        "yyyy-MM-dd'T'HH:mm:ss",
+        .{
+            .year = 2026,
+            .month = 11,
+            .day = 18,
+            .hour = 15,
+            .minute = 4,
+            .second = 5,
+        },
+        "en",
+        "UTC",
+    );
+    defer allocator.free(pattern);
+    try testing.expectEqualStrings("2026-11-18T15:04:05", pattern);
+
+    const date_time = try formatDateTimeAlloc(
+        allocator,
+        .{
+            .year = 2026,
+            .month = 11,
+            .day = 18,
+            .hour = 15,
+            .minute = 4,
+            .second = 5,
+        },
+        "en",
+        .medium,
+        "UTC",
+    );
+    defer allocator.free(date_time);
+    try testing.expectEqualStrings("Nov 18, 2026, 3:04:05\u{202f}PM", date_time);
+}

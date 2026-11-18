@@ -29,4 +29,24 @@ pub fn build(b: *std.Build) void {
         "Verify committed Unicode blobs, generated sources, and generators",
     );
     verify_step.dependOn(&verify.step);
+
+    const bench_icuz = b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    const bench = b.addExecutable(.{
+        .name = "icuz-bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/bench.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .imports = &.{
+                .{ .name = "icuz", .module = bench_icuz },
+            },
+        }),
+    });
+    const run_bench = b.addRunArtifact(bench);
+    const bench_step = b.step("bench", "Run icuz microbenchmarks");
+    bench_step.dependOn(&run_bench.step);
 }
