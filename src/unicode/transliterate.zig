@@ -1849,3 +1849,11 @@ test "discovered names resolve" {
         try testing.expect(hasTransform(name));
     }
 }
+
+test "Hex-Any keeps malformed escapes" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const out = try transliterateByNameAlloc(allocator, "\\uZZZZ", "Hex-Any");
+    defer allocator.free(out);
+    try testing.expectEqualStrings("\\uZZZZ", out);
+}
