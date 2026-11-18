@@ -100,6 +100,7 @@ TRANSFORMS = (
     ("Korean-Latin-BGN", "Korean-Latin-BGN", "context"),
     ("Kirghiz-Latin-BGN", "Kirghiz-Latin-BGN", "context"),
     ("Latin-Armenian", "Latin-Armenian", "context"),
+    ("Azerbaijani-Latin-BGN", "Azerbaijani-Latin-BGN", "context"),
 )
 
 CONFORMANCE = (
