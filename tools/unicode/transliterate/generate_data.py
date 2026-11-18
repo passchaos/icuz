@@ -34,7 +34,6 @@ TRANSFORMS = (
     ("Latin-Georgian", "Georgian-Latin", "reverse_georgian"),
     ("Lao-Latin", "Lao-Latin", "simple"),
     ("kk-kk_FONIPA", "kk-kk_FONIPA", "simple"),
-    ("ug-ug_FONIPA", "ug-ug_FONIPA", "simple"),
     ("Hebrew-Latin-BGN", "Hebrew-Latin-BGN", "variables"),
     ("Russian-Latin-BGN", "Russian-Latin-BGN", "context"),
     ("Greek-Latin-BGN", "Greek-Latin-BGN", "context"),
@@ -104,10 +103,18 @@ TRANSFORMS = (
     ("Latin-Cyrillic", "Cyrillic-Latin", "reverse_context"),
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
+    ("ug-ug_FONIPA", "ug-ug_FONIPA", "simple"),
 )
 
 CONFORMANCE = (
     # (transform name, fixture path, magic, excluded source strings)
+    (
+        "Latin-ASCII",
+        "common/testData/transforms/und-t-und-latn-d0-ascii.txt",
+        b"CJAS",
+        frozenset(),
+        "latin_ascii_conformance.bin",
+    ),
     (
         "Georgian-Latin-BGN_1981",
         "common/testData/transforms/ka-Latn-t-ka-m0-bgn-1981.txt",

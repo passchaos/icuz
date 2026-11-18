@@ -97,7 +97,7 @@ need without pulling in a font or layout engine.
   Azerbaijani-Latin-BGN, Latin-Cyrillic, Latin-Thaana,
   Latin-CanadianAboriginal, and
   NFC/NFD/NFKC/NFKD transforms. Seventy-four
-  transforms are compiled; twenty-four ship official CLDR conformance
+  transforms are compiled; twenty-five ship official CLDR conformance
   fixtures, and forty-six (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
