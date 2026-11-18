@@ -117,7 +117,8 @@ need without pulling in a font or layout engine.
   transforms. Transforms can be selected by CLDR name through
   `transliterateByNameAlloc`; ICU's `NFC`, `NFD`, `NFKC`, `NFKD`,
   `Any-Lower`, `Any-Upper`, and `Any-Title` names dispatch to the
-  normalization and case engines. The table compiler expands character classes,
+  normalization and case engines. `transformCount`, `transformNameAt`,
+  and `hasTransform` expose the compiled transform list. The table compiler expands character classes,
   Unicode properties, set operations, multi-codepoint set elements,
   multi-element prefix/suffix contexts with word-boundary handling, optional
   and repeated context elements, whole-source and embedded capture groups

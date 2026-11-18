@@ -125,6 +125,23 @@ fn transformAt(index: usize) TransformRecord {
     };
 }
 
+/// Number of compiled table transforms available by name.
+pub fn transformCount() usize {
+    return transform_count;
+}
+
+/// Name of the transform at `index`, or null when out of range.
+pub fn transformNameAt(index: usize) ?[]const u8 {
+    if (index >= transform_count) return null;
+    const record = transformAt(index);
+    return data[names_offset + record.name_offset ..][0..record.name_len];
+}
+
+/// Whether a transform with `name` is compiled into the table blob.
+pub fn hasTransform(name: []const u8) bool {
+    return findTransformByName(name) != null;
+}
+
 fn findTransformByName(name: []const u8) ?usize {
     for (0..transform_count) |index| {
         const record = transformAt(index);
@@ -1641,4 +1658,19 @@ test "named normalization and case transforms" {
     );
     defer allocator.free(title);
     try testing.expectEqualStrings("Hello World", title);
+}
+
+test "transform discovery" {
+    const testing = @import("std").testing;
+    try testing.expect(transformCount() >= 80);
+    try testing.expect(hasTransform("Latin-ASCII"));
+    try testing.expect(hasTransform("Russian-Latin-BGN"));
+    try testing.expect(!hasTransform("No-Such-Transform"));
+    var found = false;
+    for (0..transformCount()) |index| {
+        const name = transformNameAt(index) orelse return error.TestUnexpectedResult;
+        if (std.mem.eql(u8, name, "Simplified-Traditional")) found = true;
+    }
+    try testing.expect(found);
+    try testing.expect(transformNameAt(transformCount()) == null);
 }
