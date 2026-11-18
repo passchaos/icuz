@@ -1213,13 +1213,11 @@ test "transliterate by CLDR name" {
 
 test "CLDR transform conformance" {
     for (conformance_fixtures) |fixture| {
-        checkTransformConformance(
+        try checkTransformConformance(
             fixture.bytes,
             fixture.magic,
             fixture.name,
-        ) catch |err| {
-            std.debug.print("FAILED {s}: {any}\n", .{ fixture.name, err });
-        };
+        );
     }
 }
 
