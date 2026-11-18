@@ -170,6 +170,7 @@ fn isNamedTransform(name: []const u8) bool {
     const names = [_][]const u8{
         "Latin-ASCII", "NFC",     "NFD",       "NFKC",      "NFKD",
         "Any-Lower",   "Any-Upper", "Any-Title", "Any-Null", "Null",
+        "Hex-Any",     "Any-Hex",
     };
     for (names) |candidate| {
         if (std.mem.eql(u8, name, candidate)) return true;
@@ -925,6 +926,75 @@ pub fn transliterateAlloc(
 
 /// Transliterate UTF-8 `text` with a compiled CLDR transform selected by its
 /// CLDR name, for example `"Russian-Latin-BGN"` or `"Amharic-Latin-BGN"`.
+fn hexAnyAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    var index: usize = 0;
+    while (index < text.len) {
+        if (text[index] == '\\' and index + 1 < text.len) {
+            const kind = text[index + 1];
+            const digits: usize = if (kind == 'u') 4 else if (kind == 'U') 8 else 0;
+            if (digits != 0 and index + 2 + digits <= text.len) {
+                const value = std.fmt.parseInt(
+                    u21,
+                    text[index + 2 ..][0..digits],
+                    16,
+                ) catch {
+                    try output.append(allocator, text[index]);
+                    index += 1;
+                    continue;
+                };
+                var buffer: [4]u8 = undefined;
+                const length = std.unicode.utf8Encode(value, &buffer) catch {
+                    try output.append(allocator, text[index]);
+                    index += 1;
+                    continue;
+                };
+                try output.appendSlice(allocator, buffer[0..length]);
+                index += 2 + digits;
+                continue;
+            }
+        }
+        try output.append(allocator, text[index]);
+        index += 1;
+    }
+    return output.toOwnedSlice(allocator);
+}
+
+fn anyHexAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    var index: usize = 0;
+    while (index < text.len) {
+        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+            return error.InvalidUtf8;
+        if (index + length > text.len) return error.InvalidUtf8;
+        const codepoint = std.unicode.utf8Decode(text[index..][0..length]) catch
+            return error.InvalidUtf8;
+        if (codepoint >= 0x20 and codepoint <= 0x7e) {
+            try output.append(allocator, text[index]);
+        } else if (codepoint <= 0xffff) {
+            var buffer: [6]u8 = undefined;
+            const formatted = std.fmt.bufPrint(
+                &buffer,
+                "\\u{x:0>4}",
+                .{codepoint},
+            ) catch unreachable;
+            try output.appendSlice(allocator, formatted);
+        } else {
+            var buffer: [10]u8 = undefined;
+            const formatted = std.fmt.bufPrint(
+                &buffer,
+                "\\U{x:0>8}",
+                .{codepoint},
+            ) catch unreachable;
+            try output.appendSlice(allocator, formatted);
+        }
+        index += length;
+    }
+    return output.toOwnedSlice(allocator);
+}
+
 fn namedFormAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -962,6 +1032,8 @@ pub fn transliterateByNameAlloc(
     if (std.mem.eql(u8, name, "Any-Null") or std.mem.eql(u8, name, "Null")) {
         return allocator.dupe(u8, text);
     }
+    if (std.mem.eql(u8, name, "Hex-Any")) return hexAnyAlloc(allocator, text);
+    if (std.mem.eql(u8, name, "Any-Hex")) return anyHexAlloc(allocator, text);
     if (aliasTransform(name)) |clrd| {
         return transliterateByNameAlloc(allocator, text, clrd);
     }
@@ -1732,6 +1804,17 @@ test "transform discovery" {
     defer allocator.free(icu_named);
     try testing.expectEqualStrings("Moskva", icu_named);
     try testing.expect(hasTransform("ru-ru_Latn/BGN"));
+
+    const decoded = try transliterateByNameAlloc(
+        allocator,
+        "a\\u0042",
+        "Hex-Any",
+    );
+    defer allocator.free(decoded);
+    try testing.expectEqualStrings("aB", decoded);
+    const encoded = try transliterateByNameAlloc(allocator, "\u{00e9}", "Any-Hex");
+    defer allocator.free(encoded);
+    try testing.expectEqualStrings("\\u00e9", encoded);
 
     const identity = try transliterateByNameAlloc(allocator, "abc", "Any-Null");
     defer allocator.free(identity);
