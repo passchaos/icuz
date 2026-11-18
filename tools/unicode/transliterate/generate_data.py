@@ -807,38 +807,6 @@ def fullwidth_entries(rules: str):
 PROPERTY_CACHE: dict[str, frozenset[int]] = {}
 COMPLEMENT_CACHE: dict[int, frozenset[int]] = {}
 ALL_CODEPOINTS = frozenset(range(0x110000))
-CCC_ALIASES = {
-    "not_reordered": 0,
-    "overlay": 1,
-    "nukta": 7,
-    "kana_voicing": 8,
-    "virama": 9,
-    "attached_below": 202,
-    "attached_above": 214,
-    "attached_above_right": 216,
-    "below_left": 218,
-    "below": 220,
-    "below_right": 222,
-    "left": 224,
-    "right": 226,
-    "above_left": 228,
-    "above": 230,
-    "above_right": 232,
-    "double_below": 233,
-    "double_above": 234,
-    "iota_subscript": 240,
-}
-
-
-def complement_set(value: frozenset[int]) -> frozenset[int]:
-    key = id(value)
-    cached = COMPLEMENT_CACHE.get(key)
-    if cached is None:
-        cached = ALL_CODEPOINTS - value
-        COMPLEMENT_CACHE[key] = cached
-    return cached
-
-
 def property_codepoints(name: str):
     key = name.strip().lower()
     if key in PROPERTY_CACHE:
@@ -853,6 +821,11 @@ def property_codepoints(name: str):
         prefix = key.upper()
         for codepoint in range(0x110000):
             if unicodedata.category(chr(codepoint)).startswith(prefix):
+                result.append(codepoint)
+    elif key in GENERAL_CATEGORIES:
+        category = key[0].upper() + key[1]
+        for codepoint in range(0x110000):
+            if unicodedata.category(chr(codepoint)) == category:
                 result.append(codepoint)
     elif key.startswith("ccc="):
         ccc_name = key[4:].strip().replace("-", "_").replace(" ", "_")

@@ -117,8 +117,8 @@ need without pulling in a font or layout engine.
   whitespace, output-aware rule contexts, context variables that expand to
   element sequences, `*`/`+` quantifiers on variable references, mid-target
   output cursors, ICU input filters (`:: [set] ;`),
-  trailing `::Any-Lower;`/`::Any-Upper;` case steps, `ccc=` property
-  classes, ICU rule-order priority, XML
+  trailing `::Any-Lower;`/`::Any-Upper;` case steps, `ccc=` and two-letter
+  general-category property classes, ICU rule-order priority, XML
   comment stripping, and `::Null;` multi-pass pipelines.
 - Embedded, version-pinned generated data plus conformance fixtures.
 
