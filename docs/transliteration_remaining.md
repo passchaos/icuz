@@ -38,10 +38,15 @@ but whose second component is missing (`es_FONIPA-ja`, `am_FONIPA-am`,
 because directives use names such as `Amharic-Amharic/Geminate` while the
 XML files are `am-Ethi-t-am-ethi-m0-geminate.xml`.
 
-The two Ethiopic geminate pipelines have both components compiled:
-`und-Ethi-t-und-latn-m0-aethiopi-geminate` and
-`und-Ethi-t-und-latn-m0-ies-jes-1964-geminate`. They are the cheapest
-targets once multi-step chaining and aliases exist.
+The two Ethiopic geminate pipelines have both components compiled and
+are now landed: `Ethiopic-Latin/Aethiopica_Geminate` and
+`Ethiopic-Latin/IES_JES_1964_Geminate` (7129 PyICU cases each).
+
+A full scan of CLDR's pure pipelines confirms no other pipeline is
+covered end to end by the current transform set: every remaining
+pipeline needs a component that is not yet compiled (for example
+`am_FONIPA-am`, `und_FONIPA-ar`, `es_FONIPA-ja`). Compiling those
+components is the prerequisite for the next batch.
 
 ## 2. ICU rule specificity / hidden-rule ordering
 
