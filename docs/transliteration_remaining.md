@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 262 compiled table transforms plus 13 named engines (`NFC`, `NFD`,
+- 263 compiled table transforms plus 13 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 267 conformance fixtures: 30 official CLDR test-data files and 237 PyICU
+- 268 conformance fixtures: 30 official CLDR test-data files and 238 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -117,9 +117,11 @@ coverage for the tone-position classes.
   compile with the context builder and pass; the `sat-am` pipeline also
   passes.
 - `it-am`, `it-ja`, `ja_Latn-ru`, `ru-ja`, `cs_FONIPA-ja`, `es_FONIPA-ja`,
-  and `es_FONIPA-es_419_FONIPA` pass their PyICU fixtures. The
-  `ja_Latn-ko`, `pl/ro/sk_FONIPA-ja`, `ru-zh`, and `zh_Latn_PINYIN-ru`
-  variants still need context or Pinyin coverage.
+  and `es_FONIPA-es_419_FONIPA` pass their PyICU fixtures.
+- `fa-fa_FONIPA` passes after context-group captures
+  (`(context){key} > $1`) were compiled. The `ja_Latn-ko`,
+  `pl/ro/sk_FONIPA-ja`, `ru-zh`, and `zh_Latn_PINYIN-ru` variants still
+  need context or Pinyin coverage.
 - `dsb-dsb_FONIPA` passes after mid-rule normalization directives were
   made pass boundaries and the global filter was moved to the first
   non-empty pass.

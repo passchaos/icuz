@@ -53,7 +53,7 @@ const step_count = readU32(40);
 const transform_offset = header_len;
 const step_offset = transform_offset + @as(usize, transform_count) * 36;
 const entry_offset = step_offset + @as(usize, step_count) * 8;
-const set_offset = entry_offset + @as(usize, entry_count) * 32;
+const set_offset = entry_offset + @as(usize, entry_count) * 34;
 const range_offset = set_offset + @as(usize, set_count) * 8;
 const context_offset = range_offset + @as(usize, range_count) * 8;
 const context_element_offset = context_offset + @as(usize, context_count) * 8;
@@ -75,7 +75,7 @@ const targets_offset = sources_offset + @as(usize, source_count) * 4;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJTR") or
-        data[4] != 15 or data[5] != 48 or data[6] != 0 or data[7] != 0)
+        data[4] != 16 or data[5] != 48 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid transliteration data");
     }
@@ -117,6 +117,7 @@ const Entry = struct {
     repeat_min: u8,
     repeat_start: u32,
     repeat_len: u32,
+    kind: u8,
 };
 
 fn readU16(offset: usize) u16 {
@@ -233,7 +234,7 @@ fn findTransformByName(name: []const u8) ?usize {
 }
 
 fn entryAt(index: usize) Entry {
-    const base = entry_offset + index * 32;
+    const base = entry_offset + index * 34;
     return .{
         .source_offset = readU32(base),
         .source_len = data[base + 4],
@@ -250,13 +251,14 @@ fn entryAt(index: usize) Entry {
         .repeat_set = readU32(base + 28),
         .repeat_start = 0,
         .repeat_len = 0,
+        .kind = data[base + 32],
     };
 }
 
 /// First source codepoint of an entry without materializing the whole record;
 /// used by the binary search in the literal range.
 fn entryFirstCodepoint(index: usize) u21 {
-    const base = entry_offset + index * 32;
+    const base = entry_offset + index * 34;
     return @intCast(readU32(sources_offset + readU32(base) * 4));
 }
 
@@ -857,6 +859,28 @@ fn applyPassAlloc(
         steps += 1;
         if (steps > max_steps) break;
         if (findMatchInRange(range, work.items, index, work.items[0..index], filter_set)) |entry| {
+            if (entry.kind == 1) {
+                // The target's sentinel is replaced by the captured
+                // ante-context codepoint immediately before the key.
+                var mapped = std.ArrayList(u21).empty;
+                defer mapped.deinit(allocator);
+                const captured = if (index > 0) work.items[index - 1] else 0;
+                for (0..@as(usize, entry.target_len)) |offset| {
+                    const codepoint = targetCodepoint(entry, offset);
+                    try mapped.append(
+                        allocator,
+                        if (codepoint == 0x110001) captured else codepoint,
+                    );
+                }
+                try work.replaceRange(
+                    allocator,
+                    index,
+                    entry.source_len,
+                    mapped.items,
+                );
+                index += mapped.items.len;
+                continue;
+            }
             if (entry.flags & 128 != 0) {
                 var mapped = std.ArrayList(u21).empty;
                 defer mapped.deinit(allocator);
@@ -2447,6 +2471,11 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/latin_interindic_conformance.bin"),
         .magic = "CJLI".*,
         .name = "Latin-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/fa_fa_fonipa_conformance.bin"),
+        .magic = "CJEP".*,
+        .name = "fa-fa_FONIPA",
     },
     .{
         .bytes = @embedFile("transliterate/cs_fonipa_ja_conformance.bin"),

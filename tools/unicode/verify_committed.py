@@ -40,7 +40,7 @@ BLOBS = (
     Blob("src/unicode/bidi/data.bin", b"CJB1", 1, "9e9f9937100d6019f7308743916c3606bdb31c9cc4f142eb605becf45a210c3f"),
     Blob("src/unicode/canonical/combining_class.bin", b"CJC1", 1, "336130546fc300108806f5ae23144cda93da13488a810946357304b5a12f5fcc"),
     Blob("src/unicode/charset/data.bin", b"CJCS", 1, "965bd7d7e6084e49d6a5a04f350807c0c2cdeececeacfa78103d928f45f71575"),
-    Blob("src/unicode/transliterate/data.bin", b"CJTR", 15, "5943edbb634e9f4c21be6e3d400f9ea05a1c1f16ff3b9d0e97022159cd529289", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/data.bin", b"CJTR", 16, "6defed88901bac97eb9a22b02282d36337de27d70f4a5ccd3ffbd5e5e3e0a464", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/georgian_bgn_conformance.bin", b"CJTG", 1, "e8d6ea181123ec5175c7b4d92e1591febcdc9ea0ee2800d075e5bbd4f81acf62", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/hebrew_bgn_conformance.bin", b"CJTH", 1, "c8e0869ef80a3608d0d98f8d07f291e3863a4c7d6b08bf3bd50fe7242459af51", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/russian_bgn_conformance.bin", b"CJRU", 1, "bd90c67fe72c02a91305a394c3506158d1b2fd39d307ec57838df20594d2e6e2", version=(48, 0, 0)),
@@ -333,6 +333,7 @@ BLOBS = (
     Blob("src/unicode/transliterate/it_ja_conformance.bin", b"CJEP", 1, "b4e4d0de109a06585fd655092b6ca201af9a81828b74087215a341c15bf56849", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/ja_latn_ru_conformance.bin", b"CJES", 1, "84eb6bdec00b3ad8798ab53acdb995599b4ef1e0e3fe355ad7c9315d4c542e2f", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/ru_ja_conformance.bin", b"CJET", 1, "f4efc786168210e22fee5d36385b6790a5b005d93172b2a545a43e40481f54f7", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/fa_fa_fonipa_conformance.bin", b"CJEP", 1, "62969fb0fa6bf921fa79cda0ae94ab418c42860a9d922199ffc7f738c34f8b12", version=(48, 0, 0)),
 )
 
 GENERATORS = {
@@ -359,7 +360,7 @@ GENERATORS = {
     "tools/unicode/format/generate_dates.py": "de6d58352b8793fee777752b980d27561e6ca400cb4710b95c9fda9b54999e45",
     "tools/unicode/format/generate_misc.py": "35d08acef5a6b7c23bbbe3b13977a2085f02df3985185068a68fe59e0625b0e1",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
-    "tools/unicode/transliterate/generate_data.py": "3db2e9d10cccffb836ea70486ec8b88cd2c24b7742ef574bca4c2335859fd0a8",
+    "tools/unicode/transliterate/generate_data.py": "003b8fb65bf458132cda34d3c5aa5f2080ae6ae98ba7f864755efd5b0bbefc9a",
     "tools/unicode/break/generate_dictionaries.py": "bdbd4c4e9c999b4cea6a8924b08c72a49719c857e26dea82fc50940ee145e264",
     "tools/unicode/break/generate_word_conformance.py": "3c2467ffc38b2467cbbc0d895e76b8862774c48567aa3ad26b9681605df3a5ff",
     "tools/unicode/transliterate/generate_icu_conformance.py": "c1f2435db3039a3f569de277eccf5901a7c2ba34d396026be0815f39cd6dc997",
@@ -565,7 +566,7 @@ def check_layout(blob: Blob, data: bytes) -> None:
             44
             + transform_count * 36
             + step_count * 8
-            + entry_count * 32
+            + entry_count * 34
             + set_count * 8
             + range_count * 8
             + context_count * 8

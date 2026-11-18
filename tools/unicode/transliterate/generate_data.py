@@ -145,6 +145,7 @@ TRANSFORMS = (
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
     ("ug-ug_FONIPA", "ug-ug_FONIPA", "context"),
+    ("fa-fa_FONIPA", "fa-fa_FONIPA", "context"),
     ("it-am", "it-am", "context"),
     ("it-ja", "it-ja", "context"),
     ("ja_Latn-ru", "ja_Latn-ru", "context"),
@@ -1409,8 +1410,12 @@ def parse_class_expression(
         if character.isspace():
             index += 1
             continue
-        if character in "-&":
-            operator = "diff" if character == "-" else "intersect"
+        if character in "-&|":
+            operator = (
+                "diff" if character == "-"
+                else "intersect" if character == "&"
+                else "union"
+            )
             index += 1
             continue
         parsed = parse_class_term(content, index, variables, depth + 1)
@@ -2118,6 +2123,43 @@ NEGATED_REPEAT_CAPTURE = re.compile(
 )
 
 
+def parse_context_group(text: str, variables: dict[str, str]):
+    """Parse a bare `(class)` ante-context group used for `$1` capture."""
+    text = text.strip()
+    open_pos = find_unquoted(text, "(")
+    if open_pos is None:
+        return None
+    close_pos = find_unquoted(text, ")")
+    if close_pos is None or close_pos <= open_pos:
+        return None
+    if text[:open_pos].strip() or text[close_pos + 1 :].strip():
+        return None
+    inner = text[open_pos + 1 : close_pos].strip()
+    if not inner:
+        return None
+    parsed = parse_class_set("[" + inner + "]", variables)
+    if parsed is None:
+        return None
+    value, negated = parsed
+    if negated:
+        return None
+    return [[(value, False, False, False, 0, False)]]
+
+
+def parse_context_capture_target(text: str, variables: dict[str, str]):
+    """Parse a target whose `$1` refers to the captured ante-context."""
+    segments = text.split("$1")
+    target: list[int] = []
+    for index, segment in enumerate(segments):
+        if index > 0:
+            target.append(0x110001)
+        codepoints, syntax = parse_side_with_variables(segment, variables)
+        if syntax:
+            return None
+        target.extend(codepoints)
+    return tuple(target)
+
+
 def parse_negated_repeat_capture(
     source_text: str,
     target_text: str,
@@ -2330,11 +2372,15 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             source_text = left
             before_text = ""
             after_text = ""
+        context_capture = False
         before_alts = [None]
         if before_text.strip():
             before_alts = parse_context(before_text, variables)
             if before_alts is None:
-                continue
+                before_alts = parse_context_group(before_text, variables)
+                if before_alts is None:
+                    continue
+                context_capture = True
         after_alts = [None]
         if after_text.strip():
             after_alts = parse_context(after_text, variables)
@@ -2404,7 +2450,16 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             else:
                 embedded = expand_embedded_group(source_text, variables)
                 if embedded is None:
-                    continue
+                    # No source capture: `$1` may refer to a single-element
+                    # ante-context group such as `(class){key} > $1`.
+                    if (
+                        before_alts != [None]
+                        and len(before_alts) == 1
+                        and len(before_alts[0]) == 1
+                    ):
+                        context_capture = True
+                    else:
+                        continue
         negated_source = parse_negated_source(source_expression, variables)
         if negated_source is not None:
             for before in before_alts:
@@ -2477,7 +2532,12 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             continue
         fixed_target = None
         case_call = 0
-        if not capture:
+        context_target = None
+        if context_capture and "$1" in right:
+            context_target = parse_context_capture_target(right, variables)
+            if context_target is None:
+                continue
+        if not capture and context_target is None:
             fixed_target, target_syntax = parse_side_with_variables(
                 right,
                 variables,
@@ -2491,7 +2551,9 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
         for source in sources:
             if not source and repeat_set is None:
                 continue
-            if case_call:
+            if context_target is not None:
+                target = context_target
+            elif case_call:
                 target = ()
             elif capture:
                 target = parse_target_with_capture(right, variables, source)
@@ -2524,6 +2586,9 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
                             repeat,
                             None,
                             case_call,
+                            None,
+                            None,
+                            context_capture,
                         )
                     )
         priority += 1
@@ -2563,6 +2628,7 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
         case_call = entry[9] if len(entry) > 9 else 0
         negated_set = entry[10] if len(entry) > 10 else None
         negated_repeat = entry[11] if len(entry) > 11 else None
+        context_capture = entry[12] if len(entry) > 12 else False
         result.append(
             (
                 source,
@@ -2577,6 +2643,7 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
                 negated_set,
                 entry[5],
                 negated_repeat,
+                context_capture,
             )
         )
     return result
@@ -2773,6 +2840,7 @@ def render_blob(
             negated_set = entry[9] if len(entry) > 9 else None
             entry_priority = entry[10] if len(entry) > 10 else 0
             negated_repeat = entry[11] if len(entry) > 11 else None
+            context_capture = entry[12] if len(entry) > 12 else False
             pass_count = max(pass_count, entry_pass + 1)
             source2_offset = 0
             source2_len = 0
@@ -2836,6 +2904,8 @@ def render_blob(
                     source2_len,
                     repeat_minimum,
                     repeat_set_index,
+                    1 if context_capture else 0,
+                    0,
                 )
             )
         transform_records.append(
@@ -2867,7 +2937,7 @@ def render_blob(
     header = bytearray(b"CJTR")
     header += struct.pack(
         "<B3BH7IH",
-        15,
+        16,
         CLDR_VERSION,
         0,
         0,
@@ -2920,7 +2990,7 @@ def render_blob(
         step_bytes += struct.pack("<BBHI", kind, 0, 0, value)
     entry_bytes = bytearray()
     for entry in entries:
-        entry_bytes += struct.pack("<IBIBIIBBHIBBI", *entry)
+        entry_bytes += struct.pack("<IBIBIIBBHIBBIBB", *entry)
     set_bytes = bytearray()
     for offset, count in set_records:
         set_bytes += struct.pack("<II", offset, count)
