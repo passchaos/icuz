@@ -2473,6 +2473,106 @@ const conformance_fixtures = [_]struct {
         .name = "Latin-InterIndic",
     },
     .{
+        .bytes = @embedFile("transliterate/am_chr_conformance.bin"),
+        .magic = "CJEY".*,
+        .name = "am-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ch_chr_conformance.bin"),
+        .magic = "CJFI".*,
+        .name = "ch-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/cs_chr_conformance.bin"),
+        .magic = "CJFJ".*,
+        .name = "cs-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/eo_chr_conformance.bin"),
+        .magic = "CJFL".*,
+        .name = "eo-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/es_am_conformance.bin"),
+        .magic = "CJFN".*,
+        .name = "es-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/es_chr_conformance.bin"),
+        .magic = "CJFO".*,
+        .name = "es-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/es_419_chr_conformance.bin"),
+        .magic = "CJFQ".*,
+        .name = "es_419-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/hy_chr_conformance.bin"),
+        .magic = "CJFR".*,
+        .name = "hy-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ia_chr_conformance.bin"),
+        .magic = "CJFT".*,
+        .name = "ia-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kk_chr_conformance.bin"),
+        .magic = "CJFU".*,
+        .name = "kk-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ky_chr_conformance.bin"),
+        .magic = "CJFV".*,
+        .name = "ky-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/rm_sursilv_chr_conformance.bin"),
+        .magic = "CJFZ".*,
+        .name = "rm_SURSILV-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ro_chr_conformance.bin"),
+        .magic = "CJF0".*,
+        .name = "ro-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/si_chr_conformance.bin"),
+        .magic = "CJF2".*,
+        .name = "si-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tlh_chr_conformance.bin"),
+        .magic = "CJF4".*,
+        .name = "tlh-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/han_spacedhan_conformance.bin"),
+        .magic = "CJFP".*,
+        .name = "Han-Spacedhan",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ipa_xsampa_conformance.bin"),
+        .magic = "CJFK".*,
+        .name = "IPA-XSampa",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_katakana_conformance.bin"),
+        .magic = "CJFM".*,
+        .name = "Latin-Katakana",
+    },
+    .{
+        .bytes = @embedFile("transliterate/es_fonipa_am_conformance.bin"),
+        .magic = "CJEQ".*,
+        .name = "es_FONIPA-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/und_fonipa_chr_conformance.bin"),
+        .magic = "CJFH".*,
+        .name = "und_FONIPA-chr",
+    },
+    .{
         .bytes = @embedFile("transliterate/fa_fa_fonipa_conformance.bin"),
         .magic = "CJEP".*,
         .name = "fa-fa_FONIPA",

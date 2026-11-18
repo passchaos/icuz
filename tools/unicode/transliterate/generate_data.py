@@ -145,6 +145,13 @@ TRANSFORMS = (
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
     ("ug-ug_FONIPA", "ug-ug_FONIPA", "context"),
+    ("es_FONIPA-am", "es_FONIPA-am", "context"),
+    ("und_FONIPA-chr", "und_FONIPA-chr", "context"),
+    ("Any-Accents", "Any-Accents", "context"),
+    ("IPA-XSampa", "IPA-XSampa", "context"),
+    ("Thai-ThaiSemi", "Thai-ThaiSemi", "context"),
+    ("Latin-Katakana", "Latin-Katakana", "context"),
+    ("Han-Spacedhan", "Han-Spacedhan", "context"),
     ("fa-fa_FONIPA", "fa-fa_FONIPA", "context"),
     ("it-am", "it-am", "context"),
     ("it-ja", "it-ja", "context"),
@@ -482,7 +489,7 @@ def detect_reverse_normalization(rules: str):
 # Components whose rule sets need engine features that are not compiled yet
 # (for example InterIndic-Arabic's `($alif) $alif+ > $1` collapse rule).
 PIPELINE_EXCLUDE_COMPONENTS: set[str] = set()
-PIPELINE_EXCLUDE_NAMES = {"ch-am", "sk-am", "cs-ja", "es-ja", "es_419-am", "es_419-ja", "ug-Latin"}
+PIPELINE_EXCLUDE_NAMES = {"ch-am", "sk-am", "cs-ja", "es-ja", "es_419-am", "es_419-ja", "ug-Latin", "hy_AREVMDA-chr", "my-chr", "pl-chr", "sat-chr", "sk-chr", "xh-chr", "zu-chr"}
 
 PIPELINE_COMPONENTS = {
     "Amharic-Amharic/Geminate": "am-Ethi-t-am-ethi-m0-geminate",

@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 263 compiled table transforms plus 13 named engines (`NFC`, `NFD`,
+- 285 compiled table transforms plus 13 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 268 conformance fixtures: 30 official CLDR test-data files and 238 PyICU
+- 288 conformance fixtures: 30 official CLDR test-data files and 258 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -15,7 +15,7 @@ Status after the CLDR 48 rule-engine push:
   pipelines (`kk-am`, `my-am`, `ro-am`, `si-am`, `xh-am`, `zu-am`) use
   this path.
 - Ordered step programs (blob format CJTR v12) execute arbitrary
-  `::NFD;` / `::Transform;` / `::Lower;` / `::NFC;` sequences. All 118 pure
+  `::NFD;` / `::Transform;` / `::Lower;` / `::NFC;` sequences. All 142 pure
   CLDR pipelines whose components are compiled are auto-discovered,
   including the Indic script-to-script and script-to-Latin chains, the
   `X-Arabic` / `X-ur` families, and the `Latin-*` pipelines.
@@ -119,9 +119,13 @@ coverage for the tone-position classes.
 - `it-am`, `it-ja`, `ja_Latn-ru`, `ru-ja`, `cs_FONIPA-ja`, `es_FONIPA-ja`,
   and `es_FONIPA-es_419_FONIPA` pass their PyICU fixtures.
 - `fa-fa_FONIPA` passes after context-group captures
-  (`(context){key} > $1`) were compiled. The `ja_Latn-ko`,
-  `pl/ro/sk_FONIPA-ja`, `ru-zh`, and `zh_Latn_PINYIN-ru` variants still
-  need context or Pinyin coverage.
+  (`(context){key} > $1`) were compiled.
+- `es_FONIPA-am`, `und_FONIPA-chr`, `IPA-XSampa`, `Latin-Katakana`,
+  `Han-Spacedhan`, and 15 `X-chr` / `es-am` pipelines pass their PyICU
+  fixtures. The `ja_Latn-ko`, `pl/ro/sk_FONIPA-ja`, `ru-zh`, and
+  `zh_Latn_PINYIN-ru` variants still need context or Pinyin coverage;
+  the `my/pl/sat/sk/xh/zu-chr` pipelines need more `und_FONIPA-chr`
+  coverage.
 - `dsb-dsb_FONIPA` passes after mid-rule normalization directives were
   made pass boundaries and the global filter was moved to the first
   non-empty pass.
