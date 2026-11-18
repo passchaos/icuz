@@ -1342,6 +1342,11 @@ const conformance_fixtures = [_]struct {
         .magic = "CJKI".*,
         .name = "Kirghiz-Latin-BGN",
     },
+    .{
+        .bytes = @embedFile("transliterate/latin_armenian_conformance.bin"),
+        .magic = "CJLA".*,
+        .name = "Latin-Armenian",
+    },
 };
 
 test "transliterate by CLDR name" {

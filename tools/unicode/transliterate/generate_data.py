@@ -99,6 +99,7 @@ TRANSFORMS = (
     ("lt-Upper", "lt-Upper", "context"),
     ("Korean-Latin-BGN", "Korean-Latin-BGN", "context"),
     ("Kirghiz-Latin-BGN", "Kirghiz-Latin-BGN", "context"),
+    ("Latin-Armenian", "Latin-Armenian", "context"),
 )
 
 CONFORMANCE = (
@@ -1385,7 +1386,32 @@ def resolve_source_variable(name: str, variables: dict[str, str]):
     return [tuple(codepoints)]
 
 
+def unquote_literals(text: str) -> str:
+    """Turn ICU quoted literals into escapes for the source-term parser."""
+    output: list[str] = []
+    quoted = False
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if character == "'":
+            if quoted and index + 1 < len(text) and text[index + 1] == "'":
+                output.append("\\u0027")
+                index += 2
+                continue
+            quoted = not quoted
+            index += 1
+            continue
+        if quoted:
+            output.append(f"\\u{ord(character):04X}")
+            index += 1
+            continue
+        output.append(character)
+        index += 1
+    return "".join(output)
+
+
 def parse_source_terms(text: str, variables: dict[str, str]):
+    text = unquote_literals(text)
     terms = []
     index = 0
     while index < len(text):
