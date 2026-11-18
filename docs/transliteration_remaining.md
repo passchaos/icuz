@@ -105,3 +105,9 @@ coverage for the tone-position classes.
   `simple` / `reverse_with_left`; the reverse builder applies explicit
   `A <- B` rules as `B -> A`.
 - `Hans-Hant` / `Hant-Hans` are aliases over the same tables.
+
+## 6. Hex transform divergence
+
+`Hex-Any` decodes `\uXXXX`, `\UXXXXXXXX`, and `\x{...}`. ICU also emits
+lone surrogates for inputs such as `\uD800`; the UTF-8 API here cannot
+represent them, so such sequences pass through unchanged.
