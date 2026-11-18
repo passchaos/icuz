@@ -534,7 +534,7 @@ def detect_reverse_normalization(rules: str):
 # Components whose rule sets need engine features that are not compiled yet
 # (for example InterIndic-Arabic's `($alif) $alif+ > $1` collapse rule).
 PIPELINE_EXCLUDE_COMPONENTS: set[str] = set()
-PIPELINE_EXCLUDE_NAMES = {"cs-ja", "es-ja", "es_419-am", "es_419-ja", "ug-Latin", "hy_AREVMDA-chr", "my-chr", "pl-chr", "sat-chr", "sk-chr", "xh-chr", "zu-chr"}
+PIPELINE_EXCLUDE_NAMES = {"cs-ja", "es-ja", "es_419-am", "es_419-ja", "ug-Latin"}
 
 PIPELINE_COMPONENTS = {
     "Amharic-Amharic/Geminate": "am-Ethi-t-am-ethi-m0-geminate",
@@ -1217,6 +1217,7 @@ CATEGORY_ALIASES = {
 SCRIPT_ALIASES = {
     "arab": "arabic",
     "brai": "braille",
+    "cher": "cherokee",
     "cyrl": "cyrillic",
     "ethi": "ethiopic",
     "grek": "greek",

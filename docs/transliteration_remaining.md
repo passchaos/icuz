@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 298 compiled table transforms plus 15 named engines (`NFC`, `NFD`,
+- 305 compiled table transforms plus 15 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 303 conformance fixtures: 30 official CLDR test-data files and 273 PyICU
+- 310 conformance fixtures: 30 official CLDR test-data files and 280 PyICU
   differential fixtures.
 - Blob format CJTR v17 (36-byte transform records with `filter_set`,
   `final_case`, `next_transform`, `pre_transform`, and per-pass
@@ -55,7 +55,7 @@ The v12 step program covers arbitrary `::` sequences. Remaining gaps:
 - Transform references with arguments, e.g.
   `::Latin-NumericPinyin(NumericPinyin-Latin);` in `Latin-Bopomofo.xml`.
 - Pipelines whose components are not compiled (for example
-  `und_FONIPA-ar`, `und_FONIPA-chr`, `es_FONIPA-ja`, `und_FONIPA-fa`).
+  `und_FONIPA-ar`, `es_FONIPA-ja`, `und_FONIPA-fa`).
 
 ## 2. ICU rule specificity / hidden-rule ordering
 
@@ -134,8 +134,11 @@ coverage for the tone-position classes.
   normalization directives normalize the intermediate text before the
   following pass (the Pinyin tone pass NFD-decomposes, removes tone marks,
   then NFC-recomposes before the syllabify and mapping passes).
-  The `my/pl/sat/sk/xh/zu-chr` pipelines need more `und_FONIPA-chr`
-  coverage.
+- All 20 `X-chr` pipelines pass their PyICU fixtures. The remaining
+  `my/pl/sat/sk/xh/zu/hy_AREVMDA-chr` pipelines needed the ISO 15924
+  `sc=Cher` alias so `und_FONIPA-chr`'s negated
+  `[^[:sc=Cher:][tone marks]]` cleanup rule compiles and removes leftover
+  tie bars.
 - `dsb-dsb_FONIPA` passes after mid-rule normalization directives were
   compiled as per-pass normalization steps and the global filter was moved
   to the first non-empty pass.

@@ -2868,6 +2868,41 @@ const conformance_fixtures = [_]struct {
         .name = "si-chr",
     },
     .{
+        .bytes = @embedFile("transliterate/pl_chr_conformance.bin"),
+        .magic = "CJPC".*,
+        .name = "pl-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/my_chr_conformance.bin"),
+        .magic = "CJQ2".*,
+        .name = "my-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/sat_chr_conformance.bin"),
+        .magic = "CJQ3".*,
+        .name = "sat-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/sk_chr_conformance.bin"),
+        .magic = "CJQ4".*,
+        .name = "sk-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/xh_chr_conformance.bin"),
+        .magic = "CJQ5".*,
+        .name = "xh-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/zu_chr_conformance.bin"),
+        .magic = "CJQ6".*,
+        .name = "zu-chr",
+    },
+    .{
+        .bytes = @embedFile("transliterate/hy_arevmda_chr_conformance.bin"),
+        .magic = "CJQ7".*,
+        .name = "hy_AREVMDA-chr",
+    },
+    .{
         .bytes = @embedFile("transliterate/tlh_chr_conformance.bin"),
         .magic = "CJF4".*,
         .name = "tlh-chr",
