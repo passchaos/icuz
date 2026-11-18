@@ -145,6 +145,9 @@ TRANSFORMS = (
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
     ("ug-ug_FONIPA", "ug-ug_FONIPA", "context"),
+    ("pl_FONIPA-ja", "pl_FONIPA-ja", "context"),
+    ("ro_FONIPA-ja", "ro_FONIPA-ja", "context"),
+    ("sk_FONIPA-ja", "sk_FONIPA-ja", "context"),
     ("es_FONIPA-am", "es_FONIPA-am", "context"),
     ("und_FONIPA-chr", "und_FONIPA-chr", "context"),
     ("Any-Accents", "Any-Accents", "context"),
@@ -1669,6 +1672,9 @@ def parse_context_token(token: str, variables: dict[str, str]):
         return None
     if token == "$":
         return [[(frozenset(), False, True, 0, True, False)]]
+    if token == "^":
+        # Start-of-text anchor.
+        return [[(frozenset(), False, False, 0, True, False)]]
     if token == "$wordBoundary":
         raw = variables.get("$wordBoundary")
         if raw is None:
@@ -2290,11 +2296,15 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             # CLDR's ::Null; and ::(null); directives close the current pass:
             # rules that follow see the output of the rules before it. In the
             # reverse direction ICU applies the passes in reverse order.
-            directive = line[2:].strip().rstrip(";").strip().lower()
-            if directive in ("null", "(null)", "null()"):
+            directive = re.sub(
+                r"\s+",
+                "",
+                line[2:].strip().rstrip(";").strip().lower(),
+            )
+            if directive in ("null", "(null)", "null()", "(null)()"):
                 pass_index += 1
             elif re.fullmatch(
-                r"nfk?[cd](\s*\(\s*nfk?[cd]\s*\))?",
+                r"nfk?[cd](\(nfk?[cd]\))?",
                 directive,
             ):
                 # Mid-rule normalization directives also split passes.
@@ -2394,6 +2404,26 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             if after_alts is None:
                 continue
         source_text = source_text.strip()
+        start_anchor = False
+        end_anchor = False
+        if source_text.startswith("^"):
+            start_anchor = True
+            source_text = source_text[1:].lstrip()
+        if source_text.endswith("$"):
+            end_anchor = True
+            source_text = source_text[:-1].rstrip()
+        if start_anchor:
+            anchor = (frozenset(), False, False, False, 0, True)
+            if before_alts == [None]:
+                before_alts = [[anchor]]
+            else:
+                before_alts = [[anchor] + list(alt) for alt in before_alts]
+        if end_anchor:
+            anchor = (frozenset(), False, False, False, 0, True)
+            if after_alts == [None]:
+                after_alts = [[anchor]]
+            else:
+                after_alts = [list(alt) + [anchor] for alt in after_alts]
         if not source_text:
             if before_alts == [None] and after_alts == [None]:
                 continue

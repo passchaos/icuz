@@ -2473,6 +2473,36 @@ const conformance_fixtures = [_]struct {
         .name = "Latin-InterIndic",
     },
     .{
+        .bytes = @embedFile("transliterate/pl_ja_conformance.bin"),
+        .magic = "CJF1".*,
+        .name = "pl-ja",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ro_ja_conformance.bin"),
+        .magic = "CJF3".*,
+        .name = "ro-ja",
+    },
+    .{
+        .bytes = @embedFile("transliterate/sk_ja_conformance.bin"),
+        .magic = "CJF5".*,
+        .name = "sk-ja",
+    },
+    .{
+        .bytes = @embedFile("transliterate/pl_fonipa_ja_conformance.bin"),
+        .magic = "CJFS".*,
+        .name = "pl_FONIPA-ja",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ro_fonipa_ja_conformance.bin"),
+        .magic = "CJFX".*,
+        .name = "ro_FONIPA-ja",
+    },
+    .{
+        .bytes = @embedFile("transliterate/sk_fonipa_ja_conformance.bin"),
+        .magic = "CJFY".*,
+        .name = "sk_FONIPA-ja",
+    },
+    .{
         .bytes = @embedFile("transliterate/am_chr_conformance.bin"),
         .magic = "CJEY".*,
         .name = "am-chr",
