@@ -91,13 +91,15 @@ need without pulling in a font or layout engine.
   Malayalam/Latin/Tamil, chr-chr_FONIPA, zu-zu_FONIPA,
   Hiragana-Katakana, Persian-Latin-BGN, nv-nv_FONIPA, si-si_FONIPA,
   es-es_FONIPA, xh-xh_FONIPA, vec-vec_FONIPA, ro-ro_FONIPA,
-  Arabic-Latin-BGN, Armenian-Latin-BGN, and
-  NFC/NFD/NFKC/NFKD transforms. Fifty-eight
+  Arabic-Latin-BGN, Armenian-Latin-BGN, Thaana-Latin, Syriac-Latin,
+  CanadianAboriginal-Latin, and
+  NFC/NFD/NFKC/NFKD transforms. Sixty-one
   transforms are compiled; twenty-four ship official CLDR conformance
-  fixtures, and twenty-six (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and twenty-nine (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
   Venetian FONIPA, Romanian FONIPA, Arabic-Latin-BGN, Armenian-Latin-BGN,
+  Thaana-Latin, Syriac-Latin, CanadianAboriginal-Latin,
   a Kazakh FONIPA validation fixture, Hiragana-Katakana,
   and Persian-Latin-BGN) ship ICU
   differential fixtures generated with PyICU. Transforms can be selected by CLDR name through

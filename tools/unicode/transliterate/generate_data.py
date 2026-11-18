@@ -88,6 +88,9 @@ TRANSFORMS = (
     ("ro-ro_FONIPA", "ro-ro_FONIPA", "context"),
     ("Arabic-Latin-BGN", "Arabic-Latin-BGN", "context"),
     ("Armenian-Latin-BGN", "Armenian-Latin-BGN", "context"),
+    ("Thaana-Latin", "Thaana-Latin", "reverse_simple"),
+    ("Syriac-Latin", "Syriac-Latin", "context"),
+    ("CanadianAboriginal-Latin", "CanadianAboriginal-Latin", "reverse_simple"),
 )
 
 CONFORMANCE = (
@@ -1929,6 +1932,8 @@ def main() -> int:
             table = simple_table_entries(rules)
         elif builder == "reverse_georgian":
             table = reverse_table(simple_table_entries(georgian_rules))
+        elif builder == "reverse_simple":
+            table = reverse_table(simple_table_entries(rules))
         elif builder == "variables":
             table = table_entries_with_variables(rules)
         elif builder == "context":
