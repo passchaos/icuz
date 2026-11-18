@@ -1432,6 +1432,11 @@ const conformance_fixtures = [_]struct {
         .magic = "CJKH".*,
         .name = "Katakana-Hiragana",
     },
+    .{
+        .bytes = @embedFile("transliterate/pashto_bgn_conformance.bin"),
+        .magic = "CJPB".*,
+        .name = "Pashto-Latin-BGN",
+    },
 };
 
 test "transliterate by CLDR name" {
