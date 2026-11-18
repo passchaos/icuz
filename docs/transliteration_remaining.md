@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 86 compiled table transforms plus 10 named engines (`NFC`, `NFD`,
+- 87 compiled table transforms plus 10 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Hex-Any`, `Any-Hex`).
-- 87 conformance fixtures: 29 official CLDR test-data files and 58 PyICU
+- 89 conformance fixtures: 30 official CLDR test-data files and 59 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
