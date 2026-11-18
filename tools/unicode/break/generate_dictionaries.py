@@ -8,9 +8,11 @@ The input files are the ICU break dictionaries from
 icu4c/source/data/brkitr/dictionaries:
     thaidict.txt, laodict.txt, khmerdict.txt, burmesedict.txt, cjdict.txt
 
-Words are sorted by UTF-8 byte order and stored in a shared byte pool with an
-offset/length/cost table, so the runtime can find exact words by binary search.
-CJK entries carry the ICU unigram cost used by the Viterbi segmenter.
+Each dictionary is compiled into a compact byte trie. A node stores its edge
+range, child count, and word cost; edges are sorted by byte and pack the byte
+and child index into one u32. The runtime walks the trie once per position,
+which is much faster than binary-searching the sorted word list for every
+prefix length.
 """
 
 from __future__ import annotations
@@ -62,6 +64,44 @@ def parse_dictionary(path: Path, has_cost: bool) -> list[tuple[bytes, int]]:
     return sorted(entries.items())
 
 
+def build_trie(entries: list[tuple[bytes, int]]):
+    # children maps a byte to a child node (a dict), cost_plus_one marks words.
+    root = {"children": {}, "cost": 0}
+    for word, cost in entries:
+        node = root
+        for byte in word:
+            children = node["children"]
+            child = children.get(byte)
+            if child is None:
+                child = {"children": {}, "cost": 0}
+                children[byte] = child
+            node = child
+        node["cost"] = cost + 1
+    return root
+
+
+def serialize_trie(root):
+    # Assign node indices breadth-first, then build the node/edge arrays.
+    nodes = [root]
+    index = 0
+    while index < len(nodes):
+        node = nodes[index]
+        index += 1
+        for byte in sorted(node["children"]):
+            nodes.append(node["children"][byte])
+    indices = {id(node): position for position, node in enumerate(nodes)}
+
+    node_records = []
+    edge_records = []
+    for node in nodes:
+        children = sorted(node["children"].items())
+        edge_start = len(edge_records)
+        for byte, child in children:
+            edge_records.append((byte << 24) | indices[id(child)])
+        node_records.append((edge_start, len(children), node["cost"]))
+    return node_records, edge_records
+
+
 def main() -> int:
     if len(sys.argv) != 3:
         print(__doc__.strip(), file=sys.stderr)
@@ -70,30 +110,38 @@ def main() -> int:
     out_dir = Path(sys.argv[2])
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    parsed = []
+    compiled = []
     for _, name, _, has_cost in LANGUAGES:
-        parsed.append(parse_dictionary(source_dir / name, has_cost))
+        entries = parse_dictionary(source_dir / name, has_cost)
+        root = build_trie(entries)
+        node_records, edge_records = serialize_trie(root)
+        max_word_bytes = max(len(word) for word, _ in entries)
+        compiled.append((node_records, edge_records, max_word_bytes, len(entries)))
 
     header = bytearray(b"CJDB")
-    header += struct.pack("<BBH", 1, len(LANGUAGES), 0)
+    header += struct.pack("<BBH", 2, len(LANGUAGES), 0)
     body = bytearray()
-    for entries in parsed:
-        pool = bytearray()
-        records = bytearray()
-        max_len = 0
-        for word, cost in entries:
-            offset = len(pool)
-            pool.extend(word)
-            max_len = max(max_len, len(word))
-            records += struct.pack("<IBHB", offset, len(word), cost, 0)
-        header += struct.pack("<IIHH", len(entries), len(pool), max_len, 0)
-        body += records
-        body += pool
+    for node_records, edge_records, max_word_bytes, _ in compiled:
+        header += struct.pack(
+            "<IIHH",
+            len(node_records),
+            len(edge_records),
+            max_word_bytes,
+            0,
+        )
+    for node_records, edge_records, _, _ in compiled:
+        for edge_start, edge_count, cost in node_records:
+            body += struct.pack("<IHH", edge_start, edge_count, cost)
+        for edge in edge_records:
+            body += struct.pack("<I", edge)
 
     (out_dir / "dictionaries.bin").write_bytes(bytes(header + body))
     print(
         " ".join(
-            f"{name}={len(entries)}" for (name, _, _, _), entries in zip(LANGUAGES, parsed)
+            f"{name}={entries} words/{len(nodes)} nodes"
+            for (name, _, _, _), (nodes, _, _, entries) in zip(
+                LANGUAGES, compiled
+            )
         ),
         file=sys.stderr,
     )
