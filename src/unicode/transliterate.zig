@@ -137,6 +137,35 @@ pub fn transformNameAt(index: usize) ?[]const u8 {
     return data[names_offset + record.name_offset ..][0..record.name_len];
 }
 
+const TransformAlias = struct { icu: []const u8, clrd: []const u8 };
+const transform_aliases = [_]TransformAlias{
+    .{ .icu = "ru-ru_Latn/BGN", .clrd = "Russian-Latin-BGN" },
+    .{ .icu = "el-el_Latn/BGN", .clrd = "Greek-Latin-BGN" },
+    .{ .icu = "he-he_Latn/BGN", .clrd = "Hebrew-Latin-BGN" },
+    .{ .icu = "ka-ka_Latn/BGN_1981", .clrd = "Georgian-Latin-BGN_1981" },
+    .{ .icu = "mn-mn_Latn/BGN", .clrd = "Mongolian-Latin-BGN" },
+    .{ .icu = "bg-bg_Latn/BGN", .clrd = "Bulgarian-Latin-BGN" },
+    .{ .icu = "mk-mk_Latn/BGN", .clrd = "Macedonian-Latin-BGN" },
+    .{ .icu = "Any-sr_Latn/BGN", .clrd = "Serbian-Latin-BGN" },
+    .{ .icu = "uk-uk_Latn/BGN", .clrd = "Ukrainian-Latin-BGN" },
+    .{ .icu = "be-be_Latn/BGN", .clrd = "Belarusian-Latin-BGN" },
+    .{ .icu = "kk-kk_Latn/BGN", .clrd = "Kazakh-Latin-BGN" },
+    .{ .icu = "ky-ky_Latn/BGN", .clrd = "Kirghiz-Latin-BGN" },
+    .{ .icu = "hy-hy_Latn/BGN", .clrd = "Armenian-Latin-BGN" },
+    .{ .icu = "fa-fa_Latn/BGN", .clrd = "Persian-Latin-BGN" },
+    .{ .icu = "ar-ar_Latn/BGN", .clrd = "Arabic-Latin-BGN" },
+    .{ .icu = "ps-ps_Latn/BGN", .clrd = "Pashto-Latin-BGN" },
+    .{ .icu = "ko-ko_Latn/BGN", .clrd = "Korean-Latin-BGN" },
+    .{ .icu = "az_Cyrl-az/BGN", .clrd = "Azerbaijani-Latin-BGN" },
+};
+
+fn aliasTransform(name: []const u8) ?[]const u8 {
+    for (transform_aliases) |alias| {
+        if (std.mem.eql(u8, name, alias.icu)) return alias.clrd;
+    }
+    return null;
+}
+
 fn isNamedTransform(name: []const u8) bool {
     const names = [_][]const u8{
         "Latin-ASCII", "NFC",     "NFD",       "NFKC",      "NFKD",
@@ -150,6 +179,7 @@ fn isNamedTransform(name: []const u8) bool {
 
 /// Whether `name` resolves through the table blob or a named engine.
 pub fn hasTransform(name: []const u8) bool {
+    if (aliasTransform(name)) |clrd| return findTransformByName(clrd) != null;
     return isNamedTransform(name) or findTransformByName(name) != null;
 }
 
@@ -932,6 +962,9 @@ pub fn transliterateByNameAlloc(
     if (std.mem.eql(u8, name, "Any-Null") or std.mem.eql(u8, name, "Null")) {
         return allocator.dupe(u8, text);
     }
+    if (aliasTransform(name)) |clrd| {
+        return transliterateByNameAlloc(allocator, text, clrd);
+    }
     const transform_index = findTransformByName(name) orelse
         return error.UnknownTransform;
     return tableAlloc(allocator, text, transform_index);
@@ -1690,6 +1723,15 @@ test "transform discovery" {
     }
     try testing.expect(found);
     try testing.expect(transformNameAt(transformCount()) == null);
+
+    const icu_named = try transliterateByNameAlloc(
+        allocator,
+        "\u{041C}\u{043E}\u{0441}\u{043A}\u{0432}\u{0430}",
+        "ru-ru_Latn/BGN",
+    );
+    defer allocator.free(icu_named);
+    try testing.expectEqualStrings("Moskva", icu_named);
+    try testing.expect(hasTransform("ru-ru_Latn/BGN"));
 
     const identity = try transliterateByNameAlloc(allocator, "abc", "Any-Null");
     defer allocator.free(identity);
