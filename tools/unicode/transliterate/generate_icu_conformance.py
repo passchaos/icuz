@@ -3,7 +3,7 @@
 
 Usage:
     generate_icu_conformance.py <cldr-common.zip> <transform-xml> <icu-id> \
-        <magic> <out-file>
+        <magic> <out-file> [source-transform-xml]
 
 The inputs are derived from the transform's own rule sources (classes are
 expanded to representatives) and concatenated with a fixed seed. PyICU runs
@@ -141,13 +141,16 @@ def source_strings(rules: str):
 
 
 def main() -> int:
-    if len(sys.argv) != 6:
+    if len(sys.argv) not in (6, 7):
         print(__doc__.strip(), file=sys.stderr)
         return 2
     archive_path, transform, icu_id, magic, out_path = sys.argv[1:6]
+    source_transform = sys.argv[6] if len(sys.argv) == 7 else transform
     with zipfile.ZipFile(archive_path) as archive:
         rules = extract_rule(
-            archive.read(f"common/transforms/{transform}.xml").decode("utf-8")
+            archive.read(
+                f"common/transforms/{source_transform}.xml"
+            ).decode("utf-8")
         )
     sources = source_strings(rules)
     if not sources:

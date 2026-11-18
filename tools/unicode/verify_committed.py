@@ -136,7 +136,7 @@ GENERATORS = {
     "tools/unicode/transliterate/generate_data.py": "34c5e9f185298bb662fededd6bb50a8364ea4d5a35efe99b5f950322d566cbd4",
     "tools/unicode/break/generate_dictionaries.py": "c1c3c319ca6d2e08d4aa0d2ab7aee22aac22d8ec3ec95e3d93381f53e26fac36",
     "tools/unicode/break/generate_word_conformance.py": "3c2467ffc38b2467cbbc0d895e76b8862774c48567aa3ad26b9681605df3a5ff",
-    "tools/unicode/transliterate/generate_icu_conformance.py": "4a9b05ffcda4569fc6235b0b63722c284d28e1bd1ddbaf43a7768c8b6ae34c58",
+    "tools/unicode/transliterate/generate_icu_conformance.py": "9d5fd5df338e19cbaec2934b5915f0f19bb4627f6a4f9ee581e86556e947bad3",
     "tools/unicode/name/generate_data.py": "bb3a64ad8a8c8fd2e34807cb10d81c76677f5e29c073c4808d75d48f234c9302",
     "tools/unicode/line_break/generate_conformance.py": "44b205d1b640cdb52e4316d649c584c97c2c94644437291fa568fbec1a2cd630",
     "tools/unicode/line_break/generate_data.py": "fa3d55066a98356ffcbf7abc50955a94e0c0f9eeec15758357bd14b8fcf55ac1",
