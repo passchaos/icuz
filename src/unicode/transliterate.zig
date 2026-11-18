@@ -44,7 +44,7 @@ const range_count = readU32(26);
 const context_count = readU32(30);
 const context_element_count = readU32(34);
 const transform_offset = header_len;
-const entry_offset = transform_offset + @as(usize, transform_count) * 14;
+const entry_offset = transform_offset + @as(usize, transform_count) * 18;
 const set_offset = entry_offset + @as(usize, entry_count) * 20;
 const range_offset = set_offset + @as(usize, set_count) * 8;
 const context_offset = range_offset + @as(usize, range_count) * 8;
@@ -66,7 +66,7 @@ const targets_offset = sources_offset + @as(usize, source_count) * 4;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJTR") or
-        data[4] != 7 or data[5] != 48 or data[6] != 0 or data[7] != 0)
+        data[4] != 8 or data[5] != 48 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid transliteration data");
     }
@@ -83,6 +83,7 @@ const TransformRecord = struct {
     entry_count: u32,
     pre_normalization: u8,
     post_normalization: u8,
+    filter_set: u32,
 };
 
 const Entry = struct {
@@ -105,7 +106,7 @@ fn readU32(offset: usize) u32 {
 }
 
 fn transformAt(index: usize) TransformRecord {
-    const base = transform_offset + index * 14;
+    const base = transform_offset + index * 18;
     return .{
         .name_offset = readU16(base),
         .name_len = data[base + 2],
@@ -114,6 +115,7 @@ fn transformAt(index: usize) TransformRecord {
         .entry_count = readU32(base + 8),
         .pre_normalization = data[base + 12],
         .post_normalization = data[base + 13],
+        .filter_set = readU32(base + 14),
     };
 }
 
@@ -415,8 +417,12 @@ fn findMatchInRange(
     codepoints: []const u21,
     index: usize,
     before: []const u21,
+    filter_set: u32,
 ) ?Entry {
     const first = codepoints[index];
+    // ICU's :: [set] ; filter restricts which input characters may start a
+    // match; everything else passes through unchanged.
+    if (filter_set != 0 and !setContains(filter_set, first)) return null;
     const literals_start = mappingStart(range);
     var lead = range.start;
     while (lead < literals_start) : (lead += 1) {
@@ -542,7 +548,7 @@ fn halfwidthKatakanaAlloc(
     while (index < codepoints.items.len) {
         const codepoint = codepoints.items[index];
         if (codepoint >= 0xFF61 and codepoint <= 0xFF9F) {
-            if (findMatchInRange(range, codepoints.items, index, codepoints.items[0..index])) |entry| {
+            if (findMatchInRange(range, codepoints.items, index, codepoints.items[0..index], 0)) |entry| {
                 try appendTarget(allocator, &output, entry);
                 index += entry.source_len;
                 continue;
@@ -558,6 +564,7 @@ fn applyPassAlloc(
     allocator: std.mem.Allocator,
     codepoints: []const u21,
     range: EntryRange,
+    filter_set: u32,
 ) Error!std.ArrayList(u21) {
     // Apply the pass in place so a rule whose output cursor is at the start
     // of the replacement (`|` in ICU rule syntax) rescans that replacement.
@@ -571,7 +578,7 @@ fn applyPassAlloc(
     while (index < work.items.len) {
         steps += 1;
         if (steps > max_steps) break;
-        if (findMatchInRange(range, work.items, index, work.items[0..index])) |entry| {
+        if (findMatchInRange(range, work.items, index, work.items[0..index], filter_set)) |entry| {
             const target_len: usize = entry.target_len;
             for (0..target_len) |offset| {
                 target_buffer[offset] = targetCodepoint(entry, offset);
@@ -652,7 +659,12 @@ fn tableAlloc(
             inserted = try applyInsertions(allocator, current, range);
             pass_input = inserted.?.items;
         }
-        var next = try applyPassAlloc(allocator, pass_input, range);
+        var next = try applyPassAlloc(
+            allocator,
+            pass_input,
+            range,
+            if (pass == 0) record.filter_set else 0,
+        );
         if (pass + 1 == pass_count) {
             defer next.deinit(allocator);
             var output = std.ArrayList(u8).empty;
@@ -742,7 +754,7 @@ fn latinAsciiAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
     const range = transformPassRange(0, 0);
     var index: usize = 0;
     while (index < nfc_codepoints.len) {
-        if (findMatchInRange(range, nfc_codepoints, index, nfc_codepoints[0..index])) |entry| {
+        if (findMatchInRange(range, nfc_codepoints, index, nfc_codepoints[0..index], 0)) |entry| {
             try appendTarget(allocator, &output, entry);
             index += entry.source_len;
         } else {

@@ -109,7 +109,8 @@ need without pulling in a font or layout engine.
   sources, empty-source insertion rules, text-boundary class anchors, output
   cursor reprocessing (`|`), output post-normalization, multi-definition
   variable lines (including multi-line classes), quoted and ignored
-  whitespace, output-aware rule contexts, ICU rule-order priority, XML
+  whitespace, output-aware rule contexts, ICU input filters (`:: [set] ;`),
+  ICU rule-order priority, XML
   comment stripping, and `::Null;` multi-pass pipelines.
 - Embedded, version-pinned generated data plus conformance fixtures.
 

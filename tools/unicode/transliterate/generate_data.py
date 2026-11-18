@@ -1659,9 +1659,36 @@ def find_unquoted(text: str, needle: str):
     return None
 
 
+def parse_filter(rules: str, variables: dict[str, str]):
+    """Return the transform's first ICU `:: [set] ;` input filter."""
+    for raw in rules.splitlines():
+        line = strip_comment(raw).strip()
+        if not line.startswith("::"):
+            continue
+        directive = line[2:].strip().rstrip(";").strip()
+        upper = directive.upper()
+        if upper.startswith(("NFKD", "NFKC", "NFD", "NFC", "NULL")):
+            continue
+        if directive.startswith("[") and directive.endswith("]"):
+            split = split_class_strings(directive[1:-1])
+            if split is None:
+                return None
+            content, _ = split
+            parsed = parse_class_set("[" + content + "]", variables)
+            if parsed is None:
+                return None
+            value, negated = parsed
+            if negated:
+                return None
+            return frozenset(codepoint for codepoint in value if codepoint >= 0)
+        return None
+    return None
+
+
 def render_blob(
     specs: list[tuple[str, int, int]],
     tables: list[list[tuple]],
+    filters: list[frozenset[int] | None],
 ) -> bytes:
     names = bytearray()
     name_records: list[tuple[int, int]] = []
@@ -1790,6 +1817,9 @@ def render_blob(
                 pre_normalization,
                 pass_count,
                 post_normalization,
+                add_set(sorted(filters[len(transform_records)]))
+                if filters[len(transform_records)] is not None
+                else 0,
             )
         )
         entry_start += len(table)
@@ -1797,7 +1827,7 @@ def render_blob(
     header = bytearray(b"CJTR")
     header += struct.pack(
         "<B3BBB7IH",
-        7,
+        8,
         CLDR_VERSION,
         0,
         0,
@@ -1819,10 +1849,11 @@ def render_blob(
         pre_normalization,
         pass_count,
         post_normalization,
+        filter_set,
     ) in enumerate(transform_records):
         name_offset, name_length = name_records[index]
         transform_bytes += struct.pack(
-            "<HBBIIBB",
+            "<HBBIIBBI",
             name_offset,
             name_length,
             pass_count,
@@ -1830,6 +1861,7 @@ def render_blob(
             count,
             pre_normalization,
             post_normalization,
+            filter_set,
         )
     entry_bytes = bytearray()
     for entry in entries:
@@ -1884,6 +1916,7 @@ def main() -> int:
     )
     specs: list[tuple[str, int]] = []
     tables: list[list[tuple]] = []
+    filters: list[frozenset[int] | None] = []
     for name, source, builder in TRANSFORMS:
         rules = rules_for(source)
         if builder == "latin":
@@ -1912,8 +1945,9 @@ def main() -> int:
         )
         specs.append((name, pre_normalization, post_normalization))
         tables.append(table)
+        filters.append(parse_filter(rules, parse_variables(rules)))
 
-    (out_dir / "data.bin").write_bytes(render_blob(specs, tables))
+    (out_dir / "data.bin").write_bytes(render_blob(specs, tables, filters))
     for _, fixture_path, magic, excluded, filename in CONFORMANCE:
         (out_dir / filename).write_bytes(
             render_conformance(archive, fixture_path, magic, excluded)
