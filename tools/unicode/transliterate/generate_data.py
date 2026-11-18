@@ -372,6 +372,31 @@ def detect_post_normalization(rules: str) -> int:
     return form if index > last_rule else 0
 
 
+def detect_next_transform(rules: str):
+    """Return a trailing ::TransformName; reference, if resolvable."""
+    candidate = None
+    for raw in rules.splitlines():
+        line = strip_comment(raw).strip()
+        if not line:
+            continue
+        if VARIABLE_DEF.match(line):
+            continue
+        if line.startswith("::"):
+            directive = line[2:].strip().rstrip(";").strip()
+            normalized = directive.upper().replace("()", "").strip()
+            if normalized.startswith(("NFKD", "NFKC", "NFD", "NFC")):
+                candidate = None
+            elif normalized == "NULL" or directive.startswith("["):
+                candidate = None
+            elif normalized.startswith("ANY-"):
+                candidate = None
+            else:
+                candidate = directive
+        else:
+            candidate = None
+    return candidate
+
+
 def detect_final_case(rules: str) -> int:
     """Detect a trailing ::Any-Lower; (1) or ::Any-Upper; (2) directive."""
     final_case = 0
@@ -1978,7 +2003,7 @@ def render_blob(
 ) -> bytes:
     names = bytearray()
     name_records: list[tuple[int, int]] = []
-    for name, _, _, _ in specs:
+    for name, _, _, _, _ in specs:
         name_records.append((len(names), len(name)))
         names.extend(name.encode("utf-8"))
 
@@ -2051,9 +2076,16 @@ def render_blob(
     entries: list[tuple[int, int, int, int, int, int, int]] = []
     transform_records: list[tuple[int, int, int, int]] = []
     entry_start = 0
-    for (name, pre_normalization, post_normalization, final_case), table in zip(
-        specs, tables
-    ):
+    transform_index_by_name = {
+        name: index for index, (name, _, _, _, _) in enumerate(specs)
+    }
+    for (
+        name,
+        pre_normalization,
+        post_normalization,
+        final_case,
+        next_name,
+    ), table in zip(specs, tables):
         pass_count = 1
         for entry in table:
             source = entry[0]
@@ -2104,6 +2136,7 @@ def render_blob(
                 pass_count,
                 post_normalization,
                 final_case,
+                transform_index_by_name.get(next_name, 0xFFFFFFFF),
                 add_set(sorted(filters[len(transform_records)]))
                 if filters[len(transform_records)] is not None
                 else 0,
@@ -2114,7 +2147,7 @@ def render_blob(
     header = bytearray(b"CJTR")
     header += struct.pack(
         "<B3BBB7IH",
-        9,
+        10,
         CLDR_VERSION,
         0,
         0,
@@ -2137,11 +2170,12 @@ def render_blob(
         pass_count,
         post_normalization,
         final_case,
+        next_transform,
         filter_set,
     ) in enumerate(transform_records):
         name_offset, name_length = name_records[index]
         transform_bytes += struct.pack(
-            "<HBBIIBBIBB",
+            "<HBBIIBBIBBI",
             name_offset,
             name_length,
             pass_count,
@@ -2152,6 +2186,7 @@ def render_blob(
             filter_set,
             final_case,
             0,
+            next_transform,
         )
     entry_bytes = bytearray()
     for entry in entries:
@@ -2240,7 +2275,15 @@ def main() -> int:
             detect_post_normalization(rules)
         )
         final_case = 0 if builder == "katakana" else detect_final_case(rules)
-        specs.append((name, pre_normalization, post_normalization, final_case))
+        specs.append(
+            (
+                name,
+                pre_normalization,
+                post_normalization,
+                final_case,
+                detect_next_transform(rules),
+            )
+        )
         tables.append(table)
         filters.append(
             None
@@ -2255,7 +2298,7 @@ def main() -> int:
         )
     counts = ", ".join(
         f"{name}={len(table)}"
-        for (name, _, _, _), table in zip(specs, tables)
+        for (name, _, _, _, _), table in zip(specs, tables)
     )
     print(counts, file=sys.stderr)
     return 0

@@ -100,7 +100,7 @@ need without pulling in a font or layout engine.
   Traditional-Simplified, and
   NFC/NFD/NFKC/NFKD transforms. Seventy-four
   transforms are compiled; twenty-eight ship official CLDR conformance
-  fixtures, and fifty-four (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and fifty-five (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
   Venetian FONIPA, Romanian FONIPA, Arabic-Latin-BGN, Armenian-Latin-BGN,
@@ -123,7 +123,8 @@ need without pulling in a font or layout engine.
   sources, empty-source insertion rules, text-boundary class anchors, output
   cursor reprocessing (`|`), output post-normalization, multi-definition
   variable lines (including multi-line classes), quoted and ignored
-  whitespace, output-aware rule contexts, context variables that expand to
+  whitespace, output-aware rule contexts, trailing transform references
+  (`::Latin-ASCII;`), context variables that expand to
   element sequences, `*`/`+` quantifiers on variable references, mid-target
   output cursors, ICU input filters (`:: [set] ;`),
   trailing `::Any-Lower;`/`::Any-Upper;` case steps, `ccc=` and two-letter

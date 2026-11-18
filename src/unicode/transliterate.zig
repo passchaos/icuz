@@ -45,7 +45,7 @@ const range_count = readU32(26);
 const context_count = readU32(30);
 const context_element_count = readU32(34);
 const transform_offset = header_len;
-const entry_offset = transform_offset + @as(usize, transform_count) * 20;
+const entry_offset = transform_offset + @as(usize, transform_count) * 24;
 const set_offset = entry_offset + @as(usize, entry_count) * 20;
 const range_offset = set_offset + @as(usize, set_count) * 8;
 const context_offset = range_offset + @as(usize, range_count) * 8;
@@ -67,7 +67,7 @@ const targets_offset = sources_offset + @as(usize, source_count) * 4;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJTR") or
-        data[4] != 9 or data[5] != 48 or data[6] != 0 or data[7] != 0)
+        data[4] != 10 or data[5] != 48 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid transliteration data");
     }
@@ -86,6 +86,7 @@ const TransformRecord = struct {
     post_normalization: u8,
     filter_set: u32,
     final_case: u8,
+    next_transform: u32,
 };
 
 const Entry = struct {
@@ -108,7 +109,7 @@ fn readU32(offset: usize) u32 {
 }
 
 fn transformAt(index: usize) TransformRecord {
-    const base = transform_offset + index * 20;
+    const base = transform_offset + index * 24;
     return .{
         .name_offset = readU16(base),
         .name_len = data[base + 2],
@@ -119,6 +120,7 @@ fn transformAt(index: usize) TransformRecord {
         .post_normalization = data[base + 13],
         .filter_set = readU32(base + 14),
         .final_case = data[base + 18],
+        .next_transform = readU32(base + 20),
     };
 }
 
@@ -600,7 +602,29 @@ fn applyPassAlloc(
     return work;
 }
 
+fn transformName(index: usize) []const u8 {
+    const record = transformAt(index);
+    return data[names_offset + record.name_offset ..][0..record.name_len];
+}
+
 fn tableAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    transform_index: usize,
+) Error![]u8 {
+    const result = try tableCoreAlloc(allocator, text, transform_index);
+    const record = transformAt(transform_index);
+    if (record.next_transform == 0xffff_ffff) return result;
+    const next = record.next_transform;
+    const chained = if (std.mem.eql(u8, transformName(next), "Latin-ASCII"))
+        try latinAsciiAlloc(allocator, result)
+    else
+        try tableCoreAlloc(allocator, result, next);
+    allocator.free(result);
+    return chained;
+}
+
+fn tableCoreAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
     transform_index: usize,
@@ -1420,6 +1444,11 @@ const conformance_fixtures = [_]struct {
     .{
         .bytes = @embedFile("transliterate/de_ascii_conformance.bin"),
         .magic = "CJD2".*,
+        .name = "de-ASCII",
+    },
+    .{
+        .bytes = @embedFile("transliterate/de_ascii_official_conformance.bin"),
+        .magic = "CJD3".*,
         .name = "de-ASCII",
     },
     .{
