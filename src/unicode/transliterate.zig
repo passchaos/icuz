@@ -190,6 +190,11 @@ fn isNamedTransform(name: []const u8) bool {
     return false;
 }
 
+/// Index of a compiled table transform, or null for named engines.
+pub fn transformIndex(name: []const u8) ?usize {
+    return findTransformByName(name);
+}
+
 /// Whether `name` resolves through the table blob or a named engine.
 pub fn hasTransform(name: []const u8) bool {
     if (aliasTransform(name)) |clrd| return findTransformByName(clrd) != null;
@@ -1799,6 +1804,8 @@ test "transform discovery" {
     try testing.expect(hasTransform("Russian-Latin-BGN"));
     try testing.expect(hasTransform("NFC"));
     try testing.expect(hasTransform("Any-Title"));
+    try testing.expect(transformIndex("Latin-ASCII") != null);
+    try testing.expect(transformIndex("NFC") == null);
     try testing.expect(!hasTransform("No-Such-Transform"));
     var found = false;
     var found_named = false;
