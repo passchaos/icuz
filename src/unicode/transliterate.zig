@@ -1840,3 +1840,12 @@ test "transform aliases resolve" {
         try testing.expect(hasTransform(alias.icu));
     }
 }
+
+test "discovered names resolve" {
+    const testing = @import("std").testing;
+    for (0..transformCount()) |index| {
+        const name = transformNameAt(index) orelse
+            return error.TestUnexpectedResult;
+        try testing.expect(hasTransform(name));
+    }
+}
