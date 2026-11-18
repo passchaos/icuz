@@ -112,7 +112,6 @@ coverage for the tone-position classes.
 lone surrogates for inputs such as `\uD800`; the UTF-8 API here cannot
 represent them, so such sequences pass through unchanged.
 
-`Any-Name` encodes named scalars as `\N{NAME}` and falls back to
-`\uXXXX`/`\UXXXXXXXX` for unnamed scalars. ICU instead synthesizes
-names such as `<private use area-E000>` for private-use and control
-ranges; matching that requires the generated-name tables.
+`Any-Name` encodes named scalars as `\N{NAME}` and synthesizes
+`<control-XXXX>`, `<private use area-XXXX>`, and `<unassigned-XXXX>`
+names like ICU. Other unnamed categories still fall back to hex escapes.

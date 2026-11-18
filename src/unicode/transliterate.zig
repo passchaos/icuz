@@ -1058,6 +1058,35 @@ fn anyNameAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
             try output.appendSlice(allocator, "\\N{");
             try output.appendSlice(allocator, entry);
             try output.append(allocator, '}');
+        } else if (codepoint <= 0x1f or
+            (codepoint >= 0x7f and codepoint <= 0x9f))
+        {
+            var buffer: [24]u8 = undefined;
+            const formatted = std.fmt.bufPrint(
+                &buffer,
+                "\\N{{<control-{X:0>4}>}}",
+                .{codepoint},
+            ) catch unreachable;
+            try output.appendSlice(allocator, formatted);
+        } else if ((codepoint >= 0xe000 and codepoint <= 0xf8ff) or
+            (codepoint >= 0xf0000 and codepoint <= 0xffffd) or
+            (codepoint >= 0x100000 and codepoint <= 0x10fffd))
+        {
+            var buffer: [32]u8 = undefined;
+            const formatted = std.fmt.bufPrint(
+                &buffer,
+                "\\N{{<private use area-{X}>}}",
+                .{codepoint},
+            ) catch unreachable;
+            try output.appendSlice(allocator, formatted);
+        } else if (properties.category(codepoint) == .Cn) {
+            var buffer: [24]u8 = undefined;
+            const formatted = std.fmt.bufPrint(
+                &buffer,
+                "\\N{{<unassigned-{X:0>4}>}}",
+                .{codepoint},
+            ) catch unreachable;
+            try output.appendSlice(allocator, formatted);
         } else if (codepoint <= 0xffff) {
             var buffer: [6]u8 = undefined;
             const formatted = std.fmt.bufPrint(
@@ -2005,6 +2034,19 @@ test "transform discovery" {
         "\\N{LATIN CAPITAL LETTER A}",
         encoded_name,
     );
+    const pua_name = try transliterateByNameAlloc(allocator, "\u{E000}", "Any-Name");
+    defer allocator.free(pua_name);
+    try testing.expectEqualStrings(
+        "\\N{<private use area-E000>}",
+        pua_name,
+    );
+    const unassigned_name = try transliterateByNameAlloc(
+        allocator,
+        "\u{0378}",
+        "Any-Name",
+    );
+    defer allocator.free(unassigned_name);
+    try testing.expectEqualStrings("\\N{<unassigned-0378>}", unassigned_name);
 
     const identity = try transliterateByNameAlloc(allocator, "abc", "Any-Null");
     defer allocator.free(identity);
