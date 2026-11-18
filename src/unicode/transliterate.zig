@@ -1820,3 +1820,11 @@ test "transform discovery" {
     defer allocator.free(identity);
     try testing.expectEqualStrings("abc", identity);
 }
+
+test "transform aliases resolve" {
+    const testing = @import("std").testing;
+    for (transform_aliases) |alias| {
+        try testing.expect(findTransformByName(alias.clrd) != null);
+        try testing.expect(hasTransform(alias.icu));
+    }
+}
