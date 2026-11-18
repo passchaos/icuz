@@ -74,6 +74,7 @@ TRANSFORMS = (
     ("InterIndic-Kannada", "InterIndic-Kannada", "context"),
     ("InterIndic-Malayalam", "InterIndic-Malayalam", "context"),
     ("InterIndic-Latin", "InterIndic-Latin", "context"),
+    ("Latin-InterIndic", "Latin-InterIndic", "context"),
     ("Bengali-InterIndic", "Bengali-InterIndic", "context"),
     ("Devanagari-InterIndic", "Devanagari-InterIndic", "context"),
     ("Gujarati-InterIndic", "Gujarati-InterIndic", "context"),
@@ -440,8 +441,15 @@ def detect_reverse_normalization(rules: str):
     return pre, post
 
 
+# Components whose rule sets need engine features that are not compiled yet
+# (for example InterIndic-Arabic's `($alif) $alif+ > $1` collapse rule).
+PIPELINE_EXCLUDE_COMPONENTS = {"InterIndic-Arabic"}
+
 PIPELINE_COMPONENTS = {
     "Amharic-Amharic/Geminate": "am-Ethi-t-am-ethi-m0-geminate",
+    # ICU resolves the Urdu target to Arabic inside pure pipelines even
+    # though a standalone InterIndic-ur transform exists.
+    "InterIndic-ur": "InterIndic-Arabic",
     "Ethiopic-Latin/Aethiopica": "und-Ethi-t-und-latn-m0-aethiopi",
     "Ethiopic-Latin/IES_JES_1964": "und-Ethi-t-und-latn-m0-ies-jes-1964",
 }
@@ -460,6 +468,68 @@ def detect_pipeline(rules: str):
             return None
         components.append(directive)
     return components if len(components) >= 2 else None
+
+
+PIPELINE_STEP_TRANSFORM = 0
+PIPELINE_STEP_NORMALIZE = 1
+PIPELINE_STEP_LOWER = 2
+PIPELINE_STEP_UPPER = 3
+PIPELINE_STEP_TITLE = 4
+NORMALIZATION_IDS = {"NFD": 1, "NFC": 2, "NFKD": 3, "NFKC": 4}
+
+
+def parse_pipeline_steps(rules: str, reverse: bool = False):
+    """Parse a pure `::` pipeline into ordered (kind, value) steps.
+
+    Transform steps keep their CLDR name until the caller resolves them.
+    Normalization directives use the forward form, or the parenthesized
+    reverse form when present.
+    """
+    steps = []
+    for raw in rules.splitlines():
+        line = strip_comment(raw).strip()
+        if not line or VARIABLE_DEF.match(line):
+            continue
+        if not line.startswith("::"):
+            return None
+        directive = line[2:].strip().rstrip(";").strip()
+        upper = directive.upper().replace(" ", "")
+        match = re.fullmatch(r"(NFK?[CD])(?:\((NFK?[CD])\))?", upper)
+        if match:
+            form = (
+                match.group(2)
+                if reverse and match.group(2)
+                else match.group(1)
+            )
+            steps.append((PIPELINE_STEP_NORMALIZE, NORMALIZATION_IDS[form]))
+            continue
+        if upper in ("NULL", "(NULL)", "NULL()"):
+            continue
+        if not reverse and directive.startswith("["):
+            continue
+        if (
+            reverse
+            and directive.startswith("(")
+            and directive.endswith(")")
+            and "[" in directive
+        ):
+            continue
+        if upper in (
+            "ANY-LOWER", "ANY-UPPER", "ANY-TITLE",
+            "LOWER", "UPPER", "TITLE",
+        ):
+            kind = {
+                "ANY-LOWER": PIPELINE_STEP_LOWER,
+                "ANY-UPPER": PIPELINE_STEP_UPPER,
+                "ANY-TITLE": PIPELINE_STEP_TITLE,
+                "LOWER": PIPELINE_STEP_LOWER,
+                "UPPER": PIPELINE_STEP_UPPER,
+                "TITLE": PIPELINE_STEP_TITLE,
+            }[upper]
+            steps.append((kind, 0))
+            continue
+        steps.append((PIPELINE_STEP_TRANSFORM, directive))
+    return steps if steps else None
 
 
 def detect_next_transform(rules: str):
@@ -1213,6 +1283,15 @@ def property_codepoints(name: str):
     elif normalized == "ideographic":
         for start, end in IDEOGRAPHIC_RANGES:
             result.extend(range(start, end + 1))
+    elif key.startswith(("script=", "sc=")):
+        script_name = key.split("=", 1)[1].strip()
+        script_value = script_codepoints(
+            SCRIPT_ALIASES.get(script_name, script_name)
+        )
+        if script_value is None:
+            return None
+        PROPERTY_CACHE[key] = script_value
+        return script_value
     elif key.startswith("ccc="):
         ccc_name = key[4:].strip().replace("-", "_").replace(" ", "_")
         ccc_value = CCC_ALIASES.get(ccc_name)
@@ -2192,10 +2271,6 @@ def parse_filter(rules: str, variables: dict[str, str]):
         if upper.startswith(("NFKD", "NFKC", "NFD", "NFC", "NULL")):
             continue
         if directive.startswith("[") and directive.endswith("]"):
-            # Property-based filters depend on Script_Extensions data that is
-            # not part of the committed tables; literal filters still apply.
-            if "[:" in directive:
-                return None
             split = split_class_strings(directive[1:-1])
             if split is None:
                 return None
@@ -2249,6 +2324,7 @@ def render_blob(
     specs: list[tuple[str, int, int]],
     tables: list[list[tuple]],
     filters: list[frozenset[int] | None],
+    step_lists: list[list[tuple[int, int]] | None],
 ) -> bytes:
     names = bytearray()
     name_records: list[tuple[int, int]] = []
@@ -2397,14 +2473,22 @@ def render_blob(
         )
         entry_start += len(table)
 
+    step_pool: list[tuple[int, int]] = []
+    step_records: list[tuple[int, int]] = []
+    for steps in step_lists:
+        if not steps:
+            step_records.append((0, 0))
+            continue
+        step_records.append((len(step_pool), len(steps)))
+        step_pool.extend(steps)
     header = bytearray(b"CJTR")
     header += struct.pack(
         "<B3BBB7IH",
-        11,
+        12,
         CLDR_VERSION,
         0,
         0,
-        len(TRANSFORMS),
+        len(specs),
         0,
         len(entries),
         len(sources) // 4,
@@ -2415,6 +2499,7 @@ def render_blob(
         len(context_elements),
         0,
     )
+    header += struct.pack("<I", len(step_pool))
     transform_bytes = bytearray()
     for index, (
         start,
@@ -2429,8 +2514,9 @@ def render_blob(
         filtered_normalization,
     ) in enumerate(transform_records):
         name_offset, name_length = name_records[index]
+        step_start, step_count = step_records[index]
         transform_bytes += struct.pack(
-            "<HBBIIBBIBBII",
+            "<HBBIIBBIBBIIIHH",
             name_offset,
             name_length,
             pass_count,
@@ -2443,7 +2529,13 @@ def render_blob(
             filtered_normalization,
             next_transform,
             pre_transform,
+            step_start,
+            step_count,
+            0,
         )
+    step_bytes = bytearray()
+    for kind, value in step_pool:
+        step_bytes += struct.pack("<BBHI", kind, 0, 0, value)
     entry_bytes = bytearray()
     for entry in entries:
         entry_bytes += struct.pack("<IBIBIIBB", *entry)
@@ -2462,6 +2554,7 @@ def render_blob(
     return bytes(
         header
         + transform_bytes
+        + step_bytes
         + entry_bytes
         + set_bytes
         + range_bytes
@@ -2495,10 +2588,55 @@ def main() -> int:
     width_forward, width_reverse = fullwidth_entries(
         rules_for("Fullwidth-Halfwidth")
     )
-    specs: list[tuple[str, int, int, int]] = []
+    specs: list[tuple] = []
     tables: list[list[tuple]] = []
     filters: list[frozenset[int] | None] = []
-    for name, source, builder in TRANSFORMS:
+    pending_steps: list[list[tuple[int, object]] | None] = []
+
+    # Discover pure `::` pipelines whose components are all compiled. The
+    # fixpoint lets a pipeline reference another discovered pipeline.
+    all_transforms = list(TRANSFORMS)
+    available = {name for name, _, _ in TRANSFORMS}
+    used_sources = {source for _, source, _ in TRANSFORMS}
+    archive_files = sorted(
+        name.split("/")[-1][:-4]
+        for name in archive.namelist()
+        if name.startswith("common/transforms/") and name.endswith(".xml")
+    )
+    discovered: list[tuple[str, str, str]] = []
+    changed = True
+    while changed:
+        changed = False
+        for candidate in archive_files:
+            if candidate in used_sources or candidate in available:
+                continue
+            try:
+                candidate_rules = rules_for(candidate)
+            except KeyError:
+                continue
+            candidate_steps = parse_pipeline_steps(candidate_rules)
+            if candidate_steps is None:
+                continue
+            resolvable = True
+            for kind, value in candidate_steps:
+                if kind != PIPELINE_STEP_TRANSFORM:
+                    continue
+                resolved = PIPELINE_COMPONENTS.get(value, value)
+                if resolved in PIPELINE_EXCLUDE_COMPONENTS:
+                    resolvable = False
+                    break
+                if resolved not in available:
+                    resolvable = False
+                    break
+            if not resolvable:
+                continue
+            discovered.append((candidate, candidate, "steps"))
+            available.add(candidate)
+            used_sources.add(candidate)
+            changed = True
+    all_transforms += discovered
+
+    for name, source, builder in all_transforms:
         rules = rules_for(source)
         if builder == "latin":
             table = latin_ascii_entries(rules)
@@ -2518,6 +2656,8 @@ def main() -> int:
             table = reverse_with_left(rules)
         elif builder == "pipeline":
             table = []
+        elif builder == "steps":
+            table = []
         elif builder == "variables":
             table = table_entries_with_variables(rules)
         elif builder == "context":
@@ -2526,36 +2666,50 @@ def main() -> int:
             table = table_entries_with_contexts(rules)
         else:
             raise SystemExit(f"unknown transform builder {builder!r}")
-        if builder.startswith("reverse"):
-            pre_normalization, post_normalization = (
-                detect_reverse_normalization(rules)
-            )
-        else:
-            pre_normalization = (
-                5 if builder == "katakana" else detect_pre_normalization(rules)
-            )
-            post_normalization = 0 if builder == "katakana" else (
-                detect_post_normalization(rules)
-            )
-        final_case = 0 if builder == "katakana" else detect_final_case(rules)
-        if builder.startswith("reverse"):
-            transform_filter = parse_reverse_filter(
-                rules,
-                parse_variables(rules),
-            )
-        else:
+        if builder == "steps":
+            pending_steps.append(parse_pipeline_steps(rules))
+            pre_normalization = 0
+            post_normalization = 0
+            final_case = 0
+            next_name = None
+            filtered_normalization = 0
             transform_filter = parse_filter(rules, parse_variables(rules))
+        else:
+            pending_steps.append(None)
+            if builder.startswith("reverse"):
+                pre_normalization, post_normalization = (
+                    detect_reverse_normalization(rules)
+                )
+            else:
+                pre_normalization = (
+                    5 if builder == "katakana" else detect_pre_normalization(rules)
+                )
+                post_normalization = 0 if builder == "katakana" else (
+                    detect_post_normalization(rules)
+                )
+            final_case = 0 if builder == "katakana" else detect_final_case(rules)
+            next_name = detect_next_transform(rules)
+            if builder.startswith("reverse"):
+                transform_filter = parse_reverse_filter(
+                    rules,
+                    parse_variables(rules),
+                )
+            else:
+                transform_filter = parse_filter(rules, parse_variables(rules))
+            # Reverse filters apply to the input side; normalization must then
+            # run on filtered spans instead of the whole output.
+            filtered_normalization = (
+                1 if builder.startswith("reverse") and transform_filter else 0
+            )
         specs.append(
             (
                 name,
                 pre_normalization,
                 post_normalization,
                 final_case,
-                detect_next_transform(rules),
+                next_name,
                 None,
-                # Reverse filters apply to the input side; normalization must
-                # then run on filtered spans instead of the whole output.
-                1 if builder.startswith("reverse") and transform_filter else 0,
+                filtered_normalization,
             )
         )
         tables.append(table)
@@ -2568,7 +2722,7 @@ def main() -> int:
             return component
         return PIPELINE_COMPONENTS.get(component)
 
-    for index, (name, source, builder) in enumerate(TRANSFORMS):
+    for index, (name, source, builder) in enumerate(all_transforms):
         if builder != "pipeline":
             continue
         components = detect_pipeline(rules_for(source))
@@ -2594,7 +2748,25 @@ def main() -> int:
         spec[6] = specs[last_index][6]
         specs[index] = tuple(spec)
 
-    (out_dir / "data.bin").write_bytes(render_blob(specs, tables, filters))
+    step_lists: list[list[tuple[int, int]] | None] = []
+    for steps in pending_steps:
+        if steps is None:
+            step_lists.append(None)
+            continue
+        resolved_steps: list[tuple[int, int]] = []
+        for kind, value in steps:
+            if kind != PIPELINE_STEP_TRANSFORM:
+                resolved_steps.append((kind, int(value)))
+                continue
+            target = PIPELINE_COMPONENTS.get(value, value)
+            if target not in name_to_index:
+                raise SystemExit(
+                    f"pipeline step {value!r} is not compiled"
+                )
+            resolved_steps.append((kind, name_to_index[target]))
+        step_lists.append(resolved_steps)
+
+    (out_dir / "data.bin").write_bytes(render_blob(specs, tables, filters, step_lists))
     for _, fixture_path, magic, excluded, filename in CONFORMANCE:
         (out_dir / filename).write_bytes(
             render_conformance(archive, fixture_path, magic, excluded)

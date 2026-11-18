@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 106 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
+- 198 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 108 conformance fixtures: 30 official CLDR test-data files and 78 PyICU
+- 199 conformance fixtures: 30 official CLDR test-data files and 169 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -14,6 +14,11 @@ Status after the CLDR 48 rule-engine push:
   The two Ethiopic geminate pipelines and the six FONIPA-to-Amharic
   pipelines (`kk-am`, `my-am`, `ro-am`, `si-am`, `xh-am`, `zu-am`) use
   this path.
+- Ordered step programs (blob format CJTR v12) execute arbitrary
+  `::NFD;` / `::Transform;` / `::Lower;` / `::NFC;` sequences. All 91 pure
+  CLDR pipelines whose components are compiled are auto-discovered,
+  including the Indic script-to-script and script-to-Latin chains and the
+  `Latin-*` pipelines.
 - The reverse direction is compiled compositionally: `A ← B` and
   `A ↔ B` become `B -> A`, pass order is reversed, `::(null);`,
   `::null;`, and `::null();` all split passes, and reverse normalization
@@ -38,20 +43,15 @@ python3 tools/unicode/verify_committed.py
 
 ## 1. General segment/pipeline engine
 
-The current record chains one leading and one trailing transform.
-CLDR's longer pipelines still need an ordered program of arbitrary steps:
+The v12 step program covers arbitrary `::` sequences. Remaining gaps:
 
-- multiple `::Name;` references in sequence (three or more components)
-- mid-rule `::NFD();` / `::NFC();` normalization steps in any position
-- `::Any-Lower;` / `::Any-Upper;` / `::Any-Title;` steps in any position
-- transform references with arguments, e.g.
-  `::Latin-NumericPinyin(NumericPinyin-Latin);` in `Latin-Bopomofo.xml`
-
-A full scan of CLDR's pure pipelines confirms the remaining pipelines need
-at least one component that is not yet compiled (for example
-`und_FONIPA-ar`, `und_FONIPA-chr`, `es_FONIPA-ja`, `und_FONIPA-fa`).
-Compiling those components is the prerequisite for the next batch; the
-two-step chain already covers every pipeline whose components exist.
+- `InterIndic-Arabic`'s `($alif) $alif+ > $1` collapse rule needs a
+  repeat-of-sequence matcher; pipelines that use `InterIndic-Arabic`
+  (the `X-Arabic` and `X-ur` families) are excluded until it lands.
+- Transform references with arguments, e.g.
+  `::Latin-NumericPinyin(NumericPinyin-Latin);` in `Latin-Bopomofo.xml`.
+- Pipelines whose components are not compiled (for example
+  `und_FONIPA-ar`, `und_FONIPA-chr`, `es_FONIPA-ja`, `und_FONIPA-fa`).
 
 ## 2. ICU rule specificity / hidden-rule ordering
 

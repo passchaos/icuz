@@ -39,7 +39,7 @@ pub const Error = error{ InvalidUtf8, OutOfMemory, UnknownTransform };
 
 const data = @embedFile("transliterate/data.bin");
 
-const header_len = 40;
+const header_len = 44;
 const transform_count = data[8];
 const entry_count = readU32(10);
 const source_count = readU32(14);
@@ -48,8 +48,10 @@ const set_count = readU32(22);
 const range_count = readU32(26);
 const context_count = readU32(30);
 const context_element_count = readU32(34);
+const step_count = readU32(40);
 const transform_offset = header_len;
-const entry_offset = transform_offset + @as(usize, transform_count) * 28;
+const step_offset = transform_offset + @as(usize, transform_count) * 36;
+const entry_offset = step_offset + @as(usize, step_count) * 8;
 const set_offset = entry_offset + @as(usize, entry_count) * 20;
 const range_offset = set_offset + @as(usize, set_count) * 8;
 const context_offset = range_offset + @as(usize, range_count) * 8;
@@ -72,7 +74,7 @@ const targets_offset = sources_offset + @as(usize, source_count) * 4;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJTR") or
-        data[4] != 11 or data[5] != 48 or data[6] != 0 or data[7] != 0)
+        data[4] != 12 or data[5] != 48 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid transliteration data");
     }
@@ -94,6 +96,8 @@ const TransformRecord = struct {
     filtered_normalization: bool,
     next_transform: u32,
     pre_transform: u32,
+    step_start: u32,
+    step_count: u16,
 };
 
 const Entry = struct {
@@ -116,7 +120,7 @@ fn readU32(offset: usize) u32 {
 }
 
 fn transformAt(index: usize) TransformRecord {
-    const base = transform_offset + index * 28;
+    const base = transform_offset + index * 36;
     return .{
         .name_offset = readU16(base),
         .name_len = data[base + 2],
@@ -130,6 +134,8 @@ fn transformAt(index: usize) TransformRecord {
         .filtered_normalization = data[base + 19] != 0,
         .next_transform = readU32(base + 20),
         .pre_transform = readU32(base + 24),
+        .step_start = readU32(base + 28),
+        .step_count = readU16(base + 32),
     };
 }
 
@@ -700,7 +706,111 @@ fn runComponentAlloc(
     if (std.mem.eql(u8, transformName(index), "Latin-ASCII")) {
         return latinAsciiAlloc(allocator, text);
     }
-    return tableCoreAlloc(allocator, text, index);
+    return tableAlloc(allocator, text, index);
+}
+
+const Step = struct {
+    kind: u8,
+    value: u32,
+};
+
+fn stepAt(index: usize) Step {
+    const base = step_offset + index * 8;
+    return .{ .kind = data[base], .value = readU32(base + 4) };
+}
+
+fn runStepProgramAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    record: TransformRecord,
+) Error![]u8 {
+    var current = try allocator.dupe(u8, text);
+    errdefer allocator.free(current);
+    var index: usize = record.step_start;
+    const end = index + record.step_count;
+    while (index < end) : (index += 1) {
+        const step = stepAt(index);
+        const next: []u8 = switch (step.kind) {
+            0 => try runComponentAlloc(allocator, current, step.value),
+            1 => blk: {
+                const form: normalization.Form = switch (step.value) {
+                    1 => .nfd,
+                    2 => .nfc,
+                    3 => .nfkd,
+                    4 => .nfkc,
+                    else => .nfc,
+                };
+                const normalized = try normalization.normalizeFormAlloc(
+                    allocator,
+                    current,
+                    form,
+                );
+                break :blk normalized orelse try allocator.dupe(u8, current);
+            },
+            2 => try case_mapping.fullLowerAlloc(allocator, current, .{}),
+            3 => try case_mapping.fullUpperAlloc(allocator, current, .{}),
+            else => try allocator.dupe(u8, current),
+        };
+        allocator.free(current);
+        current = next;
+    }
+    return current;
+}
+
+fn runFilteredProgramAlloc(
+    allocator: std.mem.Allocator,
+    run: []const u21,
+    record: TransformRecord,
+) Error![]u8 {
+    const run_text = try encodeCodepointsAlloc(allocator, run);
+    defer allocator.free(run_text);
+    return runStepProgramAlloc(allocator, run_text, record);
+}
+
+/// Execute an ordered pipeline program. A global filter restricts the
+/// program to input runs, matching ICU's compound-filter behavior.
+fn runStepsAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    transform_index: usize,
+) Error![]u8 {
+    const record = transformAt(transform_index);
+    if (record.filter_set == 0) {
+        return runStepProgramAlloc(allocator, text, record);
+    }
+    var codepoints = try decodeAlloc(allocator, text);
+    defer codepoints.deinit(allocator);
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    var index: usize = 0;
+    while (index < codepoints.items.len) {
+        const contained = setContains(
+            record.filter_set,
+            codepoints.items[index],
+        );
+        const start = index;
+        while (index < codepoints.items.len and
+            setContains(record.filter_set, codepoints.items[index]) ==
+                contained)
+        {
+            index += 1;
+        }
+        const run = codepoints.items[start..index];
+        if (!contained) {
+            for (run) |codepoint| {
+                try appendCodepoint(allocator, &output, codepoint);
+            }
+            continue;
+        }
+        const converted = try runFilteredProgramAlloc(
+            allocator,
+            run,
+            record,
+        );
+        defer allocator.free(converted);
+        try output.appendSlice(allocator, converted);
+    }
+    return output.toOwnedSlice(allocator);
 }
 
 fn tableAlloc(
@@ -709,6 +819,9 @@ fn tableAlloc(
     transform_index: usize,
 ) Error![]u8 {
     const record = transformAt(transform_index);
+    if (record.step_count != 0) {
+        return runStepsAlloc(allocator, text, transform_index);
+    }
     var owned: ?[]u8 = null;
     defer if (owned) |value| allocator.free(value);
     var input = text;
@@ -2023,6 +2136,460 @@ const conformance_fixtures = [_]struct {
         .magic = "CJEI".*,
         .name = "Telugu-InterIndic",
     },
+    .{
+        .bytes = @embedFile("transliterate/latin_interindic_conformance.bin"),
+        .magic = "CJLI".*,
+        .name = "Latin-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_bengali_conformance.bin"),
+        .magic = "CJAA".*,
+        .name = "Latin-Bengali",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_devanagari_conformance.bin"),
+        .magic = "CJAO".*,
+        .name = "Latin-Devanagari",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_gujarati_conformance.bin"),
+        .magic = "CJAQ".*,
+        .name = "Latin-Gujarati",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_gurmukhi_conformance.bin"),
+        .magic = "CJA5".*,
+        .name = "Latin-Gurmukhi",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_kannada_conformance.bin"),
+        .magic = "CJA6".*,
+        .name = "Latin-Kannada",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_malayalam_conformance.bin"),
+        .magic = "CJBG".*,
+        .name = "Latin-Malayalam",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_oriya_conformance.bin"),
+        .magic = "CJBH".*,
+        .name = "Latin-Oriya",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_tamil_conformance.bin"),
+        .magic = "CJBV".*,
+        .name = "Latin-Tamil",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_telugu_conformance.bin"),
+        .magic = "CJBW".*,
+        .name = "Latin-Telugu",
+    },    .{
+        .bytes = @embedFile("transliterate/bengali_devanagari_conformance.bin"),
+        .magic = "CJAC".*,
+        .name = "Bengali-Devanagari",
+    },
+    .{
+        .bytes = @embedFile("transliterate/bengali_gujarati_conformance.bin"),
+        .magic = "CJAD".*,
+        .name = "Bengali-Gujarati",
+    },
+    .{
+        .bytes = @embedFile("transliterate/bengali_gurmukhi_conformance.bin"),
+        .magic = "CJAE".*,
+        .name = "Bengali-Gurmukhi",
+    },
+    .{
+        .bytes = @embedFile("transliterate/bengali_kannada_conformance.bin"),
+        .magic = "CJAG".*,
+        .name = "Bengali-Kannada",
+    },
+    .{
+        .bytes = @embedFile("transliterate/bengali_latin_conformance.bin"),
+        .magic = "CJAH".*,
+        .name = "Bengali-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/bengali_malayalam_conformance.bin"),
+        .magic = "CJAI".*,
+        .name = "Bengali-Malayalam",
+    },
+    .{
+        .bytes = @embedFile("transliterate/bengali_oriya_conformance.bin"),
+        .magic = "CJAJ".*,
+        .name = "Bengali-Oriya",
+    },
+    .{
+        .bytes = @embedFile("transliterate/bengali_tamil_conformance.bin"),
+        .magic = "CJAK".*,
+        .name = "Bengali-Tamil",
+    },
+    .{
+        .bytes = @embedFile("transliterate/bengali_telugu_conformance.bin"),
+        .magic = "CJAN".*,
+        .name = "Bengali-Telugu",
+    },
+    .{
+        .bytes = @embedFile("transliterate/devanagari_bengali_conformance.bin"),
+        .magic = "CJAT".*,
+        .name = "Devanagari-Bengali",
+    },
+    .{
+        .bytes = @embedFile("transliterate/devanagari_gujarati_conformance.bin"),
+        .magic = "CJAV".*,
+        .name = "Devanagari-Gujarati",
+    },
+    .{
+        .bytes = @embedFile("transliterate/devanagari_gurmukhi_conformance.bin"),
+        .magic = "CJAW".*,
+        .name = "Devanagari-Gurmukhi",
+    },
+    .{
+        .bytes = @embedFile("transliterate/devanagari_kannada_conformance.bin"),
+        .magic = "CJAX".*,
+        .name = "Devanagari-Kannada",
+    },
+    .{
+        .bytes = @embedFile("transliterate/devanagari_latin_conformance.bin"),
+        .magic = "CJAY".*,
+        .name = "Devanagari-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/devanagari_malayalam_conformance.bin"),
+        .magic = "CJA0".*,
+        .name = "Devanagari-Malayalam",
+    },
+    .{
+        .bytes = @embedFile("transliterate/devanagari_oriya_conformance.bin"),
+        .magic = "CJA1".*,
+        .name = "Devanagari-Oriya",
+    },
+    .{
+        .bytes = @embedFile("transliterate/devanagari_tamil_conformance.bin"),
+        .magic = "CJA3".*,
+        .name = "Devanagari-Tamil",
+    },
+    .{
+        .bytes = @embedFile("transliterate/devanagari_telugu_conformance.bin"),
+        .magic = "CJA4".*,
+        .name = "Devanagari-Telugu",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gujarati_bengali_conformance.bin"),
+        .magic = "CJA7".*,
+        .name = "Gujarati-Bengali",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gujarati_devanagari_conformance.bin"),
+        .magic = "CJA8".*,
+        .name = "Gujarati-Devanagari",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gujarati_gurmukhi_conformance.bin"),
+        .magic = "CJA9".*,
+        .name = "Gujarati-Gurmukhi",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gujarati_kannada_conformance.bin"),
+        .magic = "CJBA".*,
+        .name = "Gujarati-Kannada",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gujarati_latin_conformance.bin"),
+        .magic = "CJBB".*,
+        .name = "Gujarati-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gujarati_malayalam_conformance.bin"),
+        .magic = "CJBC".*,
+        .name = "Gujarati-Malayalam",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gujarati_oriya_conformance.bin"),
+        .magic = "CJBD".*,
+        .name = "Gujarati-Oriya",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gujarati_tamil_conformance.bin"),
+        .magic = "CJBE".*,
+        .name = "Gujarati-Tamil",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gujarati_telugu_conformance.bin"),
+        .magic = "CJBF".*,
+        .name = "Gujarati-Telugu",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gurmukhi_bengali_conformance.bin"),
+        .magic = "CJBJ".*,
+        .name = "Gurmukhi-Bengali",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gurmukhi_devanagari_conformance.bin"),
+        .magic = "CJBL".*,
+        .name = "Gurmukhi-Devanagari",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gurmukhi_gujarati_conformance.bin"),
+        .magic = "CJBM".*,
+        .name = "Gurmukhi-Gujarati",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gurmukhi_kannada_conformance.bin"),
+        .magic = "CJBN".*,
+        .name = "Gurmukhi-Kannada",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gurmukhi_latin_conformance.bin"),
+        .magic = "CJBO".*,
+        .name = "Gurmukhi-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gurmukhi_malayalam_conformance.bin"),
+        .magic = "CJBP".*,
+        .name = "Gurmukhi-Malayalam",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gurmukhi_oriya_conformance.bin"),
+        .magic = "CJBQ".*,
+        .name = "Gurmukhi-Oriya",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gurmukhi_tamil_conformance.bin"),
+        .magic = "CJBR".*,
+        .name = "Gurmukhi-Tamil",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gurmukhi_telugu_conformance.bin"),
+        .magic = "CJBS".*,
+        .name = "Gurmukhi-Telugu",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kannada_bengali_conformance.bin"),
+        .magic = "CJBX".*,
+        .name = "Kannada-Bengali",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kannada_devanagari_conformance.bin"),
+        .magic = "CJBZ".*,
+        .name = "Kannada-Devanagari",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kannada_gujarati_conformance.bin"),
+        .magic = "CJB0".*,
+        .name = "Kannada-Gujarati",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kannada_gurmukhi_conformance.bin"),
+        .magic = "CJB3".*,
+        .name = "Kannada-Gurmukhi",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kannada_latin_conformance.bin"),
+        .magic = "CJB4".*,
+        .name = "Kannada-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kannada_malayalam_conformance.bin"),
+        .magic = "CJB5".*,
+        .name = "Kannada-Malayalam",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kannada_oriya_conformance.bin"),
+        .magic = "CJB6".*,
+        .name = "Kannada-Oriya",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kannada_tamil_conformance.bin"),
+        .magic = "CJB7".*,
+        .name = "Kannada-Tamil",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kannada_telugu_conformance.bin"),
+        .magic = "CJB8".*,
+        .name = "Kannada-Telugu",
+    },
+    .{
+        .bytes = @embedFile("transliterate/malayalam_bengali_conformance.bin"),
+        .magic = "CJCC".*,
+        .name = "Malayalam-Bengali",
+    },
+    .{
+        .bytes = @embedFile("transliterate/malayalam_devanagari_conformance.bin"),
+        .magic = "CJCD".*,
+        .name = "Malayalam-Devanagari",
+    },
+    .{
+        .bytes = @embedFile("transliterate/malayalam_gujarati_conformance.bin"),
+        .magic = "CJCE".*,
+        .name = "Malayalam-Gujarati",
+    },
+    .{
+        .bytes = @embedFile("transliterate/malayalam_gurmukhi_conformance.bin"),
+        .magic = "CJCF".*,
+        .name = "Malayalam-Gurmukhi",
+    },
+    .{
+        .bytes = @embedFile("transliterate/malayalam_kannada_conformance.bin"),
+        .magic = "CJCG".*,
+        .name = "Malayalam-Kannada",
+    },
+    .{
+        .bytes = @embedFile("transliterate/malayalam_latin_conformance.bin"),
+        .magic = "CJCI".*,
+        .name = "Malayalam-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/malayalam_oriya_conformance.bin"),
+        .magic = "CJCJ".*,
+        .name = "Malayalam-Oriya",
+    },
+    .{
+        .bytes = @embedFile("transliterate/malayalam_tamil_conformance.bin"),
+        .magic = "CJCK".*,
+        .name = "Malayalam-Tamil",
+    },
+    .{
+        .bytes = @embedFile("transliterate/malayalam_telugu_conformance.bin"),
+        .magic = "CJCM".*,
+        .name = "Malayalam-Telugu",
+    },
+    .{
+        .bytes = @embedFile("transliterate/oriya_bengali_conformance.bin"),
+        .magic = "CJCP".*,
+        .name = "Oriya-Bengali",
+    },
+    .{
+        .bytes = @embedFile("transliterate/oriya_devanagari_conformance.bin"),
+        .magic = "CJCQ".*,
+        .name = "Oriya-Devanagari",
+    },
+    .{
+        .bytes = @embedFile("transliterate/oriya_gujarati_conformance.bin"),
+        .magic = "CJCR".*,
+        .name = "Oriya-Gujarati",
+    },
+    .{
+        .bytes = @embedFile("transliterate/oriya_gurmukhi_conformance.bin"),
+        .magic = "CJCU".*,
+        .name = "Oriya-Gurmukhi",
+    },
+    .{
+        .bytes = @embedFile("transliterate/oriya_kannada_conformance.bin"),
+        .magic = "CJCV".*,
+        .name = "Oriya-Kannada",
+    },
+    .{
+        .bytes = @embedFile("transliterate/oriya_latin_conformance.bin"),
+        .magic = "CJCW".*,
+        .name = "Oriya-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/oriya_malayalam_conformance.bin"),
+        .magic = "CJCX".*,
+        .name = "Oriya-Malayalam",
+    },
+    .{
+        .bytes = @embedFile("transliterate/oriya_tamil_conformance.bin"),
+        .magic = "CJCY".*,
+        .name = "Oriya-Tamil",
+    },
+    .{
+        .bytes = @embedFile("transliterate/oriya_telugu_conformance.bin"),
+        .magic = "CJCZ".*,
+        .name = "Oriya-Telugu",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tamil_bengali_conformance.bin"),
+        .magic = "CJC4".*,
+        .name = "Tamil-Bengali",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tamil_devanagari_conformance.bin"),
+        .magic = "CJC5".*,
+        .name = "Tamil-Devanagari",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tamil_gujarati_conformance.bin"),
+        .magic = "CJC6".*,
+        .name = "Tamil-Gujarati",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tamil_gurmukhi_conformance.bin"),
+        .magic = "CJC7".*,
+        .name = "Tamil-Gurmukhi",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tamil_kannada_conformance.bin"),
+        .magic = "CJC8".*,
+        .name = "Tamil-Kannada",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tamil_latin_conformance.bin"),
+        .magic = "CJC9".*,
+        .name = "Tamil-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tamil_malayalam_conformance.bin"),
+        .magic = "CJDA".*,
+        .name = "Tamil-Malayalam",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tamil_oriya_conformance.bin"),
+        .magic = "CJDC".*,
+        .name = "Tamil-Oriya",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tamil_telugu_conformance.bin"),
+        .magic = "CJDD".*,
+        .name = "Tamil-Telugu",
+    },
+    .{
+        .bytes = @embedFile("transliterate/telugu_bengali_conformance.bin"),
+        .magic = "CJDH".*,
+        .name = "Telugu-Bengali",
+    },
+    .{
+        .bytes = @embedFile("transliterate/telugu_devanagari_conformance.bin"),
+        .magic = "CJDJ".*,
+        .name = "Telugu-Devanagari",
+    },
+    .{
+        .bytes = @embedFile("transliterate/telugu_gujarati_conformance.bin"),
+        .magic = "CJDK".*,
+        .name = "Telugu-Gujarati",
+    },
+    .{
+        .bytes = @embedFile("transliterate/telugu_gurmukhi_conformance.bin"),
+        .magic = "CJDL".*,
+        .name = "Telugu-Gurmukhi",
+    },
+    .{
+        .bytes = @embedFile("transliterate/telugu_kannada_conformance.bin"),
+        .magic = "CJDM".*,
+        .name = "Telugu-Kannada",
+    },
+    .{
+        .bytes = @embedFile("transliterate/telugu_latin_conformance.bin"),
+        .magic = "CJDN".*,
+        .name = "Telugu-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/telugu_malayalam_conformance.bin"),
+        .magic = "CJDO".*,
+        .name = "Telugu-Malayalam",
+    },
+    .{
+        .bytes = @embedFile("transliterate/telugu_oriya_conformance.bin"),
+        .magic = "CJDP".*,
+        .name = "Telugu-Oriya",
+    },
+    .{
+        .bytes = @embedFile("transliterate/telugu_tamil_conformance.bin"),
+        .magic = "CJDQ".*,
+        .name = "Telugu-Tamil",
+    },
 };
 
 test "transliterate by CLDR name" {
@@ -2048,12 +2615,27 @@ test "transliterate by CLDR name" {
 }
 
 test "CLDR transform conformance" {
+    var failures: usize = 0;
     for (conformance_fixtures) |fixture| {
-        try checkTransformConformance(
+        const fixture_failures = try checkTransformConformance(
             fixture.bytes,
             fixture.magic,
             fixture.name,
         );
+        if (fixture_failures != 0) {
+            std.debug.print(
+                "FAILURES {s}: {d}\n",
+                .{ fixture.name, fixture_failures },
+            );
+        }
+        failures += fixture_failures;
+    }
+    if (failures != 0) {
+        std.debug.print(
+            "transliteration conformance failures: {d}\n",
+            .{failures},
+        );
+        return error.TestUnexpectedResult;
     }
 }
 
@@ -2061,7 +2643,7 @@ fn checkTransformConformance(
     fixture: []const u8,
     magic: [4]u8,
     transform_name: []const u8,
-) !void {
+) !usize {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
     if (fixture.len < 12 or !std.mem.eql(u8, fixture[0..4], &magic) or
@@ -2123,7 +2705,7 @@ fn checkTransformConformance(
         allocator.free(converted);
     }
     if (offset != fixture.len) return error.InvalidFixture;
-    if (failures != 0) return error.TestUnexpectedResult;
+    return failures;
 }
 
 test "named normalization and case transforms" {

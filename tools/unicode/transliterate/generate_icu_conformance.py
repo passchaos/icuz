@@ -140,9 +140,9 @@ def source_strings(rules: str, reverse: bool = False):
         source = source.strip()
         if not source:
             continue
-        # Keep only literal source text; variables and quantifiers are rule
-        # syntax, not input characters.
-        if any(character in source for character in "$?*+()[]|"):
+        # Keep only literal source text; variables, quantifiers, and quoted
+        # strings are rule syntax, not input characters.
+        if any(character in source for character in "$?*+()[]|'"):
             continue
         # Expand the first class in the source; keep other characters as-is.
         match = re.search(r"\[[^\]]*\]", source)
