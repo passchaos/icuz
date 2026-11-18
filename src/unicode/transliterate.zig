@@ -1427,6 +1427,11 @@ const conformance_fixtures = [_]struct {
         .magic = "CJAP".*,
         .name = "Any-Publishing",
     },
+    .{
+        .bytes = @embedFile("transliterate/katakana_hiragana_conformance.bin"),
+        .magic = "CJKH".*,
+        .name = "Katakana-Hiragana",
+    },
 };
 
 test "transliterate by CLDR name" {
