@@ -1027,9 +1027,7 @@ fn anyHexAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
         if (index + length > text.len) return error.InvalidUtf8;
         const codepoint = std.unicode.utf8Decode(text[index..][0..length]) catch
             return error.InvalidUtf8;
-        if (codepoint >= 0x20 and codepoint <= 0x7e) {
-            try output.append(allocator, text[index]);
-        } else if (codepoint <= 0xffff) {
+        if (codepoint <= 0xffff) {
             var buffer: [6]u8 = undefined;
             const formatted = std.fmt.bufPrint(
                 &buffer,
@@ -1914,6 +1912,9 @@ test "transform discovery" {
     const encoded = try transliterateByNameAlloc(allocator, "\u{00e9}", "Any-Hex");
     defer allocator.free(encoded);
     try testing.expectEqualStrings("\\u00E9", encoded);
+    const ascii_hex = try transliterateByNameAlloc(allocator, "A ", "Any-Hex");
+    defer allocator.free(ascii_hex);
+    try testing.expectEqualStrings("\\u0041\\u0020", ascii_hex);
 
     const identity = try transliterateByNameAlloc(allocator, "abc", "Any-Null");
     defer allocator.free(identity);
