@@ -105,7 +105,8 @@ def source_strings(rules: str, reverse: bool = False):
             elif "↔" in line:
                 left = line.split("↔", 1)[1]
             elif "←" in line:
-                left = line.split("←", 1)[0]
+                # `A ← B` applies as B -> A in the reverse direction.
+                left = line.split("←", 1)[1]
             else:
                 continue
             left = left.strip().rstrip(";").strip()

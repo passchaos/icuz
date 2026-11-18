@@ -2,16 +2,29 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 87 compiled table transforms plus 10 named engines (`NFC`, `NFD`,
+- 94 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
-  `Hex-Any`, `Any-Hex`).
-- 89 conformance fixtures: 30 official CLDR test-data files and 59 PyICU
+  `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
+- 96 conformance fixtures: 30 official CLDR test-data files and 66 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
-- Two-step pipelines already work: a leading component runs via
-  `pre_transform`, then the transform's own rules, then the optional
-  `next_transform`. The two Ethiopic geminate pipelines use this path.
+- Two-step pipelines work: a leading component runs via `pre_transform`,
+  then the transform's own rules, then the optional `next_transform`.
+  The two Ethiopic geminate pipelines and the six FONIPA-to-Amharic
+  pipelines (`kk-am`, `my-am`, `ro-am`, `si-am`, `xh-am`, `zu-am`) use
+  this path.
+- The reverse direction is compiled compositionally: `A ← B` and
+  `A ↔ B` become `B -> A`, pass order is reversed, `::(null);`,
+  `::null;`, and `::null();` all split passes, and reverse normalization
+  uses the parenthesized form of `NFD (NFC)` directives.
+- Property classes accept long general-category names
+  (`[:Uppercase_Letter:]`, `[:Mark:]`), binary approximations
+  (`Cased`, `Case_Ignorable`, `Soft_Dotted`, `Ideographic`,
+  `Logical_Order_Exception`), and ISO 15924 script aliases (`Cyrl`,
+  `Sinh`, ...).
+- Source quantifiers are greedy, matching ICU's regex behavior
+  (`X?`, `X*`, `X+` try the longest repetition first).
 
 Verification commands:
 
@@ -23,40 +36,19 @@ python3 tools/unicode/verify_committed.py
 ## 1. General segment/pipeline engine
 
 The current record chains one leading and one trailing transform.
-CLDR's longer pipelines need an ordered program of arbitrary steps:
+CLDR's longer pipelines still need an ordered program of arbitrary steps:
 
-- multiple `::Name;` references in sequence
-- mid-rule `::NFD();` / `::NFC();` normalization steps
+- multiple `::Name;` references in sequence (three or more components)
+- mid-rule `::NFD();` / `::NFC();` normalization steps in any position
 - `::Any-Lower;` / `::Any-Upper;` / `::Any-Title;` steps in any position
 - transform references with arguments, e.g.
   `::Latin-NumericPinyin(NumericPinyin-Latin);` in `Latin-Bopomofo.xml`
 
-Blocks ~30 pure pipelines whose first component is already compiled
-(`es-ja`, `es-am`, `kk-am`, `si-am`, `ro-am`, `my-am`, `xh-chr`, ...)
-but whose second component is missing (`es_FONIPA-ja`, `am_FONIPA-am`,
-`und_FONIPA-ar`, ...). A CLDR transform-name alias map is also required
-because directives use names such as `Amharic-Amharic/Geminate` while the
-XML files are `am-Ethi-t-am-ethi-m0-geminate.xml`.
-
-The two Ethiopic geminate pipelines have both components compiled and
-are now landed: `Ethiopic-Latin/Aethiopica_Geminate` and
-`Ethiopic-Latin/IES_JES_1964_Geminate` (7129 PyICU cases each).
-
-A full scan of CLDR's pure pipelines confirms no other pipeline is
-covered end to end by the current transform set: every remaining
-pipeline needs a component that is not yet compiled (for example
-`am_FONIPA-am`, `und_FONIPA-ar`, `es_FONIPA-ja`). Compiling those
-components is the prerequisite for the next batch.
-
-Attempting `am_FONIPA-am` as `reverse_context` or `reverse_with_left`
-still leaves 19 PyICU failures. The failing cases show multi-character
-Latin targets such as `nɡe` left partially untranslated (`nɡ` plus a
-separately mapped vowel). The source XML has no literal `ንገ`/`nɡe` rule:
-the forward transform reaches `nɡe` by composition (ን -> n, ገ -> ɡe).
-ICU's reverse transform is therefore a compositional inverse (reverse
-rule order with inverse mappings), not a reversal of the compiled table.
-Supporting this needs an inverse-rule compiler, which is a larger piece
-than target-side class parsing.
+A full scan of CLDR's pure pipelines confirms the remaining pipelines need
+at least one component that is not yet compiled (for example
+`und_FONIPA-ar`, `und_FONIPA-chr`, `es_FONIPA-ja`, `und_FONIPA-fa`).
+Compiling those components is the prerequisite for the next batch; the
+two-step chain already covers every pipeline whose components exist.
 
 ## 2. ICU rule specificity / hidden-rule ordering
 
@@ -78,7 +70,9 @@ Known failing transforms (PyICU differential fixtures):
 | `Bopo-Latn` | 19 | reverse-direction rules |
 
 `Greek-Latin` needs script property classes, which are implemented, plus
-the specificity model above.
+the specificity model above. `Latin-Arabic`, `Latin-Syriac`, `Latin-Hebrew`,
+and `Bopo-Latn` need reverse directions of transforms whose forward rules
+are not yet compiled.
 
 ## 3. Script_Extensions based filters
 
@@ -105,6 +99,10 @@ coverage for the tone-position classes.
   `simple` / `reverse_with_left`; the reverse builder applies explicit
   `A <- B` rules as `B -> A`.
 - `Hans-Hant` / `Hant-Hans` are aliases over the same tables.
+- `am_FONIPA-am` compiles as the compositional inverse of
+  `am-am_FONIPA` and passes 789 PyICU cases.
+- `kk-am`, `my-am`, `ro-am`, `si-am`, `xh-am`, and `zu-am` pass their
+  PyICU pipeline fixtures.
 
 ## 6. Hex transform divergence
 

@@ -79,6 +79,7 @@ TRANSFORMS = (
     ("InterIndic-Tamil", "InterIndic-Tamil", "context"),
     ("Hiragana-Katakana", "Hiragana-Katakana", "context"),
     ("am-am_FONIPA", "am-am_FONIPA", "context"),
+    ("am_FONIPA-am", "am-am_FONIPA", "reverse_context"),
     (
         "Ethiopic-Latin/Aethiopica_Geminate",
         "und-Ethi-t-und-latn-m0-aethiopi-geminate",
@@ -89,6 +90,12 @@ TRANSFORMS = (
         "und-Ethi-t-und-latn-m0-ies-jes-1964-geminate",
         "pipeline",
     ),
+    ("kk-am", "kk-am", "pipeline"),
+    ("my-am", "my-am", "pipeline"),
+    ("ro-am", "ro-am", "pipeline"),
+    ("si-am", "si-am", "pipeline"),
+    ("xh-am", "xh-am", "pipeline"),
+    ("zu-am", "zu-am", "pipeline"),
     ("Persian-Latin-BGN", "Persian-Latin-BGN", "context"),
     ("nv-nv_FONIPA", "nv-nv_FONIPA", "context"),
     ("si-si_FONIPA", "si-si_FONIPA", "context"),
@@ -358,19 +365,24 @@ def normalization_directives(rules: str):
         if line.startswith("::"):
             directive = line[2:].strip().rstrip(";").strip().upper()
             form = None
-            if directive.startswith("NFKD"):
-                form = 3
-            elif directive.startswith("NFKC"):
-                form = 4
-            elif directive.startswith("NFD"):
-                form = 1
-            elif directive.startswith("NFC"):
-                form = 2
-            if form is not None:
-                post_form = None
+            post_form = None
+            parenthesized = re.fullmatch(r"\(\s*(NFK?[CD])\s*\)", directive)
+            if parenthesized:
+                # CLDR writes a standalone normalization step as `::(NFC);`.
+                form = NORMALIZATION_FORMS.get(parenthesized.group(1))
+            else:
+                if directive.startswith("NFKD"):
+                    form = 3
+                elif directive.startswith("NFKC"):
+                    form = 4
+                elif directive.startswith("NFD"):
+                    form = 1
+                elif directive.startswith("NFC"):
+                    form = 2
                 match = re.search(r"\(\s*(NFK?[CD])\s*\)", directive)
                 if match:
                     post_form = NORMALIZATION_FORMS.get(match.group(1))
+            if form is not None:
                 directives.append((index, form, post_form))
         elif not VARIABLE_DEF.match(line):
             last_rule = index
@@ -397,6 +409,23 @@ def detect_post_normalization(rules: str) -> int:
     if post_form is not None and index > last_rule:
         return post_form
     return form if index > last_rule else 0
+
+
+def detect_reverse_normalization(rules: str):
+    """Return (pre, post) normalization forms for the reverse direction.
+
+    ICU reverses the pass order, so the final directive applies first. A
+    directive written `NFD (NFC)` uses NFD forward and NFC in reverse; the
+    parenthesized form therefore wins when the pass order is flipped.
+    """
+    directives, _ = normalization_directives(rules)
+    if not directives:
+        return 0, 0
+    _, form, post_form = directives[-1]
+    pre = post_form if post_form is not None else form
+    _, form, post_form = directives[0]
+    post = post_form if post_form is not None else form
+    return pre, post
 
 
 PIPELINE_COMPONENTS = {
@@ -958,6 +987,79 @@ GENERAL_CATEGORIES = {
     "pc", "pd", "ps", "pe", "pi", "pf", "po", "sm", "sc", "sk", "so",
     "zs", "zl", "zp", "cc", "cf", "cs", "co", "cn",
 }
+# ICU accepts the long general-category names in property sets.
+CATEGORY_ALIASES = {
+    "letter": "L",
+    "mark": "M",
+    "number": "N",
+    "punctuation": "P",
+    "symbol": "S",
+    "separator": "Z",
+    "other": "C",
+    "uppercaseletter": "Lu",
+    "lowercaseletter": "Ll",
+    "titlecaseletter": "Lt",
+    "modifierletter": "Lm",
+    "otherletter": "Lo",
+    "nonspacingmark": "Mn",
+    "spacingmark": "Mc",
+    "enclosingmark": "Me",
+    "decimalnumber": "Nd",
+    "letternumber": "Nl",
+    "othernumber": "No",
+    "connectorpunctuation": "Pc",
+    "dashpunctuation": "Pd",
+    "openpunctuation": "Ps",
+    "closepunctuation": "Pe",
+    "initialpunctuation": "Pi",
+    "finalpunctuation": "Pf",
+    "otherpunctuation": "Po",
+    "mathsymbol": "Sm",
+    "currencysymbol": "Sc",
+    "modifiersymbol": "Sk",
+    "othersymbol": "So",
+    "spaceseparator": "Zs",
+    "lineseparator": "Zl",
+    "paragraphseparator": "Zp",
+    "control": "Cc",
+    "format": "Cf",
+    "surrogate": "Cs",
+    "privateuse": "Co",
+    "unassigned": "Cn",
+}
+SCRIPT_ALIASES = {
+    "arab": "arabic",
+    "brai": "braille",
+    "cyrl": "cyrillic",
+    "ethi": "ethiopic",
+    "grek": "greek",
+    "hebr": "hebrew",
+    "hira": "hiragana",
+    "kana": "katakana",
+    "latn": "latin",
+    "sinh": "sinhala",
+    "thai": "thai",
+    "zyyy": "common",
+    "zinh": "inherited",
+}
+SOFT_DOTTED = frozenset(
+    (0x0069, 0x006A, 0x012F, 0x0249, 0x0268, 0x029D, 0x02B2, 0x03F3,
+     0x0456, 0x0458, 0x1D62, 0x1D96, 0x1DA4, 0x1DA8, 0x1E2D, 0x1ECB,
+     0x2071, 0x2148, 0x2149, 0x2C7C)
+)
+LOGICAL_ORDER_EXCEPTION = frozenset(
+    list(range(0x0E40, 0x0E45)) + list(range(0x0EC0, 0x0EC5)) +
+    [0x0F76, 0x0F78, 0x0F80, 0x0FB5]
+)
+IDEOGRAPHIC_RANGES = (
+    (0x3006, 0x3007), (0x3021, 0x3029), (0x3038, 0x303A),
+    (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF),
+    (0x20000, 0x2FFFD), (0x30000, 0x3FFFD),
+)
+CASE_IGNORABLE_PUNCTUATION = frozenset(
+    (0x0027, 0x002E, 0x003A, 0x00B7, 0x0387, 0x05F4, 0x2018, 0x2019,
+     0x2024, 0xFE13, 0xFE52, 0xFE55, 0xFF07, 0xFF0E, 0xFF1A)
+)
 CCC_ALIASES = {
     "not_reordered": 0,
     "overlay": 1,
@@ -1041,22 +1143,50 @@ def property_codepoints(name: str):
     key = name.strip().lower()
     if key in PROPERTY_CACHE:
         return PROPERTY_CACHE[key]
+    normalized = re.sub(r"[\s_-]", "", key)
     result: list[int] = []
     if key in ("uppercase", "lowercase"):
         categories = ("Lu", "Lt") if key == "uppercase" else ("Ll", "Lt")
         for codepoint in range(0x110000):
             if unicodedata.category(chr(codepoint)) in categories:
                 result.append(codepoint)
-    elif key in ("l", "m", "n", "p", "s", "z", "c"):
-        prefix = key.upper()
+    elif key in ("upper", "lower"):
+        categories = ("Lu", "Lt") if key == "upper" else ("Ll", "Lt")
         for codepoint in range(0x110000):
-            if unicodedata.category(chr(codepoint)).startswith(prefix):
+            if unicodedata.category(chr(codepoint)) in categories:
+                result.append(codepoint)
+    elif key in ("l", "m", "n", "p", "s", "z", "c") or (
+        normalized in CATEGORY_ALIASES
+    ):
+        category = CATEGORY_ALIASES.get(normalized, key.upper())
+        for codepoint in range(0x110000):
+            actual = unicodedata.category(chr(codepoint))
+            if (actual == category) if len(category) == 2 else (
+                actual.startswith(category)
+            ):
                 result.append(codepoint)
     elif key in GENERAL_CATEGORIES:
         category = key[0].upper() + key[1]
         for codepoint in range(0x110000):
             if unicodedata.category(chr(codepoint)) == category:
                 result.append(codepoint)
+    elif normalized == "cased":
+        for codepoint in range(0x110000):
+            if unicodedata.category(chr(codepoint)) in ("Lu", "Ll", "Lt"):
+                result.append(codepoint)
+    elif normalized == "caseignorable":
+        for codepoint in range(0x110000):
+            if unicodedata.category(chr(codepoint)) in (
+                "Mn", "Me", "Cf", "Lm", "Sk"
+            ) or codepoint in CASE_IGNORABLE_PUNCTUATION:
+                result.append(codepoint)
+    elif normalized == "softdotted":
+        result = sorted(SOFT_DOTTED)
+    elif normalized == "logicalorderexception":
+        result = sorted(LOGICAL_ORDER_EXCEPTION)
+    elif normalized == "ideographic":
+        for start, end in IDEOGRAPHIC_RANGES:
+            result.extend(range(start, end + 1))
     elif key.startswith("ccc="):
         ccc_name = key[4:].strip().replace("-", "_").replace(" ", "_")
         ccc_value = CCC_ALIASES.get(ccc_name)
@@ -1066,7 +1196,9 @@ def property_codepoints(name: str):
             if unicodedata.combining(chr(codepoint)) == ccc_value:
                 result.append(codepoint)
     else:
-        script_value = script_codepoints(name.strip())
+        script_value = script_codepoints(
+            SCRIPT_ALIASES.get(key, name.strip())
+        )
         if script_value is None:
             return None
         PROPERTY_CACHE[key] = script_value
@@ -1431,10 +1563,10 @@ def parse_context_token(token: str, variables: dict[str, str]):
                     if depth == 0:
                         break
                 end += 1
-            if depth != 0 or end + 1 >= len(token):
+            if depth != 0:
                 return None
-            quantifier = token[end + 1]
-            if quantifier not in "*+":
+            quantifier = token[end + 1] if end + 1 < len(token) else None
+            if quantifier is not None and quantifier not in "*+?":
                 return None
             inner = token[index + 1 : end].strip()
             parsed = parse_class_set(inner, variables)
@@ -1449,12 +1581,12 @@ def parse_context_token(token: str, variables: dict[str, str]):
                     base,
                     negated,
                     False,
-                    1 if quantifier == "*" else 2,
+                    1 if quantifier == "*" else 2 if quantifier == "+" else 0,
                     False,
-                    False,
+                    quantifier == "?",
                 )
             ]]
-            index = end + 2
+            index = end + 1 if quantifier is None else end + 2
         elif character == "$":
             end = index + 1
             while end < len(token) and (
@@ -1578,6 +1710,11 @@ def expand_embedded_group(source_text: str, variables: dict[str, str]):
     inner = source_text[open_pos + 1 : close_pos].strip()
     if inner.startswith("$"):
         group = resolve_source_variable(inner, variables)
+        if group is None:
+            # A variable followed by literals or quantifiers, e.g.
+            # `($IPA_VOWEL ː?)` in the Ethiopic length-marker rules.
+            terms = parse_source_terms(inner, variables)
+            group = expand_source_terms(terms) if terms is not None else None
     elif inner.startswith("[") and inner.endswith("]"):
         group = class_alternatives(inner[1:-1], variables)
     else:
@@ -1724,7 +1861,8 @@ def expand_source_terms(terms):
     for alternatives, minimum, maximum in terms:
         expanded: list[tuple[int, ...]] = []
         for base in results:
-            for repetitions in range(minimum, maximum + 1):
+            # ICU quantifiers are greedy: try the longest repetition first.
+            for repetitions in range(maximum, minimum - 1, -1):
                 combinations: list[tuple[int, ...]] = [()]
                 for _ in range(repetitions):
                     combinations = [
@@ -1762,12 +1900,6 @@ def parse_target_with_capture(text: str, variables: dict[str, str], source):
     return result
 
 
-def reverse_context_alts(alts):
-    if alts is None or alts == [None]:
-        return alts
-    return [list(reversed(elements)) for elements in alts]
-
-
 def table_entries_with_contexts(rules: str, reverse: bool = False):
     variables = parse_variables(rules)
     entries = []
@@ -1780,10 +1912,11 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
         if not line:
             continue
         if line.startswith("::"):
-            # CLDR's ::Null; directive closes the current pass: rules that
-            # follow see the output of the rules before it.
+            # CLDR's ::Null; and ::(null); directives close the current pass:
+            # rules that follow see the output of the rules before it. In the
+            # reverse direction ICU applies the passes in reverse order.
             directive = line[2:].strip().rstrip(";").strip().lower()
-            if directive == "null":
+            if directive in ("null", "(null)", "null()"):
                 pass_index += 1
             continue
         if VARIABLE_DEF.match(line):
@@ -1792,12 +1925,19 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
         if parts is None:
             continue
         left, arrow, right = parts
-        if arrow == "←":
-            continue
         left = left.strip()
         right = right.strip()
         if right.endswith(";"):
             right = right[:-1].strip()
+        if reverse:
+            # The reverse direction applies `A ← B` and `A ↔ B` as B -> A.
+            # ICU keeps each rule's position inside its pass; only the pass
+            # order is reversed (handled below).
+            if arrow == "→":
+                continue
+            left, right = right, left
+        elif arrow == "←":
+            continue
         # ICU's output cursor `|` controls where scanning resumes after a
         # replacement. A leading `|` means the replacement itself is rescanned.
         reprocess = False
@@ -1930,9 +2070,7 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             )
             if target_syntax:
                 continue
-        if reverse and (capture or repeat_set is not None):
-            continue
-        if reverse and (fixed_target is None or not fixed_target):
+        if reverse and repeat_set is not None:
             continue
         for source in sources:
             if not source and repeat_set is None:
@@ -1948,16 +2086,12 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
                 if repeat_set is not None
                 else None
             )
-            if reverse:
-                entry_source = tuple(target)
-                entry_target = tuple(source)
-                entry_before = reverse_context_alts(after_alts)
-                entry_after = reverse_context_alts(before_alts)
-            else:
-                entry_source = source
-                entry_target = tuple(target)
-                entry_before = before_alts
-                entry_after = after_alts
+            # Rule sides were already swapped when parsing the reverse
+            # direction, so the contexts stay attached to the new source.
+            entry_source = source
+            entry_target = tuple(target)
+            entry_before = before_alts
+            entry_after = after_alts
             for before in entry_before:
                 for after in entry_after:
                     entries.append(
@@ -1973,6 +2107,12 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
                         )
                     )
         priority += 1
+    if reverse:
+        # ICU reverses the order of the passes (segments split by ::Null;)
+        # but keeps each pass's rules in source order.
+        entries = [
+            (pass_index - entry[0],) + entry[1:] for entry in entries
+        ]
     entries.sort(
         key=lambda item: (
             item[0],
@@ -2323,12 +2463,17 @@ def main() -> int:
             table = table_entries_with_contexts(rules)
         else:
             raise SystemExit(f"unknown transform builder {builder!r}")
-        pre_normalization = (
-            5 if builder == "katakana" else detect_pre_normalization(rules)
-        )
-        post_normalization = 0 if builder == "katakana" else (
-            detect_post_normalization(rules)
-        )
+        if builder.startswith("reverse"):
+            pre_normalization, post_normalization = (
+                detect_reverse_normalization(rules)
+            )
+        else:
+            pre_normalization = (
+                5 if builder == "katakana" else detect_pre_normalization(rules)
+            )
+            post_normalization = 0 if builder == "katakana" else (
+                detect_post_normalization(rules)
+            )
         final_case = 0 if builder == "katakana" else detect_final_case(rules)
         specs.append(
             (
@@ -2348,18 +2493,35 @@ def main() -> int:
         )
 
     name_to_index = {name: index for index, (name, *_rest) in enumerate(specs)}
+
+    def resolve_pipeline_component(component: str) -> str | None:
+        if component in name_to_index:
+            return component
+        return PIPELINE_COMPONENTS.get(component)
+
     for index, (name, source, builder) in enumerate(TRANSFORMS):
         if builder != "pipeline":
             continue
         components = detect_pipeline(rules_for(source))
-        if components is None or components[-1] not in PIPELINE_COMPONENTS:
+        if components is None or len(components) != 2:
             continue
-        last_name = PIPELINE_COMPONENTS[components[-1]]
-        if last_name not in name_to_index:
+        first = resolve_pipeline_component(components[0])
+        last = resolve_pipeline_component(components[1])
+        if first is None or last is None:
             continue
-        tables[index] = tables[name_to_index[last_name]]
+        if first not in name_to_index or last not in name_to_index:
+            continue
+        last_index = name_to_index[last]
+        tables[index] = tables[last_index]
         spec = list(specs[index])
-        spec[5] = PIPELINE_COMPONENTS.get(components[0])
+        # The pipeline's own table is the final component's, so it also
+        # inherits that component's normalization and case behavior and must
+        # not chain the final component a second time.
+        spec[1] = specs[last_index][1]
+        spec[2] = specs[last_index][2]
+        spec[3] = specs[last_index][3]
+        spec[4] = None
+        spec[5] = first
         specs[index] = tuple(spec)
 
     (out_dir / "data.bin").write_bytes(render_blob(specs, tables, filters))

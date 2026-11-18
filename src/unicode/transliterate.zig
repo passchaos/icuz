@@ -1815,6 +1815,41 @@ const conformance_fixtures = [_]struct {
         .magic = "CJAF".*,
         .name = "am-am_FONIPA",
     },
+    .{
+        .bytes = @embedFile("transliterate/am_fonipa_rev_conformance.bin"),
+        .magic = "CJFA".*,
+        .name = "am_FONIPA-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kk_am_conformance.bin"),
+        .magic = "CJPA".*,
+        .name = "kk-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/my_am_conformance.bin"),
+        .magic = "CJPM".*,
+        .name = "my-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ro_am_conformance.bin"),
+        .magic = "CJPR".*,
+        .name = "ro-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/si_am_conformance.bin"),
+        .magic = "CJPS".*,
+        .name = "si-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/xh_am_conformance.bin"),
+        .magic = "CJPX".*,
+        .name = "xh-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/zu_am_conformance.bin"),
+        .magic = "CJPZ".*,
+        .name = "zu-am",
+    },
 };
 
 test "transliterate by CLDR name" {

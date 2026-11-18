@@ -94,16 +94,18 @@ need without pulling in a font or layout engine.
   Arabic-Latin-BGN, Armenian-Latin-BGN, Thaana-Latin, Syriac-Latin,
   CanadianAboriginal-Latin, tr-Lower, az-Lower, tr-Upper, az-Upper,
   el-Lower, el-Upper, lt-Lower, lt-Upper, Korean-Latin-BGN, Kirghiz-Latin-BGN, Latin-Armenian,
-  Azerbaijani-Latin-BGN, am-am_FONIPA, Latin-Cyrillic, Latin-Thaana,
+  Azerbaijani-Latin-BGN, am-am_FONIPA, am_FONIPA-am, Latin-Cyrillic,
+  Latin-Thaana,
   Latin-CanadianAboriginal, de-ASCII, Any-Publishing,
   Katakana-Hiragana, Pashto-Latin-BGN, Simplified-Traditional,
   Traditional-Simplified, Hans-Hant, Hant-Hans, the Ethiopic geminate
-  pipelines, and
+  pipelines, the `kk-am`, `my-am`, `ro-am`, `si-am`, `xh-am`, and `zu-am`
+  FONIPA-to-Amharic pipelines, and
   NFC/NFD/NFKC/NFKD transforms, plus the `Hex-Any` / `Any-Hex` escape
   transforms and the `Name-Any` / `Any-Name` character-name transforms.
-  Eighty-seven
+  Ninety-four
   transforms are compiled; thirty ship official CLDR conformance
-  fixtures, and fifty-nine (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and sixty-six (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
   Venetian FONIPA, Romanian FONIPA, Arabic-Latin-BGN, Armenian-Latin-BGN,
@@ -111,10 +113,12 @@ need without pulling in a font or layout engine.
   case transforms (including tr/az Upper), Korean-Latin-BGN,
   Kirghiz-Latin-BGN, Latin-Armenian, de-ASCII, Any-Publishing,
   Katakana-Hiragana,
-  Azerbaijani-Latin-BGN, am-am_FONIPA, Latin-Cyrillic, Latin-Thaana,
+  Azerbaijani-Latin-BGN, am-am_FONIPA, am_FONIPA-am, Latin-Cyrillic,
+  Latin-Thaana,
   Latin-CanadianAboriginal, Georgian-Latin, Latin-Georgian,
   Halfwidth-Fullwidth, Fullwidth-Halfwidth, a Kazakh FONIPA validation
   fixture, Hiragana-Katakana,
+  the six FONIPA-to-Amharic pipelines,
   and Persian-Latin-BGN) ship ICU
   differential fixtures generated with PyICU, including reverse-direction
   transforms. Transforms can be selected by CLDR name through
@@ -124,8 +128,10 @@ need without pulling in a font or layout engine.
   and `hasTransform` expose the compiled transform list. The table compiler expands character classes,
   Unicode properties, set operations, multi-codepoint set elements,
   multi-element prefix/suffix contexts with word-boundary handling, optional
-  and repeated context elements, whole-source and embedded capture groups
-  (`$1`), source quantifier expansion (`X*`, `X+`) and native repeated-class
+  and repeated context elements (including optional groups such as
+  `($class)?`), whole-source and embedded capture groups
+  (`$1`), greedy source quantifier expansion (`X?`, `X*`, `X+`) and native
+  repeated-class
   sources, empty-source insertion rules, text-boundary class anchors, output
   cursor reprocessing (`|`), output post-normalization, multi-definition
   variable lines (including multi-line classes), quoted and ignored
@@ -134,10 +140,13 @@ need without pulling in a font or layout engine.
   that expand to
   element sequences, `*`/`+` quantifiers on variable references, mid-target
   output cursors, ICU input filters (`:: [set] ;`),
-  trailing `::Any-Lower;`/`::Any-Upper;` case steps, `ccc=` and two-letter
-  general-category and script property classes, ICU rule-order priority,
+  trailing `::Any-Lower;`/`::Any-Upper;` case steps, `ccc=`, long and short
+  general-category names, and script property classes (including ISO 15924
+  aliases), ICU rule-order priority, reverse-direction compilation (swapped
+  `←`/`↔` rules with reversed pass order and inverse normalization steps),
   XML
-  comment stripping, and `::Null;` multi-pass pipelines.
+  comment stripping, and `::Null;`/`::(null);`/`::null();` multi-pass
+  pipelines.
 - Embedded, version-pinned generated data plus conformance fixtures.
 
 ## Non-goals for 0.1
