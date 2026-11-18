@@ -2,13 +2,16 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 84 compiled table transforms plus 10 named engines (`NFC`, `NFD`,
+- 86 compiled table transforms plus 10 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Hex-Any`, `Any-Hex`).
-- 85 conformance fixtures: 29 official CLDR test-data files and 56 PyICU
+- 87 conformance fixtures: 29 official CLDR test-data files and 58 PyICU
   differential fixtures.
-- Blob format CJTR v10 (24-byte transform records with `filter_set`,
-  `final_case`, and `next_transform`).
+- Blob format CJTR v11 (28-byte transform records with `filter_set`,
+  `final_case`, `next_transform`, and `pre_transform`).
+- Two-step pipelines already work: a leading component runs via
+  `pre_transform`, then the transform's own rules, then the optional
+  `next_transform`. The two Ethiopic geminate pipelines use this path.
 
 Verification commands:
 
@@ -19,8 +22,8 @@ python3 tools/unicode/verify_committed.py
 
 ## 1. General segment/pipeline engine
 
-The current `next_transform` field chains a single trailing transform.
-CLDR's pure pipelines need an ordered program of steps:
+The current record chains one leading and one trailing transform.
+CLDR's longer pipelines need an ordered program of arbitrary steps:
 
 - multiple `::Name;` references in sequence
 - mid-rule `::NFD();` / `::NFC();` normalization steps
