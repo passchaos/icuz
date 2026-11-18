@@ -9,8 +9,10 @@ icu4c/source/data/brkitr/dictionaries:
     thaidict.txt, laodict.txt, khmerdict.txt, burmesedict.txt, cjdict.txt
 
 Each dictionary is compiled into a compact byte trie. A node stores its edge
-range, child count, and word cost; edges are sorted by byte and pack the byte
-and child index into one u32. The runtime walks the trie once per position,
+range, child count, and word cost. Low-fan-out nodes store sorted (byte, child)
+edges; high-fan-out nodes store a 256-bit byte bitmap followed by compact child
+indices, so the runtime finds a child with a bitmap test and popcount instead
+of several binary-search probes. The runtime walks the trie once per position,
 which is much faster than binary-searching the sorted word list for every
 prefix length.
 """
@@ -31,6 +33,7 @@ LANGUAGES = (
 )
 
 HEADER_LEN = 4 + 1 + 1 + 2 + len(LANGUAGES) * 12
+BITMAP_THRESHOLD = 16
 
 
 def parse_dictionary(path: Path, has_cost: bool) -> list[tuple[bytes, int]]:
@@ -95,9 +98,20 @@ def serialize_trie(root):
     edge_records = []
     for node in nodes:
         children = sorted(node["children"].items())
-        edge_start = len(edge_records)
-        for byte, child in children:
-            edge_records.append((byte << 24) | indices[id(child)])
+        if len(children) > BITMAP_THRESHOLD:
+            # Align the bitmap so its eight words share cache lines.
+            while len(edge_records) % 8:
+                edge_records.append(0)
+            edge_start = len(edge_records)
+            bitmap = [0] * 8
+            for byte, _ in children:
+                bitmap[byte >> 5] |= 1 << (byte & 31)
+            edge_records.extend(bitmap)
+            edge_records.extend(indices[id(child)] for _, child in children)
+        else:
+            edge_start = len(edge_records)
+            for byte, child in children:
+                edge_records.append((byte << 24) | indices[id(child)])
         node_records.append((edge_start, len(children), node["cost"]))
     return node_records, edge_records
 
@@ -119,7 +133,7 @@ def main() -> int:
         compiled.append((node_records, edge_records, max_word_bytes, len(entries)))
 
     header = bytearray(b"CJDB")
-    header += struct.pack("<BBH", 2, len(LANGUAGES), 0)
+    header += struct.pack("<BBH", 3, len(LANGUAGES), 0)
     body = bytearray()
     for node_records, edge_records, max_word_bytes, _ in compiled:
         header += struct.pack(

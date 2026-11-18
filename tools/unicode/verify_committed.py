@@ -105,7 +105,7 @@ BLOBS = (
     Blob("src/unicode/sentence/data.bin", b"CJSB", 1, "c163eb450ba6df51a31fe2ac4a74e3c1d9d154c37ec9124af46dffce6a5844e8"),
     Blob("src/unicode/word/conformance.bin", b"CJWT", 1, "e390fd977570cd63aef4a1c657d4afefa188bfff5e8cc39e60942444feb5b674"),
     Blob("src/unicode/word/data.bin", b"CJWB", 2, "0ed721c08b09aae17c350d1125189b08c912c9fed4610da8704d45a2df4a7000"),
-    Blob("src/unicode/word/dictionaries.bin", b"CJDB", 2, "a4e032548e596b8391dfaff6208a18f89be6a31ca8854cd72dcca490a786045c", version=(5, 0, 0)),
+    Blob("src/unicode/word/dictionaries.bin", b"CJDB", 3, "849686cb9bb7eda6b75a96824d6e502b0adf02d0e354d9cbc2a81282bac3bcdb", version=(5, 0, 0)),
     Blob("src/unicode/word/dictionary_conformance.bin", b"CJDW", 1, "5f80f94680dd3d0639a0b342b523ce2129be26942d6eacce96d0b7fab3835f3a", version=(0, 0, 0)),
 )
 
@@ -134,7 +134,7 @@ GENERATORS = {
     "tools/unicode/format/generate_misc.py": "35d08acef5a6b7c23bbbe3b13977a2085f02df3985185068a68fe59e0625b0e1",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
     "tools/unicode/transliterate/generate_data.py": "34c5e9f185298bb662fededd6bb50a8364ea4d5a35efe99b5f950322d566cbd4",
-    "tools/unicode/break/generate_dictionaries.py": "2ec2fda1a951ad42be36111da861233315528999e094be52e2e85bd5318494d4",
+    "tools/unicode/break/generate_dictionaries.py": "bdbd4c4e9c999b4cea6a8924b08c72a49719c857e26dea82fc50940ee145e264",
     "tools/unicode/break/generate_word_conformance.py": "3c2467ffc38b2467cbbc0d895e76b8862774c48567aa3ad26b9681605df3a5ff",
     "tools/unicode/transliterate/generate_icu_conformance.py": "9d5fd5df338e19cbaec2934b5915f0f19bb4627f6a4f9ee581e86556e947bad3",
     "tools/unicode/name/generate_data.py": "bb3a64ad8a8c8fd2e34807cb10d81c76677f5e29c073c4808d75d48f234c9302",
