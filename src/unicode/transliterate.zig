@@ -2329,6 +2329,26 @@ const conformance_fixtures = [_]struct {
         .name = "Latin-InterIndic",
     },
     .{
+        .bytes = @embedFile("transliterate/thailogical_latin_conformance.bin"),
+        .magic = "CJEO".*,
+        .name = "ThaiLogical-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/sat_am_conformance.bin"),
+        .magic = "CJER".*,
+        .name = "sat-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/sat_olck_sat_fonipa_conformance.bin"),
+        .magic = "CJEM".*,
+        .name = "sat_Olck-sat_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/uz_cyrl_uz_latn_conformance.bin"),
+        .magic = "CJEN".*,
+        .name = "uz_Cyrl-uz_Latn",
+    },
+    .{
         .bytes = @embedFile("transliterate/nl_title_conformance.bin"),
         .magic = "CJD0".*,
         .name = "nl-Title",

@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 251 compiled table transforms plus 13 named engines (`NFC`, `NFD`,
+- 254 compiled table transforms plus 13 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 254 conformance fixtures: 30 official CLDR test-data files and 224 PyICU
+- 258 conformance fixtures: 30 official CLDR test-data files and 228 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -113,6 +113,9 @@ coverage for the tone-position classes.
   `Kannada-InterIndic`, `Malayalam-InterIndic`, `Oriya-InterIndic`,
   `Tamil-InterIndic`, `Telugu-InterIndic`) compile from their own rule
   files and pass PyICU fixtures.
+- `sat_Olck-sat_FONIPA`, `uz_Cyrl-uz_Latn`, and `ThaiLogical-Latin`
+  compile with the context builder and pass; the `sat-am` pipeline also
+  passes.
 - `kk-am`, `my-am`, `ro-am`, `si-am`, `xh-am`, and `zu-am` pass their
   PyICU pipeline fixtures.
 
