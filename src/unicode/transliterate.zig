@@ -1113,27 +1113,44 @@ fn runPassesAlloc(
 ) Error!std.ArrayList(u21) {
     const record = transformAt(transform_index);
     const pass_count: usize = @max(record.pass_count, 1);
+    // Leading normalization directives can leave empty passes; the global
+    // filter belongs to the first pass that actually contains rules.
+    const first_pass: usize = blk: {
+        for (0..pass_count) |pass| {
+            const range = transformPassRange(transform_index, @intCast(pass));
+            if (range.end > range.start) break :blk pass;
+        }
+        break :blk 0;
+    };
     var current: []const u21 = codepoints;
     var pass_output: ?std.ArrayList(u21) = null;
     defer if (pass_output) |*value| value.deinit(allocator);
 
     // Each pass applies its empty-source insertion rules, then its mapping
-    // rules. Every pass except the last writes intermediate codepoints.
+    // rules. Empty passes (for example around normalization directives) are
+    // skipped without scanning the text.
     var pass: usize = 0;
     while (pass < pass_count) : (pass += 1) {
         const range = transformPassRange(transform_index, @intCast(pass));
+        if (range.end == range.start) continue;
         const next = try applyPassAlloc(
             allocator,
             current,
             range,
-            if (pass == 0) filter_set else 0,
+            if (pass == first_pass) filter_set else 0,
         );
-        if (pass + 1 == pass_count) return next;
         if (pass_output) |*value| value.deinit(allocator);
         pass_output = next;
         current = next.items;
     }
-    unreachable;
+    if (pass_output) |value| {
+        pass_output = null;
+        return value;
+    }
+    var output = std.ArrayList(u21).empty;
+    errdefer output.deinit(allocator);
+    try output.appendSlice(allocator, codepoints);
+    return output;
 }
 
 fn encodeCodepointsAlloc(
@@ -2430,6 +2447,11 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/latin_interindic_conformance.bin"),
         .magic = "CJLI".*,
         .name = "Latin-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/dsb_dsb_fonipa_conformance.bin"),
+        .magic = "CJEH".*,
+        .name = "dsb-dsb_FONIPA",
     },
     .{
         .bytes = @embedFile("transliterate/latin_hebrew_conformance.bin"),

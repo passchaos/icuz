@@ -145,6 +145,7 @@ TRANSFORMS = (
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
     ("ug-ug_FONIPA", "ug-ug_FONIPA", "context"),
+    ("dsb-dsb_FONIPA", "dsb-dsb_FONIPA", "context"),
     ("sat_Olck-sat_FONIPA", "sat_Olck-sat_FONIPA", "context"),
     ("uz_Cyrl-uz_Latn", "uz_Cyrl-uz_Latn", "context"),
     ("ThaiLogical-Latin", "ThaiLogical-Latin", "context"),
@@ -2235,6 +2236,12 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             # reverse direction ICU applies the passes in reverse order.
             directive = line[2:].strip().rstrip(";").strip().lower()
             if directive in ("null", "(null)", "null()"):
+                pass_index += 1
+            elif re.fullmatch(
+                r"nfk?[cd](\s*\(\s*nfk?[cd]\s*\))?",
+                directive,
+            ):
+                # Mid-rule normalization directives also split passes.
                 pass_index += 1
             continue
         if VARIABLE_DEF.match(line):

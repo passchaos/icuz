@@ -105,10 +105,10 @@ need without pulling in a font or layout engine.
   FONIPA-to-Amharic pipelines, and
   NFC/NFD/NFKC/NFKD transforms, plus the `Hex-Any` / `Any-Hex` escape
   transforms and the `Name-Any` / `Any-Name` character-name transforms.
-  Two hundred fifty-five
+  Two hundred fifty-six
   transforms are compiled (including 120 auto-discovered CLDR pipelines);
   thirty ship official CLDR conformance
-  fixtures, and two hundred twenty-nine (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and two hundred thirty (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, the nine script-to-InterIndic
   transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
@@ -157,8 +157,8 @@ need without pulling in a font or layout engine.
   ordered step programs (`::NFD;`, `::Transform;`, `::Lower;`,
   `::NFC;`) for multi-component pipelines,
   XML
-  comment stripping, and `::Null;`/`::(null);`/`::null();` multi-pass
-  pipelines.
+  comment stripping, `::Null;`/`::(null);`/`::null();` multi-pass
+  pipelines, and mid-rule normalization directives that split passes.
 - Embedded, version-pinned generated data plus conformance fixtures.
 
 ## Non-goals for 0.1
