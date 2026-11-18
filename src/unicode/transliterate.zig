@@ -134,7 +134,7 @@ fn transformAt(index: usize) TransformRecord {
 const named_transform_names = [_][]const u8{
     "NFC",       "NFD",       "NFKC",      "NFKD",     "Any-Lower",
     "Any-Upper", "Any-Title", "Any-Null",  "Hex-Any",  "Any-Hex",
-    "Name-Any",
+    "Name-Any",  "Any-Name",
 };
 
 /// Number of transforms available by name, including named engines.
@@ -186,7 +186,7 @@ fn isNamedTransform(name: []const u8) bool {
     const names = [_][]const u8{
         "Latin-ASCII", "NFC",     "NFD",       "NFKC",      "NFKD",
         "Any-Lower",   "Any-Upper", "Any-Title", "Any-Null", "Null",
-        "Hex-Any",     "Any-Hex",   "Name-Any",
+        "Hex-Any",     "Any-Hex",   "Name-Any", "Any-Name",
     };
     for (names) |candidate| {
         if (std.mem.eql(u8, name, candidate)) return true;
@@ -1044,6 +1044,42 @@ fn nameAnyAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
     return output.toOwnedSlice(allocator);
 }
 
+fn anyNameAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    var index: usize = 0;
+    while (index < text.len) {
+        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+            return error.InvalidUtf8;
+        if (index + length > text.len) return error.InvalidUtf8;
+        const codepoint = std.unicode.utf8Decode(text[index..][0..length]) catch
+            return error.InvalidUtf8;
+        if (unicode_name.name(codepoint)) |entry| {
+            try output.appendSlice(allocator, "\\N{");
+            try output.appendSlice(allocator, entry);
+            try output.append(allocator, '}');
+        } else if (codepoint <= 0xffff) {
+            var buffer: [6]u8 = undefined;
+            const formatted = std.fmt.bufPrint(
+                &buffer,
+                "\\u{X:0>4}",
+                .{codepoint},
+            ) catch unreachable;
+            try output.appendSlice(allocator, formatted);
+        } else {
+            var buffer: [10]u8 = undefined;
+            const formatted = std.fmt.bufPrint(
+                &buffer,
+                "\\U{X:0>8}",
+                .{codepoint},
+            ) catch unreachable;
+            try output.appendSlice(allocator, formatted);
+        }
+        index += length;
+    }
+    return output.toOwnedSlice(allocator);
+}
+
 fn anyHexAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
@@ -1114,6 +1150,7 @@ pub fn transliterateByNameAlloc(
         return allocator.dupe(u8, text);
     }
     if (std.mem.eql(u8, name, "Name-Any")) return nameAnyAlloc(allocator, text);
+    if (std.mem.eql(u8, name, "Any-Name")) return anyNameAlloc(allocator, text);
     if (std.mem.eql(u8, name, "Hex-Any")) return hexAnyAlloc(allocator, text);
     if (std.mem.eql(u8, name, "Any-Hex")) return anyHexAlloc(allocator, text);
     if (aliasTransform(name)) |clrd| {
@@ -1961,6 +1998,13 @@ test "transform discovery" {
     );
     defer allocator.free(unknown_name);
     try testing.expectEqualStrings("\\N{NO SUCH NAME}", unknown_name);
+
+    const encoded_name = try transliterateByNameAlloc(allocator, "A", "Any-Name");
+    defer allocator.free(encoded_name);
+    try testing.expectEqualStrings(
+        "\\N{LATIN CAPITAL LETTER A}",
+        encoded_name,
+    );
 
     const identity = try transliterateByNameAlloc(allocator, "abc", "Any-Null");
     defer allocator.free(identity);
