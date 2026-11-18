@@ -145,6 +145,13 @@ TRANSFORMS = (
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
     ("ug-ug_FONIPA", "ug-ug_FONIPA", "context"),
+    ("it-am", "it-am", "context"),
+    ("it-ja", "it-ja", "context"),
+    ("ja_Latn-ru", "ja_Latn-ru", "context"),
+    ("ru-ja", "ru-ja", "context"),
+    ("es_FONIPA-es_419_FONIPA", "es_FONIPA-es_419_FONIPA", "context"),
+    ("cs_FONIPA-ja", "cs_FONIPA-ja", "context"),
+    ("es_FONIPA-ja", "es_FONIPA-ja", "context"),
     ("dsb-dsb_FONIPA", "dsb-dsb_FONIPA", "context"),
     ("sat_Olck-sat_FONIPA", "sat_Olck-sat_FONIPA", "context"),
     ("uz_Cyrl-uz_Latn", "uz_Cyrl-uz_Latn", "context"),
@@ -474,7 +481,7 @@ def detect_reverse_normalization(rules: str):
 # Components whose rule sets need engine features that are not compiled yet
 # (for example InterIndic-Arabic's `($alif) $alif+ > $1` collapse rule).
 PIPELINE_EXCLUDE_COMPONENTS: set[str] = set()
-PIPELINE_EXCLUDE_NAMES = {"ch-am", "sk-am"}
+PIPELINE_EXCLUDE_NAMES = {"ch-am", "sk-am", "cs-ja", "es-ja", "es_419-am", "es_419-ja", "ug-Latin"}
 
 PIPELINE_COMPONENTS = {
     "Amharic-Amharic/Geminate": "am-Ethi-t-am-ethi-m0-geminate",

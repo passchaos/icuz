@@ -105,10 +105,10 @@ need without pulling in a font or layout engine.
   FONIPA-to-Amharic pipelines, and
   NFC/NFD/NFKC/NFKD transforms, plus the `Hex-Any` / `Any-Hex` escape
   transforms and the `Name-Any` / `Any-Name` character-name transforms.
-  Two hundred fifty-six
+  Two hundred sixty-two
   transforms are compiled (including 120 auto-discovered CLDR pipelines);
   thirty ship official CLDR conformance
-  fixtures, and two hundred thirty (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and two hundred thirty-seven (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, the nine script-to-InterIndic
   transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,

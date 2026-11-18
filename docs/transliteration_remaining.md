@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 256 compiled table transforms plus 13 named engines (`NFC`, `NFD`,
+- 262 compiled table transforms plus 13 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 260 conformance fixtures: 30 official CLDR test-data files and 230 PyICU
+- 267 conformance fixtures: 30 official CLDR test-data files and 237 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -116,6 +116,10 @@ coverage for the tone-position classes.
 - `sat_Olck-sat_FONIPA`, `uz_Cyrl-uz_Latn`, and `ThaiLogical-Latin`
   compile with the context builder and pass; the `sat-am` pipeline also
   passes.
+- `it-am`, `it-ja`, `ja_Latn-ru`, `ru-ja`, `cs_FONIPA-ja`, `es_FONIPA-ja`,
+  and `es_FONIPA-es_419_FONIPA` pass their PyICU fixtures. The
+  `ja_Latn-ko`, `pl/ro/sk_FONIPA-ja`, `ru-zh`, and `zh_Latn_PINYIN-ru`
+  variants still need context or Pinyin coverage.
 - `dsb-dsb_FONIPA` passes after mid-rule normalization directives were
   made pass boundaries and the global filter was moved to the first
   non-empty pass.

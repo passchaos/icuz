@@ -2449,6 +2449,41 @@ const conformance_fixtures = [_]struct {
         .name = "Latin-InterIndic",
     },
     .{
+        .bytes = @embedFile("transliterate/cs_fonipa_ja_conformance.bin"),
+        .magic = "CJFE".*,
+        .name = "cs_FONIPA-ja",
+    },
+    .{
+        .bytes = @embedFile("transliterate/es_fonipa_es_419_fonipa_conformance.bin"),
+        .magic = "CJFD".*,
+        .name = "es_FONIPA-es_419_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/es_fonipa_ja_conformance.bin"),
+        .magic = "CJFG".*,
+        .name = "es_FONIPA-ja",
+    },
+    .{
+        .bytes = @embedFile("transliterate/it_am_conformance.bin"),
+        .magic = "CJEE".*,
+        .name = "it-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/it_ja_conformance.bin"),
+        .magic = "CJEP".*,
+        .name = "it-ja",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ja_latn_ru_conformance.bin"),
+        .magic = "CJES".*,
+        .name = "ja_Latn-ru",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ru_ja_conformance.bin"),
+        .magic = "CJET".*,
+        .name = "ru-ja",
+    },
+    .{
         .bytes = @embedFile("transliterate/dsb_dsb_fonipa_conformance.bin"),
         .magic = "CJEH".*,
         .name = "dsb-dsb_FONIPA",
