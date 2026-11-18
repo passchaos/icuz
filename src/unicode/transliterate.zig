@@ -1909,6 +1909,9 @@ test "transform discovery" {
     );
     defer allocator.free(braced);
     try testing.expectEqualStrings("\u{1F600}", braced);
+    const bare_hex = try transliterateByNameAlloc(allocator, "\\x41", "Hex-Any");
+    defer allocator.free(bare_hex);
+    try testing.expectEqualStrings("\\x41", bare_hex);
     const encoded = try transliterateByNameAlloc(allocator, "\u{00e9}", "Any-Hex");
     defer allocator.free(encoded);
     try testing.expectEqualStrings("\\u00E9", encoded);
