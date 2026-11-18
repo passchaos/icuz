@@ -100,7 +100,8 @@ need without pulling in a font or layout engine.
   Traditional-Simplified, Hans-Hant, Hant-Hans, the Ethiopic geminate
   pipelines, and
   NFC/NFD/NFKC/NFKD transforms, plus the `Hex-Any` / `Any-Hex` escape
-  transforms. Eighty-seven
+  transforms and the `Name-Any` / `Any-Name` character-name transforms.
+  Eighty-seven
   transforms are compiled; thirty ship official CLDR conformance
   fixtures, and fifty-nine (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
