@@ -114,7 +114,9 @@ need without pulling in a font or layout engine.
   sources, empty-source insertion rules, text-boundary class anchors, output
   cursor reprocessing (`|`), output post-normalization, multi-definition
   variable lines (including multi-line classes), quoted and ignored
-  whitespace, output-aware rule contexts, ICU input filters (`:: [set] ;`),
+  whitespace, output-aware rule contexts, context variables that expand to
+  element sequences, `*`/`+` quantifiers on variable references, mid-target
+  output cursors, ICU input filters (`:: [set] ;`),
   trailing `::Any-Lower;`/`::Any-Upper;` case steps, `ccc=` property
   classes, ICU rule-order priority, XML
   comment stripping, and `::Null;` multi-pass pipelines.

@@ -1094,6 +1094,24 @@ def parse_context(text: str, variables: dict[str, str]):
         return None
     alternatives: list[list[tuple]] = [[]]
     for token in tokens:
+        if token in ("*", "+"):
+            # ICU treats `$class * $next` as a quantified preceding element.
+            if not alternatives:
+                return None
+            repeat = 1 if token == "*" else 2
+            for elements in alternatives:
+                if not elements:
+                    return None
+                base, negated, boundary, _, anchor, element_optional = elements[-1]
+                elements[-1] = (
+                    base,
+                    negated,
+                    boundary,
+                    repeat,
+                    anchor,
+                    element_optional,
+                )
+            continue
         optional = token.endswith("?")
         if optional:
             token = token[:-1]
@@ -1236,14 +1254,32 @@ def parse_context_token(token: str, variables: dict[str, str]):
                 token[end].isalnum() or token[end] == "_"
             ):
                 end += 1
-            resolved = resolve_context_set(token[index:end], variables)
-            if resolved is None:
-                return None
-            base, negated, strings = resolved
-            piece = set_element_alternatives(base, negated, strings)
-            if piece is None:
-                return None
+            name = token[index:end]
+            raw = variables.get(name)
+            nested = None
+            if raw is not None and any(ch in raw for ch in " *+$["):
+                nested = parse_context(raw, variables)
+            if nested is not None:
+                piece = nested
+            else:
+                resolved = resolve_context_set(name, variables)
+                if resolved is None:
+                    return None
+                base, negated, strings = resolved
+                piece = set_element_alternatives(base, negated, strings)
+                if piece is None:
+                    return None
             index = end
+            if index < len(token) and token[index] in "*+":
+                repeat = 1 if token[index] == "*" else 2
+                piece = [
+                    [
+                        (base, negated, boundary, repeat, anchor, optional)
+                        for (base, negated, boundary, _, anchor, optional) in elements
+                    ]
+                    for elements in piece
+                ]
+                index += 1
         elif character in "*+{}|":
             return None
         else:
@@ -1552,12 +1588,14 @@ def table_entries_with_contexts(rules: str):
         # ICU's output cursor `|` controls where scanning resumes after a
         # replacement. A leading `|` means the replacement itself is rescanned.
         reprocess = False
-        bar = find_unquoted(right, "|")
-        if bar is not None:
-            if right[:bar].strip():
-                continue
+        while True:
+            bar = find_unquoted(right, "|")
+            if bar is None:
+                break
+            # ICU's output cursor marks where scanning resumes. Rescanning the
+            # whole replacement covers both leading and mid-target cursors.
             reprocess = True
-            right = right[bar + 1 :].strip()
+            right = (right[:bar] + right[bar + 1 :]).strip()
         open_pos = find_unquoted(left, "{")
         close_pos = find_unquoted(left, "}")
         if open_pos is not None:
