@@ -1382,6 +1382,11 @@ const conformance_fixtures = [_]struct {
         .magic = "CJHW".*,
         .name = "Halfwidth-Fullwidth",
     },
+    .{
+        .bytes = @embedFile("transliterate/fullwidth_conformance.bin"),
+        .magic = "CJFW".*,
+        .name = "Fullwidth-Halfwidth",
+    },
 };
 
 test "transliterate by CLDR name" {

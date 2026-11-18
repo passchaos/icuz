@@ -376,7 +376,7 @@ def strip_comment(line: str) -> str:
     index = 0
     while index < len(line):
         character = line[index]
-        if character == "\\" and index + 1 < len(line):
+        if character == "\\" and not quoted and index + 1 < len(line):
             output.append(line[index : index + 2])
             index += 2
             continue
@@ -425,7 +425,7 @@ def parse_side(text: str) -> tuple[list[int], bool]:
             quoted = not quoted
             index += 1
             continue
-        if character == "\\":
+        if character == "\\" and not quoted:
             codepoint, consumed = read_escape(text, index)
             codepoints.append(codepoint)
             index += consumed
@@ -696,7 +696,7 @@ def parse_side_with_variables(
             quoted = not quoted
             index += 1
             continue
-        if character == "\\":
+        if character == "\\" and not quoted:
             codepoint, consumed = read_escape(text, index)
             codepoints.append(codepoint)
             index += consumed

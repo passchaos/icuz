@@ -98,7 +98,7 @@ need without pulling in a font or layout engine.
   Latin-CanadianAboriginal, and
   NFC/NFD/NFKC/NFKD transforms. Seventy-four
   transforms are compiled; twenty-four ship official CLDR conformance
-  fixtures, and forty-five (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and forty-six (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
   Venetian FONIPA, Romanian FONIPA, Arabic-Latin-BGN, Armenian-Latin-BGN,
@@ -106,7 +106,8 @@ need without pulling in a font or layout engine.
   case transforms, Korean-Latin-BGN, Kirghiz-Latin-BGN, Latin-Armenian,
   Azerbaijani-Latin-BGN, Latin-Cyrillic, Latin-Thaana,
   Latin-CanadianAboriginal, Georgian-Latin, Latin-Georgian,
-  Halfwidth-Fullwidth, a Kazakh FONIPA validation fixture, Hiragana-Katakana,
+  Halfwidth-Fullwidth, Fullwidth-Halfwidth, a Kazakh FONIPA validation
+  fixture, Hiragana-Katakana,
   and Persian-Latin-BGN) ship ICU
   differential fixtures generated with PyICU, including reverse-direction
   transforms. Transforms can be selected by CLDR name through
