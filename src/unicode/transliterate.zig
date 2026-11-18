@@ -3750,6 +3750,25 @@ test "transliterate by CLDR name" {
     );
 }
 
+test "global filters leave out-of-filter text unchanged" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    // Arabic-Latin and Hebrew-Latin declare `:: [set] ;` input filters; text
+    // outside the filter must pass through untouched, as in ICU.
+    for ([_][]const u8{ "Arabic-Latin", "Hebrew-Latin" }) |name| {
+        for ([_][]const u8{ "abc 123", "\u{00e9}", "x\u{0301}" }) |input| {
+            const converted = try transliterateByNameAlloc(
+                allocator,
+                input,
+                name,
+            );
+            defer allocator.free(converted);
+            try testing.expectEqualStrings(input, converted);
+        }
+    }
+}
+
 test "CLDR transform conformance" {
     var failures: usize = 0;
     for (conformance_fixtures) |fixture| {

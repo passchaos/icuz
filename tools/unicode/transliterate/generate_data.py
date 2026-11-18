@@ -1230,6 +1230,24 @@ SCRIPT_ALIASES = {
     "zyyy": "common",
     "zinh": "inherited",
 }
+# Unicode blocks referenced by CLDR transliteration rules. ICU block names
+# ignore case, spaces, hyphens, and underscores.
+BLOCK_RANGES = {
+    "arabic": (0x0600, 0x06FF),
+    "thaana": (0x0780, 0x07BF),
+}
+
+
+def block_codepoints(name: str):
+    key = re.sub(r"[\s_-]", "", name.strip().lower())
+    if key.startswith("block="):
+        key = key[len("block=") :]
+    span = BLOCK_RANGES.get(key)
+    if span is None:
+        return None
+    return frozenset(range(span[0], span[1] + 1))
+
+
 SOFT_DOTTED = frozenset(
     (0x0069, 0x006A, 0x012F, 0x0249, 0x0268, 0x029D, 0x02B2, 0x03F3,
      0x0456, 0x0458, 0x1D62, 0x1D96, 0x1DA4, 0x1DA8, 0x1E2D, 0x1ECB,
@@ -1387,6 +1405,12 @@ def property_codepoints(name: str):
             return None
         PROPERTY_CACHE[key] = script_value
         return script_value
+    elif key.startswith("block="):
+        block_value = block_codepoints(key)
+        if block_value is None:
+            return None
+        PROPERTY_CACHE[key] = block_value
+        return block_value
     elif key.startswith("ccc="):
         ccc_name = key[4:].strip().replace("-", "_").replace(" ", "_")
         ccc_value = CCC_ALIASES.get(ccc_name)
@@ -1457,7 +1481,14 @@ def parse_class_expression(
 ):
     stripped = content.strip()
     if stripped.startswith(":") and stripped.endswith(":"):
-        return property_codepoints(stripped[1:-1])
+        name = stripped[1:-1].strip()
+        property_negated = name.startswith("^")
+        if property_negated:
+            name = name[1:].strip()
+        value = property_codepoints(name)
+        if value is None:
+            return None
+        return complement_set(value) if property_negated else value
     index = 0
     current: set[int] | None = None
     operator = "union"
@@ -1504,8 +1535,18 @@ def parse_class_term(
             end = content.find(":]", index + 2)
             if end < 0:
                 return None
-            value = property_codepoints(content[index + 2 : end])
-            return None if value is None else (value, end + 2)
+            name = content[index + 2 : end].strip()
+            property_negated = name.startswith("^")
+            if property_negated:
+                name = name[1:].strip()
+            value = property_codepoints(name)
+            if value is None:
+                return None
+            # A negated property inside a larger class must be materialized
+            # so it can participate in the surrounding union/intersection.
+            if property_negated:
+                value = complement_set(value)
+            return (value, end + 2)
         depth_count = 0
         end = index
         while end < len(content):
@@ -1523,7 +1564,7 @@ def parse_class_term(
             return None
         value, negated = parsed
         if negated:
-            return None
+            value = complement_set(value)
         return (value, end + 1)
     if character == "$":
         end = index + 1

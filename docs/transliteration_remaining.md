@@ -36,8 +36,10 @@ Status after the CLDR 48 rule-engine push:
 - Property classes accept long general-category names
   (`[:Uppercase_Letter:]`, `[:Mark:]`), binary approximations
   (`Cased`, `Case_Ignorable`, `Soft_Dotted`, `Ideographic`,
-  `Logical_Order_Exception`), and ISO 15924 script aliases (`Cyrl`,
-  `Sinh`, ...).
+  `Logical_Order_Exception`), ISO 15924 script aliases (`Cyrl`,
+  `Sinh`, `Cher`, ...), Unicode blocks (`Block=Arabic`, `Block=Thaana`),
+  and nested negated classes/properties
+  (`[[:^ccc=0:] & [:^ccc=230:]]`, `[^[:L:][:M:][:N:]]`).
 - Source quantifiers are greedy, matching ICU's regex behavior
   (`X?`, `X*`, `X+` try the longest repetition first).
 
@@ -84,14 +86,15 @@ Embedded case calls (`&Any-Lower($1)` / `&Any-Upper($1)`) are compiled;
 friends) plus a real `Any-Title` step. General embedded transform calls
 (`&SomeTransform($1)`) remain unsupported.
 
-## 3. Script_Extensions based filters
+## 3. Filter expressions with transform arguments
 
-Property-based input filters (`:: [:Ethiopic:] ;`) are currently skipped
-because the committed `src/unicode/script_extensions/data.bin` disagrees
-with ICU for some scalars (ICU places `U+2DC8` in `[:Ethiopic:]`; the
-committed tables report Common). Literal filters still apply. Fixing
-this requires completing the scx data, then allowing property filters in
-`parse_filter`.
+Property-based input filters (`:: [:Ethiopic:] ;`,
+`[[:Arabic:][:Block=Arabic:]...]`) compile, including nested negated
+classes and properties. The remaining gap is a filter followed by a
+transform reference: `::[:Latin:] fullwidth-halfwidth();` in `it-am`,
+`it-ja`, `ja_Latn-ko`, and `ja_Latn-ru`, and `::[...] nfkc` in
+`Han-Spacedhan`. Those need the general segment/pipeline engine from
+section 1.
 
 ## 4. Pinyin tone placement
 
