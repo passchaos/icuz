@@ -93,18 +93,29 @@ def decode_literal(text: str) -> str:
     return "".join(result)
 
 
-def source_strings(rules: str):
+def source_strings(rules: str, reverse: bool = False):
     sources = []
     for raw in rules.splitlines():
         line = raw.split("#", 1)[0].strip()
         if not line or line.startswith("::") or line.startswith("$"):
             continue
-        if "→" in line:
-            left = line.split("→", 1)[0]
-        elif "↔" in line:
-            left = line.split("↔", 1)[0]
+        if reverse:
+            if "→" in line:
+                left = line.split("→", 1)[1]
+            elif "↔" in line:
+                left = line.split("↔", 1)[1]
+            elif "←" in line:
+                left = line.split("←", 1)[0]
+            else:
+                continue
+            left = left.strip().rstrip(";").strip()
         else:
-            continue
+            if "→" in line:
+                left = line.split("→", 1)[0]
+            elif "↔" in line:
+                left = line.split("↔", 1)[0]
+            else:
+                continue
         open_pos = left.find("{")
         close_pos = left.find("}")
         if open_pos >= 0:
@@ -141,18 +152,19 @@ def source_strings(rules: str):
 
 
 def main() -> int:
-    if len(sys.argv) not in (6, 7):
+    if len(sys.argv) not in (6, 7, 8):
         print(__doc__.strip(), file=sys.stderr)
         return 2
     archive_path, transform, icu_id, magic, out_path = sys.argv[1:6]
-    source_transform = sys.argv[6] if len(sys.argv) == 7 else transform
+    source_transform = sys.argv[6] if len(sys.argv) >= 7 else transform
+    reverse = len(sys.argv) == 8 and sys.argv[7] == "reverse"
     with zipfile.ZipFile(archive_path) as archive:
         rules = extract_rule(
             archive.read(
                 f"common/transforms/{source_transform}.xml"
             ).decode("utf-8")
         )
-    sources = source_strings(rules)
+    sources = source_strings(rules, reverse)
     if not sources:
         raise SystemExit("no source strings found")
     random.seed(20261118)

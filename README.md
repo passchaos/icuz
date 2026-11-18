@@ -106,7 +106,8 @@ need without pulling in a font or layout engine.
   Azerbaijani-Latin-BGN,
   a Kazakh FONIPA validation fixture, Hiragana-Katakana,
   and Persian-Latin-BGN) ship ICU
-  differential fixtures generated with PyICU. Transforms can be selected by CLDR name through
+  differential fixtures generated with PyICU, including reverse-direction
+  transforms. Transforms can be selected by CLDR name through
   `transliterateByNameAlloc`. The table compiler expands character classes,
   Unicode properties, set operations, multi-codepoint set elements,
   multi-element prefix/suffix contexts with word-boundary handling, optional
