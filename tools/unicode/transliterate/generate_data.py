@@ -81,6 +81,11 @@ TRANSFORMS = (
     ("Hiragana-Katakana", "Hiragana-Katakana", "context"),
     ("Persian-Latin-BGN", "Persian-Latin-BGN", "context"),
     ("nv-nv_FONIPA", "nv-nv_FONIPA", "context"),
+    ("si-si_FONIPA", "si-si_FONIPA", "context"),
+    ("es-es_FONIPA", "es-es_FONIPA", "context"),
+    ("xh-xh_FONIPA", "xh-xh_FONIPA", "context"),
+    ("vec-vec_FONIPA", "vec-vec_FONIPA", "context"),
+    ("ro-ro_FONIPA", "ro-ro_FONIPA", "context"),
 )
 
 CONFORMANCE = (
@@ -475,19 +480,52 @@ def reverse_table(table: list[tuple[tuple[int, ...], tuple[int, ...]]]):
     return sorted(result.items(), key=lambda item: (item[0][0], -len(item[0]), item[0]))
 
 
+def variable_definition_complete(text: str) -> bool:
+    """True when every `[` in a variable definition has its `]`."""
+    depth = 0
+    quoted = False
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if character == "\\":
+            index += 2
+            continue
+        if character == "'":
+            quoted = not quoted
+        elif not quoted:
+            if character == "[":
+                depth += 1
+            elif character == "]":
+                depth = max(depth - 1, 0)
+        index += 1
+    return depth == 0
+
+
 def parse_variables(rules: str) -> dict[str, str]:
     variables: dict[str, str] = {}
-    for raw in rules.splitlines():
-        line = strip_comment(raw)
+    lines = rules.splitlines()
+    index = 0
+    while index < len(lines):
+        line = strip_comment(lines[index])
         line = line.replace("\u200e", "").replace("\u200f", "")
         line = line.replace("\u061c", "")
         if not line.startswith("$") or "=" not in line:
+            index += 1
             continue
-        for statement in line.split(";"):
-            statement = statement.strip()
-            if not statement.startswith("$") or "=" not in statement:
+        # Variable definitions may span lines, for example a large
+        # multi-line character class.
+        statement = line
+        while not variable_definition_complete(statement) and index + 1 < len(lines):
+            index += 1
+            continuation = strip_comment(lines[index])
+            continuation = continuation.replace("\u200e", "").replace("\u200f", "")
+            continuation = continuation.replace("\u061c", "")
+            statement += " " + continuation
+        for piece in statement.split(";"):
+            piece = piece.strip()
+            if not piece.startswith("$") or "=" not in piece:
                 continue
-            name, value = statement.split("=", 1)
+            name, value = piece.split("=", 1)
             name = name.strip()
             value = value.strip()
             if not name:
@@ -495,6 +533,7 @@ def parse_variables(rules: str) -> dict[str, str]:
             # Empty values are meaningful (for example the sixth Ethiopic
             # vowel order has no suffix).
             variables[name] = value
+        index += 1
     return variables
 
 
@@ -727,6 +766,17 @@ def fullwidth_entries(rules: str):
 
 
 PROPERTY_CACHE: dict[str, frozenset[int]] = {}
+COMPLEMENT_CACHE: dict[int, frozenset[int]] = {}
+ALL_CODEPOINTS = frozenset(range(0x110000))
+
+
+def complement_set(value: frozenset[int]) -> frozenset[int]:
+    key = id(value)
+    cached = COMPLEMENT_CACHE.get(key)
+    if cached is None:
+        cached = ALL_CODEPOINTS - value
+        COMPLEMENT_CACHE[key] = cached
+    return cached
 
 
 def property_codepoints(name: str):
@@ -739,7 +789,7 @@ def property_codepoints(name: str):
         for codepoint in range(0x110000):
             if unicodedata.category(chr(codepoint)) in categories:
                 result.append(codepoint)
-    elif key in ("l", "m", "n"):
+    elif key in ("l", "m", "n", "p", "s", "z", "c"):
         prefix = key.upper()
         for codepoint in range(0x110000):
             if unicodedata.category(chr(codepoint)).startswith(prefix):
@@ -873,7 +923,9 @@ def parse_class_term(
             return None
         value, negated = resolved
         if negated:
-            return None
+            # Materialize the complement so a negated variable can participate
+            # in class unions; -1 keeps ICU's boundary-matching behavior.
+            return (complement_set(value) | frozenset((-1,)), end)
         return (value, end)
     if character == "\\":
         first, consumed = read_escape(content, index)
@@ -899,6 +951,72 @@ def parse_class_term(
     return (frozenset((first,)), index)
 
 
+def split_class_strings(content: str):
+    """Split `{...}` string elements out of a UnicodeSet body.
+
+    Returns (remaining body, string tuples) or None when the body is
+    malformed. Strings keep longest-first priority.
+    """
+    strings: list[tuple[int, ...]] = []
+    remainder: list[str] = []
+    index = 0
+    while index < len(content):
+        character = content[index]
+        if character == "\\":
+            remainder.append(content[index : index + 2])
+            index += 2
+            continue
+        if character == "'":
+            remainder.append(character)
+            index += 1
+            while index < len(content):
+                remainder.append(content[index])
+                if content[index] == "'":
+                    index += 1
+                    break
+                index += 1
+            continue
+        if character == "{":
+            end = content.find("}", index + 1)
+            if end < 0:
+                return None
+            inner = content[index + 1 : end]
+            codepoints, syntax = parse_side(inner)
+            if syntax:
+                return None
+            if len(codepoints) >= 2:
+                strings.append(tuple(codepoints))
+            elif len(codepoints) == 1:
+                remainder.append(f"\\u{codepoints[0]:04X}")
+            index = end + 1
+            continue
+        remainder.append(character)
+        index += 1
+    strings.sort(key=lambda value: (-len(value), value))
+    return "".join(remainder), strings
+
+
+def resolve_context_set(name: str, variables: dict[str, str]):
+    """Resolve a context token to (set, negated, string alternatives)."""
+    raw = variables.get(name)
+    if raw is None:
+        return None
+    if raw.startswith("[") and raw.endswith("]"):
+        split = split_class_strings(raw[1:-1])
+        if split is None:
+            return None
+        content, strings = split
+        parsed = parse_class_set("[" + content + "]", variables)
+        if parsed is None:
+            return None
+        base, negated = parsed
+        return (base, negated, strings)
+    codepoints, syntax = parse_side_with_variables(raw, variables)
+    if syntax:
+        return None
+    return (frozenset(codepoints), False, [])
+
+
 def parse_context(text: str, variables: dict[str, str]):
     text = text.strip()
     if not text:
@@ -906,7 +1024,7 @@ def parse_context(text: str, variables: dict[str, str]):
     tokens = split_context_tokens(text)
     if tokens is None:
         return None
-    elements = []
+    alternatives: list[list[tuple]] = [[]]
     for token in tokens:
         optional = token.endswith("?")
         if optional:
@@ -914,11 +1032,52 @@ def parse_context(text: str, variables: dict[str, str]):
         parsed = parse_context_token(token, variables)
         if parsed is None:
             return None
-        for base, negated, boundary, repeat, anchor in parsed:
-            elements.append(
-                (base, negated, boundary, optional, repeat, anchor)
-            )
-    return elements if elements else None
+        combined: list[list[tuple]] = []
+        for prefix in alternatives:
+            for elements in parsed:
+                combined.append(
+                    prefix +
+                        [
+                            (
+                                base,
+                                negated,
+                                boundary,
+                                optional or element_optional,
+                                repeat,
+                                anchor,
+                            )
+                            for (
+                                base,
+                                negated,
+                                boundary,
+                                repeat,
+                                anchor,
+                                element_optional,
+                            ) in elements
+                        ]
+                )
+        alternatives = combined
+        if len(alternatives) > 64:
+            return None
+    return alternatives if alternatives else None
+
+
+def set_element_alternatives(base, negated, strings):
+    if not strings:
+        return [[(base, negated, False, 0, False, False)]]
+    if negated:
+        return None
+    alternatives = []
+    for sequence in strings:
+        alternatives.append(
+            [
+                (frozenset((codepoint,)), False, False, 0, False, False)
+                for codepoint in sequence
+            ]
+        )
+    if base:
+        alternatives.append([(base, False, False, 0, False, False)])
+    return alternatives
 
 
 def parse_context_token(token: str, variables: dict[str, str]):
@@ -926,7 +1085,7 @@ def parse_context_token(token: str, variables: dict[str, str]):
     if not token:
         return None
     if token == "$":
-        return [(frozenset(), False, True, 0, True)]
+        return [[(frozenset(), False, True, 0, True, False)]]
     if token == "$wordBoundary":
         raw = variables.get("$wordBoundary")
         if raw is None:
@@ -937,11 +1096,12 @@ def parse_context_token(token: str, variables: dict[str, str]):
         base, negated = parsed
         if not negated:
             return None
-        return [(base, True, True, 0, False)]
-    elements = []
+        return [[(base, True, True, 0, False, False)]]
+    alternatives: list[list[tuple]] = [[]]
     index = 0
     while index < len(token):
         character = token[index]
+        piece = None
         if character == "[":
             depth = 0
             end = index
@@ -955,14 +1115,19 @@ def parse_context_token(token: str, variables: dict[str, str]):
                 end += 1
             if depth != 0:
                 return None
-            parsed = parse_class_set(token[index : end + 1], variables)
+            split = split_class_strings(token[index + 1 : end])
+            if split is None:
+                return None
+            content, strings = split
+            parsed = parse_class_set("[" + content + "]", variables)
             if parsed is None:
                 return None
             base, negated = parsed
-            elements.append((base, negated, False, 0, False))
+            piece = set_element_alternatives(base, negated, strings)
+            if piece is None:
+                return None
             index = end + 1
-            continue
-        if character == "(":
+        elif character == "(":
             depth = 0
             end = index
             while end < len(token):
@@ -986,40 +1151,59 @@ def parse_context_token(token: str, variables: dict[str, str]):
                 if parsed is None:
                     return None
             base, negated = parsed
-            elements.append(
+            piece = [[
                 (
                     base,
                     negated,
                     False,
                     1 if quantifier == "*" else 2,
                     False,
+                    False,
                 )
-            )
+            ]]
             index = end + 2
-            continue
-        if character == "$":
+        elif character == "$":
             end = index + 1
             while end < len(token) and (
                 token[end].isalnum() or token[end] == "_"
             ):
                 end += 1
-            resolved = resolve_set_variable(token[index:end], variables)
+            resolved = resolve_context_set(token[index:end], variables)
             if resolved is None:
                 return None
-            base, negated = resolved
-            elements.append((base, negated, False, 0, False))
+            base, negated, strings = resolved
+            piece = set_element_alternatives(base, negated, strings)
+            if piece is None:
+                return None
             index = end
-            continue
-        if character in "*+{}|":
+        elif character in "*+{}|":
             return None
-        if character == "\\":
-            codepoint, consumed = read_escape(token, index)
-            index += consumed
         else:
-            codepoint = ord(character)
+            if character == "\\":
+                codepoint, consumed = read_escape(token, index)
+                index += consumed
+            else:
+                codepoint = ord(character)
+                index += 1
+            piece = [[(frozenset((codepoint,)), False, False, 0, False, False)]]
+        # A `?` directly after a literal or class makes that element optional.
+        if index < len(token) and token[index] == "?":
+            piece = [
+                [
+                    (base, negated, boundary, repeat, anchor, True)
+                    for (base, negated, boundary, repeat, anchor, _) in elements
+                ]
+                for elements in piece
+            ]
             index += 1
-        elements.append((frozenset((codepoint,)), False, False, 0, False))
-    return elements if elements else None
+        combined: list[list[tuple]] = []
+        for prefix in alternatives:
+            for elements in piece:
+                combined.append(prefix + elements)
+        alternatives = combined
+        if len(alternatives) > 64:
+            return None
+    return alternatives if alternatives else None
 
 
 def split_context_tokens(text: str):
@@ -1066,6 +1250,74 @@ def strip_whole_group(source_text: str):
     return text[1:-1].strip()
 
 
+def expand_embedded_group(source_text: str, variables: dict[str, str]):
+    """Expand a single mid-source class capture such as `X ([abc]) Y`.
+
+    Returns (prefix alternatives, class codepoints, suffix alternatives) or
+    None. The target's `$1` is replaced with the captured codepoint.
+    """
+    open_pos = find_unquoted(source_text, "(")
+    if open_pos is None:
+        return None
+    close_pos = find_unquoted(source_text, ")")
+    if close_pos is None or close_pos <= open_pos:
+        return None
+    if find_unquoted(source_text[close_pos + 1 :], "(") is not None:
+        return None
+    inner = source_text[open_pos + 1 : close_pos].strip()
+    if inner.startswith("$"):
+        group = resolve_source_variable(inner, variables)
+    elif inner.startswith("[") and inner.endswith("]"):
+        group = class_alternatives(inner[1:-1], variables)
+    else:
+        codepoints, syntax = parse_side_with_variables(inner, variables)
+        if syntax:
+            return None
+        group = [tuple(codepoints)]
+    if group is None:
+        return None
+    prefix_text = source_text[:open_pos].strip()
+    suffix_text = source_text[close_pos + 1 :].strip()
+    prefix_terms = parse_source_terms(prefix_text, variables) if prefix_text else []
+    suffix_terms = parse_source_terms(suffix_text, variables) if suffix_text else []
+    if prefix_terms is None or suffix_terms is None:
+        return None
+    prefixes = expand_source_terms(prefix_terms)
+    suffixes = expand_source_terms(suffix_terms)
+    if prefixes is None or suffixes is None:
+        return None
+    return prefixes, group, suffixes
+
+
+def class_alternatives(content: str, variables: dict[str, str]):
+    """Expand a class body into source alternatives, including strings."""
+    split = split_class_strings(content)
+    if split is None:
+        return None
+    body, strings = split
+    parsed = parse_class_set("[" + body + "]", variables)
+    if parsed is None:
+        return None
+    values, negated = parsed
+    if negated:
+        return None
+    alternatives = [tuple(sequence) for sequence in strings]
+    alternatives += [(codepoint,) for codepoint in sorted(values) if codepoint >= 0]
+    return alternatives if alternatives else None
+
+
+def resolve_source_variable(name: str, variables: dict[str, str]):
+    raw = variables.get(name)
+    if raw is None:
+        return None
+    if raw.startswith("[") and raw.endswith("]"):
+        return class_alternatives(raw[1:-1], variables)
+    codepoints, syntax = parse_side_with_variables(raw, variables)
+    if syntax:
+        return None
+    return [tuple(codepoints)]
+
+
 def parse_source_terms(text: str, variables: dict[str, str]):
     terms = []
     index = 0
@@ -1089,18 +1341,11 @@ def parse_source_terms(text: str, variables: dict[str, str]):
                 end += 1
             if depth != 0:
                 return None
-            parsed = parse_class_set(text[index : end + 1], variables)
-            if parsed is None:
-                return None
-            values, negated = parsed
-            if negated:
-                return None
-            alternatives = [
-                (codepoint,)
-                for codepoint in sorted(values)
-                if codepoint >= 0
-            ]
-            if not alternatives:
+            alternatives = class_alternatives(
+                text[index + 1 : end],
+                variables,
+            )
+            if alternatives is None:
                 return None
             index = end + 1
         elif text[index] == "$":
@@ -1109,14 +1354,9 @@ def parse_source_terms(text: str, variables: dict[str, str]):
                 text[end].isalnum() or text[end] == "_"
             ):
                 end += 1
-            resolved = resolve_variable(text[index:end], variables)
-            if resolved is None:
+            alternatives = resolve_source_variable(text[index:end], variables)
+            if alternatives is None:
                 return None
-            kind, value = resolved
-            if kind == "set":
-                alternatives = [(codepoint,) for codepoint in sorted(value)]
-            else:
-                alternatives = [tuple(value)]
             index = end
         elif text[index] == "(":
             return None
@@ -1216,6 +1456,15 @@ def table_entries_with_contexts(rules: str):
         right = right.strip()
         if right.endswith(";"):
             right = right[:-1].strip()
+        # ICU's output cursor `|` controls where scanning resumes after a
+        # replacement. A leading `|` means the replacement itself is rescanned.
+        reprocess = False
+        bar = find_unquoted(right, "|")
+        if bar is not None:
+            if right[:bar].strip():
+                continue
+            reprocess = True
+            right = right[bar + 1 :].strip()
         open_pos = find_unquoted(left, "{")
         close_pos = find_unquoted(left, "}")
         if open_pos is not None:
@@ -1234,38 +1483,99 @@ def table_entries_with_contexts(rules: str):
             source_text = left
             before_text = ""
             after_text = ""
-        before = None
+        before_alts = [None]
         if before_text.strip():
-            before = parse_context(before_text, variables)
-            if before is None:
+            before_alts = parse_context(before_text, variables)
+            if before_alts is None:
                 continue
-        after = None
+        after_alts = [None]
         if after_text.strip():
-            after = parse_context(after_text, variables)
-            if after is None:
+            after_alts = parse_context(after_text, variables)
+            if after_alts is None:
                 continue
         source_text = source_text.strip()
         if not source_text:
-            if before is None and after is None:
+            if before_alts == [None] and after_alts == [None]:
+                continue
+            if reprocess:
                 continue
             target, target_syntax = parse_side_with_variables(right, variables)
             if target_syntax:
                 continue
-            entries.append((pass_index, (), tuple(target), before, after, priority))
+            for before in before_alts:
+                for after in after_alts:
+                    entries.append(
+                        (
+                            pass_index,
+                            (),
+                            tuple(target),
+                            before,
+                            after,
+                            priority,
+                            False,
+                        )
+                    )
             priority += 1
             continue
         capture = False
+        embedded = None
         source_expression = source_text
         if "$1" in right:
             stripped = strip_whole_group(source_text)
-            if stripped is None:
-                continue
-            source_expression = stripped
-            capture = True
+            if stripped is not None:
+                source_expression = stripped
+                capture = True
+            else:
+                embedded = expand_embedded_group(source_text, variables)
+                if embedded is None:
+                    continue
+        if embedded is not None:
+            prefixes, group_values, suffixes = embedded
+            for prefix in prefixes:
+                for value in group_values:
+                    for suffix in suffixes:
+                        source = prefix + value + suffix
+                        if not source:
+                            continue
+                        target = parse_target_with_capture(
+                            right,
+                            variables,
+                            value,
+                        )
+                        if target is None:
+                            continue
+                        for before in before_alts:
+                            for after in after_alts:
+                                entries.append(
+                                    (
+                                        pass_index,
+                                        source,
+                                        tuple(target),
+                                        before,
+                                        after,
+                                        priority,
+                                        reprocess,
+                                    )
+                                )
+            priority += 1
+            continue
         terms = parse_source_terms(source_expression, variables)
         if terms is None:
             continue
-        sources = expand_source_terms(terms)
+        repeat_set = None
+        repeat_minimum = 0
+        if (
+            len(terms) == 1
+            and terms[0][2] > 1
+            and all(len(alternative) == 1 for alternative in terms[0][0])
+        ):
+            # A repeated single-codepoint class compiles to one repeat entry
+            # instead of enumerating every run length.
+            repeat_set = frozenset(
+                alternative[0] for alternative in terms[0][0]
+            )
+            repeat_minimum = terms[0][1]
+        sources = expand_source_terms(terms) if repeat_set is None else [()]
         if sources is None:
             continue
         fixed_target = None
@@ -1277,7 +1587,7 @@ def table_entries_with_contexts(rules: str):
             if target_syntax:
                 continue
         for source in sources:
-            if not source:
+            if not source and repeat_set is None:
                 continue
             if capture:
                 target = parse_target_with_capture(right, variables, source)
@@ -1285,9 +1595,25 @@ def table_entries_with_contexts(rules: str):
                     continue
             else:
                 target = fixed_target
-            entries.append(
-                (pass_index, source, tuple(target), before, after, priority)
+            repeat = (
+                (repeat_set, repeat_minimum)
+                if repeat_set is not None
+                else None
             )
+            for before in before_alts:
+                for after in after_alts:
+                    entries.append(
+                        (
+                            pass_index,
+                            source,
+                            tuple(target),
+                            before,
+                            after,
+                            priority,
+                            reprocess,
+                            repeat,
+                        )
+                    )
         priority += 1
     entries.sort(
         key=lambda item: (
@@ -1297,14 +1623,19 @@ def table_entries_with_contexts(rules: str):
             item[5],
         )
     )
-    return [
-        (source, target, before, after, pass_index)
-        for pass_index, source, target, before, after, _ in entries
-    ]
+    result = []
+    for entry in entries:
+        pass_index, source, target, before, after, _, reprocess = entry[:7]
+        repeat = entry[7] if len(entry) > 7 else None
+        result.append(
+            (source, target, before, after, pass_index, reprocess, repeat)
+        )
+    return result
 
 
 def find_unquoted(text: str, needle: str):
     quoted = False
+    depth = 0
     index = 0
     while index < len(text):
         character = text[index]
@@ -1313,8 +1644,15 @@ def find_unquoted(text: str, needle: str):
                 index += 2
                 continue
             quoted = not quoted
-        elif not quoted and character == needle:
-            return index
+        elif not quoted:
+            # Braces inside a character class are string elements, not the
+            # source-context delimiters.
+            if character == "[":
+                depth += 1
+            elif character == "]":
+                depth = max(depth - 1, 0)
+            elif depth == 0 and character == needle:
+                return index
         index += 1
     return None
 
@@ -1408,10 +1746,18 @@ def render_blob(
             before = entry[2] if len(entry) > 2 else None
             after = entry[3] if len(entry) > 3 else None
             entry_pass = entry[4] if len(entry) > 4 else 0
+            reprocess = entry[5] if len(entry) > 5 else False
+            repeat = entry[6] if len(entry) > 6 else None
             pass_count = max(pass_count, entry_pass + 1)
-            source_offset = len(sources) // 4
-            for codepoint in source:
-                sources.extend(struct.pack("<I", codepoint))
+            if repeat is not None:
+                repeat_set, repeat_minimum = repeat
+                source_offset = add_set(sorted(repeat_set))
+                source_len = repeat_minimum
+            else:
+                source_offset = len(sources) // 4
+                for codepoint in source:
+                    sources.extend(struct.pack("<I", codepoint))
+                source_len = len(source)
             target_offset = len(targets) // 4
             for codepoint in target:
                 targets.extend(struct.pack("<I", codepoint))
@@ -1424,13 +1770,15 @@ def render_blob(
             entries.append(
                 (
                     source_offset,
-                    len(source),
+                    source_len,
                     target_offset,
                     len(target),
                     before_context,
                     after_context,
                     entry_pass,
-                    1 if not source else 0,
+                    (1 if not source and repeat is None else 0) |
+                    (2 if reprocess else 0) |
+                    (4 if repeat is not None else 0),
                 )
             )
         transform_records.append(

@@ -209,8 +209,9 @@ fn contextMatches(
                     // Negated class containing the end anchor: the boundary
                     // itself is excluded, normal positions use the set.
                     if (cursor >= codepoints.len) return false;
-                } else {
-                    if (cursor != codepoints.len) return false;
+                } else if (cursor == codepoints.len) {
+                    // A class union with the end anchor matches the boundary
+                    // without consuming a character.
                     continue;
                 }
             }
@@ -260,8 +261,7 @@ fn contextMatches(
         if (element.flags & 32 != 0) {
             if (element.flags & 1 != 0) {
                 if (cursor == 0) return false;
-            } else {
-                if (cursor != 0) return false;
+            } else if (cursor == 0) {
                 continue;
             }
         }
@@ -338,14 +338,22 @@ fn transformPassRange(transform_index: usize, pass_index: u8) EntryRange {
     return .{ .start = start, .end = low };
 }
 
+/// Entries with an empty or repeated source are stored at the front of a
+/// pass, before the sorted literal-source entries.
 fn mappingStart(range: EntryRange) usize {
     var start = range.start;
-    while (start < range.end and entryAt(start).flags & 1 != 0) : (start += 1) {}
+    while (start < range.end and entryAt(start).flags & 5 != 0) : (start += 1) {}
     return start;
 }
 
 fn hasInsertions(range: EntryRange) bool {
-    return range.start < range.end and entryAt(range.start).flags & 1 != 0;
+    var index = range.start;
+    while (index < range.end) : (index += 1) {
+        const flags = entryAt(index).flags;
+        if (flags & 1 != 0) return true;
+        if (flags & 5 == 0) break;
+    }
+    return false;
 }
 
 /// Apply the pass's empty-source rules before its mapping rules. The inserted
@@ -363,10 +371,10 @@ fn applyInsertions(
         while (attempts < 8) : (attempts += 1) {
             var matched = false;
             var entry_index = range.start;
-            while (entry_index < range.end and
-                entryAt(entry_index).flags & 1 != 0) : (entry_index += 1)
-            {
+            while (entry_index < range.end) : (entry_index += 1) {
                 const entry = entryAt(entry_index);
+                if (entry.flags & 5 == 0) break;
+                if (entry.flags & 1 == 0) continue;
                 if (!contextMatches(
                     entry.before_context,
                     output.items,
@@ -409,7 +417,35 @@ fn findMatchInRange(
     before: []const u21,
 ) ?Entry {
     const first = codepoints[index];
-    var low = mappingStart(range);
+    const literals_start = mappingStart(range);
+    var lead = range.start;
+    while (lead < literals_start) : (lead += 1) {
+        const entry = entryAt(lead);
+        if (entry.flags & 4 == 0) continue;
+        // A repeated class source consumes the longest run in the set.
+        var consumed: usize = 0;
+        while (index + consumed < codepoints.len and consumed < 255 and
+            setContains(entry.source_offset, codepoints[index + consumed]))
+        {
+            consumed += 1;
+        }
+        if (consumed < entry.source_len) continue;
+        if (!contextMatches(entry.before_context, before, before.len, false)) {
+            continue;
+        }
+        if (!contextMatches(
+            entry.after_context,
+            codepoints,
+            index + consumed,
+            true,
+        )) {
+            continue;
+        }
+        var matched = entry;
+        matched.source_len = @intCast(consumed);
+        return matched;
+    }
+    var low = literals_start;
     var high = range.end;
     while (low < high) {
         const middle = low + (high - low) / 2;
@@ -523,22 +559,35 @@ fn applyPassAlloc(
     codepoints: []const u21,
     range: EntryRange,
 ) Error!std.ArrayList(u21) {
-    var output = std.ArrayList(u21).empty;
-    errdefer output.deinit(allocator);
+    // Apply the pass in place so a rule whose output cursor is at the start
+    // of the replacement (`|` in ICU rule syntax) rescans that replacement.
+    var work = std.ArrayList(u21).empty;
+    errdefer work.deinit(allocator);
+    try work.appendSlice(allocator, codepoints);
     var index: usize = 0;
-    while (index < codepoints.len) {
-        if (findMatchInRange(range, codepoints, index, output.items)) |entry| {
-            var offset: usize = 0;
-            while (offset < entry.target_len) : (offset += 1) {
-                try output.append(allocator, targetCodepoint(entry, offset));
+    var target_buffer: [256]u21 = undefined;
+    var steps: usize = 0;
+    const max_steps = codepoints.len * 16 + 1024;
+    while (index < work.items.len) {
+        steps += 1;
+        if (steps > max_steps) break;
+        if (findMatchInRange(range, work.items, index, work.items[0..index])) |entry| {
+            const target_len: usize = entry.target_len;
+            for (0..target_len) |offset| {
+                target_buffer[offset] = targetCodepoint(entry, offset);
             }
-            index += entry.source_len;
+            try work.replaceRange(
+                allocator,
+                index,
+                entry.source_len,
+                target_buffer[0..target_len],
+            );
+            if (entry.flags & 2 == 0) index += target_len;
         } else {
-            try output.append(allocator, codepoints[index]);
             index += 1;
         }
     }
-    return output;
+    return work;
 }
 
 fn tableAlloc(
@@ -603,32 +652,13 @@ fn tableAlloc(
             inserted = try applyInsertions(allocator, current, range);
             pass_input = inserted.?.items;
         }
+        var next = try applyPassAlloc(allocator, pass_input, range);
         if (pass + 1 == pass_count) {
+            defer next.deinit(allocator);
             var output = std.ArrayList(u8).empty;
             errdefer output.deinit(allocator);
-            var context = std.ArrayList(u21).empty;
-            defer context.deinit(allocator);
-            var index: usize = 0;
-            while (index < pass_input.len) {
-                if (findMatchInRange(
-                    range,
-                    pass_input,
-                    index,
-                    context.items,
-                )) |entry| {
-                    var offset: usize = 0;
-                    while (offset < entry.target_len) : (offset += 1) {
-                        const codepoint = targetCodepoint(entry, offset);
-                        try context.append(allocator, codepoint);
-                        try appendCodepoint(allocator, &output, codepoint);
-                    }
-                    index += entry.source_len;
-                } else {
-                    const codepoint = pass_input[index];
-                    try context.append(allocator, codepoint);
-                    try appendCodepoint(allocator, &output, codepoint);
-                    index += 1;
-                }
+            for (next.items) |codepoint| {
+                try appendCodepoint(allocator, &output, codepoint);
             }
             const raw = try output.toOwnedSlice(allocator);
             if (record.post_normalization == 0) return raw;
@@ -652,7 +682,6 @@ fn tableAlloc(
             }
             return raw;
         }
-        const next = try applyPassAlloc(allocator, pass_input, range);
         if (pass_output) |*value| value.deinit(allocator);
         pass_output = next;
         current = next.items;
@@ -1199,6 +1228,31 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/nv_fonipa_conformance.bin"),
         .magic = "CJN2".*,
         .name = "nv-nv_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/si_fonipa_conformance.bin"),
+        .magic = "CJSF".*,
+        .name = "si-si_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/es_fonipa_conformance.bin"),
+        .magic = "CJEF".*,
+        .name = "es-es_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/xh_fonipa_conformance.bin"),
+        .magic = "CJHF".*,
+        .name = "xh-xh_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/vec_fonipa_conformance.bin"),
+        .magic = "CJVF".*,
+        .name = "vec-vec_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ro_fonipa_conformance.bin"),
+        .magic = "CJOF".*,
+        .name = "ro-ro_FONIPA",
     },
 };
 
