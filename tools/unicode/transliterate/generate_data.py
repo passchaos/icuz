@@ -145,6 +145,25 @@ TRANSFORMS = (
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
     ("ug-ug_FONIPA", "ug-ug_FONIPA", "simple"),
+    ("ch-ch_FONIPA", "ch-ch_FONIPA", "context"),
+    ("cs-cs_FONIPA", "cs-cs_FONIPA", "context"),
+    ("eo-eo_FONIPA", "eo-eo_FONIPA", "context"),
+    ("fa-fa_FONIPA", "fa-fa_FONIPA", "context"),
+    ("hy-hy_FONIPA", "hy-hy_FONIPA", "context"),
+    ("hy_AREVMDA-hy_AREVMDA_FONIPA", "hy_AREVMDA-hy_AREVMDA_FONIPA", "context"),
+    ("ia-ia_FONIPA", "ia-ia_FONIPA", "context"),
+    ("ky-ky_FONIPA", "ky-ky_FONIPA", "context"),
+    ("la-la_FONIPA", "la-la_FONIPA", "context"),
+    ("pl-pl_FONIPA", "pl-pl_FONIPA", "context"),
+    ("rm_SURSILV-rm_FONIPA_SURSILV", "rm_SURSILV-rm_FONIPA_SURSILV", "context"),
+    ("sk-sk_FONIPA", "sk-sk_FONIPA", "context"),
+    ("ta-ta_FONIPA", "ta-ta_FONIPA", "context"),
+    ("tlh-tlh_FONIPA", "tlh-tlh_FONIPA", "context"),
+    ("ha-ha_NE", "ha-ha_NE", "context"),
+    ("yo-yo_BJ", "yo-yo_BJ", "context"),
+    ("Latin-Russian/BGN", "ru_Latn-ru-BGN", "context"),
+    ("Uzbek-Latin/BGN", "Uzbek-Latin-BGN", "context"),
+    ("Maldivian-Latin/BGN", "Maldivian-Latin-BGN", "context"),
 )
 
 CONFORMANCE = (
@@ -444,6 +463,7 @@ def detect_reverse_normalization(rules: str):
 # Components whose rule sets need engine features that are not compiled yet
 # (for example InterIndic-Arabic's `($alif) $alif+ > $1` collapse rule).
 PIPELINE_EXCLUDE_COMPONENTS: set[str] = set()
+PIPELINE_EXCLUDE_NAMES = {"ch-am", "sk-am"}
 
 PIPELINE_COMPONENTS = {
     "Amharic-Amharic/Geminate": "am-Ethi-t-am-ethi-m0-geminate",
@@ -2528,13 +2548,12 @@ def render_blob(
         step_pool.extend(steps)
     header = bytearray(b"CJTR")
     header += struct.pack(
-        "<B3BBB7IH",
-        12,
+        "<B3BH7IH",
+        13,
         CLDR_VERSION,
         0,
         0,
         len(specs),
-        0,
         len(entries),
         len(sources) // 4,
         len(targets) // 4,
@@ -2654,6 +2673,8 @@ def main() -> int:
         changed = False
         for candidate in archive_files:
             if candidate in used_sources or candidate in available:
+                continue
+            if candidate in PIPELINE_EXCLUDE_NAMES:
                 continue
             try:
                 candidate_rules = rules_for(candidate)

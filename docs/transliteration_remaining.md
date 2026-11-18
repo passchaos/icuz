@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 216 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
+- 244 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 217 conformance fixtures: 30 official CLDR test-data files and 187 PyICU
+- 245 conformance fixtures: 30 official CLDR test-data files and 215 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -15,7 +15,7 @@ Status after the CLDR 48 rule-engine push:
   pipelines (`kk-am`, `my-am`, `ro-am`, `si-am`, `xh-am`, `zu-am`) use
   this path.
 - Ordered step programs (blob format CJTR v12) execute arbitrary
-  `::NFD;` / `::Transform;` / `::Lower;` / `::NFC;` sequences. All 109 pure
+  `::NFD;` / `::Transform;` / `::Lower;` / `::NFC;` sequences. All 118 pure
   CLDR pipelines whose components are compiled are auto-discovered,
   including the Indic script-to-script and script-to-Latin chains, the
   `X-Arabic` / `X-ur` families, and the `Latin-*` pipelines.
@@ -65,15 +65,17 @@ Known failing transforms (PyICU differential fixtures):
 |---|---|---|
 | `Greek-Latin` | 19 | final sigma `ς` loses the `U+0331` disambiguator; `Χ` + lowercase yields `CH` instead of `Ch` |
 | `Latin-Hebrew` | 20 | reverse-direction rules |
-| `Maldivian-Latin-BGN` | 19 | direction/rule coverage |
 | `ug-ug_FONIPA` | 20 | context/rule coverage |
 | `Bopo-Latn` | 19 | reverse-direction rules |
 
 `Greek-Latin` needs script property classes, which are implemented, plus
 the specificity model above. `Latin-Hebrew` and `Bopo-Latn` need reverse
 directions of transforms whose forward rules are not yet compiled.
-`Latin-Arabic`, `Latin-Syriac`, and `Armenian-Latin` now pass their PyICU
-fixtures after the reverse-filter and per-run normalization work.
+`Maldivian-Latin/BGN` now passes its PyICU fixture.
+
+Embedded transform calls (`&Any-Lower($1)` / `&Any-Upper($1)`) are the
+main blocker for the `*-Title` transforms; the rule parser currently
+skips those rules. They need a per-rule callback into the case engine.
 
 ## 3. Script_Extensions based filters
 

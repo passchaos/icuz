@@ -40,7 +40,7 @@ pub const Error = error{ InvalidUtf8, OutOfMemory, UnknownTransform };
 const data = @embedFile("transliterate/data.bin");
 
 const header_len = 44;
-const transform_count = data[8];
+const transform_count = readU16(8);
 const entry_count = readU32(10);
 const source_count = readU32(14);
 const target_count = readU32(18);
@@ -74,7 +74,7 @@ const targets_offset = sources_offset + @as(usize, source_count) * 4;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJTR") or
-        data[4] != 12 or data[5] != 48 or data[6] != 0 or data[7] != 0)
+        data[4] != 13 or data[5] != 48 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid transliteration data");
     }
@@ -2189,6 +2189,146 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/latin_interindic_conformance.bin"),
         .magic = "CJLI".*,
         .name = "Latin-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/interindic_ur_conformance.bin"),
+        .magic = "CJDT".*,
+        .name = "InterIndic-ur",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_russian_bgn_conformance.bin"),
+        .magic = "CJEV".*,
+        .name = "Latin-Russian/BGN",
+    },
+    .{
+        .bytes = @embedFile("transliterate/maldivian_latin_bgn_conformance.bin"),
+        .magic = "CJEX".*,
+        .name = "Maldivian-Latin/BGN",
+    },
+    .{
+        .bytes = @embedFile("transliterate/uzbek_latin_bgn_conformance.bin"),
+        .magic = "CJEW".*,
+        .name = "Uzbek-Latin/BGN",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ch_ch_fonipa_conformance.bin"),
+        .magic = "CJDV".*,
+        .name = "ch-ch_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/cs_am_conformance.bin"),
+        .magic = "CJEZ".*,
+        .name = "cs-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/cs_cs_fonipa_conformance.bin"),
+        .magic = "CJDX".*,
+        .name = "cs-cs_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/eo_am_conformance.bin"),
+        .magic = "CJE0".*,
+        .name = "eo-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/eo_eo_fonipa_conformance.bin"),
+        .magic = "CJDZ".*,
+        .name = "eo-eo_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ha_ha_ne_conformance.bin"),
+        .magic = "CJEJ".*,
+        .name = "ha-ha_NE",
+    },
+    .{
+        .bytes = @embedFile("transliterate/hy_am_conformance.bin"),
+        .magic = "CJE1".*,
+        .name = "hy-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/hy_hy_fonipa_conformance.bin"),
+        .magic = "CJD1".*,
+        .name = "hy-hy_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/hy_arevmda_am_conformance.bin"),
+        .magic = "CJE2".*,
+        .name = "hy_AREVMDA-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/hy_arevmda_hy_arevmda_fonipa_conformance.bin"),
+        .magic = "CJD4".*,
+        .name = "hy_AREVMDA-hy_AREVMDA_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ia_am_conformance.bin"),
+        .magic = "CJE8".*,
+        .name = "ia-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ia_ia_fonipa_conformance.bin"),
+        .magic = "CJD5".*,
+        .name = "ia-ia_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ky_am_conformance.bin"),
+        .magic = "CJE9".*,
+        .name = "ky-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ky_ky_fonipa_conformance.bin"),
+        .magic = "CJD6".*,
+        .name = "ky-ky_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/la_la_fonipa_conformance.bin"),
+        .magic = "CJD7".*,
+        .name = "la-la_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/pl_am_conformance.bin"),
+        .magic = "CJFB".*,
+        .name = "pl-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/pl_pl_fonipa_conformance.bin"),
+        .magic = "CJD8".*,
+        .name = "pl-pl_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/rm_sursilv_am_conformance.bin"),
+        .magic = "CJFC".*,
+        .name = "rm_SURSILV-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/rm_sursilv_rm_fonipa_sursilv_conformance.bin"),
+        .magic = "CJD9".*,
+        .name = "rm_SURSILV-rm_FONIPA_SURSILV",
+    },
+    .{
+        .bytes = @embedFile("transliterate/sk_sk_fonipa_conformance.bin"),
+        .magic = "CJEB".*,
+        .name = "sk-sk_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ta_ta_fonipa_conformance.bin"),
+        .magic = "CJEC".*,
+        .name = "ta-ta_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tlh_am_conformance.bin"),
+        .magic = "CJFF".*,
+        .name = "tlh-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tlh_tlh_fonipa_conformance.bin"),
+        .magic = "CJED".*,
+        .name = "tlh-tlh_FONIPA",
+    },
+    .{
+        .bytes = @embedFile("transliterate/yo_yo_bj_conformance.bin"),
+        .magic = "CJEK".*,
+        .name = "yo-yo_BJ",
     },
     .{
         .bytes = @embedFile("transliterate/bengali_arabic_conformance.bin"),

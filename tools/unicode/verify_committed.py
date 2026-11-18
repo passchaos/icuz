@@ -40,7 +40,7 @@ BLOBS = (
     Blob("src/unicode/bidi/data.bin", b"CJB1", 1, "9e9f9937100d6019f7308743916c3606bdb31c9cc4f142eb605becf45a210c3f"),
     Blob("src/unicode/canonical/combining_class.bin", b"CJC1", 1, "336130546fc300108806f5ae23144cda93da13488a810946357304b5a12f5fcc"),
     Blob("src/unicode/charset/data.bin", b"CJCS", 1, "965bd7d7e6084e49d6a5a04f350807c0c2cdeececeacfa78103d928f45f71575"),
-    Blob("src/unicode/transliterate/data.bin", b"CJTR", 12, "166e6197576ca36f683a6d22eb790ee4886a14ad9cf70087fd37c325e6bf9fbf", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/data.bin", b"CJTR", 13, "0bfb764e74b69f2f914f952bb3d7f5ebc6d092df5fe15c64bb720f1f9d748dab", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/georgian_bgn_conformance.bin", b"CJTG", 1, "e8d6ea181123ec5175c7b4d92e1591febcdc9ea0ee2800d075e5bbd4f81acf62", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/hebrew_bgn_conformance.bin", b"CJTH", 1, "c8e0869ef80a3608d0d98f8d07f291e3863a4c7d6b08bf3bd50fe7242459af51", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/russian_bgn_conformance.bin", b"CJRU", 1, "bd90c67fe72c02a91305a394c3506158d1b2fd39d307ec57838df20594d2e6e2", version=(48, 0, 0)),
@@ -283,6 +283,34 @@ BLOBS = (
     Blob("src/unicode/transliterate/tamil_ur_conformance.bin", b"CJDF", 1, "6289e9c27907a79e9ee729c0f210db60c6a8d21896cd4fc0bd44e62eab79756e", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/telugu_arabic_conformance.bin", b"CJDG", 1, "dce58cea290af755ac76ae37a0fbb9b2cf23d508e47de3083771dfcf7b1dfeab", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/telugu_ur_conformance.bin", b"CJDR", 1, "6f0377306c9ccd3f3489f7c93553e83b52a8dfab53ad6c4e5273bb609537854f", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/ch_ch_fonipa_conformance.bin", b"CJDV", 1, "6ad70424c024f8b927621d72d79e9214bcad7fe7b00b83d74acc92077370c1a1", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/cs_am_conformance.bin", b"CJEZ", 1, "6260a046677e6e3c64b6eec24e4d6a6aee1396d744ec7499032ee8b3d5eee6d7", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/cs_cs_fonipa_conformance.bin", b"CJDX", 1, "1e7224bfc5dc77f1e12426325ee3785c7c740e28dcadcfca94486c08ea4cf443", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/eo_am_conformance.bin", b"CJE0", 1, "03b836779b2aa065a402cbb7d55fc151949a83216ffb24a847d61fe815e2bb60", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/eo_eo_fonipa_conformance.bin", b"CJDZ", 1, "ac297ebe7dd03603f639dd194116b963e4581bfdd8e4e9b7a0496c7ec64f8d35", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/ha_ha_ne_conformance.bin", b"CJEJ", 1, "09e648e71404a5ee7ca31b8dac5de30e05e7f060756114b5259a5d359f0ad36f", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/hy_am_conformance.bin", b"CJE1", 1, "a7d95fa6508c756b8b03ea61c86d662ffc026c1ddc031a47583042c64c09e833", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/hy_arevmda_am_conformance.bin", b"CJE2", 1, "47c2f95700bbadd3567f5f163f95d2cf0bd5fc04812d9166125dd502d0a77749", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/hy_arevmda_hy_arevmda_fonipa_conformance.bin", b"CJD4", 1, "91b4408b4a45d57e0639dfdab44c2e45fd1a604ffc43b40415b652fed48de8d1", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/hy_hy_fonipa_conformance.bin", b"CJD1", 1, "74a9244fa4947eaa3635270446659a81ca37a817218dd374d51ac9c1c037ba72", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/ia_am_conformance.bin", b"CJE8", 1, "f9fbb0d52c0f672dc0951514e140a831c0b1400129541e419e2e26424550b68f", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/ia_ia_fonipa_conformance.bin", b"CJD5", 1, "7e33237fa58dab059ee9e1b7e662a583a1206a82fb32ad077ceba0e1a5c53b47", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/interindic_ur_conformance.bin", b"CJDT", 1, "e6112b92cc122f8b4f1ceeb529b0f6b9715697ab89a89cd8d82566f9c701da33", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/ky_am_conformance.bin", b"CJE9", 1, "e9670ae0f7b46553cdbb07017104dc54d57ca315819e77fba94f1403baa26b51", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/ky_ky_fonipa_conformance.bin", b"CJD6", 1, "1de3c2e692163aaaeace623137556370e784c0400f6df2385e1af9028e626998", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/la_la_fonipa_conformance.bin", b"CJD7", 1, "e5135a585eeabc0ad7f224d0aec10aadd983d86a7f6cd0661faa9f96e2fcc80d", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/latin_russian_bgn_conformance.bin", b"CJEV", 1, "2a47fe35780d9de984ccee3dc4d7074c41b5cfd281c1af2cdd7cf84ab75f6096", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/maldivian_latin_bgn_conformance.bin", b"CJEX", 1, "7fd7efcabae099223bf6faa791316c97b345e9d5db884321da9946a853d64c3b", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/pl_am_conformance.bin", b"CJFB", 1, "06015b1d80c6304bb98e20e09c8211c9218f02f55ae74f0502b6073facf2e8de", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/pl_pl_fonipa_conformance.bin", b"CJD8", 1, "0af7118c963ecc4aca17e9c8b1286ac59ab33794ed1ebff1375c26145d6b6cbb", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/rm_sursilv_am_conformance.bin", b"CJFC", 1, "0c99eade16c918a4edc83ee3519c1517a322712eceb205b2bfa26242e51838b9", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/rm_sursilv_rm_fonipa_sursilv_conformance.bin", b"CJD9", 1, "bb59e57d50df8371f91bad8a1b6d5607e8d8af67e7010f9ebf0785b6daf2c785", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/sk_sk_fonipa_conformance.bin", b"CJEB", 1, "3e5e08da44acf39f6fca5f3b0a46e8430cf411925d315010a58a4ddc35703636", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/ta_ta_fonipa_conformance.bin", b"CJEC", 1, "a36b0f43fdca09cb7e4b988b80e8c0d5dd623428f5ee07e82d986f4fdd93800c", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/tlh_am_conformance.bin", b"CJFF", 1, "1e625d0392d976ca904bd5ab0bab8d030c304639c7965b868a415befe8aff7af", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/tlh_tlh_fonipa_conformance.bin", b"CJED", 1, "a08bcdbe2a5ac3ac3f45958996851929638bb21a373f2045d80221822c25d651", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/uzbek_latin_bgn_conformance.bin", b"CJEW", 1, "9ab4f878ad35d9b7c638bd4632fb780de2efbd10355cd1af29225fca3208f2c3", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/yo_yo_bj_conformance.bin", b"CJEK", 1, "171cb405e2f447bb7601e6c2f97012ec83be97dc62474d9e413ee2a992d51540", version=(48, 0, 0)),
 )
 
 GENERATORS = {
@@ -309,7 +337,7 @@ GENERATORS = {
     "tools/unicode/format/generate_dates.py": "de6d58352b8793fee777752b980d27561e6ca400cb4710b95c9fda9b54999e45",
     "tools/unicode/format/generate_misc.py": "35d08acef5a6b7c23bbbe3b13977a2085f02df3985185068a68fe59e0625b0e1",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
-    "tools/unicode/transliterate/generate_data.py": "f78f1992b4d9c044d63dd0440f8970ee3a33e8f46735f823d18cbc276ccc364f",
+    "tools/unicode/transliterate/generate_data.py": "56f500264433b2e01e009d2825e1f95ec6114a102c5d8e8b089cc867078224e2",
     "tools/unicode/break/generate_dictionaries.py": "bdbd4c4e9c999b4cea6a8924b08c72a49719c857e26dea82fc50940ee145e264",
     "tools/unicode/break/generate_word_conformance.py": "3c2467ffc38b2467cbbc0d895e76b8862774c48567aa3ad26b9681605df3a5ff",
     "tools/unicode/transliterate/generate_icu_conformance.py": "c1f2435db3039a3f569de277eccf5901a7c2ba34d396026be0815f39cd6dc997",
@@ -480,7 +508,6 @@ def check_layout(blob: Blob, data: bytes) -> None:
     elif magic == b"CJTR":
         (
             transform_count,
-            _,
             entry_count,
             source_count,
             target_count,
@@ -488,7 +515,7 @@ def check_layout(blob: Blob, data: bytes) -> None:
             range_count,
             context_count,
             context_element_count,
-        ) = struct.unpack_from("<BB7I", data, 8)
+        ) = struct.unpack_from("<H7I", data, 8)
         step_count = struct.unpack_from("<I", data, 40)[0]
         names_length = 0
         for index in range(transform_count):
@@ -526,7 +553,7 @@ def check_layout(blob: Blob, data: bytes) -> None:
             + target_count * 4
             == len(data)
         )
-    elif magic in (b"CJA0", b"CJA1", b"CJA2", b"CJA3", b"CJA4", b"CJA5", b"CJA6", b"CJA7", b"CJA8", b"CJA9", b"CJAA", b"CJAB", b"CJAC", b"CJAD", b"CJAE", b"CJAF", b"CJAG", b"CJAH", b"CJAI", b"CJAJ", b"CJAK", b"CJAL", b"CJAM", b"CJAN", b"CJAO", b"CJAP", b"CJAQ", b"CJAR", b"CJAS", b"CJAT", b"CJAU", b"CJAV", b"CJAW", b"CJAX", b"CJAY", b"CJAZ", b"CJB0", b"CJB2", b"CJB3", b"CJB4", b"CJB5", b"CJB6", b"CJB7", b"CJB8", b"CJB9", b"CJBA", b"CJBB", b"CJBC", b"CJBD", b"CJBE", b"CJBF", b"CJBG", b"CJBH", b"CJBI", b"CJBJ", b"CJBK", b"CJBL", b"CJBM", b"CJBN", b"CJBO", b"CJBP", b"CJBQ", b"CJBR", b"CJBS", b"CJBU", b"CJBV", b"CJBW", b"CJBX", b"CJBY", b"CJBZ", b"CJC0", b"CJC2", b"CJC3", b"CJC4", b"CJC5", b"CJC6", b"CJC7", b"CJC8", b"CJC9", b"CJCA", b"CJCB", b"CJCC", b"CJCD", b"CJCE", b"CJCF", b"CJCG", b"CJCH", b"CJCI", b"CJCJ", b"CJCK", b"CJCM", b"CJCN", b"CJCO", b"CJCP", b"CJCQ", b"CJCR", b"CJCU", b"CJCV", b"CJCW", b"CJCX", b"CJCY", b"CJCZ", b"CJD2", b"CJD3", b"CJDA", b"CJDC", b"CJDD", b"CJDE", b"CJDF", b"CJDG", b"CJDH", b"CJDI", b"CJDJ", b"CJDK", b"CJDL", b"CJDM", b"CJDN", b"CJDO", b"CJDP", b"CJDQ", b"CJDR", b"CJE3", b"CJE4", b"CJE5", b"CJE6", b"CJE7", b"CJEF", b"CJEG", b"CJEI", b"CJEL", b"CJEU", b"CJFA", b"CJFW", b"CJG3", b"CJGE", b"CJGG", b"CJGI", b"CJGR", b"CJH3", b"CJHA", b"CJHF", b"CJHK", b"CJHW", b"CJIA", b"CJIB", b"CJIE", b"CJIG", b"CJIK", b"CJIM", b"CJIO", b"CJIU", b"CJIX", b"CJK3", b"CJKA", b"CJKH", b"CJKI", b"CJKK", b"CJKO", b"CJKZ", b"CJLA", b"CJLC", b"CJLI", b"CJLL", b"CJLQ", b"CJLS", b"CJLU", b"CJM3", b"CJMC", b"CJMF", b"CJMI", b"CJMO", b"CJN2", b"CJNK", b"CJOF", b"CJP3", b"CJPA", b"CJPB", b"CJPE", b"CJPM", b"CJPR", b"CJPS", b"CJPX", b"CJPZ", b"CJRI", b"CJRS", b"CJRU", b"CJSF", b"CJSG", b"CJSL", b"CJSY", b"CJT2", b"CJTA", b"CJTG", b"CJTH", b"CJTI", b"CJTM", b"CJTN", b"CJTT", b"CJTU", b"CJUA", b"CJUI", b"CJVF", b"CJYL", b"CJZ1", b"CJZ2", b"CJZ3", b"CJZ4", b"CJZU"):
+    elif magic in (b"CJA0", b"CJA1", b"CJA2", b"CJA3", b"CJA4", b"CJA5", b"CJA6", b"CJA7", b"CJA8", b"CJA9", b"CJAA", b"CJAB", b"CJAC", b"CJAD", b"CJAE", b"CJAF", b"CJAG", b"CJAH", b"CJAI", b"CJAJ", b"CJAK", b"CJAL", b"CJAM", b"CJAN", b"CJAO", b"CJAP", b"CJAQ", b"CJAR", b"CJAS", b"CJAT", b"CJAU", b"CJAV", b"CJAW", b"CJAX", b"CJAY", b"CJAZ", b"CJB0", b"CJB2", b"CJB3", b"CJB4", b"CJB5", b"CJB6", b"CJB7", b"CJB8", b"CJB9", b"CJBA", b"CJBB", b"CJBC", b"CJBD", b"CJBE", b"CJBF", b"CJBG", b"CJBH", b"CJBI", b"CJBJ", b"CJBK", b"CJBL", b"CJBM", b"CJBN", b"CJBO", b"CJBP", b"CJBQ", b"CJBR", b"CJBS", b"CJBU", b"CJBV", b"CJBW", b"CJBX", b"CJBY", b"CJBZ", b"CJC0", b"CJC2", b"CJC3", b"CJC4", b"CJC5", b"CJC6", b"CJC7", b"CJC8", b"CJC9", b"CJCA", b"CJCB", b"CJCC", b"CJCD", b"CJCE", b"CJCF", b"CJCG", b"CJCH", b"CJCI", b"CJCJ", b"CJCK", b"CJCM", b"CJCN", b"CJCO", b"CJCP", b"CJCQ", b"CJCR", b"CJCU", b"CJCV", b"CJCW", b"CJCX", b"CJCY", b"CJCZ", b"CJD1", b"CJD2", b"CJD3", b"CJD4", b"CJD5", b"CJD6", b"CJD7", b"CJD8", b"CJD9", b"CJDA", b"CJDC", b"CJDD", b"CJDE", b"CJDF", b"CJDG", b"CJDH", b"CJDI", b"CJDJ", b"CJDK", b"CJDL", b"CJDM", b"CJDN", b"CJDO", b"CJDP", b"CJDQ", b"CJDR", b"CJDT", b"CJDV", b"CJDX", b"CJDZ", b"CJE0", b"CJE1", b"CJE2", b"CJE3", b"CJE4", b"CJE5", b"CJE6", b"CJE7", b"CJE8", b"CJE9", b"CJEB", b"CJEC", b"CJED", b"CJEF", b"CJEG", b"CJEI", b"CJEJ", b"CJEK", b"CJEL", b"CJEU", b"CJEV", b"CJEW", b"CJEX", b"CJEZ", b"CJFA", b"CJFB", b"CJFC", b"CJFF", b"CJFW", b"CJG3", b"CJGE", b"CJGG", b"CJGI", b"CJGR", b"CJH3", b"CJHA", b"CJHF", b"CJHK", b"CJHW", b"CJIA", b"CJIB", b"CJIE", b"CJIG", b"CJIK", b"CJIM", b"CJIO", b"CJIU", b"CJIX", b"CJK3", b"CJKA", b"CJKH", b"CJKI", b"CJKK", b"CJKO", b"CJKZ", b"CJLA", b"CJLC", b"CJLI", b"CJLL", b"CJLQ", b"CJLS", b"CJLU", b"CJM3", b"CJMC", b"CJMF", b"CJMI", b"CJMO", b"CJN2", b"CJNK", b"CJOF", b"CJP3", b"CJPA", b"CJPB", b"CJPE", b"CJPM", b"CJPR", b"CJPS", b"CJPX", b"CJPZ", b"CJRI", b"CJRS", b"CJRU", b"CJSF", b"CJSG", b"CJSL", b"CJSY", b"CJT2", b"CJTA", b"CJTG", b"CJTH", b"CJTI", b"CJTM", b"CJTN", b"CJTT", b"CJTU", b"CJUA", b"CJUI", b"CJVF", b"CJYL", b"CJZ1", b"CJZ2", b"CJZ3", b"CJZ4", b"CJZU"):
         case_count = struct.unpack_from("<I", data, 8)[0]
         offset = 12
         for _ in range(case_count):
