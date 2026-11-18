@@ -145,6 +145,10 @@ TRANSFORMS = (
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
     ("ug-ug_FONIPA", "ug-ug_FONIPA", "simple"),
+    ("az-Title", "az-Title", "context"),
+    ("el-Title", "el-Title", "context"),
+    ("lt-Title", "lt-Title", "context"),
+    ("tr-Title", "tr-Title", "context"),
     ("ch-ch_FONIPA", "ch-ch_FONIPA", "context"),
     ("cs-cs_FONIPA", "cs-cs_FONIPA", "context"),
     ("eo-eo_FONIPA", "eo-eo_FONIPA", "context"),
@@ -1677,6 +1681,32 @@ def parse_context_token(token: str, variables: dict[str, str]):
             if piece is None:
                 return None
             index = end + 1
+            if index < len(token) and token[index] in "*+?":
+                quantifier = token[index]
+                repeat = 1 if quantifier == "*" else 2 if quantifier == "+" else 0
+                optional = quantifier == "?"
+                piece = [
+                    [
+                        (
+                            base,
+                            negated,
+                            boundary,
+                            repeat,
+                            anchor,
+                            element_optional or optional,
+                        )
+                        for (
+                            base,
+                            negated,
+                            boundary,
+                            _,
+                            anchor,
+                            element_optional,
+                        ) in elements
+                    ]
+                    for elements in piece
+                ]
+                index += 1
         elif character == "(":
             depth = 0
             end = index
@@ -2025,6 +2055,51 @@ def parse_target_with_capture(text: str, variables: dict[str, str], source):
     return result
 
 
+def parse_negated_source(text: str, variables: dict[str, str]):
+    """Return the excluded set for a source that is one negated class."""
+    text = text.strip()
+    if text == ".":
+        # ICU's `.` wildcard matches any character except line/paragraph
+        # separators, CR, LF, and the text boundary.
+        return frozenset({0x000A, 0x000D, 0x2028, 0x2029})
+    if not (text.startswith("[") and text.endswith("]")):
+        return None
+    content = text[1:-1]
+    if not content.startswith("^"):
+        return None
+    content = content[1:]
+    # A `$` inside a source class is the text-boundary anchor; the boundary
+    # itself cannot be matched as a codepoint.
+    content = content.replace("$", "")
+    parsed = parse_class_set("[" + content + "]", variables)
+    if parsed is None:
+        return None
+    value, negated = parsed
+    if negated:
+        return None
+    return value
+
+
+CASE_CALL_PATTERN = re.compile(
+    r"&\s*(Any-Lower|Lower|Any-Upper|Upper|Any-Title|Title)\s*"
+    r"\(\s*\$1\s*\)\s*",
+    re.IGNORECASE,
+)
+
+
+def parse_case_call(target: str) -> int:
+    """Return 1 for lower, 2 for upper, or 0 when the target is not a call."""
+    match = CASE_CALL_PATTERN.fullmatch(target.strip())
+    if match is None:
+        return 0
+    name = match.group(1).lower()
+    if "lower" in name:
+        return 1
+    if "upper" in name:
+        return 2
+    return 0
+
+
 def table_entries_with_contexts(rules: str, reverse: bool = False):
     variables = parse_variables(rules)
     entries = []
@@ -2167,6 +2242,27 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
                 embedded = expand_embedded_group(source_text, variables)
                 if embedded is None:
                     continue
+        negated_source = parse_negated_source(source_expression, variables)
+        if negated_source is not None:
+            for before in before_alts:
+                for after in after_alts:
+                    entries.append(
+                        (
+                            pass_index,
+                            (),
+                            (),
+                            before,
+                            after,
+                            priority,
+                            reprocess,
+                            None,
+                            None,
+                            parse_case_call(right),
+                            frozenset(negated_source),
+                        )
+                    )
+            priority += 1
+            continue
         if embedded is not None:
             prefixes, group_values, suffixes = embedded
             for prefix in prefixes:
@@ -2217,6 +2313,7 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
         if sources is None:
             continue
         fixed_target = None
+        case_call = 0
         if not capture:
             fixed_target, target_syntax = parse_side_with_variables(
                 right,
@@ -2224,12 +2321,16 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             )
             if target_syntax:
                 continue
+        else:
+            case_call = parse_case_call(right)
         if reverse and repeat_set is not None:
             continue
         for source in sources:
             if not source and repeat_set is None:
                 continue
-            if capture:
+            if case_call:
+                target = ()
+            elif capture:
                 target = parse_target_with_capture(right, variables, source)
                 if target is None:
                     continue
@@ -2258,6 +2359,8 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
                             priority,
                             reprocess,
                             repeat,
+                            None,
+                            case_call,
                         )
                     )
         priority += 1
@@ -2267,10 +2370,22 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
         entries = [
             (pass_index - entry[0],) + entry[1:] for entry in entries
         ]
+    def entry_category(item):
+        if len(item) > 10 and item[10] is not None:
+            return 3
+        if len(item) > 7 and (
+            item[7] is not None or
+            (len(item) > 8 and item[8] is not None)
+        ):
+            return 1
+        if not item[1]:
+            return 0
+        return 2
+
     entries.sort(
         key=lambda item: (
             item[0],
-            0 if not item[1] else 1,
+            entry_category(item),
             item[1][0] if item[1] else 0,
             item[5],
         )
@@ -2280,6 +2395,8 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
         pass_index, source, target, before, after, _, reprocess = entry[:7]
         repeat = entry[7] if len(entry) > 7 else None
         collapse = entry[8] if len(entry) > 8 else None
+        case_call = entry[9] if len(entry) > 9 else 0
+        negated_set = entry[10] if len(entry) > 10 else None
         result.append(
             (
                 source,
@@ -2290,6 +2407,9 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
                 reprocess,
                 repeat,
                 collapse,
+                case_call,
+                negated_set,
+                entry[5],
             )
         )
     return result
@@ -2482,8 +2602,14 @@ def render_blob(
             reprocess = entry[5] if len(entry) > 5 else False
             repeat = entry[6] if len(entry) > 6 else None
             collapse = entry[7] if len(entry) > 7 else None
+            case_call = entry[8] if len(entry) > 8 else 0
+            negated_set = entry[9] if len(entry) > 9 else None
+            entry_priority = entry[10] if len(entry) > 10 else 0
             pass_count = max(pass_count, entry_pass + 1)
-            if collapse is not None:
+            if negated_set is not None:
+                source_offset = add_set(sorted(negated_set))
+                source_len = 1
+            elif collapse is not None:
                 source_offset = add_set(sorted(collapse))
                 source_len = 1
             elif repeat is not None:
@@ -2517,7 +2643,11 @@ def render_blob(
                         collapse is None else 0) |
                     (2 if reprocess else 0) |
                     (4 if repeat is not None else 0) |
-                    (8 if collapse is not None else 0),
+                    (8 if collapse is not None else 0) |
+                    (16 if case_call else 0) |
+                    (32 if case_call == 2 else 0) |
+                    (64 if negated_set is not None else 0),
+                    entry_priority,
                 )
             )
         transform_records.append(
@@ -2549,7 +2679,7 @@ def render_blob(
     header = bytearray(b"CJTR")
     header += struct.pack(
         "<B3BH7IH",
-        13,
+        14,
         CLDR_VERSION,
         0,
         0,
@@ -2602,7 +2732,7 @@ def render_blob(
         step_bytes += struct.pack("<BBHI", kind, 0, 0, value)
     entry_bytes = bytearray()
     for entry in entries:
-        entry_bytes += struct.pack("<IBIBIIBB", *entry)
+        entry_bytes += struct.pack("<IBIBIIBBH", *entry)
     set_bytes = bytearray()
     for offset, count in set_records:
         set_bytes += struct.pack("<II", offset, count)

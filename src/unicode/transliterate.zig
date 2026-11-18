@@ -52,7 +52,7 @@ const step_count = readU32(40);
 const transform_offset = header_len;
 const step_offset = transform_offset + @as(usize, transform_count) * 36;
 const entry_offset = step_offset + @as(usize, step_count) * 8;
-const set_offset = entry_offset + @as(usize, entry_count) * 20;
+const set_offset = entry_offset + @as(usize, entry_count) * 22;
 const range_offset = set_offset + @as(usize, set_count) * 8;
 const context_offset = range_offset + @as(usize, range_count) * 8;
 const context_element_offset = context_offset + @as(usize, context_count) * 8;
@@ -74,7 +74,7 @@ const targets_offset = sources_offset + @as(usize, source_count) * 4;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJTR") or
-        data[4] != 13 or data[5] != 48 or data[6] != 0 or data[7] != 0)
+        data[4] != 14 or data[5] != 48 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid transliteration data");
     }
@@ -109,6 +109,7 @@ const Entry = struct {
     after_context: u32,
     pass: u8,
     flags: u8,
+    priority: u16,
 };
 
 fn readU16(offset: usize) u16 {
@@ -225,7 +226,7 @@ fn findTransformByName(name: []const u8) ?usize {
 }
 
 fn entryAt(index: usize) Entry {
-    const base = entry_offset + index * 20;
+    const base = entry_offset + index * 22;
     return .{
         .source_offset = readU32(base),
         .source_len = data[base + 4],
@@ -235,6 +236,7 @@ fn entryAt(index: usize) Entry {
         .after_context = readU32(base + 14),
         .pass = data[base + 18],
         .flags = data[base + 19],
+        .priority = readU16(base + 20),
     };
 }
 
@@ -438,9 +440,17 @@ fn transformPassRange(transform_index: usize, pass_index: u8) EntryRange {
 
 /// Entries with an empty or repeated source are stored at the front of a
 /// pass, before the sorted literal-source entries.
+/// Negated-source entries are stored at the end of a pass, after the sorted
+/// literal entries.
+fn negatedStart(range: EntryRange) usize {
+    var end = range.end;
+    while (end > range.start and entryAt(end - 1).flags & 64 != 0) : (end -= 1) {}
+    return end;
+}
+
 fn mappingStart(range: EntryRange) usize {
     var start = range.start;
-    while (start < range.end and entryAt(start).flags & 13 != 0) : (start += 1) {}
+    while (start < range.end and entryAt(start).flags & 77 != 0) : (start += 1) {}
     return start;
 }
 
@@ -449,7 +459,7 @@ fn hasInsertions(range: EntryRange) bool {
     while (index < range.end) : (index += 1) {
         const flags = entryAt(index).flags;
         if (flags & 1 != 0) return true;
-        if (flags & 13 == 0) break;
+        if (flags & 77 == 0) break;
     }
     return false;
 }
@@ -471,7 +481,7 @@ fn applyInsertions(
             var entry_index = range.start;
             while (entry_index < range.end) : (entry_index += 1) {
                 const entry = entryAt(entry_index);
-                if (entry.flags & 13 == 0) break;
+                if (entry.flags & 77 == 0) break;
                 if (entry.flags & 1 == 0) continue;
                 if (!contextMatches(
                     entry.before_context,
@@ -520,9 +530,13 @@ fn findMatchInRange(
     // match; everything else passes through unchanged.
     if (filter_set != 0 and !setContains(filter_set, first)) return null;
     const literals_start = mappingStart(range);
+    const literals_end = negatedStart(range);
+    var best: ?Entry = null;
+
     var lead = range.start;
     while (lead < literals_start) : (lead += 1) {
         const entry = entryAt(lead);
+        var candidate: ?Entry = null;
         if (entry.flags & 8 != 0) {
             // A collapse entry matches one unit (base plus trailing marks)
             // and consumes any immediately following units, emitting only
@@ -564,34 +578,45 @@ fn findMatchInRange(
             var matched = entry;
             matched.source_len = @intCast(consumed);
             matched.target_len = @intCast(unit_length);
-            return matched;
+            candidate = matched;
+        } else if (entry.flags & 4 != 0) {
+            // A repeated class source consumes the longest run in the set.
+            var consumed: usize = 0;
+            while (index + consumed < codepoints.len and consumed < 255 and
+                setContains(entry.source_offset, codepoints[index + consumed]))
+            {
+                consumed += 1;
+            }
+            if (consumed < entry.source_len) continue;
+            if (!contextMatches(
+                entry.before_context,
+                before,
+                before.len,
+                false,
+            )) {
+                continue;
+            }
+            if (!contextMatches(
+                entry.after_context,
+                codepoints,
+                index + consumed,
+                true,
+            )) {
+                continue;
+            }
+            var matched = entry;
+            matched.source_len = @intCast(consumed);
+            candidate = matched;
         }
-        if (entry.flags & 4 == 0) continue;
-        // A repeated class source consumes the longest run in the set.
-        var consumed: usize = 0;
-        while (index + consumed < codepoints.len and consumed < 255 and
-            setContains(entry.source_offset, codepoints[index + consumed]))
-        {
-            consumed += 1;
+        if (candidate) |value| {
+            if (best == null or value.priority < best.?.priority) {
+                best = value;
+            }
         }
-        if (consumed < entry.source_len) continue;
-        if (!contextMatches(entry.before_context, before, before.len, false)) {
-            continue;
-        }
-        if (!contextMatches(
-            entry.after_context,
-            codepoints,
-            index + consumed,
-            true,
-        )) {
-            continue;
-        }
-        var matched = entry;
-        matched.source_len = @intCast(consumed);
-        return matched;
     }
+
     var low = literals_start;
-    var high = range.end;
+    var high = literals_end;
     while (low < high) {
         const middle = low + (high - low) / 2;
         if (sourceCodepoint(entryAt(middle), 0) < first) {
@@ -601,7 +626,7 @@ fn findMatchInRange(
         }
     }
     var entry_index = low;
-    while (entry_index < range.end) : (entry_index += 1) {
+    while (entry_index < literals_end) : (entry_index += 1) {
         const entry = entryAt(entry_index);
         if (sourceCodepoint(entry, 0) != first) break;
         const length = @as(usize, entry.source_len);
@@ -626,9 +651,31 @@ fn findMatchInRange(
         )) {
             continue;
         }
-        return entry;
+        if (best == null or entry.priority < best.?.priority) best = entry;
+        break;
     }
-    return null;
+
+    entry_index = literals_end;
+    while (entry_index < range.end) : (entry_index += 1) {
+        const entry = entryAt(entry_index);
+        if (entry.flags & 64 == 0) continue;
+        // Negated source class: the first codepoint must be outside the set.
+        if (setContains(entry.source_offset, first)) continue;
+        if (!contextMatches(entry.before_context, before, before.len, false)) {
+            continue;
+        }
+        if (!contextMatches(
+            entry.after_context,
+            codepoints,
+            index + 1,
+            true,
+        )) {
+            continue;
+        }
+        if (best == null or entry.priority < best.?.priority) best = entry;
+        break;
+    }
+    return best;
 }
 
 fn decodeAlloc(
@@ -718,6 +765,29 @@ fn applyPassAlloc(
         steps += 1;
         if (steps > max_steps) break;
         if (findMatchInRange(range, work.items, index, work.items[0..index], filter_set)) |entry| {
+            if (entry.flags & 16 != 0) {
+                // Embedded case call: &Any-Lower($1) or &Any-Upper($1).
+                var matched = std.ArrayList(u8).empty;
+                defer matched.deinit(allocator);
+                for (work.items[index .. index + entry.source_len]) |codepoint| {
+                    try appendCodepoint(allocator, &matched, codepoint);
+                }
+                const mapped = if (entry.flags & 32 != 0)
+                    try case_mapping.fullUpperAlloc(allocator, matched.items, .{})
+                else
+                    try case_mapping.fullLowerAlloc(allocator, matched.items, .{});
+                defer allocator.free(mapped);
+                var mapped_codepoints = try decodeAlloc(allocator, mapped);
+                defer mapped_codepoints.deinit(allocator);
+                try work.replaceRange(
+                    allocator,
+                    index,
+                    entry.source_len,
+                    mapped_codepoints.items,
+                );
+                index += mapped_codepoints.items.len;
+                continue;
+            }
             const target_len: usize = entry.target_len;
             if (entry.flags & 8 != 0) {
                 for (0..target_len) |offset| {
@@ -2189,6 +2259,26 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/latin_interindic_conformance.bin"),
         .magic = "CJLI".*,
         .name = "Latin-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/az_title_conformance.bin"),
+        .magic = "CJDS".*,
+        .name = "az-Title",
+    },
+    .{
+        .bytes = @embedFile("transliterate/el_title_conformance.bin"),
+        .magic = "CJDU".*,
+        .name = "el-Title",
+    },
+    .{
+        .bytes = @embedFile("transliterate/lt_title_conformance.bin"),
+        .magic = "CJDY".*,
+        .name = "lt-Title",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tr_title_conformance.bin"),
+        .magic = "CJEA".*,
+        .name = "tr-Title",
     },
     .{
         .bytes = @embedFile("transliterate/interindic_ur_conformance.bin"),

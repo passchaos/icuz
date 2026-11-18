@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 244 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
+- 248 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 245 conformance fixtures: 30 official CLDR test-data files and 215 PyICU
+- 249 conformance fixtures: 30 official CLDR test-data files and 219 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -73,9 +73,11 @@ the specificity model above. `Latin-Hebrew` and `Bopo-Latn` need reverse
 directions of transforms whose forward rules are not yet compiled.
 `Maldivian-Latin/BGN` now passes its PyICU fixture.
 
-Embedded transform calls (`&Any-Lower($1)` / `&Any-Upper($1)`) are the
-main blocker for the `*-Title` transforms; the rule parser currently
-skips those rules. They need a per-rule callback into the case engine.
+Embedded case calls (`&Any-Lower($1)` / `&Any-Upper($1)`) are compiled;
+`az-Title`, `el-Title`, `lt-Title`, and `tr-Title` pass their fixtures.
+`nl-Title` still needs Word_Break property classes (`[:WB=ALetter:]` and
+friends) plus a real `Any-Title` step. General embedded transform calls
+(`&SomeTransform($1)`) remain unsupported.
 
 ## 3. Script_Extensions based filters
 
