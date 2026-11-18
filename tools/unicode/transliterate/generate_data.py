@@ -144,7 +144,7 @@ TRANSFORMS = (
     ("Armenian-Latin", "Latin-Armenian", "reverse_context"),
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
-    ("ug-ug_FONIPA", "ug-ug_FONIPA", "simple"),
+    ("ug-ug_FONIPA", "ug-ug_FONIPA", "context"),
     ("Greek-Latin", "Greek-Latin", "context"),
     ("Latin-Greek", "Greek-Latin", "reverse_context"),
     ("Hebrew-Latin", "Hebrew-Latin", "context"),

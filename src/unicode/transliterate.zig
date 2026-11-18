@@ -11,6 +11,7 @@ const properties = @import("properties.zig");
 const script = @import("script/root.zig");
 const case_mapping = @import("case/root.zig");
 const unicode_name = @import("name.zig");
+const word_rules = @import("word/rules.zig");
 
 /// CLDR release the compiled transform tables come from.
 pub const cldr_version = "48";
@@ -142,8 +143,8 @@ fn transformAt(index: usize) TransformRecord {
 
 const named_transform_names = [_][]const u8{
     "NFC",       "NFD",       "NFKC",      "NFKD",     "Any-Lower",
-    "Any-Upper", "Any-Title", "Any-Null",  "Hex-Any",  "Any-Hex",
-    "Name-Any",  "Any-Name",
+    "Any-Upper", "Any-Title", "nl-Title",  "Any-Null", "Hex-Any",
+    "Any-Hex",   "Name-Any",  "Any-Name",
 };
 
 /// Number of transforms available by name, including named engines.
@@ -193,9 +194,9 @@ fn aliasTransform(name: []const u8) ?[]const u8 {
 
 fn isNamedTransform(name: []const u8) bool {
     const names = [_][]const u8{
-        "Latin-ASCII", "NFC",     "NFD",       "NFKC",      "NFKD",
-        "Any-Lower",   "Any-Upper", "Any-Title", "Any-Null", "Null",
-        "Hex-Any",     "Any-Hex",   "Name-Any", "Any-Name",
+        "Latin-ASCII", "NFC",       "NFD",       "NFKC",      "NFKD",
+        "Any-Lower",   "Any-Upper", "Any-Title", "nl-Title",  "Any-Null",
+        "Null",        "Hex-Any",   "Any-Hex",   "Name-Any",  "Any-Name",
     };
     for (names) |candidate| {
         if (std.mem.eql(u8, name, candidate)) return true;
@@ -1509,6 +1510,48 @@ fn anyHexAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
     return output.toOwnedSlice(allocator);
 }
 
+/// Dutch title casing: Any-Title followed by the `Ij` -> `IJ` digraph fix
+/// at word starts.
+fn nlTitleAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+) Error![]u8 {
+    const titled = try case_mapping.fullTitleAlloc(allocator, text, .{});
+    defer allocator.free(titled);
+    var codepoints = try decodeAlloc(allocator, titled);
+    defer codepoints.deinit(allocator);
+    const items = codepoints.items;
+    var index: usize = 0;
+    while (index + 1 < items.len) : (index += 1) {
+        if (items[index] != 'I' or items[index + 1] != 'j') continue;
+        var cursor = index;
+        var boundary = cursor == 0;
+        if (!boundary) {
+            const mid = word_rules.properties(items[cursor - 1]).class;
+            if (mid == .mid_letter or mid == .mid_num_let) cursor -= 1;
+            while (cursor > 0 and
+                word_rules.properties(items[cursor - 1]).class == .extend)
+            {
+                cursor -= 1;
+            }
+            if (cursor == 0) {
+                boundary = true;
+            } else {
+                const before = word_rules.properties(items[cursor - 1]).class;
+                boundary = before != .a_letter and before != .hebrew_letter;
+            }
+        }
+        if (!boundary) continue;
+        items[index + 1] = 'J';
+    }
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    for (items) |codepoint| {
+        try appendCodepoint(allocator, &output, codepoint);
+    }
+    return output.toOwnedSlice(allocator);
+}
+
 fn namedFormAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -1542,6 +1585,9 @@ pub fn transliterateByNameAlloc(
     }
     if (std.mem.eql(u8, name, "Any-Title")) {
         return case_mapping.fullTitleAlloc(allocator, text, .{});
+    }
+    if (std.mem.eql(u8, name, "nl-Title")) {
+        return nlTitleAlloc(allocator, text);
     }
     if (std.mem.eql(u8, name, "Any-Null") or std.mem.eql(u8, name, "Null")) {
         return allocator.dupe(u8, text);
@@ -2281,6 +2327,16 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/latin_interindic_conformance.bin"),
         .magic = "CJLI".*,
         .name = "Latin-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/nl_title_conformance.bin"),
+        .magic = "CJD0".*,
+        .name = "nl-Title",
+    },
+    .{
+        .bytes = @embedFile("transliterate/ug_fonipa_conformance.bin"),
+        .magic = "CJUG".*,
+        .name = "ug-ug_FONIPA",
     },
     .{
         .bytes = @embedFile("transliterate/greek_latin_conformance.bin"),

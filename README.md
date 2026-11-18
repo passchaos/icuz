@@ -108,7 +108,7 @@ need without pulling in a font or layout engine.
   Two hundred fifty-one
   transforms are compiled (including 118 auto-discovered CLDR pipelines);
   thirty ship official CLDR conformance
-  fixtures, and two hundred twenty-two (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and two hundred twenty-four (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, the nine script-to-InterIndic
   transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
@@ -128,8 +128,8 @@ need without pulling in a font or layout engine.
   differential fixtures generated with PyICU, including reverse-direction
   transforms. Transforms can be selected by CLDR name through
   `transliterateByNameAlloc`; ICU's `NFC`, `NFD`, `NFKC`, `NFKD`,
-  `Any-Lower`, `Any-Upper`, and `Any-Title` names dispatch to the
-  normalization and case engines. `transformCount`, `transformNameAt`,
+  `Any-Lower`, `Any-Upper`, `Any-Title`, and `nl-Title` names dispatch to
+  the normalization and case engines. `transformCount`, `transformNameAt`,
   and `hasTransform` expose the compiled transform list. The table compiler expands character classes,
   Unicode properties, set operations, multi-codepoint set elements,
   multi-element prefix/suffix contexts with word-boundary handling, optional
