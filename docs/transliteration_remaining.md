@@ -48,6 +48,11 @@ pipeline needs a component that is not yet compiled (for example
 `am_FONIPA-am`, `und_FONIPA-ar`, `es_FONIPA-ja`). Compiling those
 components is the prerequisite for the next batch.
 
+Attempting `am_FONIPA-am` as `reverse_context` or `reverse_with_left`
+still leaves 19 PyICU failures, so the reverse FONIPA components need
+the rule-specificity model below before the `my-am` / `si-am` pipelines
+can land.
+
 ## 2. ICU rule specificity / hidden-rule ordering
 
 ICU rejects a rule hidden by an earlier more general rule and gives
