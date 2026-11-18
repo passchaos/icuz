@@ -93,15 +93,16 @@ need without pulling in a font or layout engine.
   es-es_FONIPA, xh-xh_FONIPA, vec-vec_FONIPA, ro-ro_FONIPA,
   Arabic-Latin-BGN, Armenian-Latin-BGN, Thaana-Latin, Syriac-Latin,
   CanadianAboriginal-Latin, tr-Lower, az-Lower, el-Lower, el-Upper,
-  lt-Lower, lt-Upper, and
-  NFC/NFD/NFKC/NFKD transforms. Sixty-seven
+  lt-Lower, lt-Upper, Korean-Latin-BGN, Kirghiz-Latin-BGN, and
+  NFC/NFD/NFKC/NFKD transforms. Sixty-nine
   transforms are compiled; twenty-four ship official CLDR conformance
-  fixtures, and thirty-five (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and thirty-seven (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
   Venetian FONIPA, Romanian FONIPA, Arabic-Latin-BGN, Armenian-Latin-BGN,
   Thaana-Latin, Syriac-Latin, CanadianAboriginal-Latin, the six
-  case transforms, a Kazakh FONIPA validation fixture, Hiragana-Katakana,
+  case transforms, Korean-Latin-BGN, Kirghiz-Latin-BGN,
+  a Kazakh FONIPA validation fixture, Hiragana-Katakana,
   and Persian-Latin-BGN) ship ICU
   differential fixtures generated with PyICU. Transforms can be selected by CLDR name through
   `transliterateByNameAlloc`. The table compiler expands character classes,

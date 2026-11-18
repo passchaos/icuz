@@ -97,6 +97,8 @@ TRANSFORMS = (
     ("el-Upper", "el-Upper", "context"),
     ("lt-Lower", "lt-Lower", "context"),
     ("lt-Upper", "lt-Upper", "context"),
+    ("Korean-Latin-BGN", "Korean-Latin-BGN", "context"),
+    ("Kirghiz-Latin-BGN", "Kirghiz-Latin-BGN", "context"),
 )
 
 CONFORMANCE = (
