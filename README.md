@@ -92,18 +92,19 @@ need without pulling in a font or layout engine.
   Hiragana-Katakana, Persian-Latin-BGN, nv-nv_FONIPA, si-si_FONIPA,
   es-es_FONIPA, xh-xh_FONIPA, vec-vec_FONIPA, ro-ro_FONIPA,
   Arabic-Latin-BGN, Armenian-Latin-BGN, Thaana-Latin, Syriac-Latin,
-  CanadianAboriginal-Latin, tr-Lower, az-Lower, el-Lower, el-Upper,
-  lt-Lower, lt-Upper, Korean-Latin-BGN, Kirghiz-Latin-BGN, Latin-Armenian,
+  CanadianAboriginal-Latin, tr-Lower, az-Lower, tr-Upper, az-Upper,
+  el-Lower, el-Upper, lt-Lower, lt-Upper, Korean-Latin-BGN, Kirghiz-Latin-BGN, Latin-Armenian,
   Azerbaijani-Latin-BGN, Latin-Cyrillic, Latin-Thaana,
   Latin-CanadianAboriginal, and
   NFC/NFD/NFKC/NFKD transforms. Seventy-four
   transforms are compiled; twenty-eight ship official CLDR conformance
-  fixtures, and forty-six (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and forty-eight (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
   Venetian FONIPA, Romanian FONIPA, Arabic-Latin-BGN, Armenian-Latin-BGN,
   Thaana-Latin, Syriac-Latin, CanadianAboriginal-Latin, the six
-  case transforms, Korean-Latin-BGN, Kirghiz-Latin-BGN, Latin-Armenian,
+  case transforms (including tr/az Upper), Korean-Latin-BGN,
+  Kirghiz-Latin-BGN, Latin-Armenian,
   Azerbaijani-Latin-BGN, Latin-Cyrillic, Latin-Thaana,
   Latin-CanadianAboriginal, Georgian-Latin, Latin-Georgian,
   Halfwidth-Fullwidth, Fullwidth-Halfwidth, a Kazakh FONIPA validation

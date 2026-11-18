@@ -1407,6 +1407,16 @@ const conformance_fixtures = [_]struct {
         .magic = "CJP3".*,
         .name = "Persian-Latin-BGN",
     },
+    .{
+        .bytes = @embedFile("transliterate/tr_upper_conformance.bin"),
+        .magic = "CJTU".*,
+        .name = "tr-Upper",
+    },
+    .{
+        .bytes = @embedFile("transliterate/az_upper_conformance.bin"),
+        .magic = "CJAU".*,
+        .name = "az-Upper",
+    },
 };
 
 test "transliterate by CLDR name" {
