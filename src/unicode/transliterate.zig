@@ -137,9 +137,20 @@ pub fn transformNameAt(index: usize) ?[]const u8 {
     return data[names_offset + record.name_offset ..][0..record.name_len];
 }
 
-/// Whether a transform with `name` is compiled into the table blob.
+fn isNamedTransform(name: []const u8) bool {
+    const names = [_][]const u8{
+        "Latin-ASCII", "NFC",     "NFD",       "NFKC",      "NFKD",
+        "Any-Lower",   "Any-Upper", "Any-Title", "Any-Null", "Null",
+    };
+    for (names) |candidate| {
+        if (std.mem.eql(u8, name, candidate)) return true;
+    }
+    return false;
+}
+
+/// Whether `name` resolves through the table blob or a named engine.
 pub fn hasTransform(name: []const u8) bool {
-    return findTransformByName(name) != null;
+    return isNamedTransform(name) or findTransformByName(name) != null;
 }
 
 fn findTransformByName(name: []const u8) ?usize {
@@ -918,6 +929,9 @@ pub fn transliterateByNameAlloc(
     if (std.mem.eql(u8, name, "Any-Title")) {
         return case_mapping.fullTitleAlloc(allocator, text, .{});
     }
+    if (std.mem.eql(u8, name, "Any-Null") or std.mem.eql(u8, name, "Null")) {
+        return allocator.dupe(u8, text);
+    }
     const transform_index = findTransformByName(name) orelse
         return error.UnknownTransform;
     return tableAlloc(allocator, text, transform_index);
@@ -1662,9 +1676,12 @@ test "named normalization and case transforms" {
 
 test "transform discovery" {
     const testing = @import("std").testing;
+    const allocator = testing.allocator;
     try testing.expect(transformCount() >= 80);
     try testing.expect(hasTransform("Latin-ASCII"));
     try testing.expect(hasTransform("Russian-Latin-BGN"));
+    try testing.expect(hasTransform("NFC"));
+    try testing.expect(hasTransform("Any-Title"));
     try testing.expect(!hasTransform("No-Such-Transform"));
     var found = false;
     for (0..transformCount()) |index| {
@@ -1673,4 +1690,8 @@ test "transform discovery" {
     }
     try testing.expect(found);
     try testing.expect(transformNameAt(transformCount()) == null);
+
+    const identity = try transliterateByNameAlloc(allocator, "abc", "Any-Null");
+    defer allocator.free(identity);
+    try testing.expectEqualStrings("abc", identity);
 }
