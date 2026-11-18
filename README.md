@@ -94,16 +94,16 @@ need without pulling in a font or layout engine.
   Arabic-Latin-BGN, Armenian-Latin-BGN, Thaana-Latin, Syriac-Latin,
   CanadianAboriginal-Latin, tr-Lower, az-Lower, el-Lower, el-Upper,
   lt-Lower, lt-Upper, Korean-Latin-BGN, Kirghiz-Latin-BGN, Latin-Armenian,
-  Azerbaijani-Latin-BGN, and
-  NFC/NFD/NFKC/NFKD transforms. Seventy-one
+  Azerbaijani-Latin-BGN, Latin-Cyrillic, and
+  NFC/NFD/NFKC/NFKD transforms. Seventy-two
   transforms are compiled; twenty-four ship official CLDR conformance
-  fixtures, and thirty-nine (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and forty (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
   Venetian FONIPA, Romanian FONIPA, Arabic-Latin-BGN, Armenian-Latin-BGN,
   Thaana-Latin, Syriac-Latin, CanadianAboriginal-Latin, the six
   case transforms, Korean-Latin-BGN, Kirghiz-Latin-BGN, Latin-Armenian,
-  Azerbaijani-Latin-BGN,
+  Azerbaijani-Latin-BGN, Latin-Cyrillic,
   a Kazakh FONIPA validation fixture, Hiragana-Katakana,
   and Persian-Latin-BGN) ship ICU
   differential fixtures generated with PyICU, including reverse-direction

@@ -101,6 +101,7 @@ TRANSFORMS = (
     ("Kirghiz-Latin-BGN", "Kirghiz-Latin-BGN", "context"),
     ("Latin-Armenian", "Latin-Armenian", "context"),
     ("Azerbaijani-Latin-BGN", "Azerbaijani-Latin-BGN", "context"),
+    ("Latin-Cyrillic", "Cyrillic-Latin", "reverse_context"),
 )
 
 CONFORMANCE = (
@@ -1617,7 +1618,13 @@ def parse_target_with_capture(text: str, variables: dict[str, str], source):
     return result
 
 
-def table_entries_with_contexts(rules: str):
+def reverse_context_alts(alts):
+    if alts is None or alts == [None]:
+        return alts
+    return [list(reversed(elements)) for elements in alts]
+
+
+def table_entries_with_contexts(rules: str, reverse: bool = False):
     variables = parse_variables(rules)
     entries = []
     priority = 0
@@ -1779,6 +1786,10 @@ def table_entries_with_contexts(rules: str):
             )
             if target_syntax:
                 continue
+        if reverse and (capture or repeat_set is not None):
+            continue
+        if reverse and (fixed_target is None or not fixed_target):
+            continue
         for source in sources:
             if not source and repeat_set is None:
                 continue
@@ -1793,13 +1804,23 @@ def table_entries_with_contexts(rules: str):
                 if repeat_set is not None
                 else None
             )
-            for before in before_alts:
-                for after in after_alts:
+            if reverse:
+                entry_source = tuple(target)
+                entry_target = tuple(source)
+                entry_before = reverse_context_alts(after_alts)
+                entry_after = reverse_context_alts(before_alts)
+            else:
+                entry_source = source
+                entry_target = tuple(target)
+                entry_before = before_alts
+                entry_after = after_alts
+            for before in entry_before:
+                for after in entry_after:
                     entries.append(
                         (
                             pass_index,
-                            source,
-                            tuple(target),
+                            entry_source,
+                            tuple(entry_target),
                             before,
                             after,
                             priority,
@@ -2130,6 +2151,8 @@ def main() -> int:
             table = reverse_table(simple_table_entries(georgian_rules))
         elif builder == "reverse_simple":
             table = reverse_table(simple_table_entries(rules))
+        elif builder == "reverse_context":
+            table = table_entries_with_contexts(rules, reverse=True)
         elif builder == "variables":
             table = table_entries_with_variables(rules)
         elif builder == "context":
@@ -2147,7 +2170,11 @@ def main() -> int:
         final_case = 0 if builder == "katakana" else detect_final_case(rules)
         specs.append((name, pre_normalization, post_normalization, final_case))
         tables.append(table)
-        filters.append(parse_filter(rules, parse_variables(rules)))
+        filters.append(
+            None
+            if builder.startswith("reverse")
+            else parse_filter(rules, parse_variables(rules))
+        )
 
     (out_dir / "data.bin").write_bytes(render_blob(specs, tables, filters))
     for _, fixture_path, magic, excluded, filename in CONFORMANCE:
