@@ -60,6 +60,11 @@ The v12 step program covers arbitrary `::` sequences. Remaining gaps:
 
 - Transform references with arguments, e.g.
   `::Latin-NumericPinyin(NumericPinyin-Latin);` in `Latin-Bopomofo.xml`.
+- Transform-reference steps inside rule-based transforms, e.g.
+  `::[:Latin:] fullwidth-halfwidth();` in `it-am` / `it-ja`,
+  `:: fullwidth-halfwidth;` and `::[...] nfkc;` in `Han-Spacedhan`, and
+  `::[set] Halfwidth-Fullwidth;` in `Katakana-Latin-BGN`. These need a
+  step program that interleaves rule-table sections with steps.
 - Pipelines whose components are not compiled (for example
   `und_FONIPA-ar`, `es_FONIPA-ja`, `und_FONIPA-fa`).
 
