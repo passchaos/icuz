@@ -134,7 +134,7 @@ coverage for the tone-position classes.
   normalization directives normalize the intermediate text before the
   following pass (the Pinyin tone pass NFD-decomposes, removes tone marks,
   then NFC-recomposes before the syllabify and mapping passes).
-- All 20 `X-chr` pipelines pass their PyICU fixtures. The remaining
+- All 21 `X-chr` pipelines pass their PyICU fixtures. The remaining
   `my/pl/sat/sk/xh/zu/hy_AREVMDA-chr` pipelines needed the ISO 15924
   `sc=Cher` alias so `und_FONIPA-chr`'s negated
   `[^[:sc=Cher:][tone marks]]` cleanup rule compiles and removes leftover
