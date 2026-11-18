@@ -74,6 +74,15 @@ TRANSFORMS = (
     ("InterIndic-Kannada", "InterIndic-Kannada", "context"),
     ("InterIndic-Malayalam", "InterIndic-Malayalam", "context"),
     ("InterIndic-Latin", "InterIndic-Latin", "context"),
+    ("Bengali-InterIndic", "Bengali-InterIndic", "context"),
+    ("Devanagari-InterIndic", "Devanagari-InterIndic", "context"),
+    ("Gujarati-InterIndic", "Gujarati-InterIndic", "context"),
+    ("Gurmukhi-InterIndic", "Gurmukhi-InterIndic", "context"),
+    ("Kannada-InterIndic", "Kannada-InterIndic", "context"),
+    ("Malayalam-InterIndic", "Malayalam-InterIndic", "context"),
+    ("Oriya-InterIndic", "Oriya-InterIndic", "context"),
+    ("Tamil-InterIndic", "Tamil-InterIndic", "context"),
+    ("Telugu-InterIndic", "Telugu-InterIndic", "context"),
     ("chr-chr_FONIPA", "chr-chr_FONIPA", "context"),
     ("zu-zu_FONIPA", "zu-zu_FONIPA", "context"),
     ("InterIndic-Tamil", "InterIndic-Tamil", "context"),
@@ -546,6 +555,17 @@ def read_escape(text: str, index: int) -> tuple[int, int]:
         return int(text[index + 2 : index + 6], 16), 6
     if kind == "U" and index + 10 <= len(text):
         return int(text[index + 2 : index + 10], 16), 10
+    if kind == "x" and index + 4 <= len(text):
+        return int(text[index + 2 : index + 4], 16), 4
+    if kind in "01234567":
+        end = index + 1
+        while (
+            end < len(text)
+            and end < index + 4
+            and text[end] in "01234567"
+        ):
+            end += 1
+        return int(text[index + 1 : end], 8), end - index
     simple = {"t": 9, "n": 10, "r": 13, "\\": 92, "'": 39}
     if kind in simple:
         return simple[kind], 2

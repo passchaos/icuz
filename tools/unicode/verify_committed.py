@@ -40,7 +40,7 @@ BLOBS = (
     Blob("src/unicode/bidi/data.bin", b"CJB1", 1, "9e9f9937100d6019f7308743916c3606bdb31c9cc4f142eb605becf45a210c3f"),
     Blob("src/unicode/canonical/combining_class.bin", b"CJC1", 1, "336130546fc300108806f5ae23144cda93da13488a810946357304b5a12f5fcc"),
     Blob("src/unicode/charset/data.bin", b"CJCS", 1, "965bd7d7e6084e49d6a5a04f350807c0c2cdeececeacfa78103d928f45f71575"),
-    Blob("src/unicode/transliterate/data.bin", b"CJTR", 11, "f9d57e1f9a7a1090b26f9e99f2b80b87c2f0a4eb171999f59cec606069969c84", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/data.bin", b"CJTR", 11, "82a9399f3523c85947fafc9cbc6c2a047babd7a14d2f428c91d2e3e905017a19", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/georgian_bgn_conformance.bin", b"CJTG", 1, "e8d6ea181123ec5175c7b4d92e1591febcdc9ea0ee2800d075e5bbd4f81acf62", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/hebrew_bgn_conformance.bin", b"CJTH", 1, "c8e0869ef80a3608d0d98f8d07f291e3863a4c7d6b08bf3bd50fe7242459af51", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/russian_bgn_conformance.bin", b"CJRU", 1, "bd90c67fe72c02a91305a394c3506158d1b2fd39d307ec57838df20594d2e6e2", version=(48, 0, 0)),
@@ -140,6 +140,15 @@ BLOBS = (
     Blob("src/unicode/transliterate/latin_arabic_conformance.bin", b"CJLQ", 1, "44eaad6bdedc098041fb5d6fc17ba11c872ce6a8bb31f79976de170c5daf398d", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/latin_syriac_conformance.bin", b"CJLS", 1, "bd19ada921fd14de9913aaf20b82eb51dc8bd5e3f55e6b400aea95243266eca7", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/armenian_latin_conformance.bin", b"CJAR", 1, "857f3a932d2f50ec2a9fb4b8591e36e745386f07fdff68f7188ea3b77b18bd18", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/bengali_interindic_conformance.bin", b"CJBI", 1, "5cc71465abc51e68dd17bf0cf57ee8d58dbf87eb1be68c78840d1eba1a797001", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/devanagari_interindic_conformance.bin", b"CJDI", 1, "be74a5d1cc27e47459d3eac1c277d439dbabdec231221306e1a9b7b69427daef", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/gujarati_interindic_conformance.bin", b"CJGI", 1, "5279f941f1966d9098cb2de465663decc73c73aea06260153b9576b78f0ce68b", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/gurmukhi_interindic_conformance.bin", b"CJUI", 1, "d923d43d88355992ba287b56be2756f703718a365cd12b9cdd595ac571597f7b", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/kannada_interindic_conformance.bin", b"CJNK", 1, "faac8bc6eeb733e72c309bae8da1705429cd0dbb9b877a29cb05a43588c30cb5", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/malayalam_interindic_conformance.bin", b"CJMI", 1, "17d1516d24de26b66f980d57e7a802cdb44a959011d56564ffc9b620d7e065b5", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/oriya_interindic_conformance.bin", b"CJRI", 1, "147d5578a260731d8a995090d5bacb7551cba0c6b5dc2949e6b14fe0e2742a47", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/tamil_interindic_conformance.bin", b"CJTI", 1, "c7973cf357030a6363bcc1552d4ba9a5d269d039b6f47851024a10a46dd85da4", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/telugu_interindic_conformance.bin", b"CJEI", 1, "eb10f3bc5c277568ba486db71f318528a20bb6381d447486c531c10fe6b59360", version=(48, 0, 0)),
     Blob("src/unicode/collation/data.bin", b"CJCL", 2, "3db525f5696955768d63797c465d31285efe0d4cd4db243bd944c178a13f135d"),
     Blob("src/unicode/collation/tailorings.bin", b"CJTL", 4, "800f27cae2d4a13f0618dd57d5475b8cc3f00c705c43ac1f30232bb5430aff96", version=(48, 0, 0)),
     Blob("src/unicode/collation/conformance_non_ignorable.bin", b"CJCT", 1, "46c35a76dc144f13fbd96723a2e676a5561b2739e7bb15d58f193f538ab3841a"),
@@ -191,10 +200,10 @@ GENERATORS = {
     "tools/unicode/format/generate_dates.py": "de6d58352b8793fee777752b980d27561e6ca400cb4710b95c9fda9b54999e45",
     "tools/unicode/format/generate_misc.py": "35d08acef5a6b7c23bbbe3b13977a2085f02df3985185068a68fe59e0625b0e1",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
-    "tools/unicode/transliterate/generate_data.py": "da33633a9d4e05119e718c1bdf9f265008239cfc982dd8975b0943f82ee5420a",
+    "tools/unicode/transliterate/generate_data.py": "0e6d7fcfdf00bb52394a492a10fd751c7fe179484bc0a9b82018c189a72a6caa",
     "tools/unicode/break/generate_dictionaries.py": "bdbd4c4e9c999b4cea6a8924b08c72a49719c857e26dea82fc50940ee145e264",
     "tools/unicode/break/generate_word_conformance.py": "3c2467ffc38b2467cbbc0d895e76b8862774c48567aa3ad26b9681605df3a5ff",
-    "tools/unicode/transliterate/generate_icu_conformance.py": "feb6268680c179f028c2a6bf221b4bed3dc35aa45bf3b2735d58ee2896d0e5b1",
+    "tools/unicode/transliterate/generate_icu_conformance.py": "643265b3e358967232f314527c3642ca22d6df86f91d642c38322fe390137140",
     "tools/unicode/name/generate_data.py": "bb3a64ad8a8c8fd2e34807cb10d81c76677f5e29c073c4808d75d48f234c9302",
     "tools/unicode/line_break/generate_conformance.py": "44b205d1b640cdb52e4316d649c584c97c2c94644437291fa568fbec1a2cd630",
     "tools/unicode/line_break/generate_data.py": "fa3d55066a98356ffcbf7abc50955a94e0c0f9eeec15758357bd14b8fcf55ac1",
@@ -390,7 +399,7 @@ def check_layout(blob: Blob, data: bytes) -> None:
             + target_count * 4
             == len(data)
         )
-    elif magic in (b"CJTG", b"CJTH", b"CJRU", b"CJGR", b"CJKA", b"CJAM", b"CJKZ", b"CJTM", b"CJUA", b"CJBY", b"CJMO", b"CJBU", b"CJMC", b"CJRS", b"CJSG", b"CJGE", b"CJE3", b"CJE4", b"CJE5", b"CJBK", b"CJE7", b"CJSL", b"CJMF", b"CJB2", b"CJYL", b"CJAL", b"CJIA", b"CJDE", b"CJIB", b"CJIG", b"CJIU", b"CJIO", b"CJIE", b"CJIK", b"CJIM", b"CJIX", b"CJCH", b"CJZU", b"CJKK", b"CJTA", b"CJHK", b"CJPE", b"CJN2", b"CJSF", b"CJEF", b"CJHF", b"CJVF", b"CJOF", b"CJAB", b"CJHA", b"CJTN", b"CJSY", b"CJCA", b"CJT2", b"CJAZ", b"CJEL", b"CJEU", b"CJLL", b"CJLU", b"CJKO", b"CJKI", b"CJLA", b"CJA2", b"CJLC", b"CJTT", b"CJC2", b"CJGG", b"CJG3", b"CJHW", b"CJFW", b"CJAS", b"CJK3", b"CJH3", b"CJP3", b"CJTU", b"CJAU", b"CJD2", b"CJAP", b"CJKH", b"CJPB", b"CJZ1", b"CJZ2", b"CJD3", b"CJZ3", b"CJZ4", b"CJEG", b"CJE6", b"CJM3", b"CJAF", b"CJFA", b"CJPA", b"CJPM", b"CJPR", b"CJPS", b"CJPX", b"CJPZ", b"CJLQ", b"CJLS", b"CJAR"):
+    elif magic in (b"CJTG", b"CJTH", b"CJRU", b"CJGR", b"CJKA", b"CJAM", b"CJKZ", b"CJTM", b"CJUA", b"CJBY", b"CJMO", b"CJBU", b"CJMC", b"CJRS", b"CJSG", b"CJGE", b"CJE3", b"CJE4", b"CJE5", b"CJBK", b"CJE7", b"CJSL", b"CJMF", b"CJB2", b"CJYL", b"CJAL", b"CJIA", b"CJDE", b"CJIB", b"CJIG", b"CJIU", b"CJIO", b"CJIE", b"CJIK", b"CJIM", b"CJIX", b"CJCH", b"CJZU", b"CJKK", b"CJTA", b"CJHK", b"CJPE", b"CJN2", b"CJSF", b"CJEF", b"CJHF", b"CJVF", b"CJOF", b"CJAB", b"CJHA", b"CJTN", b"CJSY", b"CJCA", b"CJT2", b"CJAZ", b"CJEL", b"CJEU", b"CJLL", b"CJLU", b"CJKO", b"CJKI", b"CJLA", b"CJA2", b"CJLC", b"CJTT", b"CJC2", b"CJGG", b"CJG3", b"CJHW", b"CJFW", b"CJAS", b"CJK3", b"CJH3", b"CJP3", b"CJTU", b"CJAU", b"CJD2", b"CJAP", b"CJKH", b"CJPB", b"CJZ1", b"CJZ2", b"CJD3", b"CJZ3", b"CJZ4", b"CJEG", b"CJE6", b"CJM3", b"CJAF", b"CJFA", b"CJPA", b"CJPM", b"CJPR", b"CJPS", b"CJPX", b"CJPZ", b"CJLQ", b"CJLS", b"CJAR", b"CJBI", b"CJDI", b"CJGI", b"CJUI", b"CJNK", b"CJMI", b"CJRI", b"CJTI", b"CJEI"):
         case_count = struct.unpack_from("<I", data, 8)[0]
         offset = 12
         for _ in range(case_count):

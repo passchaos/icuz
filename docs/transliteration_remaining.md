@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 97 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
+- 106 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 99 conformance fixtures: 30 official CLDR test-data files and 69 PyICU
+- 108 conformance fixtures: 30 official CLDR test-data files and 78 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -103,6 +103,11 @@ coverage for the tone-position classes.
 - `Hans-Hant` / `Hant-Hans` are aliases over the same tables.
 - `am_FONIPA-am` compiles as the compositional inverse of
   `am-am_FONIPA` and passes 789 PyICU cases.
+- The nine script-to-InterIndic transforms (`Bengali-InterIndic`,
+  `Devanagari-InterIndic`, `Gujarati-InterIndic`, `Gurmukhi-InterIndic`,
+  `Kannada-InterIndic`, `Malayalam-InterIndic`, `Oriya-InterIndic`,
+  `Tamil-InterIndic`, `Telugu-InterIndic`) compile from their own rule
+  files and pass PyICU fixtures.
 - `kk-am`, `my-am`, `ro-am`, `si-am`, `xh-am`, and `zu-am` pass their
   PyICU pipeline fixtures.
 

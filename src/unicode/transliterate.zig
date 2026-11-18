@@ -1978,6 +1978,50 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/armenian_latin_conformance.bin"),
         .magic = "CJAR".*,
         .name = "Armenian-Latin",
+    },    .{
+        .bytes = @embedFile("transliterate/bengali_interindic_conformance.bin"),
+        .magic = "CJBI".*,
+        .name = "Bengali-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/devanagari_interindic_conformance.bin"),
+        .magic = "CJDI".*,
+        .name = "Devanagari-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gujarati_interindic_conformance.bin"),
+        .magic = "CJGI".*,
+        .name = "Gujarati-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/gurmukhi_interindic_conformance.bin"),
+        .magic = "CJUI".*,
+        .name = "Gurmukhi-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/kannada_interindic_conformance.bin"),
+        .magic = "CJNK".*,
+        .name = "Kannada-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/malayalam_interindic_conformance.bin"),
+        .magic = "CJMI".*,
+        .name = "Malayalam-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/oriya_interindic_conformance.bin"),
+        .magic = "CJRI".*,
+        .name = "Oriya-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/tamil_interindic_conformance.bin"),
+        .magic = "CJTI".*,
+        .name = "Tamil-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/telugu_interindic_conformance.bin"),
+        .magic = "CJEI".*,
+        .name = "Telugu-InterIndic",
     },
 };
 

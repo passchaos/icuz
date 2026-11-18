@@ -44,6 +44,15 @@ def read_escape(text: str, index: int):
         return int(text[index + 2 : index + 10], 16), 10
     if text.startswith("\\x", index) and index + 3 < len(text):
         return int(text[index + 2 : index + 4], 16), 4
+    if index + 1 < len(text) and text[index + 1] in "01234567":
+        end = index + 1
+        while (
+            end < len(text)
+            and end < index + 4
+            and text[end] in "01234567"
+        ):
+            end += 1
+        return int(text[index + 1 : end], 8), end - index
     return ord(text[index + 1]), 2
 
 

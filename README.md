@@ -88,7 +88,8 @@ need without pulling in a font or layout engine.
   byn-Ethi-t-byn-latn-m0-tekie-alibekit/xaleget, si-si_Latn,
   my-my_FONIPA, Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   InterIndic-Devanagari/Bengali/Gurmukhi/Gujarati/Oriya/Telugu/Kannada/
-  Malayalam/Latin/Tamil, chr-chr_FONIPA, zu-zu_FONIPA,
+  Malayalam/Latin/Tamil, Bengali/Devanagari/Gujarati/Gurmukhi/
+  Kannada/Malayalam/Oriya/Tamil/Telugu-InterIndic, chr-chr_FONIPA, zu-zu_FONIPA,
   Hiragana-Katakana, Persian-Latin-BGN, nv-nv_FONIPA, si-si_FONIPA,
   es-es_FONIPA, xh-xh_FONIPA, vec-vec_FONIPA, ro-ro_FONIPA,
   Arabic-Latin-BGN, Armenian-Latin-BGN, Thaana-Latin, Syriac-Latin,
@@ -103,10 +104,11 @@ need without pulling in a font or layout engine.
   FONIPA-to-Amharic pipelines, and
   NFC/NFD/NFKC/NFKD transforms, plus the `Hex-Any` / `Any-Hex` escape
   transforms and the `Name-Any` / `Any-Name` character-name transforms.
-  Ninety-seven
+  One hundred six
   transforms are compiled; thirty ship official CLDR conformance
-  fixtures, and sixty-nine (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
-  the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
+  fixtures, and seventy-eight (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  the ten InterIndic script transforms, the nine script-to-InterIndic
+  transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
   Venetian FONIPA, Romanian FONIPA, Arabic-Latin-BGN, Armenian-Latin-BGN,
   Thaana-Latin, Syriac-Latin, CanadianAboriginal-Latin, the six
