@@ -193,7 +193,9 @@ fn isNamedTransform(name: []const u8) bool {
 }
 
 /// Index of a compiled table transform, or null for named engines.
+/// ICU aliases resolve to their canonical transform index.
 pub fn transformIndex(name: []const u8) ?usize {
+    if (aliasTransform(name)) |clrd| return findTransformByName(clrd);
     return findTransformByName(name);
 }
 
@@ -1847,6 +1849,7 @@ test "transform discovery" {
     try testing.expect(transformIndex("Latin-ASCII") != null);
     try testing.expect(transformIndex("NFC") == null);
     try testing.expect(transformIndex("No-Such-Transform") == null);
+    try testing.expect(transformIndex("ru-ru_Latn/BGN") != null);
     try testing.expect(!hasTransform("No-Such-Transform"));
     var found = false;
     var found_named = false;
