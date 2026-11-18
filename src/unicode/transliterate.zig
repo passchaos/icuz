@@ -234,7 +234,7 @@ fn contextMatches(
             }
             if (cursor >= codepoints.len) {
                 if (element.flags & 4 != 0 or optional) continue;
-                // A following negated class matches the empty position at the
+                // ICU lets a negated class match the empty position at the
                 // end of the text (CLDR's word-final inherent-vowel rules).
                 if (element.flags & 1 != 0) continue;
                 return false;
@@ -285,6 +285,9 @@ fn contextMatches(
         }
         if (cursor == 0) {
             if (element.flags & 4 != 0 or optional) continue;
+            // ICU lets a negated class match the empty position at the start
+            // of the text (CLDR's word-initial inherent-vowel rules).
+            if (element.flags & 1 != 0) continue;
             return false;
         }
         cursor -= 1;
@@ -1186,6 +1189,16 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/hiragana_katakana_conformance.bin"),
         .magic = "CJHK".*,
         .name = "Hiragana-Katakana",
+    },
+    .{
+        .bytes = @embedFile("transliterate/persian_bgn_conformance.bin"),
+        .magic = "CJPE".*,
+        .name = "Persian-Latin-BGN",
+    },
+    .{
+        .bytes = @embedFile("transliterate/nv_fonipa_conformance.bin"),
+        .magic = "CJN2".*,
+        .name = "nv-nv_FONIPA",
     },
 };
 

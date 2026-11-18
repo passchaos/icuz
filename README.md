@@ -89,11 +89,13 @@ need without pulling in a font or layout engine.
   my-my_FONIPA, Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   InterIndic-Devanagari/Bengali/Gurmukhi/Gujarati/Oriya/Telugu/Kannada/
   Malayalam/Latin/Tamil, chr-chr_FONIPA, zu-zu_FONIPA,
-  Hiragana-Katakana, and NFC/NFD/NFKC/NFKD transforms. Forty-nine
+  Hiragana-Katakana, Persian-Latin-BGN, nv-nv_FONIPA, and
+  NFC/NFD/NFKC/NFKD transforms. Fifty-one
   transforms are compiled; twenty-four ship official CLDR conformance
-  fixtures, and seventeen (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
-  the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA, a
-  Kazakh FONIPA validation fixture, and Hiragana-Katakana) ship ICU
+  fixtures, and nineteen (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  the ten InterIndic script transforms, Cherokee FONIPA, Zulu FONIPA,
+  Navajo FONIPA, a Kazakh FONIPA validation fixture, Hiragana-Katakana,
+  and Persian-Latin-BGN) ship ICU
   differential fixtures generated with PyICU. Transforms can be selected by CLDR name through
   `transliterateByNameAlloc`. The table compiler expands character classes,
   Unicode properties, set operations, multi-element prefix/suffix contexts

@@ -79,6 +79,8 @@ TRANSFORMS = (
     ("zu-zu_FONIPA", "zu-zu_FONIPA", "context"),
     ("InterIndic-Tamil", "InterIndic-Tamil", "context"),
     ("Hiragana-Katakana", "Hiragana-Katakana", "context"),
+    ("Persian-Latin-BGN", "Persian-Latin-BGN", "context"),
+    ("nv-nv_FONIPA", "nv-nv_FONIPA", "context"),
 )
 
 CONFORMANCE = (
@@ -525,12 +527,25 @@ def parse_class(
         return None
     codepoints: list[int] = []
     index = 0
+    quoted = False
     while index < len(content):
         character = content[index]
+        if character == "'":
+            if quoted and index + 1 < len(content) and content[index + 1] == "'":
+                codepoints.append(0x27)
+                index += 2
+                continue
+            quoted = not quoted
+            index += 1
+            continue
         if character == "\\":
             codepoint, consumed = read_escape(content, index)
             codepoints.append(codepoint)
             index += consumed
+            continue
+        # ICU rule syntax ignores unquoted whitespace inside sets.
+        if not quoted and character.isspace():
+            index += 1
             continue
         if character == "$":
             end = index + 1
@@ -759,6 +774,16 @@ def parse_class_set(
     negated = content.startswith("^")
     if negated:
         content = content[1:]
+    stripped = content.strip()
+    if stripped.startswith(":") and stripped.endswith(":"):
+        name = stripped[1:-1].strip()
+        property_negated = name.startswith("^")
+        if property_negated:
+            name = name[1:].strip()
+        value = property_codepoints(name)
+        if value is None:
+            return None
+        return (value, negated != property_negated)
     value = parse_class_expression(content, variables, depth + 1)
     if value is None:
         return None
