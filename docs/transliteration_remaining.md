@@ -7,9 +7,9 @@ Status after the CLDR 48 rule-engine push:
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
 - 310 conformance fixtures: 30 official CLDR test-data files and 280 PyICU
   differential fixtures.
-- Blob format CJTR v17 (36-byte transform records with `filter_set`,
-  `final_case`, `next_transform`, `pre_transform`, and per-pass
-  normalization offsets).
+- Blob format CJTR v18 (36-byte transform records with `filter_set`,
+  `final_case`, `next_transform`, `pre_transform`, and per-pass operation
+  offsets).
 - Two-step pipelines work: a leading component runs via `pre_transform`,
   then the transform's own rules, then the optional `next_transform`.
   The two Ethiopic geminate pipelines and the six FONIPA-to-Amharic
@@ -29,10 +29,14 @@ Status after the CLDR 48 rule-engine push:
 - Reverse global filters (`:: (set) ;`) are compiled; filtered transforms
   run their passes and normalization per input run, matching ICU's
   compound-filter behavior.
-- Normalization directives between rule sections compile to per-pass
-  normalization forms (CJTR v17): the engine normalizes the intermediate
-  text before the following pass, matching ICU's compound steps. Leading
-  and trailing directives become the pre- and post-normalization instead.
+- Normalization and case directives between rule sections compile to
+  per-pass operations (CJTR v18): the engine normalizes or case-maps the
+  intermediate text before the following pass, matching ICU's compound
+  steps. Leading and trailing directives become the pre-/post-normalization
+  and final case instead.
+- Transforms with an input filter run the whole compound (normalization,
+  case, and rules) inside each filtered input run; text outside the filter
+  passes through unchanged, matching ICU's filter scoping.
 - Property classes accept long general-category names
   (`[:Uppercase_Letter:]`, `[:Mark:]`), binary approximations
   (`Cased`, `Case_Ignorable`, `Soft_Dotted`, `Ideographic`,

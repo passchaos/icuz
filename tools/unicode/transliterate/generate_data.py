@@ -465,42 +465,127 @@ def first_rule_line(rules: str) -> int:
     return -1
 
 
-def classify_normalization(rules: str, reverse: bool = False):
-    """Split normalization directives into pre, post, and per-pass forms.
+CASE_DIRECTIVES = {
+    "lower": 1,
+    "lower()": 1,
+    "any-lower": 1,
+    "any-lower()": 1,
+    "upper": 2,
+    "upper()": 2,
+    "any-upper": 2,
+    "any-upper()": 2,
+    "title": 3,
+    "title()": 3,
+    "any-title": 3,
+    "any-title()": 3,
+}
 
-    ICU compiles a rule file into a compound of normalization and rule steps.
-    The forward direction applies each directive's bare form where it appears;
-    the reverse direction reverses the step order and uses the parenthesized
-    form. A leading normalization becomes the pre-normalization, a trailing
-    one the post-normalization, and directives between rule sections become
-    per-pass normalization forms (pass index -> form id).
+
+def case_operation(directive: str) -> int:
+    return CASE_DIRECTIVES.get(re.sub(r"\s+", "", directive).lower(), 0)
+
+
+def classify_pass_operations(rules: str, reverse: bool = False):
+    """Split compound directives into pre/post forms and per-pass operations.
+
+    ICU compiles a rule file into a compound of normalization, case, and rule
+    steps. The forward direction applies each directive where it appears; the
+    reverse direction reverses the step order and uses the parenthesized
+    normalization form. A leading normalization becomes the pre-normalization,
+    a trailing one the post-normalization, and directives between rule
+    sections become per-pass operations: pass index -> (normalization form,
+    case operation).
     """
-    directives, last_rule = normalization_directives(rules)
+    directives = []
+    last_rule = -1
+    first_rule = -1
+    for index, raw in enumerate(rules.splitlines()):
+        line = strip_comment(raw).strip()
+        if not line:
+            continue
+        if line.startswith("::"):
+            directive = line[2:].strip().rstrip(";").strip()
+            normalized = re.sub(r"\s+", "", directive).upper()
+            form = None
+            post_form = None
+            parenthesized = re.fullmatch(r"\(\s*(NFK?[CD])\s*\)", normalized)
+            if parenthesized:
+                form = NORMALIZATION_FORMS.get(parenthesized.group(1))
+            elif normalized.startswith("NFKD"):
+                form = 3
+            elif normalized.startswith("NFKC"):
+                form = 4
+            elif normalized.startswith("NFD"):
+                form = 1
+            elif normalized.startswith("NFC"):
+                form = 2
+            match = re.search(r"\(\s*(NFK?[CD])\s*\)", normalized)
+            if form is not None:
+                if match:
+                    post_form = NORMALIZATION_FORMS.get(match.group(1))
+                directives.append((index, "norm", form, post_form))
+                continue
+            operation = case_operation(directive)
+            if operation:
+                directives.append((index, "case", operation, None))
+                continue
+            if normalized in ("NULL", "(NULL)", "NULL()", "(NULL)()"):
+                # Null directives split passes but perform no operation.
+                directives.append((index, "null", 0, None))
+        elif not VARIABLE_DEF.match(line):
+            if first_rule < 0:
+                first_rule = index
+            last_rule = index
     if not directives:
         return 0, 0, {}
-    first_rule = first_rule_line(rules)
     total = len(directives)
     pre = 0
     post = 0
-    pass_norms: dict[int, int] = {}
-    for position, (index, form, post_form) in enumerate(directives, start=1):
-        first_step = position == 1 and (first_rule < 0 or index < first_rule)
-        last_step = position == total and index > last_rule
-        if reverse:
-            value = post_form if post_form is not None else form
-            if last_step and pre == 0:
-                pre = value
-            elif first_step and post == 0:
-                post = value
+    operations: dict[int, list[int]] = {}
+    for position, (index, kind, value, post_form) in enumerate(
+        directives,
+        start=1,
+    ):
+        boundary = position
+        first_step = boundary == 1 and (first_rule < 0 or index < first_rule)
+        last_step = boundary == total and index > last_rule
+        if kind == "norm":
+            forward_value = value
+            reverse_value = post_form if post_form is not None else value
+            if reverse:
+                if last_step and pre == 0:
+                    pre = reverse_value
+                    continue
+                if first_step and post == 0:
+                    post = reverse_value
+                    continue
+                target = total - boundary + 1
+                operations.setdefault(target, [0, 0])[0] = reverse_value
             else:
-                pass_norms[total - position + 1] = value
-        else:
-            if first_step and pre == 0:
-                pre = form
-            elif last_step and post == 0:
-                post = form
-            else:
-                pass_norms[position] = form
+                if first_step and pre == 0:
+                    pre = forward_value
+                    continue
+                if last_step and post == 0:
+                    post = forward_value
+                    continue
+                operations.setdefault(boundary, [0, 0])[0] = forward_value
+        elif kind == "case" and index <= last_rule:
+            # A trailing case directive is handled by final_case instead.
+            target = total - boundary + 1 if reverse else boundary
+            operations.setdefault(target, [0, 0])[1] = value
+    return pre, post, {
+        index: tuple(operation) for index, operation in operations.items()
+    }
+
+
+def classify_normalization(rules: str, reverse: bool = False):
+    """Return the pre/post normalization forms and per-pass forms."""
+    pre, post, operations = classify_pass_operations(rules, reverse)
+    pass_norms = {
+        index: operation[0]
+        for index, operation in operations.items()
+        if operation[0]
+    }
     return pre, post, pass_norms
 
 
@@ -658,8 +743,8 @@ def detect_final_case(rules: str) -> int:
         if line.startswith("::"):
             directive = line[2:].strip().rstrip(";").strip()
             normalized = directive.upper().replace("()", "").strip()
-            if normalized in ("ANY-LOWER", "ANY-UPPER"):
-                final_case = 1 if normalized == "ANY-LOWER" else 2
+            if normalized in ("ANY-LOWER", "ANY-UPPER", "LOWER", "UPPER"):
+                final_case = 1 if normalized.endswith("LOWER") else 2
                 continue
             if normalized.startswith(("NFKD", "NFKC", "NFD", "NFC")):
                 continue
@@ -2469,9 +2554,11 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
     entries = []
     priority = 0
     pass_index = 0
-    pre_normalization, post_normalization, pass_norms = classify_normalization(
-        rules,
-        reverse,
+    pre_normalization, post_normalization, pass_operations = (
+        classify_pass_operations(
+            rules,
+            reverse,
+        )
     )
     for raw in rules.splitlines():
         line = strip_comment(raw)
@@ -2491,10 +2578,14 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             if directive in ("null", "(null)", "null()", "(null)()"):
                 pass_index += 1
             elif re.fullmatch(
-                r"nfk?[cd](\(nfk?[cd]\))?",
+                r"nfk?[cd](\(nfk?[cd]\)|\(\))?",
                 directive,
             ):
                 # Mid-rule normalization directives also split passes.
+                pass_index += 1
+            elif case_operation(directive):
+                # Mid-rule case directives split passes so the case mapping
+                # applies to the text produced by the preceding rules.
                 pass_index += 1
             continue
         if VARIABLE_DEF.match(line):
@@ -2899,7 +2990,12 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
                 context_capture,
             )
         )
-    return result, pre_normalization, post_normalization, pass_norms
+    return (
+        result,
+        pre_normalization,
+        post_normalization,
+        pass_operations,
+    )
 
 
 def find_unquoted(text: str, needle: str):
@@ -2994,7 +3090,7 @@ def render_blob(
     tables: list[list[tuple]],
     filters: list[frozenset[int] | None],
     step_lists: list[list[tuple[int, int]] | None],
-    pass_norm_lists: list[dict[int, int]],
+    pass_op_lists: list[dict[int, tuple[int, int]]],
 ) -> bytes:
     names = bytearray()
     name_records: list[tuple[int, int]] = []
@@ -3183,35 +3279,37 @@ def render_blob(
         )
         entry_start += len(table)
 
-    # One byte per pass records an optional normalization form applied before
-    # that pass (0 = none). Directives between rule sections use this; the
-    # leading and trailing directives become pre/post normalization instead.
-    pass_norm_section = bytearray()
-    pass_norm_offsets: list[int] = []
-    for record_index, (record, norms) in enumerate(
-        zip(transform_records, pass_norm_lists)
+    # One byte per pass records an optional normalization form (low nibble)
+    # and case operation (high nibble) applied before that pass. Directives
+    # between rule sections use this; leading and trailing directives become
+    # pre/post normalization or final case instead.
+    pass_op_section = bytearray()
+    pass_op_offsets: list[int] = []
+    for record_index, (record, operations) in enumerate(
+        zip(transform_records, pass_op_lists)
     ):
         pass_count = record[3]
-        filtered_norms = {
-            index: form
-            for index, form in norms.items()
-            if index > 0
+        filtered_ops = {
+            index: operation
+            for index, operation in operations.items()
+            if index > 0 and (operation[0] or operation[1])
         }
-        if filtered_norms:
-            # A normalization directive with no rules after it still runs;
-            # extend the pass count so the runtime reaches it.
-            needed = max(filtered_norms) + 1
+        if filtered_ops:
+            # A directive with no rules after it still runs; extend the pass
+            # count so the runtime reaches it.
+            needed = max(filtered_ops) + 1
             if needed > pass_count:
                 updated = list(record)
                 updated[3] = needed
                 transform_records[record_index] = tuple(updated)
                 pass_count = needed
-        if not filtered_norms:
-            pass_norm_offsets.append(0xFFFF)
+        if not filtered_ops:
+            pass_op_offsets.append(0xFFFF)
             continue
-        pass_norm_offsets.append(len(pass_norm_section))
+        pass_op_offsets.append(len(pass_op_section))
         for pass_index in range(pass_count):
-            pass_norm_section.append(filtered_norms.get(pass_index, 0))
+            form, case = filtered_ops.get(pass_index, (0, 0))
+            pass_op_section.append((form & 0x0F) | ((case & 0x0F) << 4))
 
     step_pool: list[tuple[int, int]] = []
     step_records: list[tuple[int, int]] = []
@@ -3224,7 +3322,7 @@ def render_blob(
     header = bytearray(b"CJTR")
     header += struct.pack(
         "<B3BH7IH",
-        17,
+        18,
         CLDR_VERSION,
         0,
         0,
@@ -3236,7 +3334,7 @@ def render_blob(
         len(range_pool),
         len(context_records),
         len(context_elements),
-        len(pass_norm_section),
+        len(pass_op_section),
     )
     header += struct.pack("<I", len(step_pool))
     transform_bytes = bytearray()
@@ -3270,7 +3368,7 @@ def render_blob(
             pre_transform,
             step_start,
             step_count,
-            pass_norm_offsets[index],
+            pass_op_offsets[index],
         )
     step_bytes = bytearray()
     for kind, value in step_pool:
@@ -3302,7 +3400,7 @@ def render_blob(
         + names
         + sources
         + targets
-        + pass_norm_section
+        + pass_op_section
     )
 
 
@@ -3378,12 +3476,12 @@ def main() -> int:
             changed = True
     all_transforms += discovered
 
-    pass_norm_lists: list[dict[int, int]] = []
+    pass_op_lists: list[dict[int, int]] = []
     for name, source, builder in all_transforms:
         rules = rules_for(source)
         builder_pre = 0
         builder_post = 0
-        builder_norms: dict[int, int] = {}
+        builder_ops: dict[int, int] = {}
         if builder == "latin":
             table = latin_ascii_entries(rules)
         elif builder == "fullwidth":
@@ -3401,7 +3499,7 @@ def main() -> int:
                 table,
                 builder_pre,
                 builder_post,
-                builder_norms,
+                builder_ops,
             ) = table_entries_with_contexts(rules, reverse=True)
         elif builder == "reverse_with_left":
             table = reverse_with_left(rules)
@@ -3416,10 +3514,10 @@ def main() -> int:
                 table,
                 builder_pre,
                 builder_post,
-                builder_norms,
+                builder_ops,
             ) = table_entries_with_contexts(rules)
         elif builder == "katakana":
-            table, _, _, builder_norms = table_entries_with_contexts(rules)
+            table, _, _, builder_ops = table_entries_with_contexts(rules)
         else:
             raise SystemExit(f"unknown transform builder {builder!r}")
         if builder == "steps":
@@ -3454,10 +3552,14 @@ def main() -> int:
                 )
             else:
                 transform_filter = parse_filter(rules, parse_variables(rules))
-            # Reverse filters apply to the input side; normalization must then
-            # run on filtered spans instead of the whole output.
+            # ICU runs the whole compound (normalization, case, and rules)
+            # inside each filtered input run. The katakana builder applies its
+            # own halfwidth conversion before the pass engine, so it keeps the
+            # match-start filter instead.
             filtered_normalization = (
-                1 if builder.startswith("reverse") and transform_filter else 0
+                1
+                if transform_filter and pre_normalization != 5
+                else 0
             )
         specs.append(
             (
@@ -3472,7 +3574,7 @@ def main() -> int:
         )
         tables.append(table)
         filters.append(transform_filter)
-        pass_norm_lists.append(builder_norms)
+        pass_op_lists.append(builder_ops)
 
     name_to_index = {name: index for index, (name, *_rest) in enumerate(specs)}
 
@@ -3495,7 +3597,10 @@ def main() -> int:
             continue
         last_index = name_to_index[last]
         tables[index] = tables[last_index]
-        pass_norm_lists[index] = pass_norm_lists[last_index]
+        pass_op_lists[index] = pass_op_lists[last_index]
+        # The inherited table keeps the component's input filter, including
+        # the per-filtered-run compound behavior.
+        filters[index] = filters[last_index]
         spec = list(specs[index])
         # The pipeline's own table is the final component's, so it also
         # inherits that component's normalization and case behavior and must
@@ -3527,7 +3632,7 @@ def main() -> int:
         step_lists.append(resolved_steps)
 
     (out_dir / "data.bin").write_bytes(
-        render_blob(specs, tables, filters, step_lists, pass_norm_lists)
+        render_blob(specs, tables, filters, step_lists, pass_op_lists)
     )
     for _, fixture_path, magic, excluded, filename in CONFORMANCE:
         (out_dir / filename).write_bytes(

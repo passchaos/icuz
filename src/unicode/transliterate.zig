@@ -77,7 +77,7 @@ const pass_norm_offset = targets_offset + @as(usize, target_count) * 4;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJTR") or
-        data[4] != 17 or data[5] != 48 or data[6] != 0 or data[7] != 0)
+        data[4] != 18 or data[5] != 48 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid transliteration data");
     }
@@ -1132,14 +1132,61 @@ fn normalizationFormFromId(value: u8) normalization.Form {
     };
 }
 
-/// Normalization form a transform applies before `pass`, or 0 when the pass
-/// runs on the previous pass's output unchanged. CLDR rule files place
-/// normalization directives between rule sections; ICU compiles those into
-/// compound steps that normalize the intermediate text.
-fn passNormalizationForm(record: TransformRecord, pass: usize) u8 {
-    if (record.pass_norm_offset == 0xFFFF) return 0;
-    if (pass >= record.pass_count) return 0;
-    return data[pass_norm_offset + @as(usize, record.pass_norm_offset) + pass];
+/// Operation a transform applies before `pass`: an optional normalization
+/// form (low nibble) and case mapping (high nibble). CLDR rule files place
+/// normalization and case directives between rule sections; ICU compiles
+/// those into compound steps that transform the intermediate text.
+const PassOperation = struct {
+    normalization: u8 = 0,
+    case: u8 = 0,
+};
+
+fn passOperation(record: TransformRecord, pass: usize) PassOperation {
+    if (record.pass_norm_offset == 0xFFFF) return .{};
+    if (pass >= record.pass_count) return .{};
+    const value = data[pass_norm_offset + @as(usize, record.pass_norm_offset) + pass];
+    return .{
+        .normalization = value & 0x0F,
+        .case = value >> 4,
+    };
+}
+
+/// Normalize codepoints into a newly owned list, or return null when the
+/// form leaves the text unchanged.
+fn normalizedListAlloc(
+    allocator: std.mem.Allocator,
+    codepoints: []const u21,
+    form: normalization.Form,
+) Error!?std.ArrayList(u21) {
+    const value = try normalization.normalizeCodepointsAlloc(
+        allocator,
+        codepoints,
+        form,
+    ) orelse return null;
+    defer allocator.free(value);
+    var list = std.ArrayList(u21).empty;
+    errdefer list.deinit(allocator);
+    try list.appendSlice(allocator, value);
+    return list;
+}
+
+/// Apply a per-pass case operation (1 = lower, 2 = upper, 3 = title) to
+/// codepoints, returning a newly owned list.
+fn casedListAlloc(
+    allocator: std.mem.Allocator,
+    codepoints: []const u21,
+    operation: u8,
+) Error!std.ArrayList(u21) {
+    const text = try encodeCodepointsAlloc(allocator, codepoints);
+    defer allocator.free(text);
+    const cased = switch (operation) {
+        1 => try case_mapping.fullLowerAlloc(allocator, text, .{}),
+        2 => try case_mapping.fullUpperAlloc(allocator, text, .{}),
+        3 => try case_mapping.fullTitleAlloc(allocator, text, .{}),
+        else => return error.UnknownTransform,
+    };
+    defer allocator.free(cased);
+    return decodeAlloc(allocator, cased);
 }
 
 /// Run every pass of a transform over `codepoints`, returning the final
@@ -1165,30 +1212,31 @@ fn runPassesAlloc(
     var current: []const u21 = codepoints;
     var pass_output: ?std.ArrayList(u21) = null;
     defer if (pass_output) |*value| value.deinit(allocator);
-    var norm_output: ?[]u21 = null;
-    defer if (norm_output) |value| allocator.free(value);
 
-    // Each pass applies its per-pass normalization, then its empty-source
-    // insertion rules and mapping rules. Empty passes (for example around
-    // normalization directives) are skipped without scanning the text.
+    // Each pass applies its per-pass normalization and case operation, then
+    // its empty-source insertion rules and mapping rules. Empty passes (for
+    // example around normalization directives) are skipped without scanning
+    // the text, but their operations still run.
     var pass: usize = 0;
     while (pass < pass_count) : (pass += 1) {
-        const norm_form = passNormalizationForm(record, pass);
-        if (norm_form != 0) {
-            const normalized = try normalization.normalizeCodepointsAlloc(
+        const operation = passOperation(record, pass);
+        if (operation.normalization != 0) {
+            const normalized = try normalizedListAlloc(
                 allocator,
                 current,
-                normalizationFormFromId(norm_form),
+                normalizationFormFromId(operation.normalization),
             );
-            if (normalized) |value| {
-                if (norm_output) |previous| allocator.free(previous);
-                if (pass_output) |*owned| {
-                    owned.deinit(allocator);
-                    pass_output = null;
-                }
-                norm_output = value;
-                current = value;
+            if (normalized) |list| {
+                if (pass_output) |*owned| owned.deinit(allocator);
+                pass_output = list;
+                current = list.items;
             }
+        }
+        if (operation.case != 0) {
+            const list = try casedListAlloc(allocator, current, operation.case);
+            if (pass_output) |*owned| owned.deinit(allocator);
+            pass_output = list;
+            current = list.items;
         }
         const range = transformPassRange(transform_index, @intCast(pass));
         if (range.end == range.start) continue;
@@ -1201,10 +1249,6 @@ fn runPassesAlloc(
         if (pass_output) |*value| value.deinit(allocator);
         pass_output = next;
         current = next.items;
-        if (norm_output) |value| {
-            allocator.free(value);
-            norm_output = null;
-        }
     }
     if (pass_output) |value| {
         pass_output = null;
@@ -3767,6 +3811,28 @@ test "global filters leave out-of-filter text unchanged" {
             try testing.expectEqualStrings(input, converted);
         }
     }
+}
+
+test "mid-rule case directives apply between rule sections" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    // pl-pl_FONIPA lowercases before its mapping rules (`::Lower();`), so
+    // uppercase Polish input maps through the lowercase rule sources.
+    const polish = try transliterateByNameAlloc(allocator, "ABC", "pl-pl_FONIPA");
+    defer allocator.free(polish);
+    try testing.expectEqualStrings("apt\u{361}s", polish);
+
+    // ru-ja also lowercases before its rules.
+    const romanized = try transliterateByNameAlloc(allocator, "ABC", "ru-ja");
+    defer allocator.free(romanized);
+    try testing.expectEqualStrings("abc", romanized);
+
+    // chr-chr_FONIPA uppercases inside its Cherokee filter only; Latin text
+    // outside the filter must not be case-mapped.
+    const latin = try transliterateByNameAlloc(allocator, "a", "chr-chr_FONIPA");
+    defer allocator.free(latin);
+    try testing.expectEqualStrings("a", latin);
 }
 
 test "CLDR transform conformance" {
