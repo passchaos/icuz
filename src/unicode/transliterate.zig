@@ -1437,6 +1437,11 @@ const conformance_fixtures = [_]struct {
         .magic = "CJPB".*,
         .name = "Pashto-Latin-BGN",
     },
+    .{
+        .bytes = @embedFile("transliterate/simp_trad_conformance.bin"),
+        .magic = "CJZ1".*,
+        .name = "Simplified-Traditional",
+    },
 };
 
 test "transliterate by CLDR name" {

@@ -101,6 +101,7 @@ TRANSFORMS = (
     ("de-ASCII", "de-ASCII", "context"),
     ("Any-Publishing", "Any-Publishing", "context"),
     ("Katakana-Hiragana", "Hiragana-Katakana", "reverse_context"),
+    ("Simplified-Traditional", "Simplified-Traditional", "simple"),
     ("Pashto-Latin-BGN", "Pashto-Latin-BGN", "context"),
     ("Korean-Latin-BGN", "Korean-Latin-BGN", "context"),
     ("Kirghiz-Latin-BGN", "Kirghiz-Latin-BGN", "context"),
