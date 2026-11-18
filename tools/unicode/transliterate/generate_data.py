@@ -102,6 +102,7 @@ TRANSFORMS = (
     ("Any-Publishing", "Any-Publishing", "context"),
     ("Katakana-Hiragana", "Hiragana-Katakana", "reverse_context"),
     ("Simplified-Traditional", "Simplified-Traditional", "simple"),
+    ("Traditional-Simplified", "Simplified-Traditional", "reverse_with_left"),
     ("Pashto-Latin-BGN", "Pashto-Latin-BGN", "context"),
     ("Korean-Latin-BGN", "Korean-Latin-BGN", "context"),
     ("Kirghiz-Latin-BGN", "Kirghiz-Latin-BGN", "context"),
@@ -546,6 +547,38 @@ def simple_table_entries(rules: str):
             continue
         result[source] = target
     return sorted(result.items(), key=lambda item: (item[0][0], -len(item[0]), item[0]))
+
+
+def reverse_with_left(rules: str):
+    """Reverse bidirectional rules and apply explicit `left <- right` rules."""
+    table: dict[tuple[int, ...], tuple[int, ...]] = {}
+    for source, target, arrow in simple_rules(rules, both=True):
+        if arrow != "↔" or not target:
+            continue
+        table.setdefault(target, source)
+    for raw in rules.splitlines():
+        line = strip_comment(raw)
+        line = line.replace("\u200e", "").replace("\u200f", "")
+        line = line.replace("\u061c", "")
+        if not line or line.startswith("::") or VARIABLE_DEF.match(line):
+            continue
+        parts = split_rule(line)
+        if parts is None:
+            continue
+        left, arrow, right = parts
+        if arrow != "←":
+            continue
+        left = left.strip()
+        right = right.strip()
+        if right.endswith(";"):
+            right = right[:-1].strip()
+        # `A <- B` applies in the reverse direction as B -> A.
+        source, source_syntax = parse_side(right)
+        target, target_syntax = parse_side(left)
+        if source_syntax or target_syntax or not source:
+            continue
+        table[tuple(source)] = tuple(target)
+    return sorted(table.items(), key=lambda item: (item[0][0], -len(item[0]), item[0]))
 
 
 def reverse_table(table: list[tuple[tuple[int, ...], tuple[int, ...]]]):
@@ -2190,6 +2223,8 @@ def main() -> int:
             table = reverse_table(simple_table_entries(rules))
         elif builder == "reverse_context":
             table = table_entries_with_contexts(rules, reverse=True)
+        elif builder == "reverse_with_left":
+            table = reverse_with_left(rules)
         elif builder == "variables":
             table = table_entries_with_variables(rules)
         elif builder == "context":

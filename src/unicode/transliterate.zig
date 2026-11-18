@@ -1442,6 +1442,11 @@ const conformance_fixtures = [_]struct {
         .magic = "CJZ1".*,
         .name = "Simplified-Traditional",
     },
+    .{
+        .bytes = @embedFile("transliterate/trad_simp_conformance.bin"),
+        .magic = "CJZ2".*,
+        .name = "Traditional-Simplified",
+    },
 };
 
 test "transliterate by CLDR name" {
