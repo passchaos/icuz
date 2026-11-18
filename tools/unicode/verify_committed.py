@@ -155,7 +155,7 @@ GENERATORS = {
     "tools/unicode/format/generate_dates.py": "de6d58352b8793fee777752b980d27561e6ca400cb4710b95c9fda9b54999e45",
     "tools/unicode/format/generate_misc.py": "35d08acef5a6b7c23bbbe3b13977a2085f02df3985185068a68fe59e0625b0e1",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
-    "tools/unicode/transliterate/generate_data.py": "ddf6366a076746b100a416ff83865edf5432160735320695ab641344e97c6c8f",
+    "tools/unicode/transliterate/generate_data.py": "ad1c020590c379537e48e10ddc6ae962e4dae146e62e5a58e32341c2b61f592f",
     "tools/unicode/break/generate_dictionaries.py": "bdbd4c4e9c999b4cea6a8924b08c72a49719c857e26dea82fc50940ee145e264",
     "tools/unicode/break/generate_word_conformance.py": "3c2467ffc38b2467cbbc0d895e76b8862774c48567aa3ad26b9681605df3a5ff",
     "tools/unicode/transliterate/generate_icu_conformance.py": "9d5fd5df338e19cbaec2934b5915f0f19bb4627f6a4f9ee581e86556e947bad3",

@@ -845,6 +845,53 @@ def complement_set(value: frozenset[int]) -> frozenset[int]:
     return cached
 
 
+ROOT = Path(__file__).resolve().parents[3]
+SCRIPT_NAMES_CACHE: list[str] | None = None
+
+
+def script_names() -> list[str]:
+    global SCRIPT_NAMES_CACHE
+    if SCRIPT_NAMES_CACHE is None:
+        source = (ROOT / "src/unicode/script/types.zig").read_text(
+            encoding="utf-8"
+        )
+        match = re.search(r"pub const Script = enum \{(.*?)\n\};", source, re.S)
+        if match is None:
+            raise SystemExit("could not find Script enum in types.zig")
+        names = []
+        for line in match.group(1).splitlines():
+            name = line.split("//", 1)[0].strip().removesuffix(",")
+            if name:
+                names.append(name)
+        SCRIPT_NAMES_CACHE = names
+    return SCRIPT_NAMES_CACHE
+
+
+def script_codepoints(name: str):
+    key = "script:" + name
+    if key in PROPERTY_CACHE:
+        return PROPERTY_CACHE[key]
+    names = script_names()
+    zig_name = "odia" if name.lower() == "oriya" else name.lower()
+    if zig_name not in names:
+        return None
+    target = names.index(zig_name)
+    data = (ROOT / "src/unicode/script/data.bin").read_bytes()
+    index_count, page_count = struct.unpack_from("<HH", data, 12)
+    page_bytes = data[16 + index_count * 2 :]
+    result: list[int] = []
+    for page in range(page_count):
+        base = page * 256
+        for offset, value in enumerate(
+            page_bytes[page * 256 : (page + 1) * 256]
+        ):
+            if value == target:
+                result.append(base + offset)
+    value = frozenset(result)
+    PROPERTY_CACHE[key] = value
+    return value
+
+
 def property_codepoints(name: str):
     key = name.strip().lower()
     if key in PROPERTY_CACHE:
@@ -874,7 +921,11 @@ def property_codepoints(name: str):
             if unicodedata.combining(chr(codepoint)) == ccc_value:
                 result.append(codepoint)
     else:
-        return None
+        script_value = script_codepoints(name.strip())
+        if script_value is None:
+            return None
+        PROPERTY_CACHE[key] = script_value
+        return script_value
     value = frozenset(result)
     PROPERTY_CACHE[key] = value
     return value
@@ -1810,6 +1861,10 @@ def parse_filter(rules: str, variables: dict[str, str]):
         if upper.startswith(("NFKD", "NFKC", "NFD", "NFC", "NULL")):
             continue
         if directive.startswith("[") and directive.endswith("]"):
+            # Property-based filters depend on Script_Extensions data that is
+            # not part of the committed tables; literal filters still apply.
+            if "[:" in directive:
+                return None
             split = split_class_strings(directive[1:-1])
             if split is None:
                 return None
