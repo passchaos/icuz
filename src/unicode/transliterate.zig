@@ -1842,6 +1842,10 @@ test "transform discovery" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
     try testing.expect(transformCount() >= 80);
+    try testing.expectEqual(
+        @as(usize, transform_count) + named_transform_names.len,
+        transformCount(),
+    );
     try testing.expect(hasTransform("Latin-ASCII"));
     try testing.expect(hasTransform("Russian-Latin-BGN"));
     try testing.expect(hasTransform("NFC"));
