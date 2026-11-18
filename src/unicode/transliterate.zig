@@ -1367,6 +1367,16 @@ const conformance_fixtures = [_]struct {
         .magic = "CJC2".*,
         .name = "Latin-CanadianAboriginal",
     },
+    .{
+        .bytes = @embedFile("transliterate/georgian_latin_conformance.bin"),
+        .magic = "CJGG".*,
+        .name = "Georgian-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_georgian_conformance.bin"),
+        .magic = "CJG3".*,
+        .name = "Latin-Georgian",
+    },
 };
 
 test "transliterate by CLDR name" {

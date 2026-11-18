@@ -107,6 +107,8 @@ BLOBS = (
     Blob("src/unicode/transliterate/latin_cyrillic_conformance.bin", b"CJLC", 1, "6ed08db2c01346e9282cbad780a037e619bb1456593c717669b857e90f912aaf", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/latin_thaana_conformance.bin", b"CJTT", 1, "4d79ea549917e0581d51884eaadb19e041c17e3a0aeee548fff9312c85af6db2", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/latin_canadian_conformance.bin", b"CJC2", 1, "f407bfea6495a75b53f4b71f5d21aad34195670d3be4cfc4e00952f6f44520d5", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/georgian_latin_conformance.bin", b"CJGG", 1, "eee6c30a86b3b12647ad8f718dcf65f1283c42863a17c95ccb61732dcd60f4b1", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/latin_georgian_conformance.bin", b"CJG3", 1, "6ce65461875f4a193ebf84a37f8c282b32749557034b2bbcae81ed9e1d9d48f5", version=(48, 0, 0)),
     Blob("src/unicode/collation/data.bin", b"CJCL", 2, "3db525f5696955768d63797c465d31285efe0d4cd4db243bd944c178a13f135d"),
     Blob("src/unicode/collation/tailorings.bin", b"CJTL", 4, "800f27cae2d4a13f0618dd57d5475b8cc3f00c705c43ac1f30232bb5430aff96", version=(48, 0, 0)),
     Blob("src/unicode/collation/conformance_non_ignorable.bin", b"CJCT", 1, "46c35a76dc144f13fbd96723a2e676a5561b2739e7bb15d58f193f538ab3841a"),
@@ -357,7 +359,7 @@ def check_layout(blob: Blob, data: bytes) -> None:
             + target_count * 4
             == len(data)
         )
-    elif magic in (b"CJTG", b"CJTH", b"CJRU", b"CJGR", b"CJKA", b"CJAM", b"CJKZ", b"CJTM", b"CJUA", b"CJBY", b"CJMO", b"CJBU", b"CJMC", b"CJRS", b"CJSG", b"CJGE", b"CJE3", b"CJE4", b"CJE5", b"CJBK", b"CJE7", b"CJSL", b"CJMF", b"CJB2", b"CJYL", b"CJAL", b"CJIA", b"CJDE", b"CJIB", b"CJIG", b"CJIU", b"CJIO", b"CJIE", b"CJIK", b"CJIM", b"CJIX", b"CJCH", b"CJZU", b"CJKK", b"CJTA", b"CJHK", b"CJPE", b"CJN2", b"CJSF", b"CJEF", b"CJHF", b"CJVF", b"CJOF", b"CJAB", b"CJHA", b"CJTN", b"CJSY", b"CJCA", b"CJT2", b"CJAZ", b"CJEL", b"CJEU", b"CJLL", b"CJLU", b"CJKO", b"CJKI", b"CJLA", b"CJA2", b"CJLC", b"CJTT", b"CJC2"):
+    elif magic in (b"CJTG", b"CJTH", b"CJRU", b"CJGR", b"CJKA", b"CJAM", b"CJKZ", b"CJTM", b"CJUA", b"CJBY", b"CJMO", b"CJBU", b"CJMC", b"CJRS", b"CJSG", b"CJGE", b"CJE3", b"CJE4", b"CJE5", b"CJBK", b"CJE7", b"CJSL", b"CJMF", b"CJB2", b"CJYL", b"CJAL", b"CJIA", b"CJDE", b"CJIB", b"CJIG", b"CJIU", b"CJIO", b"CJIE", b"CJIK", b"CJIM", b"CJIX", b"CJCH", b"CJZU", b"CJKK", b"CJTA", b"CJHK", b"CJPE", b"CJN2", b"CJSF", b"CJEF", b"CJHF", b"CJVF", b"CJOF", b"CJAB", b"CJHA", b"CJTN", b"CJSY", b"CJCA", b"CJT2", b"CJAZ", b"CJEL", b"CJEU", b"CJLL", b"CJLU", b"CJKO", b"CJKI", b"CJLA", b"CJA2", b"CJLC", b"CJTT", b"CJC2", b"CJGG", b"CJG3"):
         case_count = struct.unpack_from("<I", data, 8)[0]
         offset = 12
         for _ in range(case_count):
