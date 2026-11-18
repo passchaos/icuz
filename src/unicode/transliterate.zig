@@ -1357,6 +1357,11 @@ const conformance_fixtures = [_]struct {
         .magic = "CJLC".*,
         .name = "Latin-Cyrillic",
     },
+    .{
+        .bytes = @embedFile("transliterate/latin_thaana_conformance.bin"),
+        .magic = "CJTT".*,
+        .name = "Latin-Thaana",
+    },
 };
 
 test "transliterate by CLDR name" {

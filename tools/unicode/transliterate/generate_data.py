@@ -102,6 +102,7 @@ TRANSFORMS = (
     ("Latin-Armenian", "Latin-Armenian", "context"),
     ("Azerbaijani-Latin-BGN", "Azerbaijani-Latin-BGN", "context"),
     ("Latin-Cyrillic", "Cyrillic-Latin", "reverse_context"),
+    ("Latin-Thaana", "Thaana-Latin", "simple"),
 )
 
 CONFORMANCE = (
