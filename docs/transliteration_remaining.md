@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 248 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
+- 251 compiled table transforms plus 12 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 249 conformance fixtures: 30 official CLDR test-data files and 219 PyICU
+- 252 conformance fixtures: 30 official CLDR test-data files and 222 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -63,15 +63,15 @@ Known failing transforms (PyICU differential fixtures):
 
 | Transform | Failures | Main symptom |
 |---|---|---|
-| `Greek-Latin` | 19 | final sigma `ς` loses the `U+0331` disambiguator; `Χ` + lowercase yields `CH` instead of `Ch` |
-| `Latin-Hebrew` | 20 | reverse-direction rules |
 | `ug-ug_FONIPA` | 20 | context/rule coverage |
 | `Bopo-Latn` | 19 | reverse-direction rules |
 
-`Greek-Latin` needs script property classes, which are implemented, plus
-the specificity model above. `Latin-Hebrew` and `Bopo-Latn` need reverse
-directions of transforms whose forward rules are not yet compiled.
-`Maldivian-Latin/BGN` now passes its PyICU fixture.
+`Greek-Latin`, `Latin-Greek`, and `Hebrew-Latin` now pass their PyICU
+fixtures after output-context stripping, nested-context order fixes, and
+insertion rules merged into the main rule-order scan.
+`Latin-Hebrew` needs repeated negated classes (`[^[:ccc=0:]]*`) inside a
+source sequence. `Bopo-Latn` needs the Pinyin tone engine.
+`Maldivian-Latin/BGN` also passes.
 
 Embedded case calls (`&Any-Lower($1)` / `&Any-Upper($1)`) are compiled;
 `az-Title`, `el-Title`, `lt-Title`, and `tr-Title` pass their fixtures.

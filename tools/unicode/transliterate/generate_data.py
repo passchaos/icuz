@@ -145,6 +145,9 @@ TRANSFORMS = (
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
     ("ug-ug_FONIPA", "ug-ug_FONIPA", "simple"),
+    ("Greek-Latin", "Greek-Latin", "context"),
+    ("Latin-Greek", "Greek-Latin", "reverse_context"),
+    ("Hebrew-Latin", "Hebrew-Latin", "context"),
     ("az-Title", "az-Title", "context"),
     ("el-Title", "el-Title", "context"),
     ("lt-Title", "lt-Title", "context"),
@@ -1754,7 +1757,22 @@ def parse_context_token(token: str, variables: dict[str, str]):
             if raw is not None and any(ch in raw for ch in " *+$["):
                 nested = parse_context(raw, variables)
             if nested is not None:
-                piece = nested
+                # Nested contexts are already in final element order; convert
+                # them back to the token order this function returns.
+                piece = [
+                    [
+                        (base, negated, boundary, repeat, anchor, optional)
+                        for (
+                            base,
+                            negated,
+                            boundary,
+                            optional,
+                            repeat,
+                            anchor,
+                        ) in elements
+                    ]
+                    for elements in nested
+                ]
             else:
                 resolved = resolve_context_set(name, variables)
                 if resolved is None:
@@ -2080,6 +2098,25 @@ def parse_negated_source(text: str, variables: dict[str, str]):
     return value
 
 
+def strip_output_context(text: str) -> str:
+    """Remove the output-side context from a bidirectional rule target.
+
+    ICU writes `context { target`, `target } context`, or
+    `context { target } context` on the output side and removes the
+    context when compiling the rule.
+    """
+    text = text.strip()
+    open_pos = find_unquoted(text, "{")
+    close_pos = find_unquoted(text, "}")
+    if open_pos is not None and close_pos is not None and close_pos > open_pos:
+        return text[open_pos + 1 : close_pos].strip()
+    if open_pos is not None:
+        return text[open_pos + 1 :].strip()
+    if close_pos is not None:
+        return text[:close_pos].strip()
+    return text
+
+
 CASE_CALL_PATTERN = re.compile(
     r"&\s*(Any-Lower|Lower|Any-Upper|Upper|Any-Title|Title)\s*"
     r"\(\s*\$1\s*\)\s*",
@@ -2167,6 +2204,8 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             left, right = right, left
         elif arrow == "←":
             continue
+        if arrow == "↔":
+            right = strip_output_context(right)
         # ICU's output cursor `|` controls where scanning resumes after a
         # replacement. A leading `|` means the replacement itself is rescanned.
         reprocess = False
@@ -2640,7 +2679,7 @@ def render_blob(
                     after_context,
                     entry_pass,
                     (1 if not source and repeat is None and
-                        collapse is None else 0) |
+                        collapse is None and negated_set is None else 0) |
                     (2 if reprocess else 0) |
                     (4 if repeat is not None else 0) |
                     (8 if collapse is not None else 0) |

@@ -537,7 +537,22 @@ fn findMatchInRange(
     while (lead < literals_start) : (lead += 1) {
         const entry = entryAt(lead);
         var candidate: ?Entry = null;
-        if (entry.flags & 8 != 0) {
+        if (entry.flags & 1 != 0) {
+            // Empty-source insertion rule: contexts see the current output
+            // prefix and the remaining input.
+            if (!contextMatches(entry.before_context, before, before.len, false)) {
+                continue;
+            }
+            if (!contextMatches(
+                entry.after_context,
+                codepoints,
+                index,
+                true,
+            )) {
+                continue;
+            }
+            candidate = entry;
+        } else if (entry.flags & 8 != 0) {
             // A collapse entry matches one unit (base plus trailing marks)
             // and consumes any immediately following units, emitting only
             // the first one.
@@ -765,6 +780,20 @@ fn applyPassAlloc(
         steps += 1;
         if (steps > max_steps) break;
         if (findMatchInRange(range, work.items, index, work.items[0..index], filter_set)) |entry| {
+            if (entry.flags & 1 != 0) {
+                const target_len: usize = entry.target_len;
+                for (0..target_len) |offset| {
+                    target_buffer[offset] = targetCodepoint(entry, offset);
+                }
+                try work.replaceRange(
+                    allocator,
+                    index,
+                    0,
+                    target_buffer[0..target_len],
+                );
+                index += target_len;
+                continue;
+            }
             if (entry.flags & 16 != 0) {
                 // Embedded case call: &Any-Lower($1) or &Any-Upper($1).
                 var matched = std.ArrayList(u8).empty;
@@ -989,16 +1018,9 @@ fn runPassesAlloc(
     var pass: usize = 0;
     while (pass < pass_count) : (pass += 1) {
         const range = transformPassRange(transform_index, @intCast(pass));
-        var pass_input: []const u21 = current;
-        var inserted: ?std.ArrayList(u21) = null;
-        defer if (inserted) |*value| value.deinit(allocator);
-        if (hasInsertions(range)) {
-            inserted = try applyInsertions(allocator, current, range);
-            pass_input = inserted.?.items;
-        }
         const next = try applyPassAlloc(
             allocator,
-            pass_input,
+            current,
             range,
             if (pass == 0) filter_set else 0,
         );
@@ -2259,6 +2281,21 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/latin_interindic_conformance.bin"),
         .magic = "CJLI".*,
         .name = "Latin-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/greek_latin_conformance.bin"),
+        .magic = "CJGK".*,
+        .name = "Greek-Latin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_greek_conformance.bin"),
+        .magic = "CJGL".*,
+        .name = "Latin-Greek",
+    },
+    .{
+        .bytes = @embedFile("transliterate/hebrew_latin_conformance.bin"),
+        .magic = "CJHL".*,
+        .name = "Hebrew-Latin",
     },
     .{
         .bytes = @embedFile("transliterate/az_title_conformance.bin"),
