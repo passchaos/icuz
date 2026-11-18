@@ -51,10 +51,12 @@ components is the prerequisite for the next batch.
 Attempting `am_FONIPA-am` as `reverse_context` or `reverse_with_left`
 still leaves 19 PyICU failures. The failing cases show multi-character
 Latin targets such as `nɡe` left partially untranslated (`nɡ` plus a
-separately mapped vowel), so reverse sources that are compound targets
-need full target parsing (classes/variables inside the target) rather
-than the literal-only reverse table. This is the same gap as the
-rule-specificity model below, not an ordering issue.
+separately mapped vowel). The source XML has no literal `ንገ`/`nɡe` rule:
+the forward transform reaches `nɡe` by composition (ን -> n, ገ -> ɡe).
+ICU's reverse transform is therefore a compositional inverse (reverse
+rule order with inverse mappings), not a reversal of the compiled table.
+Supporting this needs an inverse-rule compiler, which is a larger piece
+than target-side class parsing.
 
 ## 2. ICU rule specificity / hidden-rule ordering
 
