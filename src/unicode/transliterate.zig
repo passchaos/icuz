@@ -2686,6 +2686,16 @@ const conformance_fixtures = [_]struct {
         .name = "Latin-InterIndic",
     },
     .{
+        .bytes = @embedFile("transliterate/bopo_latn_conformance.bin"),
+        .magic = "CJGC".*,
+        .name = "Bopo-Latn",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_bopomofo_conformance.bin"),
+        .magic = "CJGA".*,
+        .name = "Latin-Bopomofo",
+    },
+    .{
         .bytes = @embedFile("transliterate/latin_numeric_pinyin_conformance.bin"),
         .magic = "CJPN".*,
         .name = "Latin-NumericPinyin",

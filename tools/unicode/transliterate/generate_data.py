@@ -145,6 +145,8 @@ TRANSFORMS = (
     ("Latin-Thaana", "Thaana-Latin", "simple"),
     ("Latin-CanadianAboriginal", "CanadianAboriginal-Latin", "simple"),
     ("ug-ug_FONIPA", "ug-ug_FONIPA", "context"),
+    ("Latin-Bopomofo", "Latin-Bopomofo", "context"),
+    ("Bopo-Latn", "Latin-Bopomofo", "reverse_context"),
     ("ja_Latn-ko", "ja_Latn-ko", "context"),
     ("ru-zh", "ru-zh", "context"),
     ("pl_FONIPA-ja", "pl_FONIPA-ja", "context"),
