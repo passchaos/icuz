@@ -133,9 +133,13 @@ need without pulling in a font or layout engine.
 
 ## Non-goals for 0.1
 
-`icuz` is not a drop-in ICU replacement. It does not yet provide a general
-ICU-rule transliteration engine, regular expressions, or display/layout
-tailoring. Collation supports root ordering plus CLDR standard and common
+`icuz` is not a drop-in ICU replacement. Its transliteration support is a
+compiled rule-table engine covering the constructs listed above, not a
+general runtime ICU-rule interpreter: compound transforms, embedded
+transform calls (`&Name(...)`), `::Any-Title` steps, and script-extension
+based filters are not yet supported. Regular expressions and display/layout
+tailoring are also out of scope. Collation supports root ordering plus CLDR
+standard and common
 non-standard tailorings, including locale `caseFirst`, backwards secondary
 ordering, and parametric script reordering. Consumers that need those
 features should build them on top of `icuz` or use a dedicated library.
