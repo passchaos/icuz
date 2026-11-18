@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 295 compiled table transforms plus 13 named engines (`NFC`, `NFD`,
+- 295 compiled table transforms plus 15 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 298 conformance fixtures: 30 official CLDR test-data files and 268 PyICU
+- 300 conformance fixtures: 30 official CLDR test-data files and 270 PyICU
   differential fixtures.
 - Blob format CJTR v11 (28-byte transform records with `filter_set`,
   `final_case`, `next_transform`, and `pre_transform`).
@@ -123,8 +123,11 @@ coverage for the tone-position classes.
 - `es_FONIPA-am`, `und_FONIPA-chr`, `IPA-XSampa`, `Latin-Katakana`,
   `Han-Spacedhan`, `pl/ro/sk_FONIPA-ja`, `ja_Latn-ko`, `ru-zh`, and the
   `X-chr` / `X-ja` / `X-am` pipelines pass their PyICU fixtures.
-  `zh_Latn_PINYIN-ru` still needs the Pinyin tone engine; the
-  `my/pl/sat/sk/xh/zu-chr` pipelines need more `und_FONIPA-chr` coverage.
+- `Latin-NumericPinyin` and `NumericPinyin-Latin` are implemented as named
+  engines (tone-mark placement and tone-digit movement) and pass their
+  fixtures. `zh_Latn_PINYIN-ru` still needs the full Pinyin syllable
+  engine; the `my/pl/sat/sk/xh/zu-chr` pipelines need more
+  `und_FONIPA-chr` coverage.
 - `dsb-dsb_FONIPA` passes after mid-rule normalization directives were
   made pass boundaries and the global filter was moved to the first
   non-empty pass.

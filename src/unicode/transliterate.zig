@@ -151,7 +151,8 @@ fn transformAt(index: usize) TransformRecord {
 const named_transform_names = [_][]const u8{
     "NFC",       "NFD",       "NFKC",      "NFKD",     "Any-Lower",
     "Any-Upper", "Any-Title", "nl-Title",  "Any-Null", "Hex-Any",
-    "Any-Hex",   "Name-Any",  "Any-Name",
+    "Any-Hex",   "Name-Any",  "Any-Name",  "Latin-NumericPinyin",
+    "NumericPinyin-Latin",
 };
 
 /// Number of transforms available by name, including named engines.
@@ -204,6 +205,7 @@ fn isNamedTransform(name: []const u8) bool {
         "Latin-ASCII", "NFC",       "NFD",       "NFKC",      "NFKD",
         "Any-Lower",   "Any-Upper", "Any-Title", "nl-Title",  "Any-Null",
         "Null",        "Hex-Any",   "Any-Hex",   "Name-Any",  "Any-Name",
+        "Latin-NumericPinyin", "NumericPinyin-Latin",
     };
     for (names) |candidate| {
         if (std.mem.eql(u8, name, candidate)) return true;
@@ -1654,6 +1656,211 @@ fn anyHexAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
     return output.toOwnedSlice(allocator);
 }
 
+fn pinyinToneIndex(codepoint: u21) ?u8 {
+    return switch (codepoint) {
+        0x0304 => 0,
+        0x0301 => 1,
+        0x030C => 2,
+        0x0300 => 3,
+        0x0306 => 4,
+        else => null,
+    };
+}
+
+fn pinyinToneMark(index: u8) u21 {
+    return switch (index) {
+        0 => 0x0304,
+        1 => 0x0301,
+        2 => 0x030C,
+        3 => 0x0300,
+        else => 0x0306,
+    };
+}
+
+fn isPinyinLetter(codepoint: u21) bool {
+    return (codepoint >= 'a' and codepoint <= 'z') or
+        (codepoint >= 'A' and codepoint <= 'Z') or
+        codepoint == 0x00FC;
+}
+
+fn isPinyinVowel(codepoint: u21) bool {
+    return switch (codepoint) {
+        'a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U', 0x00FC => true,
+        else => false,
+    };
+}
+
+fn pinyinPrecomposed(vowel: u21, tone: u8) ?u21 {
+    const table = switch (vowel) {
+        'a', 'A' => [_]u21{ 0x0101, 0x00E1, 0x01CE, 0x00E0, 0x0103 },
+        'e', 'E' => [_]u21{ 0x0113, 0x00E9, 0x011B, 0x00E8, 0x0115 },
+        'i', 'I' => [_]u21{ 0x012B, 0x00ED, 0x01D0, 0x00EC, 0x012D },
+        'o', 'O' => [_]u21{ 0x014D, 0x00F3, 0x01D2, 0x00F2, 0x014F },
+        'u', 'U' => [_]u21{ 0x016B, 0x00FA, 0x01D4, 0x00F9, 0x016D },
+        0x00FC => [_]u21{ 0x01D6, 0x01D8, 0x01DA, 0x01DC, 0x00FC },
+        else => return null,
+    };
+    return table[tone];
+}
+
+/// Move Pinyin tone marks to a trailing tone digit.
+fn latinNumericPinyinAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+) Error![]u8 {
+    const nfd = try normalization.normalizeFormAlloc(allocator, text, .nfd);
+    defer if (nfd) |value| allocator.free(value);
+    var codepoints = try decodeAlloc(allocator, nfd orelse text);
+    defer codepoints.deinit(allocator);
+    var output = std.ArrayList(u21).empty;
+    defer output.deinit(allocator);
+    var index: usize = 0;
+    var pending_digit: u8 = 0;
+    var skip_remaining: usize = 0;
+    while (index < codepoints.items.len) {
+        const codepoint = codepoints.items[index];
+        if (pending_digit != 0) {
+            try output.append(allocator, codepoint);
+            if (skip_remaining > 0) skip_remaining -= 1;
+            if (skip_remaining == 0) {
+                try output.append(allocator, '0' + pending_digit);
+                pending_digit = 0;
+            }
+            index += 1;
+            continue;
+        }
+        if (pinyinToneIndex(codepoint)) |tone| {
+            // The base may be separated from the tone mark by another
+            // combining mark (for example u + diaeresis + grave).
+            var base_index = output.items.len;
+            while (base_index > 0 and
+                !isPinyinLetter(output.items[base_index - 1]))
+            {
+                base_index -= 1;
+            }
+            if (base_index == 0) {
+                try output.append(allocator, codepoint);
+                index += 1;
+                continue;
+            }
+            const base = output.items[base_index - 1];
+            var skip: usize = 0;
+            if (index + 1 < codepoints.items.len) {
+                const next = codepoints.items[index + 1];
+                if (base == 'e' and next == 'r') {
+                    skip = 1;
+                } else if (index + 2 < codepoints.items.len and
+                    ((next == 'n' and codepoints.items[index + 2] == 'g') or
+                        (next == 'o' and codepoints.items[index + 2] == 'n')))
+                {
+                    skip = 2;
+                } else if (next == 'i' or next == 'o' or next == 'n' or
+                    next == 'u')
+                {
+                    skip = 1;
+                }
+            }
+            pending_digit = tone + 1;
+            skip_remaining = skip;
+            if (skip == 0) {
+                try output.append(allocator, '0' + pending_digit);
+                pending_digit = 0;
+            }
+            index += 1;
+            continue;
+        }
+        try output.append(allocator, codepoint);
+        index += 1;
+    }
+    if (pending_digit != 0) {
+        try output.append(allocator, '0' + pending_digit);
+    }
+    var encoded = std.ArrayList(u8).empty;
+    errdefer encoded.deinit(allocator);
+    for (output.items) |codepoint| {
+        try appendCodepoint(allocator, &encoded, codepoint);
+    }
+    const raw = try encoded.toOwnedSlice(allocator);
+    const nfc = try normalization.normalizeFormAlloc(allocator, raw, .nfc);
+    if (nfc) |value| {
+        allocator.free(raw);
+        return value;
+    }
+    return raw;
+}
+
+/// Place a trailing Pinyin tone digit on the correct vowel.
+fn numericPinyinLatinAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+) Error![]u8 {
+    var codepoints = try decodeAlloc(allocator, text);
+    defer codepoints.deinit(allocator);
+    var output = std.ArrayList(u21).empty;
+    defer output.deinit(allocator);
+    var index: usize = 0;
+    while (index < codepoints.items.len) {
+        const codepoint = codepoints.items[index];
+        if (codepoint >= '1' and codepoint <= '5' and
+            output.items.len > 0 and
+            isPinyinLetter(output.items[output.items.len - 1]))
+        {
+            var start = output.items.len;
+            while (start > 0 and isPinyinLetter(output.items[start - 1])) {
+                start -= 1;
+            }
+            var tone_position: ?usize = null;
+            const priorities = [_]u21{ 'a', 'A', 'o', 'O', 'e', 'E' };
+            for (priorities) |vowel| {
+                for (output.items[start..], start..) |value, position| {
+                    if (value == vowel) {
+                        tone_position = position;
+                        break;
+                    }
+                }
+                if (tone_position != null) break;
+            }
+            if (tone_position == null) {
+                for (output.items[start..], start..) |value, position| {
+                    if (isPinyinVowel(value)) tone_position = position;
+                }
+            }
+            if (tone_position == null) {
+                tone_position = output.items.len - 1;
+            }
+            const digit: u8 = @intCast(codepoint - '1');
+            if (digit != 4) {
+                const vowel = output.items[tone_position.?];
+                if (pinyinPrecomposed(vowel, digit)) |composed| {
+                    output.items[tone_position.?] = composed;
+                } else {
+                    try output.insert(
+                        allocator,
+                        tone_position.? + 1,
+                        pinyinToneMark(digit),
+                    );
+                }
+            }
+            index += 1;
+            continue;
+        }
+        try output.append(allocator, codepoint);
+        index += 1;
+    }
+    var encoded = std.ArrayList(u8).empty;
+    errdefer encoded.deinit(allocator);
+    for (output.items) |codepoint| {
+        try appendCodepoint(allocator, &encoded, codepoint);
+    }
+    const raw = try encoded.toOwnedSlice(allocator);
+    const nfc = try normalization.normalizeFormAlloc(allocator, raw, .nfc);
+    if (nfc) |value| {
+        allocator.free(raw);
+        return value;
+    }
+    return raw;
+}
+
 /// Dutch title casing: Any-Title followed by the `Ij` -> `IJ` digraph fix
 /// at word starts.
 fn nlTitleAlloc(
@@ -1732,6 +1939,12 @@ pub fn transliterateByNameAlloc(
     }
     if (std.mem.eql(u8, name, "nl-Title")) {
         return nlTitleAlloc(allocator, text);
+    }
+    if (std.mem.eql(u8, name, "Latin-NumericPinyin")) {
+        return latinNumericPinyinAlloc(allocator, text);
+    }
+    if (std.mem.eql(u8, name, "NumericPinyin-Latin")) {
+        return numericPinyinLatinAlloc(allocator, text);
     }
     if (std.mem.eql(u8, name, "Any-Null") or std.mem.eql(u8, name, "Null")) {
         return allocator.dupe(u8, text);
@@ -2471,6 +2684,16 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/latin_interindic_conformance.bin"),
         .magic = "CJLI".*,
         .name = "Latin-InterIndic",
+    },
+    .{
+        .bytes = @embedFile("transliterate/latin_numeric_pinyin_conformance.bin"),
+        .magic = "CJPN".*,
+        .name = "Latin-NumericPinyin",
+    },
+    .{
+        .bytes = @embedFile("transliterate/numeric_pinyin_latin_conformance.bin"),
+        .magic = "CJNP".*,
+        .name = "NumericPinyin-Latin",
     },
     .{
         .bytes = @embedFile("transliterate/ja_latn_ko_conformance.bin"),
