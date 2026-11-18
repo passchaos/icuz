@@ -125,16 +125,25 @@ fn transformAt(index: usize) TransformRecord {
     };
 }
 
-/// Number of compiled table transforms available by name.
+const named_transform_names = [_][]const u8{
+    "NFC",       "NFD",       "NFKC",      "NFKD",     "Any-Lower",
+    "Any-Upper", "Any-Title", "Any-Null",  "Hex-Any",  "Any-Hex",
+};
+
+/// Number of transforms available by name, including named engines.
 pub fn transformCount() usize {
-    return transform_count;
+    return transform_count + named_transform_names.len;
 }
 
 /// Name of the transform at `index`, or null when out of range.
 pub fn transformNameAt(index: usize) ?[]const u8 {
-    if (index >= transform_count) return null;
-    const record = transformAt(index);
-    return data[names_offset + record.name_offset ..][0..record.name_len];
+    if (index < transform_count) {
+        const record = transformAt(index);
+        return data[names_offset + record.name_offset ..][0..record.name_len];
+    }
+    const named_index = index - transform_count;
+    if (named_index >= named_transform_names.len) return null;
+    return named_transform_names[named_index];
 }
 
 const TransformAlias = struct { icu: []const u8, clrd: []const u8 };
@@ -1789,11 +1798,14 @@ test "transform discovery" {
     try testing.expect(hasTransform("Any-Title"));
     try testing.expect(!hasTransform("No-Such-Transform"));
     var found = false;
+    var found_named = false;
     for (0..transformCount()) |index| {
         const name = transformNameAt(index) orelse return error.TestUnexpectedResult;
         if (std.mem.eql(u8, name, "Simplified-Traditional")) found = true;
+        if (std.mem.eql(u8, name, "Any-Lower")) found_named = true;
     }
     try testing.expect(found);
+    try testing.expect(found_named);
     try testing.expect(transformNameAt(transformCount()) == null);
 
     const icu_named = try transliterateByNameAlloc(
