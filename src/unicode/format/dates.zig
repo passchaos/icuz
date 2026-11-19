@@ -1793,6 +1793,640 @@ fn lookup(locale: []const u8) ?*const data.Locale {
     return null;
 }
 
+pub const ParseDefaults = struct {
+    year: i32 = 1970,
+    month: u8 = 1,
+    day: u8 = 1,
+    hour: u8 = 0,
+    minute: u8 = 0,
+    second: u8 = 0,
+    nanosecond: u32 = 0,
+};
+
+const ParseState = struct {
+    year: i32,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+    nanosecond: u32,
+    pm: ?bool = null,
+    hour12: ?u8 = null,
+    bc: bool = false,
+    day_of_year: ?u16 = null,
+};
+
+/// Parse `text` according to a localized date/time pattern.
+///
+/// Supports era, year, month (numeric and names), day, day of year,
+/// weekday names, day periods, 12/24-hour clocks, minutes, seconds,
+/// fractional seconds, and quarter names. Zone and week fields are not
+/// supported and make the parse fail. Fields absent from the pattern keep
+/// their `defaults` value; a two-digit year maps to 2000-2079 or 1900-1999.
+pub fn parsePattern(
+    text: []const u8,
+    pattern: []const u8,
+    locale_name: []const u8,
+    defaults: ParseDefaults,
+) ?DateTime {
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
+
+    var state = ParseState{
+        .year = defaults.year,
+        .month = defaults.month,
+        .day = defaults.day,
+        .hour = defaults.hour,
+        .minute = defaults.minute,
+        .second = defaults.second,
+        .nanosecond = defaults.nanosecond,
+    };
+
+    var text_index: usize = 0;
+    var index: usize = 0;
+    while (index < pattern.len) {
+        const byte = pattern[index];
+        if (byte == '\'') {
+            if (index + 1 < pattern.len and pattern[index + 1] == '\'') {
+                if (!matchPatternLiteral(text, &text_index, '\'')) return null;
+                index += 2;
+                continue;
+            }
+            index += 1;
+            while (index < pattern.len) {
+                if (pattern[index] == '\'') {
+                    if (index + 1 < pattern.len and
+                        pattern[index + 1] == '\'')
+                    {
+                        if (!matchPatternLiteral(text, &text_index, '\'')) {
+                            return null;
+                        }
+                        index += 2;
+                        continue;
+                    }
+                    index += 1;
+                    break;
+                }
+                if (!matchPatternLiteral(text, &text_index, pattern[index])) {
+                    return null;
+                }
+                index += 1;
+            }
+            continue;
+        }
+        if (isAsciiLetter(byte)) {
+            var end = index;
+            while (end < pattern.len and pattern[end] == byte) end += 1;
+            if (!parsePatternField(
+                &state,
+                text,
+                &text_index,
+                byte,
+                end - index,
+                locale,
+            )) {
+                return null;
+            }
+            index = end;
+            continue;
+        }
+        if (!matchPatternLiteral(text, &text_index, byte)) return null;
+        index += 1;
+    }
+
+    skipDateSpace(text, &text_index);
+    if (text_index != text.len) return null;
+    return finishParsedDate(&state);
+}
+
+fn matchPatternLiteral(text: []const u8, index: *usize, byte: u8) bool {
+    if (byte == ' ' or byte == '\t' or byte == '\n' or byte == '\r') {
+        skipDateSpace(text, index);
+        return true;
+    }
+    if (index.* >= text.len or text[index.*] != byte) return false;
+    index.* += 1;
+    return true;
+}
+
+fn skipDateSpace(text: []const u8, index: *usize) void {
+    while (index.* < text.len) {
+        const length = std.unicode.utf8ByteSequenceLength(text[index.*]) catch
+            return;
+        if (index.* + length > text.len) return;
+        const codepoint = std.unicode.utf8Decode(
+            text[index.*..][0..length],
+        ) catch return;
+        if (!(codepoint == ' ' or codepoint == '\t' or codepoint == '\n' or
+            codepoint == '\r' or codepoint == 0x00A0 or codepoint == 0x2009 or
+            codepoint == 0x202F))
+        {
+            return;
+        }
+        index.* += length;
+    }
+}
+
+fn dateDigit(locale: *const data.Locale, codepoint: u21) ?u8 {
+    if (codepoint >= '0' and codepoint <= '9') {
+        return @intCast(codepoint - '0');
+    }
+    for (locale.digits, 0..) |digit, index| {
+        if (digit == codepoint) return @intCast(index);
+    }
+    return null;
+}
+
+fn parseDateNumber(
+    locale: *const data.Locale,
+    text: []const u8,
+    index: *usize,
+    max_digits: usize,
+) ?u32 {
+    var value: u32 = 0;
+    var digits: usize = 0;
+    while (digits < max_digits and index.* < text.len) {
+        const length = std.unicode.utf8ByteSequenceLength(text[index.*]) catch
+            break;
+        if (index.* + length > text.len) break;
+        const codepoint = std.unicode.utf8Decode(
+            text[index.*..][0..length],
+        ) catch break;
+        const digit = dateDigit(locale, codepoint) orelse break;
+        value = value * 10 + digit;
+        digits += 1;
+        index.* += length;
+    }
+    if (digits == 0) return null;
+    return value;
+}
+
+fn startsWithIgnoreCase(text: []const u8, prefix: []const u8) bool {
+    if (text.len < prefix.len) return false;
+    for (prefix, 0..) |byte, index| {
+        if (std.ascii.toLower(text[index]) != std.ascii.toLower(byte)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+fn matchName(
+    text: []const u8,
+    index: *usize,
+    names: []const []const u8,
+) ?usize {
+    var best: ?usize = null;
+    var best_length: usize = 0;
+    for (names, 0..) |name, name_index| {
+        if (name.len == 0 or name.len <= best_length) continue;
+        if (!startsWithIgnoreCase(text[index.*..], name)) continue;
+        best = name_index;
+        best_length = name.len;
+    }
+    if (best) |name_index| {
+        index.* += best_length;
+        return name_index;
+    }
+    return null;
+}
+
+fn parsePatternField(
+    state: *ParseState,
+    text: []const u8,
+    index: *usize,
+    field: u8,
+    length: usize,
+    locale: *const data.Locale,
+) bool {
+    switch (field) {
+        'y', 'u', 'U', 'r' => {
+            const value = parseDateNumber(
+                locale,
+                text,
+                index,
+                if (length == 2) 2 else 6,
+            ) orelse return false;
+            if (length == 2 and value < 100) {
+                state.year = if (value < 80)
+                    2000 + @as(i32, @intCast(value))
+                else
+                    1900 + @as(i32, @intCast(value));
+            } else {
+                state.year = @intCast(value);
+            }
+            return true;
+        },
+        'M', 'L' => {
+            if (length <= 2) {
+                const value = parseDateNumber(locale, text, index, 2) orelse
+                    return false;
+                if (value < 1 or value > 12) return false;
+                state.month = @intCast(value);
+                return true;
+            }
+            return parseMonthName(state, text, index, length, locale);
+        },
+        'd' => {
+            const value = parseDateNumber(locale, text, index, 2) orelse
+                return false;
+            if (value < 1 or value > 31) return false;
+            state.day = @intCast(value);
+            return true;
+        },
+        'D' => {
+            const value = parseDateNumber(locale, text, index, 3) orelse
+                return false;
+            if (value < 1 or value > 366) return false;
+            state.day_of_year = @intCast(value);
+            return true;
+        },
+        'E', 'e', 'c' => return parseWeekdayName(text, index, length, locale),
+        'a', 'b', 'B' => return parseDayPeriod(state, text, index, locale),
+        'h' => {
+            const value = parseDateNumber(locale, text, index, 2) orelse
+                return false;
+            if (value < 1 or value > 12) return false;
+            state.hour12 = @intCast(value % 12);
+            return true;
+        },
+        'H' => {
+            const value = parseDateNumber(locale, text, index, 2) orelse
+                return false;
+            if (value > 23) return false;
+            state.hour = @intCast(value);
+            return true;
+        },
+        'K' => {
+            const value = parseDateNumber(locale, text, index, 2) orelse
+                return false;
+            if (value > 11) return false;
+            state.hour12 = @intCast(value);
+            return true;
+        },
+        'k' => {
+            const value = parseDateNumber(locale, text, index, 2) orelse
+                return false;
+            if (value < 1 or value > 24) return false;
+            state.hour = @intCast(value % 24);
+            return true;
+        },
+        'm' => {
+            const value = parseDateNumber(locale, text, index, 2) orelse
+                return false;
+            if (value > 59) return false;
+            state.minute = @intCast(value);
+            return true;
+        },
+        's' => {
+            const value = parseDateNumber(locale, text, index, 2) orelse
+                return false;
+            if (value > 59) return false;
+            state.second = @intCast(value);
+            return true;
+        },
+        'S' => {
+            var value: u32 = 0;
+            var digits: usize = 0;
+            while (digits < length and index.* < text.len and
+                text[index.*] >= '0' and text[index.*] <= '9')
+            {
+                value = value * 10 + (text[index.*] - '0');
+                digits += 1;
+                index.* += 1;
+            }
+            if (digits == 0) return false;
+            var nanos = value;
+            var scale = digits;
+            while (scale < 9) : (scale += 1) nanos *= 10;
+            state.nanosecond = nanos;
+            return true;
+        },
+        'G' => return parseEra(state, text, index, length, locale),
+        'Q', 'q' => {
+            if (length <= 2) {
+                const value = parseDateNumber(locale, text, index, 1) orelse
+                    return false;
+                if (value < 1 or value > 4) return false;
+                state.month = @intCast((value - 1) * 3 + 1);
+                return true;
+            }
+            return parseQuarterName(state, text, index, length, locale);
+        },
+        else => return false,
+    }
+}
+
+fn parseMonthName(
+    state: *ParseState,
+    text: []const u8,
+    index: *usize,
+    length: usize,
+    locale: *const data.Locale,
+) bool {
+    const format_names: []const []const u8 = switch (length) {
+        3 => &locale.months_abbreviated,
+        4 => &locale.months_wide,
+        else => &locale.months_narrow,
+    };
+    if (matchName(text, index, format_names)) |month_index| {
+        state.month = @intCast(month_index + 1);
+        return true;
+    }
+    const standalone_names: []const []const u8 = switch (length) {
+        3 => &locale.months_standalone_abbreviated,
+        4 => &locale.months_standalone_wide,
+        else => &locale.months_standalone_narrow,
+    };
+    if (matchName(text, index, standalone_names)) |month_index| {
+        state.month = @intCast(month_index + 1);
+        return true;
+    }
+    return false;
+}
+
+fn parseWeekdayName(
+    text: []const u8,
+    index: *usize,
+    length: usize,
+    locale: *const data.Locale,
+) bool {
+    const format_names: []const []const u8 = switch (length) {
+        3 => &locale.days_abbreviated,
+        4 => &locale.days_wide,
+        5 => &locale.days_narrow,
+        6 => &locale.days_short,
+        else => &locale.days_abbreviated,
+    };
+    if (matchName(text, index, format_names) != null) return true;
+    const standalone_names: []const []const u8 = switch (length) {
+        3 => &locale.days_standalone_abbreviated,
+        4 => &locale.days_standalone_wide,
+        5 => &locale.days_standalone_narrow,
+        6 => &locale.days_standalone_short,
+        else => &locale.days_standalone_abbreviated,
+    };
+    return matchName(text, index, standalone_names) != null;
+}
+
+fn parseDayPeriod(
+    state: *ParseState,
+    text: []const u8,
+    index: *usize,
+    locale: *const data.Locale,
+) bool {
+    const names = [_][]const u8{
+        locale.am_wide,
+        locale.pm_wide,
+        locale.am_abbreviated,
+        locale.pm_abbreviated,
+        locale.am_narrow,
+        locale.pm_narrow,
+    };
+    const period = matchName(text, index, &names) orelse return false;
+    state.pm = period % 2 == 1;
+    return true;
+}
+
+fn parseEra(
+    state: *ParseState,
+    text: []const u8,
+    index: *usize,
+    length: usize,
+    locale: *const data.Locale,
+) bool {
+    const names: []const []const u8 = switch (length) {
+        4 => &locale.era_wide,
+        5 => &locale.era_narrow,
+        else => &locale.era_abbreviated,
+    };
+    const era = matchName(text, index, names) orelse return false;
+    state.bc = era == 0;
+    return true;
+}
+
+fn parseQuarterName(
+    state: *ParseState,
+    text: []const u8,
+    index: *usize,
+    length: usize,
+    locale: *const data.Locale,
+) bool {
+    const format_names: []const []const u8 = switch (length) {
+        3 => &locale.quarters_abbreviated,
+        4 => &locale.quarters_wide,
+        else => &locale.quarters_narrow,
+    };
+    if (matchName(text, index, format_names)) |quarter| {
+        state.month = @intCast(quarter * 3 + 1);
+        return true;
+    }
+    const standalone_names: []const []const u8 = switch (length) {
+        3 => &locale.quarters_standalone_abbreviated,
+        4 => &locale.quarters_standalone_wide,
+        else => &locale.quarters_standalone_narrow,
+    };
+    if (matchName(text, index, standalone_names)) |quarter| {
+        state.month = @intCast(quarter * 3 + 1);
+        return true;
+    }
+    return false;
+}
+
+fn daysInMonth(year: i32, month: u8) u8 {
+    return switch (month) {
+        1, 3, 5, 7, 8, 10, 12 => 31,
+        4, 6, 9, 11 => 30,
+        2 => if (isLeapYear(year)) 29 else 28,
+        else => 0,
+    };
+}
+
+fn isLeapYear(year: i32) bool {
+    return (@mod(year, 4) == 0 and @mod(year, 100) != 0) or
+        @mod(year, 400) == 0;
+}
+
+fn finishParsedDate(state: *ParseState) ?DateTime {
+    var year = state.year;
+    if (state.bc) year = 1 - year;
+    var month = state.month;
+    var day = state.day;
+    if (state.day_of_year) |day_of_year| {
+        const start = daysFromCivil(year, 1, 1);
+        const civil = civilFromDays(start + @as(i64, day_of_year) - 1);
+        if (civil.year != year) return null;
+        month = civil.month;
+        day = civil.day;
+    }
+    if (state.hour12) |hour12| {
+        state.hour = if (state.pm orelse false)
+            (if (hour12 == 0) 12 else hour12 + 12)
+        else
+            hour12;
+    }
+    if (month < 1 or month > 12) return null;
+    if (day < 1 or day > daysInMonth(year, month)) return null;
+    if (state.hour > 23 or state.minute > 59 or state.second > 59) {
+        return null;
+    }
+    if (state.nanosecond > 999_999_999) return null;
+    return .{
+        .year = year,
+        .month = month,
+        .day = day,
+        .hour = state.hour,
+        .minute = state.minute,
+        .second = state.second,
+        .nanosecond = state.nanosecond,
+    };
+}
+
+test "date pattern parsing" {
+    const testing = @import("std").testing;
+
+    const medium = parsePattern(
+        "Mar 5, 2024",
+        "MMM d, y",
+        "en",
+        .{},
+    ).?;
+    try testing.expectEqual(@as(i32, 2024), medium.year);
+    try testing.expectEqual(@as(u8, 3), medium.month);
+    try testing.expectEqual(@as(u8, 5), medium.day);
+
+    const full = parsePattern(
+        "Tuesday, March 5, 2024",
+        "EEEE, MMMM d, y",
+        "en",
+        .{},
+    ).?;
+    try testing.expectEqual(@as(i32, 2024), full.year);
+    try testing.expectEqual(@as(u8, 3), full.month);
+
+    const german = parsePattern(
+        "05.03.2024",
+        "dd.MM.y",
+        "de",
+        .{},
+    ).?;
+    try testing.expectEqual(@as(i32, 2024), german.year);
+    try testing.expectEqual(@as(u8, 3), german.month);
+    try testing.expectEqual(@as(u8, 5), german.day);
+
+    const afternoon = parsePattern(
+        "2:30:45 PM",
+        "h:mm:ss a",
+        "en",
+        .{},
+    ).?;
+    try testing.expectEqual(@as(u8, 14), afternoon.hour);
+    try testing.expectEqual(@as(u8, 30), afternoon.minute);
+    try testing.expectEqual(@as(u8, 45), afternoon.second);
+
+    const midnight = parsePattern("12:05 AM", "h:mm a", "en", .{}).?;
+    try testing.expectEqual(@as(u8, 0), midnight.hour);
+    const noon = parsePattern("12:05 PM", "h:mm a", "en", .{}).?;
+    try testing.expectEqual(@as(u8, 12), noon.hour);
+
+    const iso = parsePattern(
+        "2024-03-05T14:30:45.123",
+        "y-MM-dd'T'HH:mm:ss.SSS",
+        "en",
+        .{},
+    ).?;
+    try testing.expectEqual(@as(u8, 14), iso.hour);
+    try testing.expectEqual(@as(u32, 123_000_000), iso.nanosecond);
+
+    const persian = parsePattern(
+        "\u{06f1}\u{06f4}\u{06f0}\u{06f2}/\u{06f1}\u{06f2}/\u{06f0}\u{06f5}",
+        "y/M/d",
+        "fa",
+        .{},
+    ).?;
+    try testing.expectEqual(@as(i32, 1402), persian.year);
+    try testing.expectEqual(@as(u8, 12), persian.month);
+    try testing.expectEqual(@as(u8, 5), persian.day);
+
+    const bc = parsePattern("5 BC", "y G", "en", .{}).?;
+    try testing.expectEqual(@as(i32, -4), bc.year);
+
+    const day_of_year = parsePattern("60 2024", "D y", "en", .{}).?;
+    try testing.expectEqual(@as(u8, 2), day_of_year.month);
+    try testing.expectEqual(@as(u8, 29), day_of_year.day);
+
+    try testing.expect(parsePattern("2024-02-30", "y-MM-dd", "en", .{}) == null);
+    try testing.expect(parsePattern("13/45/2024", "MM/dd/y", "en", .{}) == null);
+    try testing.expect(parsePattern("2024-03-05", "y-MM-dd z", "en", .{}) == null);
+    try testing.expect(parsePattern("", "y", "en", .{}) == null);
+}
+
+test "date pattern round trips" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const date_time = DateTime{
+        .year = 2024,
+        .month = 3,
+        .day = 5,
+        .hour = 14,
+        .minute = 30,
+        .second = 45,
+    };
+    const defaults = ParseDefaults{
+        .year = date_time.year,
+        .month = date_time.month,
+        .day = date_time.day,
+        .hour = date_time.hour,
+        .minute = date_time.minute,
+        .second = date_time.second,
+    };
+    const cases = [_]struct { locale: []const u8, pattern: []const u8 }{
+        .{ .locale = "en", .pattern = "y-MM-dd" },
+        .{ .locale = "en", .pattern = "MMM d, y" },
+        .{ .locale = "en", .pattern = "EEEE, MMMM d, y" },
+        .{ .locale = "de", .pattern = "dd.MM.y" },
+        .{ .locale = "fr", .pattern = "d MMMM y" },
+        .{ .locale = "ja", .pattern = "y\u{5e74}M\u{6708}d\u{65e5}" },
+        .{ .locale = "en", .pattern = "h:mm:ss a" },
+        .{ .locale = "en", .pattern = "HH:mm:ss" },
+        .{ .locale = "en", .pattern = "y-MM-dd'T'HH:mm:ss.SSS" },
+        .{ .locale = "fa", .pattern = "y/M/d" },
+        .{ .locale = "ar", .pattern = "d/M/y" },
+        .{ .locale = "ru", .pattern = "d MMMM y '\u{433}'." },
+    };
+    for (cases) |case| {
+        const formatted = try formatPatternAlloc(
+            allocator,
+            case.pattern,
+            date_time,
+            case.locale,
+            "UTC",
+        );
+        defer allocator.free(formatted);
+        const parsed = parsePattern(
+            formatted,
+            case.pattern,
+            case.locale,
+            defaults,
+        ) orelse {
+            std.debug.print("round trip failed: {s} '{s}' -> '{s}'\n", .{
+                case.locale,
+                case.pattern,
+                formatted,
+            });
+            return error.TestUnexpectedResult;
+        };
+        try testing.expectEqual(date_time.year, parsed.year);
+        try testing.expectEqual(date_time.month, parsed.month);
+        try testing.expectEqual(date_time.day, parsed.day);
+        try testing.expectEqual(date_time.hour, parsed.hour);
+        try testing.expectEqual(date_time.minute, parsed.minute);
+        try testing.expectEqual(date_time.second, parsed.second);
+    }
+}
+
 test "date and time formatting" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;

@@ -277,6 +277,8 @@ pub const timeZoneExemplarCityAlloc = timezone_mod.names.exemplarCityAlloc;
 
 pub const DateTime = dates_mod.DateTime;
 pub const DateStyle = dates_mod.Style;
+pub const DateParseDefaults = dates_mod.ParseDefaults;
+pub const parseDatePattern = dates_mod.parsePattern;
 pub const formatDateAlloc = dates_mod.formatDateAlloc;
 pub const formatTimeAlloc = dates_mod.formatTimeAlloc;
 pub const formatTimeWithZoneAlloc = dates_mod.formatTimeWithZoneAlloc;
