@@ -17,6 +17,7 @@ pub const name = @import("unicode/name.zig");
 pub const set = @import("unicode/set.zig");
 pub const utf16 = @import("unicode/utf16.zig");
 pub const collation = @import("unicode/collation/root.zig");
+pub const spoof = @import("unicode/spoof.zig");
 pub const idna = @import("unicode/idna.zig");
 pub const plural = @import("unicode/format/plurals.zig");
 pub const number = @import("unicode/format/number.zig");
@@ -50,5 +51,6 @@ pub const canonical = struct {
 
 test {
     _ = unicode;
+    _ = spoof;
     _ = @import("unicode/tests/cursor_segmentation_tests.zig");
 }
