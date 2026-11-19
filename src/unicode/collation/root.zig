@@ -267,6 +267,55 @@ pub const Collator = struct {
         );
     }
 
+    /// First primary weight for an ASCII scalar when no tailoring applies,
+    /// or null when the key depends on the locale or the character has no
+    /// primary weight.
+    pub fn asciiFirstPrimary(self: *const Collator, codepoint: u21) ?u32 {
+        if (self.tailoring != null) return null;
+        if (codepoint >= 128) return null;
+        if (!ascii_elements.usable) return null;
+        const entry = ascii_elements.table[codepoint];
+        if (entry.count == 0) return null;
+        for (entry.elements[0..entry.count]) |element| {
+            if (element.primary != 0) return element.primary;
+        }
+        return null;
+    }
+
+    /// True when a contraction starting at `codepoints[index]` could
+    /// consume the next code point, either by matching it or by skipping it
+    /// as a combining mark.
+    pub fn contractionExtends(
+        self: *const Collator,
+        codepoints: []const u21,
+        index: usize,
+    ) bool {
+        const first = codepoints[index];
+        if (index + 1 >= codepoints.len) return false;
+        const next = codepoints[index + 1];
+        if (!self.startsContraction(first)) return false;
+        if (next >= 0x300 and combining_class.forCodepoint(next) != 0) {
+            return true;
+        }
+        if (self.tailoring) |tailoring| {
+            if (tailorings.longerRuleMatches(
+                tailoring,
+                self.pages,
+                first,
+                next,
+            )) {
+                return true;
+            }
+        }
+        var entry_index = pageStart(first);
+        while (entry_index < @as(usize, entry_count)) : (entry_index += 1) {
+            const entry = entryAt(entry_index);
+            if (entry.first != first) break;
+            if (entry.len > 1 and entry.second == next) return true;
+        }
+        return false;
+    }
+
     /// True when a multi-code-point rule or contraction can start with this
     /// code point, so its single-character key depends on what follows.
     pub fn startsContraction(self: *const Collator, codepoint: u21) bool {

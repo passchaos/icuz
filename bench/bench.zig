@@ -1028,6 +1028,7 @@ pub fn main() !void {
     benchNumberParse("parse decimal", "1,234,567.89", "en", .{});
     benchNumberParse("parse decimal de", "1.234.567,89", "de", .{});
     benchSearch("search word", ascii_runtime, "fox", .{ .strength = .primary }, allocator);
+    benchSearch("search missing", ascii_runtime, "wombat", .{ .strength = .primary }, allocator);
     benchSearch(
         "search Swedish",
         swedish_runtime,

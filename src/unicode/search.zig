@@ -15,6 +15,8 @@ pub const Options = collation.Options;
 pub const Error = error{ InvalidUtf8, OutOfMemory };
 
 const max_levels = 8;
+/// Look-ahead allowed for a contraction to finish merging weights.
+const max_contraction_span = 32;
 
 /// Reusable searcher for one pattern and collation configuration.
 pub const Search = struct {
@@ -88,18 +90,31 @@ pub const Search = struct {
                 index += 1;
                 continue;
             }
+            const can_extend = self.collator.contractionExtends(
+                codepoints,
+                index,
+            );
+            // A context-free ASCII start can be rejected from its first
+            // primary weight without building a key.
+            if (!can_extend and self.needle_primary.items.len > 0) {
+                if (self.collator.asciiFirstPrimary(
+                    codepoints[index],
+                )) |first_primary| {
+                    if (first_primary != self.needle_primary.items[0]) {
+                        index += 1;
+                        continue;
+                    }
+                }
+            }
             var end = index + 1;
             try self.collator.sortKeyCodepointsInto(
                 self.allocator,
                 codepoints[index..end],
                 &self.candidate_key,
             );
-            const starts_contraction = self.collator.startsContraction(
-                codepoints[index],
-            );
-            // When no contraction can start here, the first character's
-            // primary weights must prefix the pattern's primary weights.
-            if (!starts_contraction) {
+            // When no contraction can consume the next character here, the
+            // first character's primary weights must prefix the pattern's.
+            if (!can_extend) {
                 const length = primaryLength(self.candidate_key.items);
                 if (length > self.needle_primary.items.len or
                     !std.mem.eql(
@@ -113,9 +128,15 @@ pub const Search = struct {
                 }
             }
             // Extending a contraction can merge weights, so the "too many
-            // weights" cut-off is only safe when no contraction can start
-            // anywhere inside the candidate.
-            var breakable = !starts_contraction;
+            // weights" cut-off is only safe once no contraction starting
+            // inside the candidate can still consume another code point.
+            // The look-ahead is bounded by the longest rule plus a wide
+            // margin for discontiguous mark matching.
+            var breakable = !can_extend;
+            var contraction_limit: usize = if (can_extend)
+                index + max_contraction_span
+            else
+                0;
             while (true) {
                 if (std.mem.eql(
                     u32,
@@ -135,11 +156,14 @@ pub const Search = struct {
                     codepoints[index..end],
                     &self.candidate_key,
                 );
-                if (breakable and
-                    self.collator.startsContraction(codepoints[end - 1]))
-                {
-                    breakable = false;
+                if (self.collator.contractionExtends(
+                    codepoints,
+                    end - 1,
+                )) {
+                    const limit = end - 1 + max_contraction_span;
+                    if (limit > contraction_limit) contraction_limit = limit;
                 }
+                if (!breakable and end >= contraction_limit) breakable = true;
             }
             index += 1;
         }
@@ -328,3 +352,4 @@ test "locale-aware search" {
         indexOf(allocator, "\xff", "a", primary),
     );
 }
+
