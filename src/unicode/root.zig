@@ -238,9 +238,20 @@ pub const formatNumberSkeletonIntegerAlloc =
 pub const number_cldr_version = number_mod.cldr_version;
 
 const rbnf_mod = @import("./format/rbnf.zig");
+const timezone_mod = @import("./timezone/root.zig");
 pub const RbnfTag = rbnf_mod.Tag;
 pub const formatRbnfAlloc = rbnf_mod.formatAlloc;
 pub const rbnf_cldr_version = rbnf_mod.cldr_version;
+
+pub const TimeZone = timezone_mod.Zone;
+pub const TimeZoneOffset = timezone_mod.Offset;
+pub const findTimeZone = timezone_mod.find;
+pub const timeZoneOffsetAt = timezone_mod.offsetAt;
+pub const timeZoneLocalSeconds = timezone_mod.localSeconds;
+pub const timeZoneUtcSeconds = timezone_mod.utcSeconds;
+pub const timeZoneCount = timezone_mod.count;
+pub const timeZoneAt = timezone_mod.at;
+pub const tzdata_version = timezone_mod.tzdata_version;
 
 pub const DateTime = dates_mod.DateTime;
 pub const DateStyle = dates_mod.Style;
@@ -250,6 +261,9 @@ pub const formatTimeWithZoneAlloc = dates_mod.formatTimeWithZoneAlloc;
 pub const formatDateTimeAlloc = dates_mod.formatDateTimeAlloc;
 pub const formatDatePatternAlloc = dates_mod.formatPatternAlloc;
 pub const dateTimeFromUnixSeconds = dates_mod.fromUnixSeconds;
+pub const dateTimeFromUnixSecondsInZone =
+    dates_mod.dateTimeFromUnixSecondsInZone;
+pub const formatUnixTimeInZoneAlloc = dates_mod.formatUnixTimeInZoneAlloc;
 pub const date_cldr_version = dates_mod.cldr_version;
 
 pub const MessageArgument = message_mod.Argument;
@@ -519,6 +533,7 @@ test {
     _ = number_mod;
     _ = dates_mod;
     _ = rbnf_mod;
+    _ = timezone_mod;
     _ = message_mod;
     _ = charset_mod;
     _ = transliterate_mod;

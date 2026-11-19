@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const data = @import("dates_data.zig");
+const timezone = @import("../timezone/root.zig");
 
 pub const cldr_version = "48";
 
@@ -144,6 +145,43 @@ pub fn formatPatternAlloc(
         date_time,
         locale,
         zone_name,
+    );
+}
+
+/// Convert a Unix timestamp to civil date/time fields in an IANA zone.
+/// Unknown zone IDs fall back to UTC.
+pub fn dateTimeFromUnixSecondsInZone(
+    seconds: i64,
+    zone_name: []const u8,
+) DateTime {
+    const zone = timezone.find(zone_name) orelse return fromUnixSeconds(seconds, 0);
+    return fromUnixSeconds(seconds, timezone.offsetAt(zone, seconds).seconds);
+}
+
+/// Format a Unix timestamp as a time in an IANA zone, using the zone's
+/// abbreviation for the `z` pattern field.
+pub fn formatUnixTimeInZoneAlloc(
+    allocator: std.mem.Allocator,
+    unix_seconds: i64,
+    locale_name: []const u8,
+    style: Style,
+    zone_name: []const u8,
+) Error![]u8 {
+    const zone = timezone.find(zone_name) orelse
+        return formatTimeWithZoneAlloc(
+            allocator,
+            fromUnixSeconds(unix_seconds, 0),
+            locale_name,
+            style,
+            zone_name,
+        );
+    const offset = timezone.offsetAt(zone, unix_seconds);
+    return formatTimeWithZoneAlloc(
+        allocator,
+        fromUnixSeconds(unix_seconds, offset.seconds),
+        locale_name,
+        style,
+        offset.abbreviation,
     );
 }
 

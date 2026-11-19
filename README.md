@@ -61,6 +61,11 @@ need without pulling in a font or layout engine.
 - CLDR 48 Gregorian date/time formatting for 87 locales, including localized
   month/day names, date/time styles, custom patterns, and Unix timestamp
   conversion.
+- IANA tzdata 2026e time zones for 597 IDs, including backward link names,
+  with transition-based UTC offset and daylight resolution from 1970 through
+  2100, local/UTC conversion, and zone-aware Unix timestamp formatting; a
+  15,883-case differential fixture validates the table against an independent
+  TZif reader.
 - CLDR 48 list formatting for 87 locales, including and/or and unit list
   styles with narrow/short variants.
 - CLDR 48 relative time for 87 locales, including yesterday/today/tomorrow
