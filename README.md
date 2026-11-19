@@ -103,9 +103,11 @@ need without pulling in a font or layout engine.
   styles with narrow/short variants.
 - CLDR 48 relative time for 87 locales, including yesterday/today/tomorrow
   text and future/past plural patterns.
-- CLDR 48 unit formatting for 87 locales and 60 units across length, mass,
-  temperature, speed, area, volume, duration, digital, energy, power,
-  pressure, frequency, angle, and concentration, with long and short forms.
+- CLDR 48 unit formatting for 87 locales and all 231 CLDR units across
+  length, mass, temperature, speed, area, volume, duration, digital, energy,
+  power, pressure, frequency, angle, light, electricity, torque, and
+  concentration, with long and short forms, CLDR unit identifiers, and a
+  3,063-case PyICU differential conformance fixture.
 - CLDR 48 RBNF rule-based number formatting for 112 locales, covering
   spellout and ordinal rule sets with negative, decimal, fraction, and
   optional rule branches, plural substitutions, Indian grouping, fraction
