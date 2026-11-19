@@ -162,69 +162,139 @@ pub fn decomposeInto(
 /// Incremental starter-segment normalizer. Canonical ordering and
 /// composition run per starter segment instead of over the whole string, and
 /// one-code-point segments (ASCII prose, CJK, and so on) skip both passes.
-const SegmentEngine = struct {
+/// Output sink for the segment engine: code points or UTF-8 bytes.
+const CodepointSink = struct {
+    list: *std.ArrayList(u21),
     allocator: std.mem.Allocator,
-    output: *std.ArrayList(u21),
-    segment: std.ArrayList(u21) = .empty,
-    /// Starter that may still receive combining marks; written to the output
-    /// only once the next starter proves that it has none.
-    pending: ?u21 = null,
-    compatibility: bool,
-    compose: bool,
 
-    fn deinit(self: *SegmentEngine) void {
-        self.segment.deinit(self.allocator);
+    fn appendCodepoints(
+        self: *CodepointSink,
+        codepoints: []const u21,
+    ) error{OutOfMemory}!void {
+        try self.list.appendSlice(self.allocator, codepoints);
     }
 
-    fn feed(self: *SegmentEngine, codepoint: u21) error{OutOfMemory}!void {
-        // Unicode 17's longest recursive compatibility decomposition has
-        // 18 components; 64 leaves generous headroom.
-        var parts: [64]u21 = undefined;
-        const count = decomposeInto(&parts, codepoint, self.compatibility);
-        for (parts[0..count]) |part| {
-            // A segment ends at a starter that cannot compose with the
-            // previous character. Spacing marks such as U+0DCF have
-            // combining class 0 but are composition seconds, so they stay
-            // inside the segment.
-            const starter = if (part < 0x80)
-                true
-            else
-                combining_class.forCodepoint(part) == 0 and
-                    !data.isCompositionSecond(part) and
-                    !isHangulVOrT(part);
-            if (starter) {
-                try self.settle();
-                self.pending = part;
-            } else {
-                if (self.pending) |pending| {
-                    try self.segment.append(self.allocator, pending);
-                    self.pending = null;
-                }
-                try self.segment.append(self.allocator, part);
-            }
-        }
+    fn appendOne(
+        self: *CodepointSink,
+        codepoint: u21,
+    ) error{OutOfMemory}!void {
+        try self.list.append(self.allocator, codepoint);
     }
 
-    /// Emit the pending starter or the accumulated mark segment.
-    fn settle(self: *SegmentEngine) error{OutOfMemory}!void {
-        const items = self.segment.items;
-        if (items.len > 0) {
-            canonicalOrder(items);
-            const len = if (self.compose) composeSlice(items) else items.len;
-            try self.output.appendSlice(self.allocator, items[0..len]);
-            self.segment.clearRetainingCapacity();
-            return;
-        }
-        if (self.pending) |pending| {
-            try self.output.append(self.allocator, pending);
-            self.pending = null;
-        }
-    }
-
-    fn flush(self: *SegmentEngine) error{OutOfMemory}!void {
-        try self.settle();
+    fn appendAsciiCodepoints(
+        self: *CodepointSink,
+        codepoints: []const u21,
+    ) error{OutOfMemory}!void {
+        try self.list.ensureUnusedCapacity(self.allocator, codepoints.len);
+        for (codepoints) |codepoint| self.list.appendAssumeCapacity(codepoint);
     }
 };
+
+const Utf8Sink = struct {
+    list: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+
+    fn appendCodepoints(
+        self: *Utf8Sink,
+        codepoints: []const u21,
+    ) error{OutOfMemory}!void {
+        try self.list.ensureUnusedCapacity(self.allocator, codepoints.len * 3);
+        var encoded: [4]u8 = undefined;
+        for (codepoints) |codepoint| {
+            const length = std.unicode.utf8Encode(codepoint, &encoded) catch
+                unreachable;
+            self.list.appendSliceAssumeCapacity(encoded[0..length]);
+        }
+    }
+
+    fn appendOne(
+        self: *Utf8Sink,
+        codepoint: u21,
+    ) error{OutOfMemory}!void {
+        var encoded: [4]u8 = undefined;
+        const length = std.unicode.utf8Encode(codepoint, &encoded) catch
+            unreachable;
+        try self.list.appendSlice(self.allocator, encoded[0..length]);
+    }
+
+    fn appendAsciiBytes(
+        self: *Utf8Sink,
+        bytes: []const u8,
+    ) error{OutOfMemory}!void {
+        try self.list.appendSlice(self.allocator, bytes);
+    }
+};
+
+/// Incremental starter-segment normalizer. Canonical ordering and
+/// composition run per starter segment instead of over the whole string, and
+/// one-code-point segments (ASCII prose, CJK, and so on) skip both passes.
+fn SegmentEngine(comptime Sink: type) type {
+    return struct {
+        allocator: std.mem.Allocator,
+        sink: Sink,
+        segment: std.ArrayList(u21) = .empty,
+        /// Starter that may still receive combining marks; written to the
+        /// output only once the next starter proves that it has none.
+        pending: ?u21 = null,
+        compatibility: bool,
+        compose: bool,
+
+        const Self = @This();
+
+        fn deinit(self: *Self) void {
+            self.segment.deinit(self.allocator);
+        }
+
+        fn feed(self: *Self, codepoint: u21) error{OutOfMemory}!void {
+            // Unicode 17's longest recursive compatibility decomposition has
+            // 18 components; 64 leaves generous headroom.
+            var parts: [64]u21 = undefined;
+            const count = decomposeInto(&parts, codepoint, self.compatibility);
+            for (parts[0..count]) |part| {
+                // A segment ends at a starter that cannot compose with the
+                // previous character. Spacing marks such as U+0DCF have
+                // combining class 0 but are composition seconds, so they stay
+                // inside the segment.
+                const starter = if (part < 0x80)
+                    true
+                else
+                    combining_class.forCodepoint(part) == 0 and
+                        !data.isCompositionSecond(part) and
+                        !isHangulVOrT(part);
+                if (starter) {
+                    try self.settle();
+                    self.pending = part;
+                } else {
+                    if (self.pending) |pending| {
+                        try self.segment.append(self.allocator, pending);
+                        self.pending = null;
+                    }
+                    try self.segment.append(self.allocator, part);
+                }
+            }
+        }
+
+        /// Emit the pending starter or the accumulated mark segment.
+        fn settle(self: *Self) error{OutOfMemory}!void {
+            const items = self.segment.items;
+            if (items.len > 0) {
+                canonicalOrder(items);
+                const len = if (self.compose) composeSlice(items) else items.len;
+                try self.sink.appendCodepoints(items[0..len]);
+                self.segment.clearRetainingCapacity();
+                return;
+            }
+            if (self.pending) |pending| {
+                try self.sink.appendOne(pending);
+                self.pending = null;
+            }
+        }
+
+        fn flush(self: *Self) error{OutOfMemory}!void {
+            try self.settle();
+        }
+    };
+}
 
 /// Append the normalized form of a code-point slice to `output`.
 pub fn normalizeCodepointsInto(
@@ -236,15 +306,32 @@ pub fn normalizeCodepointsInto(
     // Decomposition rarely grows text beyond the input; reserve once so the
     // per-code-point append does not trigger repeated reallocation.
     try output.ensureUnusedCapacity(allocator, codepoints.len);
-    var engine = SegmentEngine{
+    var engine = SegmentEngine(CodepointSink){
         .allocator = allocator,
-        .output = output,
+        .sink = .{ .list = output, .allocator = allocator },
         .compatibility = form == .nfkc or form == .nfkd,
         .compose = form == .nfc or form == .nfkc,
     };
     defer engine.deinit();
-    for (codepoints) |codepoint| {
-        try engine.feed(codepoint);
+    var index: usize = 0;
+    while (index < codepoints.len) {
+        // Bulk-copy ASCII starters; only the final one may still receive
+        // combining marks, so it stays pending.
+        const run_start = index;
+        while (index < codepoints.len and codepoints[index] < 0x80) {
+            index += 1;
+        }
+        if (index > run_start) {
+            try engine.settle();
+            const run = codepoints[run_start..index];
+            if (run.len > 1) {
+                try engine.sink.appendAsciiCodepoints(run[0 .. run.len - 1]);
+            }
+            engine.pending = run[run.len - 1];
+            continue;
+        }
+        try engine.feed(codepoints[index]);
+        index += 1;
     }
     try engine.flush();
 }
@@ -441,33 +528,40 @@ fn normalizeChangedFormInto(
     form: Form,
     output: *std.ArrayList(u8),
 ) Error!void {
-    var codepoints = std.ArrayList(u21).empty;
-    defer codepoints.deinit(allocator);
-    try codepoints.ensureTotalCapacity(allocator, text.len);
-    {
-        var engine = SegmentEngine{
-            .allocator = allocator,
-            .output = &codepoints,
-            .compatibility = form == .nfkc or form == .nfkd,
-            .compose = form == .nfc or form == .nfkc,
-        };
-        defer engine.deinit();
-        var iterator = std.unicode.Utf8Iterator{ .bytes = text, .i = 0 };
-        while (iterator.nextCodepoint()) |codepoint| {
-            try engine.feed(codepoint);
+    // Reserve the input size once; decomposition may grow the output but
+    // rarely reallocates more than once.
+    try output.ensureUnusedCapacity(allocator, text.len + 16);
+    var engine = SegmentEngine(Utf8Sink){
+        .allocator = allocator,
+        .sink = .{ .list = output, .allocator = allocator },
+        .compatibility = form == .nfkc or form == .nfkd,
+        .compose = form == .nfc or form == .nfkc,
+    };
+    defer engine.deinit();
+    var index: usize = 0;
+    while (index < text.len) {
+        // Bulk-copy ASCII runs; the final byte stays pending in case a
+        // combining mark follows.
+        const run_start = index;
+        while (index < text.len and text[index] < 0x80) index += 1;
+        if (index > run_start) {
+            try engine.settle();
+            const run = text[run_start..index];
+            if (run.len > 1) {
+                try engine.sink.appendAsciiBytes(run[0 .. run.len - 1]);
+            }
+            engine.pending = run[run.len - 1];
+            continue;
         }
-        try engine.flush();
-    }
-
-    // Most normalized code points take three UTF-8 bytes or fewer; a
-    // four-byte scalar may grow the list once.
-    try output.ensureUnusedCapacity(allocator, codepoints.items.len * 3);
-    var encoded: [4]u8 = undefined;
-    for (codepoints.items) |codepoint| {
-        const len = std.unicode.utf8Encode(codepoint, &encoded) catch
+        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
             unreachable;
-        try output.appendSlice(allocator, encoded[0..len]);
+        const codepoint = std.unicode.utf8Decode(
+            text[index..][0..length],
+        ) catch unreachable;
+        index += length;
+        try engine.feed(codepoint);
     }
+    try engine.flush();
 }
 
 /// Validate UTF-8 and report whether `text` is in NFC without allocating.
