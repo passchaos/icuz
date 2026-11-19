@@ -1471,25 +1471,21 @@ fn applyFinalCaseAndNormalization(
     return value;
 }
 
-/// Reverse transforms use an input-side global filter. ICU splits the input
-/// into maximal filtered runs and runs the whole compound (including its
-/// normalization steps) on each run, so unfiltered characters such as Arabic
-/// marks are never reordered by the final normalization.
-fn filteredRunAlloc(
+/// Run the whole compound (normalization, passes, final case/normalization)
+/// on a text run that is already known to be inside the filter.
+fn filteredTextRunAlloc(
     allocator: std.mem.Allocator,
-    run: []const u21,
+    text: []const u8,
     record: TransformRecord,
     transform_index: usize,
 ) Error![]u8 {
-    const run_text = try encodeCodepointsAlloc(allocator, run);
-    defer allocator.free(run_text);
     var normalized: ?[]u8 = null;
     defer if (normalized) |value| allocator.free(value);
-    var input: []const u8 = run_text;
+    var input: []const u8 = text;
     if (record.pre_normalization != 0) {
         normalized = try normalization.normalizeFormAlloc(
             allocator,
-            run_text,
+            text,
             normalizationFormFromId(record.pre_normalization),
         );
         if (normalized) |value| input = value;
@@ -1507,44 +1503,59 @@ fn filteredRunAlloc(
     return applyFinalCaseAndNormalization(allocator, raw, record);
 }
 
+/// Reverse transforms use an input-side global filter. ICU splits the input
+/// into maximal filtered runs and runs the whole compound (including its
+/// normalization steps) on each run, so unfiltered characters such as Arabic
+/// marks are never reordered by the final normalization.
 fn filteredTableCoreAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
     transform_index: usize,
 ) Error![]u8 {
     const record = transformAt(transform_index);
-    var codepoints = try decodeAlloc(allocator, text);
-    defer codepoints.deinit(allocator);
+    // Work on UTF-8 byte offsets: outside runs are copied as slices and
+    // inside runs feed the compound directly, avoiding a decode/encode
+    // round trip for the unfiltered text.
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
     var index: usize = 0;
-    while (index < codepoints.items.len) {
-        const contained = setContains(
-            record.filter_set,
-            codepoints.items[index],
-        );
+    while (index < text.len) {
+        const first_length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+            return error.InvalidUtf8;
+        if (index + first_length > text.len) return error.InvalidUtf8;
+        const first = std.unicode.utf8Decode(text[index..][0..first_length]) catch
+            return error.InvalidUtf8;
+        const contained = setContains(record.filter_set, first);
         const start = index;
-        while (index < codepoints.items.len and
-            setContains(record.filter_set, codepoints.items[index]) ==
-                contained)
-        {
-            index += 1;
+        index += first_length;
+        while (index < text.len) {
+            const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+                return error.InvalidUtf8;
+            if (index + length > text.len) return error.InvalidUtf8;
+            const codepoint = std.unicode.utf8Decode(text[index..][0..length]) catch
+                return error.InvalidUtf8;
+            if (setContains(record.filter_set, codepoint) != contained) break;
+            index += length;
         }
-        const run = codepoints.items[start..index];
+        const run = text[start..index];
+        if (start == 0 and index == text.len) {
+            // The whole input is one run; skip the extra buffer copy.
+            if (!contained) return allocator.dupe(u8, text);
+            return filteredTextRunAlloc(allocator, text, record, transform_index);
+        }
         if (!contained) {
-            for (run) |codepoint| {
-                try appendCodepoint(allocator, &output, codepoint);
-            }
+            try output.appendSlice(allocator, run);
             continue;
         }
-        const converted = try filteredRunAlloc(
+        const converted = try filteredTextRunAlloc(
             allocator,
             run,
             record,
             transform_index,
         );
-        defer allocator.free(converted);
+        errdefer allocator.free(converted);
         try output.appendSlice(allocator, converted);
+        allocator.free(converted);
     }
     return output.toOwnedSlice(allocator);
 }
