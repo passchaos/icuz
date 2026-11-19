@@ -119,9 +119,15 @@ def reverse_index(
         elif value not in reverse:
             reverse[value] = pointer
     entries = sorted(reverse.items())
+    # Split layout: sorted code points (u32) for the binary search, then the
+    # parallel u16 pointers. Probes touch only the compact code-point array.
     body = bytearray(struct.pack("<I", len(entries)))
-    for codepoint, pointer in entries:
-        body += struct.pack("<II", codepoint, pointer)
+    for codepoint, _pointer in entries:
+        body += struct.pack("<I", codepoint)
+    for _codepoint, pointer in entries:
+        if pointer > 0xFFFF:
+            raise SystemExit("reverse pointer does not fit in u16")
+        body += struct.pack("<H", pointer)
     return bytes(body)
 
 
@@ -252,16 +258,19 @@ def main() -> int:
     )
 
     header = bytearray(b"CJCS")
-    header += struct.pack("<B3B", 1, 17, 0, 0)
+    header += struct.pack("<B3B", 2, 17, 0, 0)
     header += struct.pack("<HH", len(sections), 0)
     table_offset = len(header) + len(sections) * 12
     offset = table_offset
     table = bytearray()
-    for section_id, body in sections:
+    for index, (section_id, body) in enumerate(sections):
+        # Payloads are aligned before each section; do not pad after the
+        # final one or the computed size will exceed the blob.
+        if index > 0:
+            while offset % 4 != 0:
+                offset += 1
         table += struct.pack("<HHII", section_id, 0, offset, len(body))
         offset += len(body)
-        while offset % 4 != 0:
-            offset += 1
     blob = header + table + payload
     if len(blob) != offset:
         raise SystemExit("internal size mismatch")

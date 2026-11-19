@@ -111,7 +111,7 @@ fn buildPageIndex(comptime section: Section) [0x1100]u16 {
         while (record < count and
             std.mem.readInt(
                 u32,
-                blob[section.offset + 4 + @as(usize, record) * 8 ..][0..4],
+                blob[section.offset + 4 + @as(usize, record) * 4 ..][0..4],
                 .little,
             ) < page_start)
         {
@@ -138,14 +138,15 @@ pub fn reverseLookupPaged(
     codepoint: u21,
 ) ?u32 {
     const count = readU32(section.offset);
+    const codepoints_base = section.offset + 4;
+    const pointers_base = codepoints_base + count * 4;
     const page: usize = @as(usize, codepoint) >> 8;
     var low: usize = pages[page];
     var high: usize = if (page + 1 < 0x1100) pages[page + 1] else count;
     while (low < high) {
         const mid = low + (high - low) / 2;
-        const record = section.offset + 4 + mid * 8;
-        const value = readU32(record);
-        if (value == codepoint) return readU32(record + 4);
+        const value = readU32(codepoints_base + mid * 4);
+        if (value == codepoint) return readU16(pointers_base + mid * 2);
         if (value < codepoint) low = mid + 1 else high = mid;
     }
     return null;
@@ -154,13 +155,14 @@ pub fn reverseLookupPaged(
 /// Look up a code point in a reverse index (records sorted by code point).
 pub fn reverseLookup(section: Section, codepoint: u21) ?u32 {
     const count = readU32(section.offset);
+    const codepoints_base = section.offset + 4;
+    const pointers_base = codepoints_base + count * 4;
     var low: usize = 0;
     var high: usize = count;
     while (low < high) {
         const mid = low + (high - low) / 2;
-        const record = section.offset + 4 + mid * 8;
-        const value = readU32(record);
-        if (value == codepoint) return readU32(record + 4);
+        const value = readU32(codepoints_base + mid * 4);
+        if (value == codepoint) return readU16(pointers_base + mid * 2);
         if (value < codepoint) low = mid + 1 else high = mid;
     }
     return null;
