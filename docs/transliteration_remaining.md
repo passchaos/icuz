@@ -71,9 +71,12 @@ python3 tools/unicode/verify_committed.py
 The v19 step program covers arbitrary `::` sequences and interleaves rule
 sections with steps. Remaining gaps:
 
-- Reverse compilation of rule files with steps: the reverse direction
-  currently uses the table-only path, so `Bopo-Latn` does not run the
-  inverse `NumericPinyin-Latin` step of `Latin-Bopomofo`.
+- Reverse compilation of rule files with steps is implemented: the step
+  order is reversed, rule sections map through the reverse pass numbering,
+  and transform references keep their forward step (CLDR's bidirectional
+  files use the parenthesized form only through ICU's inverse API).
+  `Bopo-Latn` now runs the tone step and converts zhuyin tones to numeric
+  pinyin (`ㄅㄠˇ` → `bao3`).
 - `Katakana-Latin-BGN` uses the native katakana builder, which applies its
   own halfwidth conversion instead of the `::[set] Halfwidth-Fullwidth;`
   step.
@@ -120,7 +123,8 @@ following compound steps; a rule segment resets the filter, matching ICU.
 Resolved: `Latin-NumericPinyin` and `NumericPinyin-Latin` are named
 engines, and `Latin-Bopomofo` runs the compound
 `::Latin-NumericPinyin(NumericPinyin-Latin);` step as the forward named
-engine. `Bopo-Latn` still uses the table-only reverse path.
+engine. `Bopo-Latn` runs the same step in its reverse compound, matching
+ICU's precompiled CLDR data.
 
 ## 5. Candidate additions already validated
 

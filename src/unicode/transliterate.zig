@@ -4109,6 +4109,26 @@ test "FONIPA Arabic and Persian transforms" {
     try testing.expectEqualStrings("\u{031E}", masked);
 }
 
+test "Bopomofo reverse compound steps" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const cases = [_]struct { input: []const u8, expected: []const u8 }{
+        .{ .input = "\u{3105}\u{3120}", .expected = "bao1" },
+        .{ .input = "\u{3105}\u{3120}\u{2C7}", .expected = "bao3" },
+        .{ .input = "\u{3105}\u{3120}\u{2CA}", .expected = "bao2" },
+    };
+    for (cases) |case| {
+        const converted = try transliterateByNameAlloc(
+            allocator,
+            case.input,
+            "Bopo-Latn",
+        );
+        defer allocator.free(converted);
+        try testing.expectEqualStrings(case.expected, converted);
+    }
+}
+
 test "CLDR transform conformance" {
     var failures: usize = 0;
     for (conformance_fixtures) |fixture| {

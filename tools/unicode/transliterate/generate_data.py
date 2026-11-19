@@ -743,6 +743,7 @@ def compile_step_program(
     variables: dict[str, str],
     name_to_index: dict[str, int],
     rule_passes: set[int],
+    reverse: bool = False,
 ):
     """Compile a rule file with interleaved steps into a step program.
 
@@ -750,8 +751,13 @@ def compile_step_program(
     transform's own table passes; normalization, case, and transform
     directives become their matching steps. Returns ``(steps, global_filter)``
     or None when a directive cannot be compiled.
+
+    With ``reverse`` the step order is reversed and each step is inverted:
+    normalization uses the parenthesized form, case keeps its operation, and
+    a transform reference uses its parenthesized reverse name. Rule-section
+    pass ranges map through the reversed pass numbering of the reverse table.
     """
-    steps: list[tuple[int, int, int, object]] = []
+    items: list[tuple] = []
     global_filter = None
     pass_index = 0
     section_start = 0
@@ -759,8 +765,8 @@ def compile_step_program(
     def flush(end: int) -> None:
         if end <= section_start:
             return
-        if any(pass_index in rule_passes for pass_index in range(section_start, end)):
-            steps.append((STEP_KIND_RUN_TABLE, section_start, end - section_start, 0))
+        if any(p in rule_passes for p in range(section_start, end)):
+            items.append(("section", section_start, end - section_start))
 
     for raw in rules.splitlines():
         line = strip_comment(raw).strip()
@@ -782,17 +788,67 @@ def compile_step_program(
         pass_index += 1
         section_start = pass_index
         if kind == "normalize":
-            _, filter_set, form, _post_form = parsed
+            items.append(("normalize", parsed[1], parsed[2], parsed[3]))
+        elif kind == "case":
+            items.append(("case", parsed[1], parsed[2]))
+        elif kind == "transform":
+            items.append(("transform", parsed[1], parsed[2], parsed[3]))
+    flush(max(rule_passes) + 1 if rule_passes else 0)
+
+    steps: list[tuple[int, int, int, object]] = []
+    if reverse:
+        boundary_count = pass_index
+        for item in reversed(items):
+            if item[0] == "section":
+                _, start, count = item
+                reverse_start = boundary_count - start - count + 1
+                steps.append(
+                    (STEP_KIND_RUN_TABLE, reverse_start, count, 0)
+                )
+                continue
+            if item[0] == "normalize":
+                _, filter_set, form, post_form = item
+                value = post_form if post_form is not None else form
+                if filter_set is not None:
+                    steps.append((STEP_KIND_SET_FILTER, 0, 0, filter_set))
+                steps.append((STEP_KIND_NORMALIZE, 0, 0, value))
+            elif item[0] == "case":
+                _, filter_set, operation = item
+                if filter_set is not None:
+                    steps.append((STEP_KIND_SET_FILTER, 0, 0, filter_set))
+                steps.append((STEP_KIND_LOWER + operation - 1, 0, 0, 0))
+            else:
+                # CLDR's bidirectional files keep the forward step in the
+                # reverse compound (Bopo-Latn still converts tone marks to
+                # digits); the parenthesized form is only used when the
+                # transform itself is inverted via ICU's inverse API.
+                _, filter_set, name, _reverse_name = item
+                resolved = resolve_step_transform(name, name_to_index)
+                if resolved is None:
+                    return None
+                step_kind, value = resolved
+                if filter_set is not None:
+                    steps.append((STEP_KIND_SET_FILTER, 0, 0, filter_set))
+                steps.append((step_kind, 0, 0, value))
+        return steps, parse_reverse_filter(rules, variables)
+
+    for item in items:
+        if item[0] == "section":
+            _, start, count = item
+            steps.append((STEP_KIND_RUN_TABLE, start, count, 0))
+            continue
+        if item[0] == "normalize":
+            _, filter_set, form, _post_form = item
             if filter_set is not None:
                 steps.append((STEP_KIND_SET_FILTER, 0, 0, filter_set))
             steps.append((STEP_KIND_NORMALIZE, 0, 0, form))
-        elif kind == "case":
-            _, filter_set, operation = parsed
+        elif item[0] == "case":
+            _, filter_set, operation = item
             if filter_set is not None:
                 steps.append((STEP_KIND_SET_FILTER, 0, 0, filter_set))
             steps.append((STEP_KIND_LOWER + operation - 1, 0, 0, 0))
-        elif kind == "transform":
-            _, filter_set, name, _reverse_name = parsed
+        else:
+            _, filter_set, name, _reverse_name = item
             resolved = resolve_step_transform(name, name_to_index)
             if resolved is None:
                 return None
@@ -800,7 +856,6 @@ def compile_step_program(
             if filter_set is not None:
                 steps.append((STEP_KIND_SET_FILTER, 0, 0, filter_set))
             steps.append((step_kind, 0, 0, value))
-    flush(max(rule_passes) + 1 if rule_passes else 0)
     return steps, global_filter
 
 
@@ -3761,6 +3816,24 @@ def main() -> int:
                 builder_post,
                 builder_ops,
             ) = table_entries_with_contexts(rules, reverse=True)
+            variables = parse_variables(rules)
+            if detect_step_compilation(rules, variables):
+                # The reverse program inverts the forward steps; rule-pass
+                # ranges come from the forward table's pass assignment.
+                forward_table, _, _, _ = table_entries_with_contexts(rules)
+                rule_passes = {entry[4] for entry in forward_table}
+                compiled = compile_step_program(
+                    rules,
+                    variables,
+                    name_to_index,
+                    rule_passes,
+                    reverse=True,
+                )
+                if compiled is not None:
+                    builder_steps, builder_step_filter = compiled
+                    builder_pre = 0
+                    builder_post = 0
+                    builder_ops = {}
         elif builder == "reverse_with_left":
             table = reverse_with_left(rules)
         elif builder == "pipeline":
