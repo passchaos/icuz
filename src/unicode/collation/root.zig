@@ -249,6 +249,45 @@ pub const Collator = struct {
         );
     }
 
+    /// Append a sort key for already decoded code points. Search paths use
+    /// this to avoid re-validating and decoding each candidate substring.
+    pub fn sortKeyCodepointsInto(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        codepoints: []const u21,
+        output: *std.ArrayList(u32),
+    ) error{OutOfMemory}!void {
+        return sortKeyCodepointsResolved(
+            allocator,
+            codepoints,
+            self.options,
+            self.tailoring,
+            self.pages,
+            output,
+        );
+    }
+
+    /// True when a multi-code-point rule or contraction can start with this
+    /// code point, so its single-character key depends on what follows.
+    pub fn startsContraction(self: *const Collator, codepoint: u21) bool {
+        if (self.tailoring) |tailoring| {
+            if (tailorings.startsLongerRule(
+                tailoring,
+                self.pages,
+                codepoint,
+            )) {
+                return true;
+            }
+        }
+        var entry_index = pageStart(codepoint);
+        while (entry_index < @as(usize, entry_count)) : (entry_index += 1) {
+            const entry = entryAt(entry_index);
+            if (entry.first != codepoint) break;
+            if (entry.len > 1) return true;
+        }
+        return false;
+    }
+
     pub fn sortKeyAlloc(
         self: *const Collator,
         allocator: std.mem.Allocator,

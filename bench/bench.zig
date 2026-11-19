@@ -724,6 +724,34 @@ fn benchNumberParse(
     reportOps(name, rounds, best);
 }
 
+fn benchSearch(
+    name: []const u8,
+    text: []const u8,
+    needle: []const u8,
+    options: icuz.collation.Options,
+    allocator: std.mem.Allocator,
+) void {
+    var search = icuz.search.Search.init(
+        allocator,
+        needle,
+        options,
+    ) catch unreachable;
+    defer search.deinit();
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 2000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const position = search.find(text, 0) catch unreachable;
+            sink +%= position orelse 0;
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps(name, rounds, best);
+}
+
 fn benchSkeleton(allocator: std.mem.Allocator) void {
     var best: u64 = std.math.maxInt(u64);
     const trials = 5;
@@ -999,6 +1027,14 @@ pub fn main() !void {
     benchNumber("decimal number", 1234.5, .{}, allocator);
     benchNumberParse("parse decimal", "1,234,567.89", "en", .{});
     benchNumberParse("parse decimal de", "1.234.567,89", "de", .{});
+    benchSearch("search word", ascii_runtime, "fox", .{ .strength = .primary }, allocator);
+    benchSearch(
+        "search Swedish",
+        swedish_runtime,
+        "\u{00e4}lskar",
+        .{ .strength = .primary, .locale = "sv" },
+        allocator,
+    );
     benchNumber(
         "scientific number",
         1234.5,

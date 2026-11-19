@@ -362,6 +362,38 @@ fn lowerBound(start: usize, end: usize, first: u21) usize {
     return low;
 }
 
+/// True when a rule with this first code point has more than one code
+/// point, so a single-character key is not context independent.
+pub fn startsLongerRule(
+    tailoring: Tailoring,
+    pages: ?*PageIndex,
+    codepoint: u21,
+) bool {
+    const end = tailoring.rule_start + tailoring.rule_count;
+    const start = if (pages) |page_index| blk: {
+        const page: usize = @as(usize, codepoint) >> 8;
+        const low = tailoring.rule_start + page_index.rules[page];
+        if (codepoint < direct_limit) {
+            const offset = page_index.direct[codepoint];
+            if (offset == direct_absent) return false;
+            break :blk low + offset;
+        }
+        const high = if (page + 1 < 0x1100)
+            tailoring.rule_start + page_index.rules[page + 1]
+        else
+            end;
+        break :blk lowerBound(low, high, codepoint);
+    } else lowerBound(tailoring.rule_start, end, codepoint);
+
+    var index = start;
+    while (index < end) : (index += 1) {
+        const rule = ruleAt(index);
+        if (rule.first != codepoint) break;
+        if (rule.sequence_len > 1) return true;
+    }
+    return false;
+}
+
 pub fn match(
     tailoring: Tailoring,
     pages: ?*PageIndex,
