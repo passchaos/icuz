@@ -24,6 +24,7 @@ pub const plural = @import("unicode/format/plurals.zig");
 pub const number = @import("unicode/format/number.zig");
 pub const date = @import("unicode/format/dates.zig");
 pub const message = @import("unicode/format/message.zig");
+pub const message2 = @import("unicode/format/message2.zig");
 pub const list = @import("unicode/format/list.zig");
 pub const relative = @import("unicode/format/relative.zig");
 pub const units = @import("unicode/format/units.zig");
@@ -54,5 +55,6 @@ test {
     _ = unicode;
     _ = spoof;
     _ = search;
+    _ = message2;
     _ = @import("unicode/tests/cursor_segmentation_tests.zig");
 }

@@ -30,6 +30,7 @@ const plural_mod = @import("./format/plurals.zig");
 const number_mod = @import("./format/number.zig");
 const dates_mod = @import("./format/dates.zig");
 const message_mod = @import("./format/message.zig");
+const message2_mod = @import("./format/message2.zig");
 const list_mod = @import("./format/list.zig");
 const relative_mod = @import("./format/relative.zig");
 const units_mod = @import("./format/units.zig");
@@ -334,6 +335,11 @@ pub const MessageArgument = message_mod.Argument;
 pub const MessageNamedArgument = message_mod.NamedArgument;
 pub const MessageArguments = message_mod.Arguments;
 pub const formatMessageAlloc = message_mod.formatAlloc;
+pub const Message2 = message2_mod.Message;
+pub const Message2Input = message2_mod.Input;
+pub const Message2Value = message2_mod.Value;
+pub const message2Parse = message2_mod.parse;
+pub const message2FormatAlloc = message2_mod.formatAlloc;
 
 pub const CharsetEncoding = charset_mod.Encoding;
 pub const CharsetErrorMode = charset_mod.ErrorMode;
@@ -607,6 +613,7 @@ test {
     _ = likely_subtags_mod;
     _ = chinese_calendar_mod;
     _ = message_mod;
+    _ = message2_mod;
     _ = charset_mod;
     _ = transliterate_mod;
     _ = list_mod;
