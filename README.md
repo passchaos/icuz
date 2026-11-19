@@ -211,14 +211,16 @@ need without pulling in a font or layout engine.
   `?`/`*`/`+` quantifiers, capture groups with `$1`-`$N` output references
   (last-repetition semantics for quantified groups, context captures
   included), output string variables, `|` cursor repositioning, quoted
-  literals and escapes, validated by a 62-case PyICU differential fixture.
+  literals and escapes, and reverse-direction compilation via
+  `compileRulesDirectionAlloc` (simple swapped rules without captures or
+  context), validated by a 72-case PyICU differential fixture.
 - Embedded, version-pinned generated data plus conformance fixtures.
 
 ## Non-goals for 0.1
 
 `icuz` is not a drop-in ICU replacement. Its transliteration support is a
 compiled rule-table engine covering the constructs listed above plus a
-runtime ICU-rule interpreter for the forward rule subset: reverse rules,
+runtime ICU-rule interpreter: reverse rules with captures or context,
 alternation, and embedded `::Transform;` calls in user rule text are not
 yet interpreted at runtime. Regular expressions and display/layout
 tailoring are also out of scope. Collation supports root ordering plus CLDR

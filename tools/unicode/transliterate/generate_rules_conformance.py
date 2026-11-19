@@ -51,24 +51,47 @@ CASES = (
     ("(a)? b > x$1;", ("ab", "b")),
 )
 
+REVERSE_CASES = (
+    ("a < b;", ("ab", "aaa")),
+    ("a <> b;", ("ab",)),
+    ("ab < xy;", ("xy xy",)),
+    ("X < a+;", ("baaa",)),
+    ("$v = x; a < $v;", ("xxb",)),
+    ("$v = x; $v < b;", ("bb",)),
+    ("a < b; c < d;", ("abcd",)),
+    ("a > b; c < d;", ("abcd",)),
+    ("abc < Q;", ("Qabc",)),
+)
+
 
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__.strip(), file=sys.stderr)
         return 2
     cases = []
-    for rules, inputs in CASES:
-        try:
-            transliterator = icu.Transliterator.createFromRules(
-                "Conformance", rules, icu.UTransDirection.FORWARD
-            )
-        except Exception as error:  # pragma: no cover - fixture sanity
-            raise SystemExit(f"PyICU rejected rules {rules!r}: {error}")
-        for text in inputs:
-            cases.append((rules, text, transliterator.transliterate(text)))
+    for direction, rule_cases in (
+        (icu.UTransDirection.FORWARD, CASES),
+        (icu.UTransDirection.REVERSE, REVERSE_CASES),
+    ):
+        for rules, inputs in rule_cases:
+            try:
+                transliterator = icu.Transliterator.createFromRules(
+                    "Conformance", rules, direction
+                )
+            except Exception as error:  # pragma: no cover - fixture sanity
+                raise SystemExit(f"PyICU rejected rules {rules!r}: {error}")
+            for text in inputs:
+                cases.append(
+                    (
+                        direction == icu.UTransDirection.REVERSE,
+                        rules,
+                        text,
+                        transliterator.transliterate(text),
+                    )
+                )
     blob = bytearray(b"CJRL")
-    blob += struct.pack("<B3xI", 1, len(cases))
-    for rules, text, expected in cases:
+    blob += struct.pack("<B3xI", 2, len(cases))
+    for reverse, rules, text, expected in cases:
         encoded_rules = rules.encode("utf-8")
         encoded_text = text.encode("utf-8")
         encoded_expected = expected.encode("utf-8")
@@ -77,7 +100,7 @@ def main() -> int:
             len(encoded_rules),
             len(encoded_text),
             len(encoded_expected),
-            0,
+            1 if reverse else 0,
         )
         blob += encoded_rules
         blob += encoded_text

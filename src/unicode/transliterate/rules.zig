@@ -80,10 +80,21 @@ pub const Rules = struct {
     }
 };
 
+pub const Direction = enum { forward, reverse };
+
 /// Compile ICU transliteration rules in the forward direction.
 pub fn compileRulesAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
+) Error!Rules {
+    return compileRulesDirectionAlloc(allocator, text, .forward);
+}
+
+/// Compile ICU transliteration rules in the requested direction.
+pub fn compileRulesDirectionAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    direction: Direction,
 ) Error!Rules {
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
@@ -94,6 +105,7 @@ pub fn compileRulesAlloc(
         .index = 0,
         .variables = std.StringHashMap(Variable).init(arena_allocator),
         .rules = std.ArrayList(Rule).empty,
+        .direction = direction,
     };
     try parser.parseAll();
     return .{
@@ -505,10 +517,12 @@ fn encodeUtf8Alloc(allocator: std.mem.Allocator, codepoints: []const u21) Error!
     return result.toOwnedSlice(allocator);
 }
 
+const ArrowKind = enum { forward, reverse, dual };
+
 const Arrow = struct {
     index: usize,
     length: usize,
-    reverse_only: bool,
+    kind: ArrowKind,
 };
 
 const Parser = struct {
@@ -518,6 +532,7 @@ const Parser = struct {
     variables: std.StringHashMap(Variable),
     rules: std.ArrayList(Rule),
     group_count: u16 = 0,
+    direction: Direction = .forward,
 
     fn parseAll(self: *Parser) Error!void {
         while (self.nextStatement()) |statement| {
@@ -630,9 +645,39 @@ const Parser = struct {
 
     fn parseRule(self: *Parser, statement: []const u8) Error!void {
         const arrow = findArrow(statement) orelse return error.InvalidRule;
-        if (arrow.reverse_only) return;
         const left = statement[0..arrow.index];
         const right = statement[arrow.index + arrow.length ..];
+
+        if (self.direction == .reverse) {
+            if (arrow.kind == .forward) return;
+            // Reverse rules swap source and target. Context braces and
+            // capture groups have direction-dependent semantics that are not
+            // modeled here, so reject them rather than mis-transliterate.
+            if (findUnquoted(left, '{') != null or
+                findUnquoted(left, '}') != null or
+                findUnquoted(right, '{') != null or
+                findUnquoted(right, '}') != null or
+                findUnquoted(left, '(') != null or
+                findUnquoted(right, '(') != null or
+                findUnquoted(left, '|') != null)
+            {
+                return error.UnsupportedRule;
+            }
+            self.group_count = 0;
+            const input = try self.parseInputElements(right);
+            if (input.len == 0) return error.InvalidRule;
+            const output = try self.parseOutputElements(left, 0);
+            try self.rules.append(self.arena, .{
+                .ante = &.{},
+                .input = input,
+                .post = &.{},
+                .output = output,
+                .capture_count = 0,
+            });
+            return;
+        }
+
+        if (arrow.kind == .reverse) return;
 
         var ante_text: []const u8 = "";
         var input_text: []const u8 = left;
@@ -1062,22 +1107,22 @@ fn findArrow(text: []const u8) ?Arrow {
             if (byte == ']' and depth > 0) depth -= 1;
             if (depth == 0) {
                 if (std.mem.startsWith(u8, text[index..], "\u{2192}")) {
-                    return .{ .index = index, .length = 3, .reverse_only = false };
+                    return .{ .index = index, .length = 3, .kind = .forward };
                 }
                 if (std.mem.startsWith(u8, text[index..], "\u{2190}")) {
-                    return .{ .index = index, .length = 3, .reverse_only = true };
+                    return .{ .index = index, .length = 3, .kind = .reverse };
                 }
                 if (std.mem.startsWith(u8, text[index..], "\u{2194}")) {
-                    return .{ .index = index, .length = 3, .reverse_only = false };
+                    return .{ .index = index, .length = 3, .kind = .dual };
                 }
                 if (std.mem.startsWith(u8, text[index..], "<>")) {
-                    return .{ .index = index, .length = 2, .reverse_only = false };
+                    return .{ .index = index, .length = 2, .kind = .dual };
                 }
                 if (byte == '>') {
-                    return .{ .index = index, .length = 1, .reverse_only = false };
+                    return .{ .index = index, .length = 1, .kind = .forward };
                 }
                 if (byte == '<') {
-                    return .{ .index = index, .length = 1, .reverse_only = true };
+                    return .{ .index = index, .length = 1, .kind = .reverse };
                 }
             }
         }
@@ -1241,6 +1286,11 @@ test "rule engine conformance" {
             fixture[cursor + 4 ..][0..2],
             .little,
         );
+        const reverse = std.mem.readInt(
+            u16,
+            fixture[cursor + 6 ..][0..2],
+            .little,
+        ) != 0;
         cursor += 8;
         const rules_text = fixture[cursor .. cursor + rules_length];
         cursor += rules_length;
@@ -1249,7 +1299,10 @@ test "rule engine conformance" {
         const expected = fixture[cursor .. cursor + expected_length];
         cursor += expected_length;
 
-        var rules = compileRulesAlloc(allocator, rules_text) catch |err| {
+        var rules = (if (reverse)
+            compileRulesDirectionAlloc(allocator, rules_text, .reverse)
+        else
+            compileRulesAlloc(allocator, rules_text)) catch |err| {
             failures += 1;
             std.debug.print(
                 "rule compile failure {s}: {s}\n",
@@ -1277,6 +1330,41 @@ test "rule engine conformance" {
     }
     std.debug.print("rule conformance: {d}/{d} passed\n", .{ case_count - failures, case_count });
     try testing.expect(failures == 0);
+}
+
+test "rule engine reverse direction" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const cases = [_]struct {
+        rules: []const u8,
+        input: []const u8,
+        expected: []const u8,
+    }{
+        .{ .rules = "a < b;", .input = "ab", .expected = "aa" },
+        .{ .rules = "a <> b;", .input = "ab", .expected = "aa" },
+        .{ .rules = "ab < xy;", .input = "xy xy", .expected = "ab ab" },
+        .{ .rules = "X < a+;", .input = "baaa", .expected = "bX" },
+        .{ .rules = "$v = x; a < $v;", .input = "xxb", .expected = "aab" },
+        .{ .rules = "$v = x; $v < b;", .input = "bb", .expected = "xx" },
+        .{ .rules = "a < b; c < d;", .input = "abcd", .expected = "aacc" },
+        .{ .rules = "a > b; c < d;", .input = "abcd", .expected = "abcc" },
+        .{ .rules = "abc < Q;", .input = "Qabc", .expected = "abcabc" },
+    };
+    for (cases) |case| {
+        var rules = try compileRulesDirectionAlloc(
+            allocator,
+            case.rules,
+            .reverse,
+        );
+        defer rules.deinit();
+        const result = try applyRulesAlloc(allocator, &rules, case.input);
+        defer allocator.free(result);
+        try testing.expectEqualStrings(case.expected, result);
+    }
+    try testing.expectError(
+        error.UnsupportedRule,
+        compileRulesDirectionAlloc(allocator, "x { y } < A;", .reverse),
+    );
 }
 
 test "rule engine capture groups" {
