@@ -314,6 +314,7 @@ pub const DisplayNameKind = display_names_mod.Kind;
 pub const displayName = display_names_mod.name;
 pub const formatLocaleDisplayNameAlloc = display_names_mod.localeDisplayNameAlloc;
 pub const maximizeLocaleAlloc = likely_subtags_mod.maximizeAlloc;
+pub const minimizeLocaleAlloc = likely_subtags_mod.minimizeAlloc;
 pub const date_cldr_version = dates_mod.cldr_version;
 
 pub const MessageArgument = message_mod.Argument;

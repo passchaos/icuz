@@ -181,13 +181,14 @@ fn findMatch(parsed: Parsed) ?Match {
     return null;
 }
 
-/// Maximize a locale by filling in likely script and region subtags.
-pub fn maximizeAlloc(
-    allocator: std.mem.Allocator,
-    locale: []const u8,
-) ![]u8 {
-    const parsed = parse(locale);
-    const match = findMatch(parsed) orelse return allocator.dupe(u8, locale);
+const Parts = struct {
+    language: []const u8,
+    script: []const u8,
+    region: []const u8,
+};
+
+fn maximizeParts(parsed: Parsed) ?Parts {
+    const match = findMatch(parsed) orelse return null;
     const language = if (parsed.language.len != 0 and
         !std.mem.eql(u8, parsed.language, "und"))
         parsed.language
@@ -198,12 +199,90 @@ pub fn maximizeAlloc(
     const has_region = parsed.region.len != 0 and
         !std.mem.eql(u8, parsed.region, "ZZ");
     const region = if (has_region) parsed.region else match.region;
+    return .{ .language = language, .script = script, .region = region };
+}
+
+/// Maximize a locale by filling in likely script and region subtags.
+pub fn maximizeAlloc(
+    allocator: std.mem.Allocator,
+    locale: []const u8,
+) ![]u8 {
+    const parsed = parse(locale);
+    const maximal = maximizeParts(parsed) orelse
+        return allocator.dupe(u8, locale);
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    try output.appendSlice(allocator, language);
+    try output.appendSlice(allocator, maximal.language);
+    if (maximal.script.len != 0) {
+        try output.append(allocator, '_');
+        try output.appendSlice(allocator, maximal.script);
+    }
+    if (maximal.region.len != 0) {
+        try output.append(allocator, '_');
+        try output.appendSlice(allocator, maximal.region);
+    }
+    if (parsed.variants.len != 0) {
+        try output.append(allocator, '_');
+        try output.appendSlice(allocator, parsed.variants);
+    }
+    return output.toOwnedSlice(allocator);
+}
+
+fn matchesMaximal(candidate: Parsed, maximal: Parts) bool {
+    const parts = maximizeParts(candidate) orelse return false;
+    return std.mem.eql(u8, parts.script, maximal.script) and
+        std.mem.eql(u8, parts.region, maximal.region);
+}
+
+/// Minimize a locale by removing script and region subtags that likely
+/// subtags imply, matching ICU's `uloc_minimizeSubtags`.
+pub fn minimizeAlloc(
+    allocator: std.mem.Allocator,
+    locale: []const u8,
+) ![]u8 {
+    const parsed = parse(locale);
+    const maximal = maximizeParts(parsed) orelse
+        return allocator.dupe(u8, locale);
+
+    var script: []const u8 = maximal.script;
+    var region: []const u8 = maximal.region;
+    if (matchesMaximal(.{ .language = maximal.language }, maximal)) {
+        script = "";
+        region = "";
+    } else {
+        var minimized = false;
+        if (parsed.region.len != 0) {
+            const candidate = Parsed{
+                .language = maximal.language,
+                .region = parsed.region,
+            };
+            if (matchesMaximal(candidate, maximal)) {
+                script = "";
+                region = parsed.region;
+                minimized = true;
+            }
+        }
+        if (!minimized and parsed.script.len != 0) {
+            const candidate = Parsed{
+                .language = maximal.language,
+                .script = parsed.script,
+            };
+            if (matchesMaximal(candidate, maximal)) {
+                script = parsed.script;
+                region = "";
+            }
+        }
+    }
+
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try output.appendSlice(allocator, maximal.language);
     if (script.len != 0) {
         try output.append(allocator, '_');
         try output.appendSlice(allocator, script);
+    } else if (parsed.variants.len != 0) {
+        // ICU keeps the empty script slot so variants stay in position.
+        try output.append(allocator, '_');
     }
     if (region.len != 0) {
         try output.append(allocator, '_');
@@ -244,6 +323,29 @@ test "likely subtags" {
     };
     for (cases) |case| {
         const value = try maximizeAlloc(allocator, case.input);
+        defer allocator.free(value);
+        try testing.expectEqualStrings(case.expected, value);
+    }
+}
+
+test "likely subtags minimization" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const cases = [_]struct { input: []const u8, expected: []const u8 }{
+        .{ .input = "en_Latn_US", .expected = "en" },
+        .{ .input = "en_Latn_GB", .expected = "en_GB" },
+        .{ .input = "zh_Hant_TW", .expected = "zh_TW" },
+        .{ .input = "zh_Hans_CN", .expected = "zh" },
+        .{ .input = "sr_Latn_RS", .expected = "sr_Latn" },
+        .{ .input = "und_Latn_US", .expected = "en" },
+        .{ .input = "de_Latn_AT", .expected = "de_AT" },
+        .{ .input = "en", .expected = "en" },
+        .{ .input = "zh_TW", .expected = "zh_TW" },
+        .{ .input = "und", .expected = "en" },
+        .{ .input = "en_US_POSIX", .expected = "en__POSIX" },
+    };
+    for (cases) |case| {
+        const value = try minimizeAlloc(allocator, case.input);
         defer allocator.free(value);
         try testing.expectEqualStrings(case.expected, value);
     }
