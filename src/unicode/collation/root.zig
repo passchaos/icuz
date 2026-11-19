@@ -191,10 +191,26 @@ pub fn sortKeyCodepointsInto(
     else
         null;
 
-    if (locale_tailoring == null and !shifted and case_first == .off and
-        !backwards and !options.numeric and !options.case_level)
+    if (!shifted and case_first == .off and !backwards and
+        !options.numeric and !options.case_level)
     {
-        if (try appendLatinSortKey(allocator, output, codepoints, options.strength)) {
+        if (locale_tailoring) |tailoring| {
+            if (try appendTailoredLatinSortKey(
+                allocator,
+                output,
+                codepoints,
+                tailoring,
+                tailoring_pages,
+                options.strength,
+            )) {
+                return;
+            }
+        } else if (try appendLatinSortKey(
+            allocator,
+            output,
+            codepoints,
+            options.strength,
+        )) {
             return;
         }
     }
@@ -653,6 +669,94 @@ fn appendLatinSortKey(
     if (strength == .quaternary) return true;
     try appendIdenticalLevel(allocator, output, codepoints);
     return true;
+}
+
+/// Tailored variant of the Latin fast path: tailored rules are matched with
+/// the page index and every other code point comes from the root table.
+fn appendTailoredLatinSortKey(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    codepoints: []const u21,
+    tailoring: tailorings.Tailoring,
+    pages: ?*const tailorings.PageIndex,
+    strength: Strength,
+) error{OutOfMemory}!bool {
+    if (!latin_elements.usable) return false;
+    if (tailoring.reorder != null or tailoring.case_first != .off or
+        tailoring.backwards)
+    {
+        return false;
+    }
+    for (codepoints) |codepoint| {
+        if (codepoint >= latin_limit) return false;
+    }
+    var buffer: [1024]u21 = undefined;
+    const source = normalizeNfdLatinInto(&buffer, codepoints) orelse return false;
+
+    // `L`/`l` + U+00B7 is a root contraction; the general path handles it.
+    for (source, 0..) |codepoint, index| {
+        if ((codepoint == 'L' or codepoint == 'l') and
+            index + 1 < source.len and source[index + 1] == 0xb7)
+        {
+            return false;
+        }
+    }
+
+    var ces = std.ArrayList(LatinElement).empty;
+    defer ces.deinit(allocator);
+    try ces.ensureTotalCapacity(allocator, source.len * 2 + 8);
+    var index: usize = 0;
+    while (index < source.len) {
+        if (tailorings.match(tailoring, pages, source, index)) |matched| {
+            const rule = matched.rule;
+            var element_index: usize = 0;
+            while (element_index < rule.ce_count) : (element_index += 1) {
+                const element = tailorings.elementAt(rule, element_index);
+                try ces.append(allocator, .{
+                    .primary = element.primary,
+                    .secondary = element.secondary,
+                    .tertiary = element.tertiary,
+                });
+            }
+            index += matched.length;
+            continue;
+        }
+        const entry = latin_elements.table[source[index]];
+        for (entry.elements[0..entry.count]) |element| {
+            try ces.append(allocator, element);
+        }
+        index += 1;
+    }
+
+    try output.ensureTotalCapacity(allocator, ces.items.len * 3 + 8);
+    try appendLatinCesLevel(allocator, output, ces.items, .primary);
+    if (strength == .primary) return true;
+    try appendLatinCesLevel(allocator, output, ces.items, .secondary);
+    if (strength == .secondary) return true;
+    try appendLatinCesLevel(allocator, output, ces.items, .tertiary);
+    if (strength == .tertiary) return true;
+    try output.append(allocator, 0);
+    if (strength == .quaternary) return true;
+    try appendIdenticalLevel(allocator, output, codepoints);
+    return true;
+}
+
+fn appendLatinCesLevel(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    elements: []const LatinElement,
+    level: Level,
+) error{OutOfMemory}!void {
+    for (elements) |element| {
+        const weight = switch (level) {
+            .primary => element.primary,
+            .secondary => element.secondary,
+            .tertiary => element.tertiary,
+            .quaternary => 0,
+        };
+        if (weight != 0) try output.append(allocator, weight);
+    }
+    try output.append(allocator, 0);
 }
 
 /// NFD for Latin-script code points into a fixed buffer, without allocating.
