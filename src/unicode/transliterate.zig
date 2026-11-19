@@ -445,6 +445,16 @@ fn contextMatches(
 const EntryRange = struct {
     start: usize,
     end: usize,
+    /// First literal-source entry (empty/repeated-source entries precede it).
+    literals_start: usize,
+    /// End of the literal-source entries (negated-source entries follow).
+    literals_end: usize,
+    /// First and last literal first-codepoint, valid when literals_start <
+    /// literals_end.
+    literal_min: u21,
+    literal_max: u21,
+    has_lead: bool,
+    has_negated: bool,
 };
 
 /// Entries of one transform are sorted by pass, so each pass is a contiguous
@@ -473,23 +483,36 @@ fn transformPassRange(transform_index: usize, pass_index: u8) EntryRange {
             high = middle;
         }
     }
-    return .{ .start = start, .end = low };
-}
-
-/// Entries with an empty or repeated source are stored at the front of a
-/// pass, before the sorted literal-source entries.
-/// Negated-source entries are stored at the end of a pass, after the sorted
-/// literal entries.
-fn negatedStart(range: EntryRange) usize {
-    var end = range.end;
-    while (end > range.start and entryAt(end - 1).flags & 64 != 0) : (end -= 1) {}
-    return end;
-}
-
-fn mappingStart(range: EntryRange) usize {
-    var start = range.start;
-    while (start < range.end and entryAt(start).flags & 205 != 0) : (start += 1) {}
-    return start;
+    const end = low;
+    // Entries with an empty or repeated source are stored at the front of a
+    // pass, before the sorted literal-source entries. Negated-source entries
+    // are stored at the end of a pass, after the sorted literal entries.
+    var literals_start = start;
+    while (literals_start < end and entryAt(literals_start).flags & 205 != 0) {
+        literals_start += 1;
+    }
+    var literals_end = end;
+    while (literals_end > start and entryAt(literals_end - 1).flags & 64 != 0) {
+        literals_end -= 1;
+    }
+    const literal_min: u21 = if (literals_start < literals_end)
+        entryFirstCodepoint(literals_start)
+    else
+        0;
+    const literal_max: u21 = if (literals_start < literals_end)
+        entryFirstCodepoint(literals_end - 1)
+    else
+        0;
+    return .{
+        .start = start,
+        .end = end,
+        .literals_start = literals_start,
+        .literals_end = literals_end,
+        .literal_min = literal_min,
+        .literal_max = literal_max,
+        .has_lead = literals_start > start,
+        .has_negated = literals_end < end,
+    };
 }
 
 fn hasInsertions(range: EntryRange) bool {
@@ -567,8 +590,16 @@ fn findMatchInRange(
     // ICU's :: [set] ; filter restricts which input characters may start a
     // match; everything else passes through unchanged.
     if (filter_set != 0 and !setContains(filter_set, first)) return null;
-    const literals_start = mappingStart(range);
-    const literals_end = negatedStart(range);
+    const literals_start = range.literals_start;
+    const literals_end = range.literals_end;
+    // Most passes only have literal-source rules. When no empty/repeated or
+    // negated entry can match, a codepoint outside the literal first-codepoint
+    // range cannot start a match, so skip the search entirely.
+    if (!range.has_lead and !range.has_negated and
+        (first < range.literal_min or first > range.literal_max))
+    {
+        return null;
+    }
     var best: ?Entry = null;
 
     var lead = range.start;
