@@ -1,9 +1,9 @@
-//! UTS #39 confusable detection.
+//! UTS #39 confusable detection and identifier status.
 //!
 //! A skeleton is computed by NFD-normalizing the input, replacing every code
 //! point with its prototype from the Unicode security data, and
 //! NFD-normalizing the result. Two strings are confusable when their
-//! skeletons match.
+//! skeletons match. `identifierAllowed` checks the Identifier_Status set.
 
 const std = @import("std");
 const normalization = @import("normalization/root.zig");
@@ -12,12 +12,21 @@ const properties = @import("properties.zig");
 
 const blob = @embedFile("spoof/confusables_data.bin");
 const conformance = @embedFile("spoof/conformance.bin");
+const identifier_blob = @embedFile("spoof/identifier_status.bin");
 
 const header_len = 16;
 const record_count = readU32(8);
 const pool_length = readU32(12);
 const records_offset = header_len;
 const pool_offset = records_offset + @as(usize, record_count) * 12;
+
+const identifier_header_len = 12;
+const identifier_range_count = std.mem.readInt(
+    u32,
+    identifier_blob[8..12],
+    .little,
+);
+const identifier_ranges_offset = identifier_header_len;
 
 comptime {
     if (blob.len < header_len or !std.mem.eql(u8, blob[0..4], "CJXC") or
@@ -27,6 +36,17 @@ comptime {
     }
     if (pool_offset + @as(usize, pool_length) * 4 != blob.len) {
         @compileError("invalid confusables data lengths");
+    }
+    if (identifier_blob.len < identifier_header_len or
+        !std.mem.eql(u8, identifier_blob[0..4], "CJXI") or
+        identifier_blob[4] != 1)
+    {
+        @compileError("invalid identifier status data");
+    }
+    if (identifier_ranges_offset +
+        @as(usize, identifier_range_count) * 8 != identifier_blob.len)
+    {
+        @compileError("invalid identifier status data lengths");
     }
 }
 
@@ -68,6 +88,53 @@ pub fn mappingInto(
         }
     }
     return null;
+}
+
+/// True when the code point's Identifier_Status is Allowed.
+pub fn isAllowedIdentifier(codepoint: u21) bool {
+    var low: usize = 0;
+    var high: usize = identifier_range_count;
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        const base = identifier_ranges_offset + middle * 8;
+        const start = std.mem.readInt(
+            u32,
+            identifier_blob[base..][0..4],
+            .little,
+        );
+        const end = std.mem.readInt(
+            u32,
+            identifier_blob[base + 4 ..][0..4],
+            .little,
+        );
+        if (codepoint < start) {
+            high = middle;
+        } else if (codepoint > end) {
+            low = middle + 1;
+        } else {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// True when every code point in `text` has Identifier_Status=Allowed and
+/// the string is not empty. This checks status only; confusable and script
+/// restrictions are separate checks.
+pub fn identifierAllowed(text: []const u8) Error!bool {
+    if (text.len == 0) return false;
+    var cursor: usize = 0;
+    while (cursor < text.len) {
+        const length = std.unicode.utf8ByteSequenceLength(text[cursor]) catch
+            return error.InvalidUtf8;
+        if (cursor + length > text.len) return error.InvalidUtf8;
+        const codepoint = std.unicode.utf8Decode(
+            text[cursor..][0..length],
+        ) catch return error.InvalidUtf8;
+        if (!isAllowedIdentifier(codepoint)) return false;
+        cursor += length;
+    }
+    return true;
 }
 
 fn decodeUtf8(
@@ -223,6 +290,25 @@ test "confusable skeletons" {
         error.InvalidUtf8,
         skeletonAlloc(allocator, "\xff"),
     );
+}
+
+test "identifier status" {
+    const testing = @import("std").testing;
+
+    try testing.expect(isAllowedIdentifier('a'));
+    try testing.expect(isAllowedIdentifier('0'));
+    try testing.expect(isAllowedIdentifier('_'));
+    try testing.expect(isAllowedIdentifier(0x00e9));
+    try testing.expect(isAllowedIdentifier(0x4f60));
+    try testing.expect(!isAllowedIdentifier(' '));
+    try testing.expect(!isAllowedIdentifier('@'));
+    try testing.expect(!isAllowedIdentifier(0x1f600));
+
+    try testing.expect(try identifierAllowed("abc_123"));
+    try testing.expect(try identifierAllowed("caf\u{00e9}"));
+    try testing.expect(!(try identifierAllowed("a b")));
+    try testing.expect(!(try identifierAllowed("")));
+    try testing.expectError(error.InvalidUtf8, identifierAllowed("\xff"));
 }
 
 test "UTS 39 skeleton conformance" {

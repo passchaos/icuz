@@ -416,6 +416,7 @@ BLOBS = (
     Blob("src/unicode/transliterate/latin_bopomofo_conformance.bin", b"CJGA", 1, "f1ef088fab4a30e42ecab325e014b2cc9ef5820f179c4efd4a06531345972242", version=(48, 0, 0)),
     Blob("src/unicode/spoof/confusables_data.bin", b"CJXC", 1, "7b28b8f511ace1c81f95faf4985aa304e80b6a7f1d5997b06375163605f9e33c"),
     Blob("src/unicode/spoof/conformance.bin", b"CJXS", 1, "3e4610a024b4a5e4d4e1608391978bd2b6d2df52d92266553ac6dc071ce9346e", version=(0, 0, 0)),
+    Blob("src/unicode/spoof/identifier_status.bin", b"CJXI", 1, "35b83562901ffce3efa1431809e482ad29411a02ac17297bce678192a481a63d"),
     Blob("src/unicode/format/parse_conformance.bin", b"CJXN", 1, "b0e146b50957aa4f34a916cb7cfa919eb83b7e719f8c92aa5b7c885e6a384629", version=(0, 0, 0)),
     Blob("src/unicode/format/date_parse_conformance.bin", b"CJXD", 1, "882b2ba49d502d56232c3e5fbcfa14c5173c45be8515e9ef7945519ac5584031", version=(0, 0, 0)),
 )
@@ -424,6 +425,7 @@ GENERATORS = {
     "tools/generate_canonical_combining_class.py": "b8064fb61377c6bca1604c2bd35c6a1db37be5187762c7419ec90b4b19527b82",
     "tools/unicode/spoof/generate_confusables.py": "40d49eef65d71552cefc4bc90f2c9ba6e1313ce95dd2af9598213dff29f972fc",
     "tools/unicode/spoof/generate_conformance.py": "b1bd9eaced6f6b97e9ecd669f5037938b21c4268a1a5dd72db1909cf779761b5",
+    "tools/unicode/spoof/generate_identifier_status.py": "d19db85b91e1933c0841ff7846b2d2e644fd78621eaccf6e5f81f8f07134b4f9",
     "tools/unicode/format/generate_parse_conformance.py": "3f3e74b9be26b36ba8f5c544801c791ccbc2e72de761bbc15ee57a8e4cc80192",
     "tools/unicode/format/generate_date_parse_conformance.py": "d32464d9c825652c04a0d8beae32f1fb32f5868c07c0a5cd29cdf51f598bfc41",
     "tools/generate_canonical_decomposition.py": "450c932dbd278208bccd3ab8bb26f04f1b18a96051fc03944393f5d73e3ad6d8",
@@ -834,6 +836,9 @@ def check_layout(blob: Blob, data: bytes) -> None:
     elif magic == b"CJXC":
         record_count, pool_length = struct.unpack_from("<II", data, 8)
         assert 16 + record_count * 12 + pool_length * 4 == len(data)
+    elif magic == b"CJXI":
+        range_count = struct.unpack_from("<I", data, 8)[0]
+        assert 12 + range_count * 8 == len(data)
     elif magic == b"CJXS":
         case_count = struct.unpack_from("<I", data, 8)[0]
         offset = 12

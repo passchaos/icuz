@@ -220,6 +220,8 @@ pub const searchIndexOf = search_mod.indexOf;
 pub const spoofSkeletonAlloc = spoof_mod.skeletonAlloc;
 pub const spoofSkeletonCodepointsInto = spoof_mod.skeletonCodepointsInto;
 pub const spoofAreConfusable = spoof_mod.areConfusable;
+pub const spoofIdentifierAllowed = spoof_mod.identifierAllowed;
+pub const spoofIsAllowedIdentifier = spoof_mod.isAllowedIdentifier;
 pub const collation_uca_version = collation_mod.uca_version;
 pub const collation_cldr_version = collation_mod.cldr_version;
 
