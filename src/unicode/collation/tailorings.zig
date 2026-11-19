@@ -362,7 +362,7 @@ fn stripExtensions(locale: []const u8) []const u8 {
 /// remembers the first rule of recently matched code points; it is written
 /// atomically and only ever holds entries for this tailoring.
 pub const PageIndex = struct {
-    rules: [0x1100]u32,
+    rules: [0x1100]u16,
     direct: [direct_limit]u16,
     cache: [256]std.atomic.Value(u64),
 };
@@ -414,7 +414,7 @@ fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
         if (pages.direct[first] == direct_absent) {
             const page = @as(usize, first) >> 8;
             pages.direct[first] = @intCast(
-                index - @as(usize, pages.rules[page]),
+                index - pages.rules[page],
             );
         }
     }
@@ -422,6 +422,9 @@ fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
 
 /// Return (building on first use) the page index for this tailoring.
 pub fn pageIndex(tailoring: Tailoring) ?*PageIndex {
+    // Page offsets are 16-bit; very large tailorings (Chinese stroke) keep
+    // the plain binary search instead.
+    if (tailoring.rule_count > 0xFFFF) return null;
     for (&index_slots) |*slot| {
         if (slot.state.load(.acquire) == 2 and
             slot.rule_start == tailoring.rule_start and
