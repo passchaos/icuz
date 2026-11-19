@@ -60,6 +60,11 @@ need without pulling in a font or layout engine.
   CLDR settings; `Options.case_first` and `Options.backwards_secondary`
   override them per call. Japanese private-kana and Korean searchjl
   tailorings are skipped.
+- Locale-aware string search (`search.indexOf`, `search.Search`): finds the first
+  substring whose collation key equals the pattern at a chosen strength, so
+  primary-strength search ignores case and accents while tailored letters keep
+  their locale weights; contraction prefixes and combining sequences are
+  handled, and results match ICU usearch on the covered cases.
 - UTS #46 IDNA 16.0.0: ToASCII/ToUnicode, NFC mapping, punycode, RFC 5893
   bidi checks, ContextJ/ContextO, and official conformance fixtures.
 - UTS #39 confusable detection from the Unicode 17.0.0 security data:
