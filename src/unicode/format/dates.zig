@@ -680,6 +680,70 @@ test "date and time formatting" {
     try testing.expectEqualStrings("2026/11/18", ja_date);
 }
 
+test "date formatting covers additional locales" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const date_time = DateTime{
+        .year = 2026,
+        .month = 11,
+        .day = 18,
+        .hour = 15,
+        .minute = 4,
+        .second = 5,
+    };
+
+    const cases = [_]struct {
+        locale: []const u8,
+        expected: []const u8,
+    }{
+        .{ .locale = "es", .expected = "18 nov 2026" },
+        .{ .locale = "it", .expected = "18 nov 2026" },
+        .{ .locale = "pl", .expected = "18 lis 2026" },
+        .{ .locale = "tr", .expected = "18 Kas 2026" },
+        .{ .locale = "ko", .expected = "2026. 11. 18." },
+        .{ .locale = "hi", .expected = "18 \u{0928}\u{0935}\u{0970} 2026" },
+        .{ .locale = "fr-CA", .expected = "18 nov. 2026" },
+        .{ .locale = "en-IN", .expected = "18 Nov 2026" },
+        .{ .locale = "ru", .expected = "18 \u{043D}\u{043E}\u{044F}\u{0431}. 2026\u{202F}\u{0433}." },
+        .{ .locale = "pt-PT", .expected = "18/11/2026" },
+        .{ .locale = "nl-BE", .expected = "18 nov 2026" },
+        .{ .locale = "cs", .expected = "18. 11. 2026" },
+        .{ .locale = "da", .expected = "18. nov. 2026" },
+        .{ .locale = "vi", .expected = "18 thg 11, 2026" },
+        .{ .locale = "zh-Hant", .expected = "2026\u{5E74}11\u{6708}18\u{65E5}" },
+    };
+    for (cases) |case| {
+        const result = try formatDateAlloc(
+            allocator,
+            date_time,
+            case.locale,
+            .medium,
+        );
+        defer allocator.free(result);
+        try testing.expectEqualStrings(case.expected, result);
+    }
+
+    const full = [_]struct {
+        locale: []const u8,
+        expected: []const u8,
+    }{
+        .{ .locale = "de", .expected = "Mittwoch, 18. November 2026" },
+        .{ .locale = "es", .expected = "mi\u{00E9}rcoles, 18 de noviembre de 2026" },
+        .{ .locale = "ko", .expected = "2026\u{B144} 11\u{C6D4} 18\u{C77C} \u{C218}\u{C694}\u{C77C}" },
+        .{ .locale = "zh-Hant", .expected = "2026\u{5E74}11\u{6708}18\u{65E5} \u{661F}\u{671F}\u{4E09}" },
+    };
+    for (full) |case| {
+        const result = try formatDateAlloc(
+            allocator,
+            date_time,
+            case.locale,
+            .full,
+        );
+        defer allocator.free(result);
+        try testing.expectEqualStrings(case.expected, result);
+    }
+}
+
 test "custom patterns and Unix timestamps" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;

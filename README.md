@@ -58,7 +58,7 @@ need without pulling in a font or layout engine.
   options, 25 currencies with locale-specific symbols/names/codes and
   currency-specific fraction digits, accounting parentheses, short/long
   compact notation, and ICU-style number skeletons.
-- CLDR 48 Gregorian date/time formatting for 30 locales, including localized
+- CLDR 48 Gregorian date/time formatting for 87 locales, including localized
   month/day names, date/time styles, custom patterns, and Unix timestamp
   conversion.
 - CLDR 48 list formatting for 87 locales, including and/or and unit list

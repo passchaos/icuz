@@ -2,20 +2,52 @@
 """Generate CLDR 48 Gregorian calendar formatting data.
 
 Usage:
-    generate_dates.py locale_json_dir out_dir
+    generate_dates.py cldr-common-48.zip out_dir
 
-The input directory contains one `<locale>.json` file per locale from
-`cldr-dates-full/main/<locale>/ca-gregorian.json`.
+Locale data is read from `common/main/<locale>.xml` and resolved through
+the CLDR parent chain (locale -> language -> root).
 """
 
 from __future__ import annotations
 
+import copy
 import json
+import re
 import sys
+import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 MONTH_KEYS = [str(index) for index in range(1, 13)]
 DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+
+LOCALES = (
+    "af", "am", "ar", "az", "be", "bg", "bn", "bs", "ca", "cs",
+    "cy", "da", "de", "de-AT", "de-CH", "el", "en", "en-AU", "en-CA",
+    "en-GB", "en-IN", "es", "es-419", "es-MX", "et", "eu", "fa", "fi",
+    "fil", "fr", "fr-CA", "ga", "gl", "gu", "he", "hi", "hr", "hu",
+    "hy", "id", "is", "it", "ja", "ka", "kk", "km", "kn", "ko", "lo",
+    "lt", "lv", "mk", "ml", "mn", "mr", "ms", "mt", "my", "nb", "ne",
+    "nl", "nl-BE", "pa", "pl", "ps", "pt", "pt-PT", "ro", "ru", "si",
+    "sk", "sl", "sq", "sr", "sv", "sw", "ta", "te", "th", "tr", "uk",
+    "ur", "uz", "vi", "zh", "zh-Hant", "zu",
+)
+
+PARENT = {
+    "de-AT": "de",
+    "de-CH": "de",
+    "en-AU": "en-001",
+    "en-CA": "en-001",
+    "en-GB": "en-001",
+    "en-IN": "en-001",
+    "es-419": "es",
+    "es-MX": "es-419",
+    "fr-CA": "fr",
+    "nb": "no",
+    "nl-BE": "nl",
+    "pt-PT": "pt",
+    "zh-Hant": "root",
+}
 
 
 def zig_string(value: str) -> str:
@@ -87,12 +119,28 @@ def parse_locale(path: Path) -> tuple[str, dict]:
             DAY_KEYS,
             days.get("abbreviated", {}),
         ),
-        "am_wide": day_periods.get("wide", {}).get("am", "AM"),
-        "pm_wide": day_periods.get("wide", {}).get("pm", "PM"),
+        "am_wide": (
+            day_periods.get("wide", {}).get("am")
+            or day_periods.get("abbreviated", {}).get("am")
+            or "AM"
+        ),
+        "pm_wide": (
+            day_periods.get("wide", {}).get("pm")
+            or day_periods.get("abbreviated", {}).get("pm")
+            or "PM"
+        ),
         "am_abbreviated": day_periods.get("abbreviated", {}).get("am", "AM"),
         "pm_abbreviated": day_periods.get("abbreviated", {}).get("pm", "PM"),
-        "am_narrow": day_periods.get("narrow", {}).get("am", "a"),
-        "pm_narrow": day_periods.get("narrow", {}).get("pm", "p"),
+        "am_narrow": (
+            day_periods.get("narrow", {}).get("am")
+            or day_periods.get("abbreviated", {}).get("am")
+            or "a"
+        ),
+        "pm_narrow": (
+            day_periods.get("narrow", {}).get("pm")
+            or day_periods.get("abbreviated", {}).get("pm")
+            or "p"
+        ),
         "era_wide": names(eras.get("eraNames", {}), ["0", "1"], {"0": "BC", "1": "AD"}),
         "era_abbreviated": names(
             eras.get("eraAbbr", {}),
@@ -202,19 +250,401 @@ def render(entries: list[tuple[str, dict]]) -> str:
     return "\n".join(lines)
 
 
+def is_alias(value) -> bool:
+    return isinstance(value, dict) and "alias" in value
+
+
+def merge_dict(target: dict, source: dict) -> None:
+    for key, value in source.items():
+        existing = target.get(key)
+        if isinstance(value, dict) and isinstance(existing, dict):
+            if is_alias(value):
+                target[key] = copy.deepcopy(value)
+            elif is_alias(existing):
+                # An empty source section inherits the parent's alias.
+                if value:
+                    target[key] = copy.deepcopy(value)
+            else:
+                merge_dict(existing, value)
+        else:
+            # Deep-copy so later merges never mutate a cached locale tree.
+            target[key] = copy.deepcopy(value)
+
+
+def context_widths(parent, context_tag: str, width_tag: str, item_tag: str) -> dict:
+    """Convert `<*Context>` elements into {context: {width: {type: text}}}.
+
+    Widths whose content is an `<alias>` keep the alias path so it can be
+    resolved after the locale's parent chain has been merged.
+    """
+    result: dict = {"format": {}, "stand-alone": {}}
+    if parent is None:
+        return result
+    for context in parent.findall(context_tag):
+        context_type = context.get("type", "format")
+        if context_type not in result:
+            continue
+        for width in context.findall(width_tag):
+            width_type = width.get("type", "wide")
+            alias = width.find("alias")
+            if alias is not None:
+                result[context_type][width_type] = {
+                    "alias": alias.get("path", "")
+                }
+                continue
+            bucket: dict = {}
+            for item in width.findall(item_tag):
+                if item.text is not None and item.get("alt") is None:
+                    bucket[item.get("type", "other")] = item.text
+            result[context_type][width_type] = bucket
+    return result
+
+
+def format_patterns(container) -> dict:
+    result: dict = {}
+    if container is None:
+        return result
+    if container.find("alias") is not None:
+        return {"__alias__": container.find("alias").get("path", "")}
+    for length in container:
+        if not length.tag.endswith("FormatLength"):
+            continue
+        length_type = length.get("type", "full")
+        for fmt in length:
+            for pattern in fmt:
+                if pattern.tag != "pattern":
+                    continue
+                if pattern.get("alt") is not None:
+                    continue
+                if pattern.get("type") is not None or pattern.get("count") is not None:
+                    continue
+                result[length_type] = pattern.text or ""
+                break
+            if length_type in result:
+                break
+    return result
+
+
+def date_time_patterns(container) -> dict:
+    result: dict = {}
+    if container is None:
+        return result
+    if container.find("alias") is not None:
+        return {"__alias__": container.find("alias").get("path", "")}
+    for length in container:
+        if not length.tag.endswith("FormatLength"):
+            continue
+        length_type = length.get("type", "full")
+        for fmt in length:
+            if fmt.tag != "dateTimeFormat":
+                continue
+            if fmt.get("type", "standard") != "standard":
+                continue
+            for pattern in fmt:
+                if pattern.tag != "pattern":
+                    continue
+                if pattern.get("alt") is not None:
+                    continue
+                result[length_type] = pattern.text or ""
+                break
+            if length_type in result:
+                break
+    return result
+
+
+def calendar_dict(document, element) -> dict:
+    """Convert a CLDR gregorian `<calendar>` into the resolved JSON shape."""
+    result: dict = {}
+    result["months"] = context_widths(
+        element.find("months"),
+        "monthContext",
+        "monthWidth",
+        "month",
+    )
+    result["days"] = context_widths(
+        element.find("days"),
+        "dayContext",
+        "dayWidth",
+        "day",
+    )
+    result["dayPeriods"] = context_widths(
+        element.find("dayPeriods"),
+        "dayPeriodContext",
+        "dayPeriodWidth",
+        "dayPeriod",
+    )
+    eras = element.find("eras")
+    era_result: dict = {}
+    if eras is not None:
+        for tag in ("eraNames", "eraAbbr", "eraNarrow"):
+            container = eras.find(tag)
+            if container is None:
+                continue
+            alias = container.find("alias")
+            if alias is not None:
+                era_result[tag] = {"alias": alias.get("path", "")}
+                continue
+            era_result[tag] = {
+                era.get("type", "0"): era.text or ""
+                for era in container.findall("era")
+                if era.text is not None and era.get("alt") is None
+            }
+    result["eras"] = era_result
+    result["dateFormats"] = format_patterns(element.find("dateFormats"))
+    result["timeFormats"] = format_patterns(element.find("timeFormats"))
+    date_time = element.find("dateTimeFormats")
+    if date_time is not None and date_time.find("alias") is not None:
+        # Root aliases the gregorian date/time glue to the generic calendar.
+        generic = document.find('.//calendar[@type="generic"]')
+        if generic is not None:
+            date_time = generic.find("dateTimeFormats")
+    result["dateTimeFormats"] = date_time_patterns(date_time)
+    return result
+
+
+def resolve_width_alias(data: dict, context: str, path: str):
+    match = re.search(
+        r"(month|day|dayPeriod)Context\[@type='([^']+)'\]",
+        path,
+    )
+    target_context = match.group(2) if match else context
+    width = re.search(
+        r"(?:month|day|dayPeriod)Width\[@type='([^']+)'\]",
+        path,
+    )
+    if width is None:
+        return None
+    return target_context, width.group(1)
+
+
+def resolve_aliases(calendar: dict) -> None:
+    """Resolve `<alias source="locale">` markers against the merged tree."""
+    for section in ("months", "days", "dayPeriods"):
+        data = calendar.get(section, {})
+        for context in ("format", "stand-alone"):
+            widths = data.get(context, {})
+            for width, value in list(widths.items()):
+                if not (isinstance(value, dict) and "alias" in value):
+                    continue
+                target = resolve_width_alias(data, context, value["alias"])
+                if target is None:
+                    continue
+                resolved = data.get(target[0], {}).get(target[1])
+                if resolved is not None and not (
+                    isinstance(resolved, dict) and "alias" in resolved
+                ):
+                    widths[width] = resolved
+    eras = calendar.get("eras", {})
+    for key, value in list(eras.items()):
+        if not (isinstance(value, dict) and "alias" in value):
+            continue
+        match = re.search(r"era(Names|Abbr|Narrow)", value["alias"])
+        if match is None:
+            continue
+        resolved = eras.get("era" + match.group(1))
+        if resolved is not None and not (
+            isinstance(resolved, dict) and "alias" in resolved
+        ):
+            eras[key] = resolved
+
+
+def parent_chain(locale: str) -> list[str]:
+    chain = []
+    current = locale
+    seen: set[str] = set()
+    while current not in seen:
+        seen.add(current)
+        chain.append(current)
+        if current == "root":
+            break
+        parent = PARENT.get(current)
+        if parent is None:
+            parent = re.split(r"[-_]", current)[0]
+        if parent == current:
+            parent = "root"
+        current = parent
+    if chain[-1] != "root":
+        chain.append("root")
+    return chain
+
+
+def load_calendar(archive: zipfile.ZipFile, locale: str, cache: dict) -> dict:
+    if locale in cache:
+        return cache[locale]
+    try:
+        filename = locale.replace("-", "_")
+        xml = archive.read(f"common/main/{filename}.xml").decode("utf-8")
+    except KeyError:
+        cache[locale] = {}
+        return cache[locale]
+    root = ET.fromstring(xml)
+    element = root.find('.//calendar[@type="gregorian"]')
+    cache[locale] = calendar_dict(root, element) if element is not None else {}
+    return cache[locale]
+
+
+def resolved_calendar(
+    archive: zipfile.ZipFile,
+    locale: str,
+    cache: dict,
+    merged_cache: dict,
+) -> dict:
+    if locale in merged_cache:
+        return merged_cache[locale]
+    merged: dict = {}
+    for name in reversed(parent_chain(locale)):
+        merge_dict(merged, load_calendar(archive, name, cache))
+    resolve_aliases(merged)
+    merged_cache[locale] = merged
+    return merged
+
+
+def parse_locale_xml(
+    archive: zipfile.ZipFile,
+    locale: str,
+    cache: dict,
+    merged_cache: dict,
+) -> tuple[str, dict]:
+    gregorian = resolved_calendar(archive, locale, cache, merged_cache)
+
+    def format_widths(section: str) -> dict:
+        # CLDR falls back from a missing format width to the stand-alone
+        # width of the same size before falling back to wider widths.
+        data = gregorian.get(section, {})
+        widths = dict(data.get("format", {}))
+        standalone = data.get("stand-alone", {})
+        for width in ("wide", "abbreviated", "narrow", "short"):
+            if width not in widths and width in standalone:
+                widths[width] = standalone[width]
+        return widths
+
+    months = format_widths("months")
+    days = format_widths("days")
+    day_periods = format_widths("dayPeriods")
+    eras = dict(gregorian.get("eras", {}))
+    # CLDR falls back from a missing eraNames to eraAbbr when the locale has
+    # no full era names of its own (root's names are a last resort).
+    has_era_names = False
+    for name in parent_chain(locale):
+        if name == "root":
+            continue
+        chain_eras = load_calendar(archive, name, cache).get("eras", {})
+        if chain_eras.get("eraNames"):
+            has_era_names = True
+            break
+    if not has_era_names and eras.get("eraAbbr"):
+        eras["eraNames"] = eras["eraAbbr"]
+    # Per-era fallback: a missing era in the full or narrow names inherits
+    # the abbreviated name of the same era.
+    abbreviated = eras.get("eraAbbr", {})
+    for key in ("eraNames", "eraNarrow"):
+        values = dict(eras.get(key, {}))
+        for era_type in ("0", "1"):
+            if era_type not in values and era_type in abbreviated:
+                values[era_type] = abbreviated[era_type]
+        eras[key] = values
+    date_formats = gregorian.get("dateFormats", {})
+    time_formats = gregorian.get("timeFormats", {})
+    date_time_formats = gregorian.get("dateTimeFormats", {})
+
+    return locale, {
+        "months_wide": names(months.get("wide", {}), MONTH_KEYS),
+        "months_abbreviated": names(
+            months.get("abbreviated", {}),
+            MONTH_KEYS,
+            months.get("wide", {}),
+        ),
+        "months_narrow": names(
+            months.get("narrow", {}),
+            MONTH_KEYS,
+            months.get("abbreviated", {}),
+        ),
+        "days_wide": names(days.get("wide", {}), DAY_KEYS),
+        "days_abbreviated": names(
+            days.get("abbreviated", {}),
+            DAY_KEYS,
+            days.get("wide", {}),
+        ),
+        "days_narrow": names(
+            days.get("narrow", {}),
+            DAY_KEYS,
+            days.get("abbreviated", {}),
+        ),
+        "days_short": names(
+            days.get("short", {}),
+            DAY_KEYS,
+            days.get("abbreviated", {}),
+        ),
+        "am_wide": (
+            day_periods.get("wide", {}).get("am")
+            or day_periods.get("abbreviated", {}).get("am")
+            or "AM"
+        ),
+        "pm_wide": (
+            day_periods.get("wide", {}).get("pm")
+            or day_periods.get("abbreviated", {}).get("pm")
+            or "PM"
+        ),
+        "am_abbreviated": day_periods.get("abbreviated", {}).get("am", "AM"),
+        "pm_abbreviated": day_periods.get("abbreviated", {}).get("pm", "PM"),
+        "am_narrow": (
+            day_periods.get("narrow", {}).get("am")
+            or day_periods.get("abbreviated", {}).get("am")
+            or "a"
+        ),
+        "pm_narrow": (
+            day_periods.get("narrow", {}).get("pm")
+            or day_periods.get("abbreviated", {}).get("pm")
+            or "p"
+        ),
+        "era_wide": names(
+            eras.get("eraNames", {}),
+            ["0", "1"],
+            {"0": "BC", "1": "AD"},
+        ),
+        "era_abbreviated": names(
+            eras.get("eraAbbr", {}),
+            ["0", "1"],
+            {"0": "BC", "1": "AD"},
+        ),
+        "era_narrow": names(
+            eras.get("eraNarrow", {}),
+            ["0", "1"],
+            {"0": "B", "1": "A"},
+        ),
+        "date_full": date_formats.get("full", "EEEE, MMMM d, y"),
+        "date_long": date_formats.get("long", "MMMM d, y"),
+        "date_medium": date_formats.get("medium", "MMM d, y"),
+        "date_short": date_formats.get("short", "M/d/yy"),
+        "time_full": time_formats.get("full", "h:mm:ss a zzzz"),
+        "time_long": time_formats.get("long", "h:mm:ss a z"),
+        "time_medium": time_formats.get("medium", "h:mm:ss a"),
+        "time_short": time_formats.get("short", "h:mm a"),
+        "date_time_full": date_time_formats.get("full", "{1}, {0}"),
+        "date_time_long": date_time_formats.get("long", "{1}, {0}"),
+        "date_time_medium": date_time_formats.get("medium", "{1}, {0}"),
+        "date_time_short": date_time_formats.get("short", "{1}, {0}"),
+    }
+
+
 def main() -> int:
     if len(sys.argv) != 3:
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    input_dir = Path(sys.argv[1])
+    archive_path = Path(sys.argv[1])
     out_dir = Path(sys.argv[2])
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    cache: dict = {}
+    merged_cache: dict = {}
     entries: list[tuple[str, dict]] = []
-    for path in sorted(input_dir.glob("*.json")):
-        entries.append(parse_locale(path))
+    with zipfile.ZipFile(archive_path) as archive:
+        for locale in LOCALES:
+            entries.append(
+                parse_locale_xml(archive, locale, cache, merged_cache)
+            )
     if not entries:
-        raise SystemExit("no locale ca-gregorian.json files found")
+        raise SystemExit("no locale data found")
 
     (out_dir / "dates_data.zig").write_text(render(entries), encoding="utf-8")
     return 0

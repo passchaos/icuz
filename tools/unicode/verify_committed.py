@@ -401,7 +401,7 @@ GENERATORS = {
     "tools/unicode/format/generate_plurals.py": "b1fd98acc793d8264d7cf8bb5a44335d8513ab1ba4321cac86fac7864ab5714b",
     "tools/unicode/format/generate_ordinals.py": "c67e49523dcfd86f641949774e2dae40ce8381828ca263fb61d5e487e406a91b",
     "tools/unicode/format/generate_numbers.py": "db89fd80fb6458a09f1d10e0228de1dd44f2798b14d996d8796c285f9cb81a3b",
-    "tools/unicode/format/generate_dates.py": "de6d58352b8793fee777752b980d27561e6ca400cb4710b95c9fda9b54999e45",
+    "tools/unicode/format/generate_dates.py": "4ba5cfde9a1ae3c7a54f26791cb8043b410d3cd86a5901b3ce18f6d137550070",
     "tools/unicode/format/generate_misc.py": "b126eb131c01bfdd7541ca78496df0b2e0a49e3a0524a666b4b9fd1d55c17086",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
     "tools/unicode/transliterate/generate_data.py": "059f2264e4ca5aa9aa8376d14f65e281528d2c43e1ad7e42d18a4b1da7808749",
@@ -479,7 +479,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/format/dates_data.zig",
         "tools/unicode/format/generate_dates.py",
-        "d2fb836e0410f5068c501d81708c22aef485e42fcfd625adb8cce193f194b6ce",
+        "f4219359fc41b20ae8a66485fce8d78d40f73e33ab12a97759736176d4d06b21",
     ),
     GeneratedText(
         "src/unicode/format/list_data.zig",
