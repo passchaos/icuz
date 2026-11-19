@@ -12,6 +12,7 @@ const tailorings = @import("tailorings.zig");
 const normalization = @import("../normalization/root.zig");
 const properties = @import("../properties.zig");
 const scalar = @import("../scalar/root.zig");
+const utf16 = @import("../utf16.zig");
 const combining_class = @import("../canonical/combining_class.zig");
 
 pub const uca_version = [3]u8{ 17, 0, 0 };
@@ -191,10 +192,21 @@ pub fn sortKeyAlloc(
     text: []const u8,
     options: Options,
 ) error{ InvalidUtf8, OutOfMemory }![]u32 {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
-
     var key = std.ArrayList(u32).empty;
     errdefer key.deinit(allocator);
+    try sortKeyInto(allocator, text, options, &key);
+    return key.toOwnedSlice(allocator);
+}
+
+/// Append a sort key for UTF-8 text to `output`. Callers that build many
+/// keys can reuse one output list and keep its capacity.
+pub fn sortKeyInto(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    options: Options,
+    output: *std.ArrayList(u32),
+) error{ InvalidUtf8, OutOfMemory }!void {
+    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
 
     // Most callers sort short labels and keys; decode those into a stack
     // buffer so a sort key costs one allocation instead of two.
@@ -207,13 +219,12 @@ pub fn sortKeyAlloc(
             count += 1;
             cursor = decoded.next;
         }
-        try sortKeyCodepointsInto(
+        return sortKeyCodepointsInto(
             allocator,
             stack_codepoints[0..count],
             options,
-            &key,
+            output,
         );
-        return key.toOwnedSlice(allocator);
     }
 
     var codepoints = std.ArrayList(u21).empty;
@@ -225,7 +236,53 @@ pub fn sortKeyAlloc(
         try codepoints.append(allocator, decoded.codepoint);
         cursor = decoded.next;
     }
-    try sortKeyCodepointsInto(allocator, codepoints.items, options, &key);
+    try sortKeyCodepointsInto(allocator, codepoints.items, options, output);
+}
+
+/// Append a sort key for UTF-16 text to `output`.
+pub fn sortKeyUtf16Into(
+    allocator: std.mem.Allocator,
+    units: []const u16,
+    options: Options,
+    output: *std.ArrayList(u32),
+) error{ InvalidUtf16, OutOfMemory }!void {
+    if (!utf16.validate(units)) return error.InvalidUtf16;
+
+    var stack_codepoints: [512]u21 = undefined;
+    if (units.len <= stack_codepoints.len) {
+        var count: usize = 0;
+        var iterator = utf16.Iterator{ .units = units };
+        while (iterator.next()) |codepoint| {
+            stack_codepoints[count] = codepoint;
+            count += 1;
+        }
+        return sortKeyCodepointsInto(
+            allocator,
+            stack_codepoints[0..count],
+            options,
+            output,
+        );
+    }
+
+    var codepoints = std.ArrayList(u21).empty;
+    defer codepoints.deinit(allocator);
+    try codepoints.ensureTotalCapacity(allocator, units.len);
+    var iterator = utf16.Iterator{ .units = units };
+    while (iterator.next()) |codepoint| {
+        try codepoints.append(allocator, codepoint);
+    }
+    try sortKeyCodepointsInto(allocator, codepoints.items, options, output);
+}
+
+/// Return an allocator-owned sort key for UTF-16 text.
+pub fn sortKeyUtf16Alloc(
+    allocator: std.mem.Allocator,
+    units: []const u16,
+    options: Options,
+) error{ InvalidUtf16, OutOfMemory }![]u32 {
+    var key = std.ArrayList(u32).empty;
+    errdefer key.deinit(allocator);
+    try sortKeyUtf16Into(allocator, units, options, &key);
     return key.toOwnedSlice(allocator);
 }
 
@@ -1357,6 +1414,52 @@ test "basic collation ordering" {
     try testing.expectEqual(
         std.math.Order.eq,
         try compare(allocator, "a", "a", options),
+    );
+}
+
+test "sort key buffer and UTF-16 APIs" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const cases = [_]struct { text: []const u8, options: Options }{
+        .{ .text = "Hello, world!", .options = .{} },
+        .{
+            .text = "\u{00c5}ngstr\u{00f6}m bl\u{00e5}b\u{00e4}r",
+            .options = .{ .locale = "sv" },
+        },
+        .{ .text = "\u{4f60}\u{597d}\u{4e16}\u{754c}", .options = .{} },
+    };
+
+    var reused = std.ArrayList(u32).empty;
+    defer reused.deinit(allocator);
+
+    for (cases) |case| {
+        const expected = try sortKeyAlloc(allocator, case.text, case.options);
+        defer allocator.free(expected);
+
+        // Write into a reused buffer twice to exercise capacity reuse.
+        try sortKeyInto(allocator, case.text, case.options, &reused);
+        try testing.expectEqualSlices(u32, expected, reused.items);
+        try sortKeyInto(allocator, case.text, case.options, &reused);
+        try testing.expectEqualSlices(u32, expected, reused.items);
+
+        const units = try std.unicode.utf8ToUtf16LeAlloc(allocator, case.text);
+        defer allocator.free(units);
+        const utf16_key = try sortKeyUtf16Alloc(allocator, units, case.options);
+        defer allocator.free(utf16_key);
+        try testing.expectEqualSlices(u32, expected, utf16_key);
+
+        try sortKeyUtf16Into(allocator, units, case.options, &reused);
+        try testing.expectEqualSlices(u32, expected, reused.items);
+    }
+
+    try testing.expectError(
+        error.InvalidUtf16,
+        sortKeyUtf16Alloc(allocator, &[_]u16{0xD800}, .{}),
+    );
+    try testing.expectError(
+        error.InvalidUtf8,
+        sortKeyAlloc(allocator, "\xff", .{}),
     );
 }
 
