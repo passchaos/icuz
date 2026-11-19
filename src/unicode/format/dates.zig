@@ -83,7 +83,10 @@ pub fn formatDateAlloc(
     );
 }
 
-const skeleton_order = "GyMdkHmsSEDFwWahKzZ";
+// ICU UDateTimePatternField order: era, year, quarter, month, week-of-year,
+// week-of-month, weekday, day-of-year, day-of-week-in-month, day, dayperiod,
+// hour, minute, second, fractional second, zone.
+const skeleton_order = "GyYuUrUQqMLlwWEecDFdgabBHkhKJjCmsASvzZOVXx";
 
 /// Canonicalize an ICU date skeleton (fields sorted by ICU's canonical
 /// order) into `buffer`.
@@ -94,8 +97,7 @@ pub fn canonicalSkeleton(
     const Field = struct {
         letter: u8,
         count: u8,
-        order: u8,
-        index: u8,
+        order: u16,
     };
     var fields: [32]Field = undefined;
     var count: usize = 0;
@@ -105,18 +107,31 @@ pub fn canonicalSkeleton(
         if (!std.ascii.isAlphabetic(letter)) return null;
         var end = index;
         while (end < skeleton.len and skeleton[end] == letter) end += 1;
-        if (count == fields.len) return null;
         const position = std.mem.indexOfScalar(u8, skeleton_order, letter);
-        fields[count] = .{
+        const order: u16 = if (position) |value|
+            @intCast(value)
+        else
+            @intCast(skeleton_order.len + index);
+        const entry = Field{
             .letter = letter,
             .count = @intCast(end - index),
-            .order = if (position) |value|
-                @intCast(value)
-            else
-                @intCast(skeleton_order.len),
-            .index = @intCast(count),
+            .order = order,
         };
-        count += 1;
+        // ICU keeps the last letter provided for a field.
+        var existing: ?usize = null;
+        for (fields[0..count], 0..) |field, slot| {
+            if (field.order == order) {
+                existing = slot;
+                break;
+            }
+        }
+        if (existing) |slot| {
+            fields[slot] = entry;
+        } else {
+            if (count == fields.len) return null;
+            fields[count] = entry;
+            count += 1;
+        }
         index = end;
     }
     if (count == 0) return null;
@@ -125,11 +140,7 @@ pub fn canonicalSkeleton(
     while (sorted < count) : (sorted += 1) {
         const current = fields[sorted];
         var position = sorted;
-        while (position > 0 and
-            (fields[position - 1].order > current.order or
-                (fields[position - 1].order == current.order and
-                    fields[position - 1].index > current.index)))
-        {
+        while (position > 0 and fields[position - 1].order > current.order) {
             fields[position] = fields[position - 1];
             position -= 1;
         }
@@ -180,16 +191,60 @@ pub fn skeletonPattern(
     var request_buffer: [64]u8 = undefined;
     const request_set = skeletonFieldSet(canonical, &request_buffer) orelse
         return null;
+    var best_pattern: ?[]const u8 = null;
+    var best_skeleton: ?[]const u8 = null;
+    var best_distance: u32 = std.math.maxInt(u32);
     for (locale.skeletons) |item| {
         var item_buffer: [64]u8 = undefined;
         const item_set = skeletonFieldSet(item.id, &item_buffer) orelse
             continue;
-        if (std.mem.eql(u8, item_set, request_set)) {
-            return adjustSkeletonWidths(item.pattern, canonical, buffer) orelse
-                item.pattern;
+        if (!std.mem.eql(u8, item_set, request_set)) continue;
+        const distance = skeletonDistance(canonical, item.id);
+        if (distance < best_distance) {
+            best_distance = distance;
+            best_pattern = item.pattern;
+            best_skeleton = item.id;
+            if (distance == 0) break;
         }
     }
+    if (best_pattern) |pattern| {
+        return adjustSkeletonWidths(
+            pattern,
+            canonical,
+            best_skeleton.?,
+            buffer,
+        ) orelse pattern;
+    }
     return null;
+}
+
+/// ICU DateTimePatternGenerator::getBestPattern width distance: field width
+/// differences plus a penalty when numeric and textual month forms compete.
+fn skeletonDistance(request: []const u8, candidate: []const u8) u32 {
+    var distance: u32 = 0;
+    var letter: u8 = 'A';
+    while (letter <= 'Z') : (letter += 1) {
+        distance += skeletonFieldDistance(request, candidate, letter);
+    }
+    letter = 'a';
+    while (letter <= 'z') : (letter += 1) {
+        distance += skeletonFieldDistance(request, candidate, letter);
+    }
+    return distance;
+}
+
+fn skeletonFieldDistance(request: []const u8, candidate: []const u8, letter: u8) u32 {
+    const request_width = requestedWidth(request, letter) orelse 0;
+    const candidate_width = requestedWidth(candidate, letter) orelse 0;
+    if (request_width == candidate_width) return 0;
+    if (request_width == 0 or candidate_width == 0) return 0x1000;
+    if (letter == 'M' and (request_width <= 2) != (candidate_width <= 2)) {
+        return 0x100;
+    }
+    return if (request_width > candidate_width)
+        request_width - candidate_width
+    else
+        candidate_width - request_width;
 }
 
 fn requestedWidth(canonical: []const u8, letter: u8) ?u8 {
@@ -206,11 +261,30 @@ fn requestedWidth(canonical: []const u8, letter: u8) ?u8 {
     return null;
 }
 
-/// Widen textual fields (three or more pattern letters) to the widths in the
-/// requested skeleton; numeric fields keep the locale pattern's width.
+/// Select the locale's date-time glue pattern for a date skeleton the way
+/// ICU DateTimePatternGenerator::getBestPattern does: the month width picks
+/// the style, and a wide month with a weekday requests the full style.
+pub fn dateTimeGlue(locale: *const data.Locale, date_skeleton: []const u8) []const u8 {
+    const month_width = requestedWidth(date_skeleton, 'M') orelse
+        requestedWidth(date_skeleton, 'L') orelse 0;
+    if (month_width == 4) {
+        if (skeletonHasAny(date_skeleton, "Eec")) {
+            return locale.date_time_full;
+        }
+        return locale.date_time_long;
+    }
+    if (month_width == 3) return locale.date_time_medium;
+    return locale.date_time_short;
+}
+
+/// Adjust the field widths of a resolved pattern to the requested skeleton
+/// (ICU DateTimePatternGenerator::adjustFieldTypes). Fields whose width in
+/// the matched skeleton already equals the request keep the pattern width,
+/// as do numeric/textual mismatches and fixed-width time fields.
 fn adjustSkeletonWidths(
     pattern: []const u8,
     canonical: []const u8,
+    matched: []const u8,
     buffer: []u8,
 ) ?[]const u8 {
     var length: usize = 0;
@@ -235,11 +309,26 @@ fn adjustSkeletonWidths(
         }
         var end = index;
         while (end < pattern.len and pattern[end] == byte) end += 1;
-        const matched_width = end - index;
-        var width = matched_width;
-        if (matched_width >= 3) {
-            if (requestedWidth(canonical, byte)) |requested| {
-                width = requested;
+        const pattern_width = end - index;
+        var width = pattern_width;
+        const letter: u8 = if (byte == 'L') 'M' else byte;
+        if (!fixedWidthField(byte)) {
+            if (requestedWidth(canonical, letter)) |requested_raw| {
+                var requested = requested_raw;
+                if (letter == 'E' and requested < 3) requested = 3;
+                var adjust = true;
+                if (requestedWidth(matched, letter)) |matched_raw| {
+                    var matched_length = matched_raw;
+                    if (letter == 'E' and matched_length < 3) matched_length = 3;
+                    if (matched_length == requested) adjust = false;
+                }
+                if (adjust and
+                    fieldIsNumeric(letter, @intCast(pattern_width)) !=
+                        fieldIsNumeric(letter, requested))
+                {
+                    adjust = false;
+                }
+                if (adjust) width = requested;
             }
         }
         if (length + width > buffer.len) return null;
@@ -253,19 +342,40 @@ fn adjustSkeletonWidths(
     return buffer[0..length];
 }
 
-const SplitSkeleton = struct {
+fn fixedWidthField(byte: u8) bool {
+    return switch (byte) {
+        'H', 'h', 'K', 'k', 'J', 'j', 'C', 'm', 's', 'S', 'A', 'a', 'b', 'B' => true,
+        else => false,
+    };
+}
+
+fn numericTextMismatch(letter: u8, requested: u8, matched: u8) bool {
+    if (letter != 'M') return false;
+    return (requested <= 2) != (matched <= 2);
+}
+
+/// Whether a field width selects the numeric (rather than textual) form.
+fn fieldIsNumeric(letter: u8, width: u8) bool {
+    return switch (letter) {
+        'M', 'L' => width <= 2,
+        'd', 'y', 'Y', 'u', 'r', 'U', 'D' => true,
+        else => false,
+    };
+}
+
+pub const SplitSkeleton = struct {
     date: []const u8,
     time: []const u8,
 };
 
-fn splitSkeleton(
+pub fn splitSkeleton(
     locale: *const data.Locale,
     skeleton: []const u8,
     date_buffer: []u8,
     time_buffer: []u8,
 ) SplitSkeleton {
-    const date_letters = "GyQqMLwWEdDFec";
-    const time_letters = "abBhHKkmsSzZOVvXx";
+    const date_letters = "GyYuUrUQqMLlwWEecDFdg";
+    const time_letters = "abBhHKJCkmsASzZOVvXx";
     const preferred_hour: u8 = if (std.mem.indexOfAny(
         u8,
         locale.time_short,
@@ -371,7 +481,7 @@ pub fn formatSkeletonAlloc(
         defer allocator.free(time_text);
         return substituteDateTimePattern(
             allocator,
-            locale.date_time_medium,
+            dateTimeGlue(locale, split.date),
             date_text,
             time_text,
         );
@@ -1043,6 +1153,7 @@ fn appendField(
                     );
                 }
             } else {
+                const standalone = field == 'L' and overrides.months == null;
                 const names: []const []const u8 = if (overrides.months) |months|
                     if (length == 3)
                         months.abbreviated[0..]
@@ -1050,6 +1161,13 @@ fn appendField(
                         months.wide[0..]
                     else
                         months.narrow[0..]
+                else if (standalone)
+                    if (length == 3)
+                        locale.months_standalone_abbreviated[0..]
+                    else if (length == 4)
+                        locale.months_standalone_wide[0..]
+                    else
+                        locale.months_standalone_narrow[0..]
                 else if (length == 3)
                     locale.months_abbreviated[0..]
                 else if (length == 4)
@@ -1078,14 +1196,17 @@ fn appendField(
             if (length >= 2) 2 else 1,
             locale,
         ),
-        'E' => {
+        'E', 'c', 'e' => {
             const day = dayOfWeek(date_time);
+            const standalone = field == 'c';
             const value = if (length >= 6)
-                locale.days_short[day]
+                if (standalone) locale.days_standalone_short[day] else locale.days_short[day]
             else if (length == 5)
-                locale.days_narrow[day]
+                if (standalone) locale.days_standalone_narrow[day] else locale.days_narrow[day]
             else if (length == 4)
-                locale.days_wide[day]
+                if (standalone) locale.days_standalone_wide[day] else locale.days_wide[day]
+            else if (standalone)
+                locale.days_standalone_abbreviated[day]
             else
                 locale.days_abbreviated[day];
             try output.appendSlice(allocator, value);
@@ -1392,7 +1513,7 @@ fn appendIsoOffset(
     }
 }
 
-fn substituteDateTimePattern(
+pub fn substituteDateTimePattern(
     allocator: std.mem.Allocator,
     pattern: []const u8,
     date_text: []const u8,
@@ -1939,9 +2060,10 @@ test "date skeleton patterns" {
         "MMMM d, y",
         skeletonPattern("en", "yMMMMd", &buffer).?,
     );
-    // Weekday widths below three pattern letters keep the locale width.
+    // Weekday widths follow the requested skeleton (E through EEEE are
+    // equivalent for the base pattern; EEEE renders the wide name).
     try testing.expectEqualStrings(
-        "E, MMMM d, y",
+        "EEEE, MMMM d, y",
         skeletonPattern("en", "yMMMMEEEEd", &buffer).?,
     );
 }

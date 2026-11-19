@@ -51,7 +51,8 @@ BLOBS = (
     Blob("src/unicode/format/calendar_conformance.bin", b"CJKC", 1, "74c7ceb16c2d2526e9d9b3a6b2c21681df50c69564b98385a364c6f996977ff9", version=(0, 0, 0)),
     Blob("src/unicode/format/calendars_data.bin", b"CJKD", 1, "c7b3d29c4b739621e6a6345b405317327208b58395e9c34b0c7ed68688e8de8b", version=(0, 0, 0)),
     Blob("src/unicode/format/chinese_data.bin", b"CJK1", 1, "f841e6f49dc0a6781223ec6e12ff6382e915911ef1a74d25a3916a6b66a8914a", version=(0, 0, 0)),
-    Blob("src/unicode/format/intervals_data.bin", b"CJIV", 1, "2ee687e7ac5db9281ebcbec37f4f0437775fe70cbcb77f4a5cbe6c59d982aa38", version=(0, 0, 0)),
+    Blob("src/unicode/format/intervals_data.bin", b"CJIV", 2, "cb5ee882c5fe43d09fecc959abad08a149e5ae1d6314e83b83d8d54061044631", version=(0, 0, 0)),
+    Blob("src/unicode/format/interval_skeleton_conformance.bin", b"CJIS", 1, "ea83dd7bb402ea0c6ce7521ffbb96c728adcd351f8ff469f3e7734fbc64b8d2f", version=(0, 0, 0)),
     Blob("src/unicode/format/interval_conformance.bin", b"CJI1", 1, "6c403ae90092aa49d33a3fd3dbb2ad4c17d199f7d27253bb25ef6e811211db45", version=(0, 0, 0)),
     Blob("src/unicode/format/durations_data.bin", b"CJQ0", 1, "f41a08233a4a439a956d6ba4562d87c96ac66413117c44e94429c688184b3590", version=(0, 0, 0)),
     Blob("src/unicode/format/duration_conformance.bin", b"CJQK", 1, "bbcecde310b0bbc976aad662692ee4e76205a6235d3cecbaae4c827d2182b6e3", version=(0, 0, 0)),
@@ -443,7 +444,7 @@ GENERATORS = {
     "tools/unicode/format/generate_calendars.py": "75fca549c55d23cab00114d1ff094b0da7775980e75ed22eab87faa98f9803e5",
     "tools/unicode/format/generate_calendar_format_conformance.py": "72f5f216c79e094e76a7e001458a85bac9ab78b28e73301726dac10d8430c5e2",
     "tools/unicode/format/generate_chinese.py": "9146656817fb532852049e86122b86224c4705b52b8d8ff75730d8a7a08177ad",
-    "tools/unicode/format/generate_intervals.py": "d27fec153fce9faaf81f19807da0586e7f4482baf1f73f8665e910faf00c47de",
+    "tools/unicode/format/generate_intervals.py": "9501a287edd57abcd29a345b91338789ec527c89dd45f8285b00cb4cfe71c0c5",
     "tools/unicode/format/generate_interval_conformance.py": "1cb95944c746a5f8276b9ba27212c8871da0c361e424af9385655731398f46cc",
     "tools/unicode/format/generate_durations.py": "2f6b8a42e37bee0cdae945746ce6a91f2de2029781e128774005c49f66967504",
     "tools/unicode/format/generate_duration_conformance.py": "2e883fa048074e09ee2bd62bc131b0de07a1d0fc36c3a480b4ff3e2ff886bd65",
@@ -453,7 +454,8 @@ GENERATORS = {
     "tools/unicode/format/generate_display_names_conformance.py": "d87750b780f7809ea1031149faba1e929cec7c532246adfad1a4e953ba49d844",
     "tools/unicode/format/generate_likely_subtags.py": "aab79fd344e8397809fc1b1960c63ad6f80bca9b826d25366d20282a6729c268",
     "tools/unicode/format/generate_likely_subtags_conformance.py": "a7285f908b8c3f3bb60153ba1cb62c7aaa9fa5248734f04530864c8b48024ae6",
-    "tools/unicode/format/generate_dates.py": "71849fc4812dcaed83e227ed0122fb3a41a6c8e4444d9676bb45f258ba84738b",
+    "tools/unicode/format/generate_dates.py": "98beac37d9bf3b7d2f1f220953f9c425d943ef5c4ec8cc3a7c6927f1171e0863",
+    "tools/unicode/format/generate_interval_skeleton_conformance.py": "3733e4ee24ea0d32bde4a35475b0c65c28d634fff77a89ab20413631b5d5bddc",
     "tools/unicode/format/generate_date_skeleton_conformance.py": "0180072157ba234dea9af11cd401695cace6e6d399792743a76ace27c24b8246",
     "tools/unicode/format/generate_misc.py": "6f811f84eb654ea301ead14d178f9ef74b5f31d75c00e4a958ee887b60380af5",
     "tools/unicode/format/generate_currency_conformance.py": "d84c2f318fc73ea144d594c5ab4d53063497d2e2d6c739973bc9decef2f3d812",
@@ -545,7 +547,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/format/dates_data.zig",
         "tools/unicode/format/generate_dates.py",
-        "79f9199529bd989991c0c52c616f2cccdd5b7d2a33bf3ad3b0e220b50676ad9e",
+        "15bb2ff0406a8467f43d727eee39283822e489cd026831bc15175202fdd6861a",
     ),
     GeneratedText(
         "src/unicode/format/list_data.zig",
@@ -948,9 +950,24 @@ def check_layout(blob: Blob, data: bytes) -> None:
     elif magic == b"CJIV":
         locale_count = struct.unpack_from("<H", data, 8)[0]
         entry_count, string_len = struct.unpack_from("<II", data, 12)
+        skeleton_count = struct.unpack_from("<I", data, 20)[0]
         assert (
-            24 + locale_count * 16 + entry_count * 12 + string_len == len(data)
+            24
+            + skeleton_count * 4
+            + locale_count * 16
+            + entry_count * 12
+            + string_len
+            == len(data)
         )
+    elif magic == b"CJIS":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            locale_len = data[offset]
+            skeleton_len = data[offset + 1]
+            expected_len = struct.unpack_from("<H", data, offset + 20)[0]
+            offset += 24 + locale_len + skeleton_len + expected_len
+        assert offset == len(data)
     elif magic == b"CJI1":
         case_count = struct.unpack_from("<I", data, 8)[0]
         offset = 12

@@ -65,11 +65,13 @@ def zig_string(value: str) -> str:
     return result
 
 
-def names(values: dict, keys: list[str], fallback: dict | None = None) -> list[str]:
+def names(values: dict, keys: list[str], *fallbacks: dict) -> list[str]:
     result: list[str] = []
     for key in keys:
         value = values.get(key)
-        if value is None and fallback is not None:
+        for fallback in fallbacks:
+            if value is not None:
+                break
             value = fallback.get(key)
         if value is None:
             value = key
@@ -108,6 +110,23 @@ def parse_locale(path: Path) -> tuple[str, dict]:
             MONTH_KEYS,
             months.get("abbreviated", {}),
         ),
+        "months_standalone_wide": names(
+            months_standalone.get("wide", {}),
+            MONTH_KEYS,
+            months.get("wide", {}),
+        ),
+        "months_standalone_abbreviated": names(
+            months_standalone.get("abbreviated", {}),
+            MONTH_KEYS,
+            months_standalone.get("wide", {}),
+            months.get("abbreviated", {}),
+        ),
+        "months_standalone_narrow": names(
+            months_standalone.get("narrow", {}),
+            MONTH_KEYS,
+            months_standalone.get("abbreviated", {}),
+            months.get("narrow", {}),
+        ),
         "days_wide": names(days.get("wide", {}), DAY_KEYS),
         "days_abbreviated": names(
             days.get("abbreviated", {}),
@@ -123,6 +142,29 @@ def parse_locale(path: Path) -> tuple[str, dict]:
             days.get("short", {}),
             DAY_KEYS,
             days.get("abbreviated", {}),
+        ),
+        "days_standalone_wide": names(
+            days_standalone.get("wide", {}),
+            DAY_KEYS,
+            days.get("wide", {}),
+        ),
+        "days_standalone_abbreviated": names(
+            days_standalone.get("abbreviated", {}),
+            DAY_KEYS,
+            days_standalone.get("wide", {}),
+            days.get("abbreviated", {}),
+        ),
+        "days_standalone_narrow": names(
+            days_standalone.get("narrow", {}),
+            DAY_KEYS,
+            days_standalone.get("abbreviated", {}),
+            days.get("narrow", {}),
+        ),
+        "days_standalone_short": names(
+            days_standalone.get("short", {}),
+            DAY_KEYS,
+            days_standalone.get("abbreviated", {}),
+            days.get("short", {}),
         ),
         "am_wide": day_period_value(
             (
@@ -208,26 +250,30 @@ def parse_locale(path: Path) -> tuple[str, dict]:
     }
 
 
-SKELETON_ORDER = "GyMdkHmsSEDFwWahKzZ"
+# ICU UDateTimePatternField order: era, year, quarter, month, week-of-year,
+# week-of-month, weekday, day-of-year, day-of-week-in-month, day, dayperiod,
+# hour, minute, second, fractional second, zone.
+SKELETON_ORDER = "GyYuUrUQqMLlwWEecDFdgabBHkhKJjCmsASvzZOVXx"
 
 
 def canonical_skeleton(skeleton: str) -> str:
-    fields: list[tuple[str, int]] = []
+    fields: dict[int, tuple[str, int]] = {}
     index = 0
     while index < len(skeleton):
         letter = skeleton[index]
         end = index
         while end < len(skeleton) and skeleton[end] == letter:
             end += 1
-        fields.append((letter, end - index))
+        position = SKELETON_ORDER.find(letter)
+        # ICU keeps the last letter provided for a field.
+        fields[position if position >= 0 else len(SKELETON_ORDER) + index] = (
+            letter,
+            end - index,
+        )
         index = end
-
-    def order(field: tuple[str, int]) -> int:
-        position = SKELETON_ORDER.find(field[0])
-        return position if position >= 0 else len(SKELETON_ORDER)
-
-    fields.sort(key=order)
-    return "".join(letter * count for letter, count in fields)
+    return "".join(
+        letter * count for letter, count in (fields[key] for key in sorted(fields))
+    )
 
 
 def render(entries: list[tuple[str, dict]]) -> str:
@@ -268,10 +314,17 @@ def render(entries: list[tuple[str, dict]]) -> str:
         "    months_wide: [12][]const u8,",
         "    months_abbreviated: [12][]const u8,",
         "    months_narrow: [12][]const u8,",
+        "    months_standalone_wide: [12][]const u8,",
+        "    months_standalone_abbreviated: [12][]const u8,",
+        "    months_standalone_narrow: [12][]const u8,",
         "    days_wide: [7][]const u8,",
         "    days_abbreviated: [7][]const u8,",
         "    days_narrow: [7][]const u8,",
         "    days_short: [7][]const u8,",
+        "    days_standalone_wide: [7][]const u8,",
+        "    days_standalone_abbreviated: [7][]const u8,",
+        "    days_standalone_narrow: [7][]const u8,",
+        "    days_standalone_short: [7][]const u8,",
         "    am_wide: []const u8,",
         "    pm_wide: []const u8,",
         "    am_abbreviated: []const u8,",
@@ -293,6 +346,7 @@ def render(entries: list[tuple[str, dict]]) -> str:
         "    date_time_long: []const u8,",
         "    date_time_medium: []const u8,",
         "    date_time_short: []const u8,",
+        "    date_time_interval: []const u8,",
         "};",
         "",
         "pub const locales = [_]Locale{",
@@ -312,10 +366,17 @@ def render(entries: list[tuple[str, dict]]) -> str:
             f".months_wide = {string_array('months_wide')}, "
             f".months_abbreviated = {string_array('months_abbreviated')}, "
             f".months_narrow = {string_array('months_narrow')}, "
+            f".months_standalone_wide = {string_array('months_standalone_wide')}, "
+            f".months_standalone_abbreviated = {string_array('months_standalone_abbreviated')}, "
+            f".months_standalone_narrow = {string_array('months_standalone_narrow')}, "
             f".days_wide = {string_array('days_wide')}, "
             f".days_abbreviated = {string_array('days_abbreviated')}, "
             f".days_narrow = {string_array('days_narrow')}, "
             f".days_short = {string_array('days_short')}, "
+            f".days_standalone_wide = {string_array('days_standalone_wide')}, "
+            f".days_standalone_abbreviated = {string_array('days_standalone_abbreviated')}, "
+            f".days_standalone_narrow = {string_array('days_standalone_narrow')}, "
+            f".days_standalone_short = {string_array('days_standalone_short')}, "
             f".am_wide = {zig_string(values['am_wide'])}, "
             f".pm_wide = {zig_string(values['pm_wide'])}, "
             f".am_abbreviated = {zig_string(values['am_abbreviated'])}, "
@@ -336,7 +397,8 @@ def render(entries: list[tuple[str, dict]]) -> str:
             f".date_time_full = {zig_string(values['date_time_full'])}, "
             f".date_time_long = {zig_string(values['date_time_long'])}, "
             f".date_time_medium = {zig_string(values['date_time_medium'])}, "
-            f".date_time_short = {zig_string(values['date_time_short'])} "
+            f".date_time_short = {zig_string(values['date_time_short'])}, "
+            f".date_time_interval = {zig_string(values['date_time_interval'])} "
             "},"
         )
     lines.extend(["};", ""])
@@ -428,20 +490,27 @@ def date_time_patterns(container) -> dict:
         if not length.tag.endswith("FormatLength"):
             continue
         length_type = length.get("type", "full")
+        candidates: dict[str, str] = {}
         for fmt in length:
             if fmt.tag != "dateTimeFormat":
-                continue
-            if fmt.get("type", "standard") != "standard":
                 continue
             for pattern in fmt:
                 if pattern.tag != "pattern":
                     continue
                 if pattern.get("alt") is not None:
                     continue
-                result[length_type] = pattern.text or ""
+                candidates[fmt.get("type", "standard")] = pattern.text or ""
                 break
-            if length_type in result:
+        # ICU 42+ prefers the "atTime" variant when CLDR provides one.
+        for variant in ("atTime", "standard"):
+            if variant in candidates:
+                result[length_type] = candidates[variant]
                 break
+        else:
+            if candidates:
+                result[length_type] = next(iter(candidates.values()))
+        if "standard" in candidates:
+            result["standard_" + length_type] = candidates["standard"]
     return result
 
 
@@ -645,6 +714,33 @@ def resolved_calendar(
     return merged
 
 
+def pattern_skeleton(pattern: str) -> str:
+    """Derive the skeleton a date/time pattern was built from."""
+    fields: list[tuple[str, int]] = []
+    quoted = False
+    index = 0
+    while index < len(pattern):
+        character = pattern[index]
+        if character == "'":
+            if index + 1 < len(pattern) and pattern[index + 1] == "'":
+                index += 2
+                continue
+            quoted = not quoted
+            index += 1
+            continue
+        if not quoted and character.isascii() and character.isalpha():
+            end = index
+            while end < len(pattern) and pattern[end] == character:
+                end += 1
+            fields.append((character, end - index))
+            index = end
+            continue
+        index += 1
+    return canonical_skeleton(
+        "".join(letter * count for letter, count in fields)
+    )
+
+
 def parse_locale_xml(
     archive: zipfile.ZipFile,
     locale: str,
@@ -668,13 +764,33 @@ def parse_locale_xml(
     days = format_widths("days")
     day_periods = format_widths("dayPeriods")
 
+    def standalone_widths(section: str) -> dict:
+        # Stand-alone names inherit from the stand-alone context, then from
+        # the format context of the same width.
+        data = gregorian.get(section, {})
+        result = dict(data.get("stand-alone", {}))
+        for width, values in data.get("format", {}).items():
+            result.setdefault(width, values)
+        return result
+
+    months_standalone = standalone_widths("months")
+    days_standalone = standalone_widths("days")
+
+    # Locales whose ICU data fills every am/pm width from the wide form.
+    WIDE_FILL_DAY_PERIODS = {"ko", "ps"}
+
     def own_day_period(width: str):
-        # am/pm inherit per locale across widths, then through the parent
-        # chain (including root). Flexible day periods are the last resort.
-        widths = [width] + [
-            other for other in ("wide", "abbreviated", "narrow")
-            if other != width
-        ]
+        # am/pm inherit per width through the parent chain (including root);
+        # a few locales use their wide form for every width. Flexible day
+        # periods are the last resort.
+        if locale in WIDE_FILL_DAY_PERIODS:
+            widths = {
+                "wide": ("wide",),
+                "abbreviated": ("abbreviated", "wide"),
+                "narrow": ("narrow", "abbreviated", "wide"),
+            }.get(width, (width,))
+        else:
+            widths = (width,)
         for name in parent_chain(locale):
             calendar = load_calendar(archive, name, cache)
             periods = calendar.get("dayPeriods", {}).get("format", {})
@@ -737,8 +853,27 @@ def parse_locale_xml(
     system = default_numbering_system(archive, locale, cache)
     digits = systems.get(system, "0123456789")
 
+    # ICU's DateTimePatternGenerator also registers the date and time style
+    # patterns, which lets skeletons such as yMMMMEEEEd resolve to the full
+    # date pattern of locales that do not list them in availableFormats.
+    available_formats = dict(gregorian.get("availableFormats", {}))
+    for style_pattern in (
+        date_formats.get("full"),
+        date_formats.get("long"),
+        date_formats.get("medium"),
+        date_formats.get("short"),
+        time_formats.get("full"),
+        time_formats.get("long"),
+        time_formats.get("medium"),
+        time_formats.get("short"),
+    ):
+        if style_pattern:
+            available_formats.setdefault(
+                pattern_skeleton(style_pattern), style_pattern
+            )
+
     return locale, {
-        "available_formats": gregorian.get("availableFormats", {}),
+        "available_formats": available_formats,
         "digits": digits,
         "months_wide": names(months.get("wide", {}), MONTH_KEYS),
         "months_abbreviated": names(
@@ -750,6 +885,23 @@ def parse_locale_xml(
             months.get("narrow", {}),
             MONTH_KEYS,
             months.get("abbreviated", {}),
+        ),
+        "months_standalone_wide": names(
+            months_standalone.get("wide", {}),
+            MONTH_KEYS,
+            months.get("wide", {}),
+        ),
+        "months_standalone_abbreviated": names(
+            months_standalone.get("abbreviated", {}),
+            MONTH_KEYS,
+            months_standalone.get("wide", {}),
+            months.get("abbreviated", {}),
+        ),
+        "months_standalone_narrow": names(
+            months_standalone.get("narrow", {}),
+            MONTH_KEYS,
+            months_standalone.get("abbreviated", {}),
+            months.get("narrow", {}),
         ),
         "days_wide": names(days.get("wide", {}), DAY_KEYS),
         "days_abbreviated": names(
@@ -766,6 +918,29 @@ def parse_locale_xml(
             days.get("short", {}),
             DAY_KEYS,
             days.get("abbreviated", {}),
+        ),
+        "days_standalone_wide": names(
+            days_standalone.get("wide", {}),
+            DAY_KEYS,
+            days.get("wide", {}),
+        ),
+        "days_standalone_abbreviated": names(
+            days_standalone.get("abbreviated", {}),
+            DAY_KEYS,
+            days_standalone.get("wide", {}),
+            days.get("abbreviated", {}),
+        ),
+        "days_standalone_narrow": names(
+            days_standalone.get("narrow", {}),
+            DAY_KEYS,
+            days_standalone.get("abbreviated", {}),
+            days.get("narrow", {}),
+        ),
+        "days_standalone_short": names(
+            days_standalone.get("short", {}),
+            DAY_KEYS,
+            days_standalone.get("abbreviated", {}),
+            days.get("short", {}),
         ),
         "am_wide": day_period_value(
             (
@@ -852,6 +1027,9 @@ def parse_locale_xml(
         "date_time_long": date_time_formats.get("long", "{1}, {0}"),
         "date_time_medium": date_time_formats.get("medium", "{1}, {0}"),
         "date_time_short": date_time_formats.get("short", "{1}, {0}"),
+        "date_time_interval": date_time_formats.get(
+            "standard_medium", "{1}, {0}"
+        ),
     }
 
 

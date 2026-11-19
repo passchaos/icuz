@@ -110,7 +110,12 @@ need without pulling in a font or layout engine.
 - CLDR 48 date and time interval formatting for 87 locales, using ICU's
   repeated-field pattern splitting, greatest-difference selection,
   single-date collapse, hour-cycle-aware time skeletons, and locale
-  fallback formatting, validated by a 160-case PyICU fixture.
+  fallback formatting, validated by a 160-case PyICU fixture. Skeleton
+  intervals (`formatSkeletonIntervalAlloc`) follow ICU DateIntervalFormat
+  semantics: canonical skeleton best-match resolution, interval-pattern
+  width adjustment, date-once time-range composition, and fallback
+  formatting, validated by a 5,060-case PyICU fixture across 23 skeletons
+  and 20 locales.
 - IANA tzdata 2026e time zones for 597 IDs, including backward link names,
   with transition-based UTC offset and daylight resolution from 1970 through
   2100, local/UTC conversion, and zone-aware Unix timestamp formatting.

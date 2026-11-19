@@ -58,9 +58,35 @@ SKELETONS = (
     ("h", 7),
 )
 
-KEY_IDS = {"y": 0, "M": 1, "d": 2, "H": 3, "h": 3, "m": 4, "s": 5, "a": 6}
+KEY_IDS = {"y": 0, "M": 1, "d": 2, "H": 3, "h": 3, "m": 4, "s": 5, "a": 6,
+           "B": 6, "G": 7}
 
 DEFAULT_FALLBACK = "{0} \u2013 {1}"
+
+# ICU UDateTimePatternField order: era, year, quarter, month, week-of-year,
+# week-of-month, weekday, day-of-year, day-of-week-in-month, day, dayperiod,
+# hour, minute, second, fractional second, zone.
+SKELETON_ORDER = "GyYuUrUQqMLlwWEecDFdgabBHkhKJjCmsASvzZOVXx"
+
+
+def canonical_skeleton(skeleton: str) -> str:
+    fields: dict[int, tuple[str, int]] = {}
+    index = 0
+    while index < len(skeleton):
+        letter = skeleton[index]
+        end = index
+        while end < len(skeleton) and skeleton[end] == letter:
+            end += 1
+        position = SKELETON_ORDER.find(letter)
+        # ICU keeps the last letter provided for a field.
+        fields[position if position >= 0 else len(SKELETON_ORDER) + index] = (
+            letter,
+            end - index,
+        )
+        index = end
+    return "".join(
+        letter * count for letter, count in (fields[key] for key in sorted(fields))
+    )
 
 
 def parent_chain(locale: str) -> list[str]:
@@ -139,7 +165,7 @@ def split_pattern_into_two_parts(pattern: str) -> tuple[str, str] | None:
     return pattern[:split], pattern[split:]
 
 
-def render(locale_entries: dict[str, tuple[str, list]]) -> bytes:
+def render(locale_entries: dict[str, tuple[str, list]], skeleton_ids: list[str]) -> bytes:
     strings = bytearray(b"\x00")
     offsets: dict[str, int] = {"": 0}
 
@@ -154,6 +180,7 @@ def render(locale_entries: dict[str, tuple[str, list]]) -> bytes:
         offsets[value] = offset
         return offset
 
+    skeleton_offsets = [intern(item_id) for item_id in skeleton_ids]
     entry_bytes = bytearray()
     locale_bytes = bytearray()
     for locale in sorted(locale_entries):
@@ -182,14 +209,15 @@ def render(locale_entries: dict[str, tuple[str, list]]) -> bytes:
     header = bytearray(b"CJIV")
     header += struct.pack(
         "<B3xHHIII",
-        1,
+        2,
         len(locale_entries),
         0,
         len(entry_bytes) // 12,
         len(strings),
-        0,
+        len(skeleton_ids),
     )
-    return bytes(header + locale_bytes + entry_bytes + strings)
+    skeleton_bytes = b"".join(struct.pack("<I", offset) for offset in skeleton_offsets)
+    return bytes(header + skeleton_bytes + locale_bytes + entry_bytes + strings)
 
 
 def main() -> int:
@@ -203,6 +231,25 @@ def main() -> int:
     cache: dict = {}
     result = {}
     with zipfile.ZipFile(archive_path) as archive:
+        discovered: set[str] = set()
+        for locale in LOCALES:
+            for name in parent_chain(locale):
+                element = interval_formats(load(archive, name, cache))
+                if element is None:
+                    continue
+                for item in element.findall("intervalFormatItem"):
+                    item_id = item.get("id") or ""
+                    if "B" in item_id:
+                        continue
+                    discovered.add(canonical_skeleton(item_id))
+        skeleton_ids = [canonical_skeleton(raw) for raw, _ in SKELETONS]
+        for canonical in sorted(discovered):
+            if canonical not in skeleton_ids:
+                skeleton_ids.append(canonical)
+        skeleton_index = {
+            canonical: index for index, canonical in enumerate(skeleton_ids)
+        }
+
         for locale in LOCALES:
             fallback = None
             entries: dict[tuple[int, int], tuple[str, str]] = {}
@@ -214,7 +261,12 @@ def main() -> int:
                 if value and fallback is None:
                     fallback = value.strip()
                 for item in element.findall("intervalFormatItem"):
-                    skeleton_id = dict(SKELETONS).get(item.get("id"))
+                    item_id = item.get("id") or ""
+                    if "B" in item_id:
+                        continue
+                    skeleton_id = skeleton_index.get(
+                        canonical_skeleton(item_id)
+                    )
                     if skeleton_id is None:
                         continue
                     for difference in item.findall("greatestDifference"):
@@ -235,7 +287,7 @@ def main() -> int:
                 resolved.append((skeleton_id, key_id, left, right))
             result[locale] = (fallback, resolved)
 
-    blob = render(result)
+    blob = render(result, skeleton_ids)
     (out_dir / "intervals_data.bin").write_bytes(blob)
     print(
         f"generated {len(result)} locales, {len(blob)} bytes",
