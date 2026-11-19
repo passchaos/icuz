@@ -51,6 +51,12 @@ pub const Iterator = struct {
                 regional_indicator_count,
             );
             if (should_break) break;
+            if (self.text[end] < 0x80) {
+                if (asciiIsWordAnchor(self.text[end])) is_word = true;
+                regional_indicator_count = 0;
+                end += 1;
+                continue;
+            }
             const current = decode(self.text, end) orelse unreachable;
             const current_properties = properties(current.codepoint);
             is_word = is_word or current_properties.word_anchor;
@@ -213,6 +219,13 @@ fn asciiBreaksAt(text: []const u8, offset: usize) ?bool {
     if (isExtendNumLetLeft(previous) and current == .extend_num_let) return false;
     if (previous == .extend_num_let and isExtendNumLetRight(current)) return false;
     return true;
+}
+
+fn asciiIsWordAnchor(byte: u8) bool {
+    return switch (byte) {
+        '0'...'9', 'A'...'Z', 'a'...'z', '_' => true,
+        else => false,
+    };
 }
 
 fn asciiClass(byte: u8) Class {
