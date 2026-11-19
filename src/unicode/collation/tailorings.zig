@@ -278,6 +278,14 @@ pub const PageIndex = struct {
 const direct_limit: usize = 0x1000;
 const direct_absent: u16 = 0xFFFF;
 
+/// True when `codepoint` may start a tailored rule. Callers use this to skip
+/// the full `match` call for code points the locale does not touch.
+pub inline fn couldMatch(pages: ?*PageIndex, codepoint: u21) bool {
+    const page_index = pages orelse return true;
+    if (codepoint >= direct_limit) return true;
+    return page_index.direct[codepoint] != direct_absent;
+}
+
 const IndexSlot = struct {
     /// 0 = empty, 1 = building, 2 = published.
     state: std.atomic.Value(u8) = std.atomic.Value(u8).init(0),

@@ -206,6 +206,69 @@ pub fn sortKeyInto(
     options: Options,
     output: *std.ArrayList(u32),
 ) error{ InvalidUtf8, OutOfMemory }!void {
+    const collator = Collator.init(options);
+    return collator.sortKeyInto(allocator, text, output);
+}
+
+/// A collator with the locale tailoring resolved once, mirroring ICU's
+/// `UCollator`. Reuse one across many sort keys to skip the locale lookup
+/// and page-index claim on every call.
+pub const Collator = struct {
+    options: Options,
+    tailoring: ?tailorings.Tailoring,
+    pages: ?*tailorings.PageIndex,
+
+    pub fn init(options: Options) Collator {
+        const tailoring = if (options.locale) |locale|
+            tailorings.find(locale, options.collation)
+        else
+            null;
+        return .{
+            .options = options,
+            .tailoring = tailoring,
+            .pages = if (tailoring) |value|
+                tailorings.pageIndex(value)
+            else
+                null,
+        };
+    }
+
+    pub fn sortKeyInto(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        text: []const u8,
+        output: *std.ArrayList(u32),
+    ) error{ InvalidUtf8, OutOfMemory }!void {
+        return sortKeyUtf8Resolved(
+            allocator,
+            text,
+            self.options,
+            self.tailoring,
+            self.pages,
+            output,
+        );
+    }
+
+    pub fn sortKeyAlloc(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        text: []const u8,
+    ) error{ InvalidUtf8, OutOfMemory }![]u32 {
+        var key = std.ArrayList(u32).empty;
+        errdefer key.deinit(allocator);
+        try self.sortKeyInto(allocator, text, &key);
+        return key.toOwnedSlice(allocator);
+    }
+};
+
+fn sortKeyUtf8Resolved(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    options: Options,
+    locale_tailoring: ?tailorings.Tailoring,
+    tailoring_pages: ?*tailorings.PageIndex,
+    output: *std.ArrayList(u32),
+) error{ InvalidUtf8, OutOfMemory }!void {
     if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
 
     // Most callers sort short labels and keys; decode those into a stack
@@ -219,10 +282,12 @@ pub fn sortKeyInto(
             count += 1;
             cursor = decoded.next;
         }
-        return sortKeyCodepointsInto(
+        return sortKeyCodepointsResolved(
             allocator,
             stack_codepoints[0..count],
             options,
+            locale_tailoring,
+            tailoring_pages,
             output,
         );
     }
@@ -236,7 +301,14 @@ pub fn sortKeyInto(
         try codepoints.append(allocator, decoded.codepoint);
         cursor = decoded.next;
     }
-    try sortKeyCodepointsInto(allocator, codepoints.items, options, output);
+    try sortKeyCodepointsResolved(
+        allocator,
+        codepoints.items,
+        options,
+        locale_tailoring,
+        tailoring_pages,
+        output,
+    );
 }
 
 /// Append a sort key for UTF-16 text to `output`.
@@ -293,22 +365,41 @@ pub fn sortKeyCodepointsInto(
     options: Options,
     output: *std.ArrayList(u32),
 ) error{OutOfMemory}!void {
-    output.clearRetainingCapacity();
-
     const locale_tailoring = if (options.locale) |locale|
         tailorings.find(locale, options.collation)
     else
         null;
+    const tailoring_pages = if (locale_tailoring) |tailoring|
+        tailorings.pageIndex(tailoring)
+    else
+        null;
+    return sortKeyCodepointsResolved(
+        allocator,
+        codepoints,
+        options,
+        locale_tailoring,
+        tailoring_pages,
+        output,
+    );
+}
+
+/// Append a sort key using an already resolved locale tailoring.
+fn sortKeyCodepointsResolved(
+    allocator: std.mem.Allocator,
+    codepoints: []const u21,
+    options: Options,
+    locale_tailoring: ?tailorings.Tailoring,
+    tailoring_pages: ?*tailorings.PageIndex,
+    output: *std.ArrayList(u32),
+) error{OutOfMemory}!void {
+    output.clearRetainingCapacity();
+
     const reorder = if (locale_tailoring) |tailoring| tailoring.reorder else null;
     const shifted = options.variable_weighting == .shifted;
     const case_first = options.case_first orelse
         (if (locale_tailoring) |tailoring| tailoring.case_first else .off);
     const backwards = options.backwards_secondary orelse
         (if (locale_tailoring) |tailoring| tailoring.backwards else false);
-    const tailoring_pages = if (locale_tailoring) |tailoring|
-        tailorings.pageIndex(tailoring)
-    else
-        null;
 
     if (!shifted and case_first == .off and !backwards and
         !options.numeric and !options.case_level)
@@ -369,10 +460,17 @@ pub fn sortKeyCodepointsInto(
             }
         }
         if (locale_tailoring) |tailoring| {
-            if (tailorings.match(tailoring, tailoring_pages, source, index)) |matched| {
-                try appendTailored(allocator, &ces, matched.rule);
-                index += matched.length;
-                continue;
+            if (tailorings.couldMatch(tailoring_pages, source[index])) {
+                if (tailorings.match(
+                    tailoring,
+                    tailoring_pages,
+                    source,
+                    index,
+                )) |matched| {
+                    try appendTailored(allocator, &ces, matched.rule);
+                    index += matched.length;
+                    continue;
+                }
             }
         }
         index += try appendElements(allocator, &ces, source, index, reorder);
@@ -967,21 +1065,24 @@ fn appendTailoredLatinSortKey(
     try ces.ensureTotalCapacity(source.len * 2 + 8);
     var index: usize = 0;
     while (index < source.len) {
-        if (tailorings.match(tailoring, pages, source, index)) |matched| {
-            const rule = matched.rule;
-            var element_index: usize = 0;
-            while (element_index < rule.ce_count) : (element_index += 1) {
-                const element = tailorings.elementAt(rule, element_index);
-                try ces.append(allocator, .{
-                    .primary = element.primary,
-                    .secondary = element.secondary,
-                    .tertiary = element.tertiary,
-                });
+        const codepoint = source[index];
+        if (tailorings.couldMatch(pages, codepoint)) {
+            if (tailorings.match(tailoring, pages, source, index)) |matched| {
+                const rule = matched.rule;
+                var element_index: usize = 0;
+                while (element_index < rule.ce_count) : (element_index += 1) {
+                    const element = tailorings.elementAt(rule, element_index);
+                    try ces.append(allocator, .{
+                        .primary = element.primary,
+                        .secondary = element.secondary,
+                        .tertiary = element.tertiary,
+                    });
+                }
+                index += matched.length;
+                continue;
             }
-            index += matched.length;
-            continue;
         }
-        const entry = latin_elements.table[source[index]];
+        const entry = latin_elements.table[codepoint];
         for (entry.elements[0..entry.count]) |element| {
             try ces.append(allocator, element);
         }
@@ -1542,6 +1643,27 @@ test "implicit-only sort keys match the generic path" {
     for (codepoints) |_| try expected.append(allocator, 0x02000);
     try expected.append(allocator, 0);
     try testing.expectEqualSlices(u32, expected.items, fast);
+}
+
+test "collator reuses a resolved tailoring" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const text = "\u{00c5}ngstr\u{00f6}m";
+    const collator = Collator.init(.{ .locale = "sv" });
+    const direct = try sortKeyAlloc(allocator, text, .{ .locale = "sv" });
+    defer allocator.free(direct);
+
+    var key = std.ArrayList(u32).empty;
+    defer key.deinit(allocator);
+    try collator.sortKeyInto(allocator, text, &key);
+    try testing.expectEqualSlices(u32, direct, key.items);
+
+    const unknown = Collator.init(.{ .locale = "zz" });
+    try unknown.sortKeyInto(allocator, "abc", &key);
+    const plain = try sortKeyAlloc(allocator, "abc", .{});
+    defer allocator.free(plain);
+    try testing.expectEqualSlices(u32, plain, key.items);
 }
 
 test "locale collation tailorings" {

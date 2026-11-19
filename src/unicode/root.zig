@@ -205,6 +205,7 @@ pub const utf16 = utf16_mod;
 pub const CollationStrength = collation_mod.Strength;
 pub const CollationVariableWeighting = collation_mod.VariableWeighting;
 pub const CollationOptions = collation_mod.Options;
+pub const CollationCollator = collation_mod.Collator;
 pub const collationSortKeyAlloc = collation_mod.sortKeyAlloc;
 pub const collationSortKeyInto = collation_mod.sortKeyInto;
 pub const collationSortKeyCodepointsInto = collation_mod.sortKeyCodepointsInto;

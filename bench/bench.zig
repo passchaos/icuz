@@ -469,6 +469,32 @@ fn benchCollationUtf16(
     reportBytes(name, rounds * text.len, best);
 }
 
+fn benchCollationCollator(
+    name: []const u8,
+    text: []const u8,
+    options: icuz.collation.Options,
+    allocator: std.mem.Allocator,
+) void {
+    const collator = icuz.collation.Collator.init(options);
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 2000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const key = collator.sortKeyAlloc(
+                allocator,
+                text,
+            ) catch unreachable;
+            sink +%= key.len;
+            allocator.free(key);
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * text.len, best);
+}
+
 fn benchCharset(
     name: []const u8,
     text: []const u8,
@@ -828,6 +854,12 @@ pub fn main() !void {
         .{ .locale = "sv" },
         allocator,
     );
+    benchCollationCodepoints(
+        "UCA sort key Swedish root (cp)",
+        swedish_runtime,
+        .{},
+        allocator,
+    );
     benchCollationInto(
         "UCA sort key Swedish (reuse)",
         swedish_runtime,
@@ -836,6 +868,18 @@ pub fn main() !void {
     );
     benchCollationUtf16(
         "UCA sort key Chinese pinyin (utf16)",
+        chinese_collation_runtime,
+        .{ .locale = "zh", .collation = "pinyin" },
+        allocator,
+    );
+    benchCollationCollator(
+        "UCA sort key Swedish (collator)",
+        swedish_runtime,
+        .{ .locale = "sv" },
+        allocator,
+    );
+    benchCollationCollator(
+        "UCA sort key Chinese pinyin (collator)",
         chinese_collation_runtime,
         .{ .locale = "zh", .collation = "pinyin" },
         allocator,
