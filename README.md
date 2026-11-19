@@ -137,6 +137,12 @@ need without pulling in a font or layout engine.
   space replacement, validated by the official 36,960-case CLDR
   personNameTest fixture (22 Khmer and Myanmar initials follow the library's
   Intl.Segmenter-style dictionaries rather than ICU's legacy word iterator).
+- CLDR 48 alphabetic index labels (`AlphabeticIndex`): per-locale index
+  characters ordered by the locale's primary collation, underflow and
+  overflow buckets, script-aware overflow, and label deduplication by
+  primary weight, validated against ICU 78 bucket labels and indices for
+  en, sv, es, tr, ru, and hi. Chinese pinyin bucket redirection and inflow
+  buckets for skipped scripts are not included.
 - Numbering system selection for number and date formatting across 78 CLDR
   numeric systems (latn, arab, arabext, thai, deva, beng, hanidec,
   fullwide, and others) through `@numbers=`/`-u-nu-` locale keywords or an

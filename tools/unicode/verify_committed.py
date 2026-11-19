@@ -44,6 +44,7 @@ BLOBS = (
     Blob("src/unicode/locale/canonicalization_conformance.bin", b"CJLY", 1, "8e3d48a4a16588dbccba978589282c08e04dbaa65cd57617ea0643ddd14eef3d", version=(48, 0, 0)),
     Blob("src/unicode/format/person_names_data.bin", b"CJPU", 1, "43f82b79e7e62717e4c0710fdad28f3a808f5b44851faec86d04fd7ef587551a", version=(48, 0, 0)),
     Blob("src/unicode/format/person_names_conformance.bin", b"CJPQ", 1, "57203fcef9f6ebcb2279810aef782336eb196fcd7eb16c9a3c74f976407c336a", version=(48, 0, 0)),
+    Blob("src/unicode/format/alphabetic_index_data.bin", b"CJXA", 1, "d81c627ec71d66e78f4d8cd72c18edfea47643b7311c18acdff196866dc519c3", version=(48, 0, 0)),
     Blob("src/unicode/set/conformance.bin", b"CJSU", 1, "ddb89617e85cdf3e162d5f59561aa53e40b0c7380e44b6a828e142b69caf472f", version=(0, 0, 0)),
     Blob("src/unicode/break/conformance.bin", b"CJGF", 1, "5e7119dc378412e1c6b0bf58b1cc826e38aebb39773c361141737a3709c60077", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_data.bin", b"CJRB", 1, "9a88f134d56db6e730bc7ef2fcc69ad271923321b22bdcaf041a74e0266db4f2", version=(0, 0, 0)),
@@ -432,6 +433,7 @@ GENERATORS = {
     "tools/unicode/spoof/generate_identifier_status.py": "d19db85b91e1933c0841ff7846b2d2e644fd78621eaccf6e5f81f8f07134b4f9",
     "tools/unicode/locale/generate_aliases.py": "455b791991d1b9a81a44ba7d84ff893ca26fb344c9816ffc5ca1085dda9ff625",
     "tools/unicode/format/generate_person_names.py": "cd7b44a5e613d06f21319e7cfc27c94093687acdb8bd9b4193091b7db9ee6771",
+    "tools/unicode/format/generate_alphabetic_index.py": "8b04cee5bfe54bbfb05e0750adab2e81607057fc225c0c37ddfcc3fe61514d06",
     "tools/unicode/format/generate_parse_conformance.py": "3f3e74b9be26b36ba8f5c544801c791ccbc2e72de761bbc15ee57a8e4cc80192",
     "tools/unicode/format/generate_date_parse_conformance.py": "d32464d9c825652c04a0d8beae32f1fb32f5868c07c0a5cd29cdf51f598bfc41",
     "tools/generate_canonical_decomposition.py": "450c932dbd278208bccd3ab8bb26f04f1b18a96051fc03944393f5d73e3ad6d8",
@@ -1172,6 +1174,28 @@ def check_layout(blob: Blob, data: bytes) -> None:
                         "<IH", data, base + 60 + slot * 16 + rank * 8
                     )
                     assert offset + length <= len(data) - pool_offset
+    elif magic == b"CJXA":
+        locale_count, locale_offset, label_offset, pool_offset = struct.unpack_from(
+            "<IIII", data, 8
+        )
+        assert locale_offset == 24
+        assert locale_offset + locale_count * 16 == label_offset
+        assert label_offset <= pool_offset <= len(data)
+        total_labels = 0
+        for index in range(locale_count):
+            base = locale_offset + index * 16
+            locale_off, locale_len, _, count, _, start = struct.unpack_from(
+                "<IHHHHI", data, base
+            )
+            assert locale_off + locale_len <= len(data) - pool_offset
+            assert start == total_labels
+            total_labels += count
+        assert label_offset + total_labels * 8 == pool_offset
+        for index in range(total_labels):
+            offset, length, _ = struct.unpack_from(
+                "<IHH", data, label_offset + index * 8
+            )
+            assert offset + length <= len(data) - pool_offset
     elif magic == b"CJPQ":
         block_count = struct.unpack_from("<I", data, 8)[0]
         offset = 12

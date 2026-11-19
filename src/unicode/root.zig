@@ -271,6 +271,7 @@ const durations_mod = @import("./format/durations.zig");
 const display_names_mod = @import("./format/display_names.zig");
 const likely_subtags_mod = @import("./format/likely_subtags.zig");
 const person_name_mod = @import("./format/person_name.zig");
+const alphabetic_index_mod = @import("./format/alphabetic_index.zig");
 const chinese_calendar_mod = @import("./format/chinese_calendar.zig");
 pub const RbnfTag = rbnf_mod.Tag;
 pub const formatRbnfAlloc = rbnf_mod.formatAlloc;
@@ -341,6 +342,7 @@ pub const PersonNameFormality = person_name_mod.Formality;
 pub const PersonNameOrder = person_name_mod.Order;
 pub const PersonNameOptions = person_name_mod.Options;
 pub const formatPersonNameAlloc = person_name_mod.formatAlloc;
+pub const AlphabeticIndex = alphabetic_index_mod.AlphabeticIndex;
 pub const date_cldr_version = dates_mod.cldr_version;
 
 pub const MessageArgument = message_mod.Argument;
@@ -628,6 +630,7 @@ test {
     _ = display_names_mod;
     _ = likely_subtags_mod;
     _ = person_name_mod;
+    _ = alphabetic_index_mod;
     _ = chinese_calendar_mod;
     _ = message_mod;
     _ = message2_mod;
