@@ -67,8 +67,11 @@ pub fn normalizeFormAlloc(
     text: []const u8,
     form: Form,
 ) Error!?[]u8 {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
-    if (isNormalizedFormUnchecked(text, form)) return null;
+    switch (checkFormUtf8(text, form)) {
+        .invalid => return error.InvalidUtf8,
+        .normalized => return null,
+        .changed => {},
+    }
 
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
@@ -91,10 +94,13 @@ pub fn normalizeFormInto(
     form: Form,
     output: *std.ArrayList(u8),
 ) Error!bool {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
-    if (isNormalizedFormUnchecked(text, form)) {
-        try output.appendSlice(allocator, text);
-        return false;
+    switch (checkFormUtf8(text, form)) {
+        .invalid => return error.InvalidUtf8,
+        .normalized => {
+            try output.appendSlice(allocator, text);
+            return false;
+        },
+        .changed => {},
     }
 
     const before = output.items.len;
@@ -569,10 +575,11 @@ fn normalizeChangedFormInto(
             continue;
         }
         const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
-            unreachable;
+            return error.InvalidUtf8;
+        if (index + length > text.len) return error.InvalidUtf8;
         const codepoint = std.unicode.utf8Decode(
             text[index..][0..length],
-        ) catch unreachable;
+        ) catch return error.InvalidUtf8;
         index += length;
         try engine.feed(codepoint);
     }
@@ -586,6 +593,8 @@ pub fn isNormalized(text: []const u8) error{InvalidUtf8}!bool {
 
 /// Validate UTF-8 and report whether `text` is in `form` without allocating.
 pub fn isNormalizedForm(text: []const u8, form: Form) error{InvalidUtf8}!bool {
+    // Validate the whole string: a quick-check failure may short-circuit
+    // before later invalid bytes.
     if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
     return isNormalizedFormUnchecked(text, form);
 }
@@ -599,6 +608,48 @@ pub fn isNormalizedAssumeValid(text: []const u8) bool {
 pub fn isNormalizedFormAssumeValid(text: []const u8, form: Form) bool {
     std.debug.assert(std.unicode.utf8ValidateSlice(text));
     return isNormalizedFormUnchecked(text, form);
+}
+
+const FormState = enum { invalid, normalized, changed };
+
+/// Validate UTF-8 and run the normalization quick check in one pass.
+fn checkFormUtf8(text: []const u8, form: Form) FormState {
+    const ascii_end = asciiPrefixLen(text);
+    if (ascii_end == text.len) return .normalized;
+
+    const compatibility = form == .nfkc or form == .nfkd;
+    var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
+    var previous_input_class: u8 = 0;
+    var index: usize = ascii_end;
+    while (index < text.len) {
+        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+            return .invalid;
+        if (index + length > text.len) return .invalid;
+        const codepoint = std.unicode.utf8Decode(
+            text[index..][0..length],
+        ) catch return .invalid;
+        index += length;
+        if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
+            starter = codepoint;
+            previous_input_class = 0;
+            continue;
+        }
+        const quick_check = data.quickCheck(codepoint, form);
+        if (quick_check == .no) return .changed;
+        const current_class = combining_class.forCodepoint(codepoint);
+        if (current_class != 0 and
+            previous_input_class > current_class) return .changed;
+        if (quick_check == .maybe and starter != null and
+            (previous_input_class == 0 or
+                previous_input_class < current_class) and
+            pairChangesUnderForm(starter.?, codepoint, form))
+        {
+            return .changed;
+        }
+        if (current_class == 0) starter = codepoint;
+        previous_input_class = current_class;
+    }
+    return .normalized;
 }
 
 fn isNormalizedFormUnchecked(text: []const u8, form: Form) bool {
