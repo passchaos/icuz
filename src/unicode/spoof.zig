@@ -9,6 +9,8 @@ const std = @import("std");
 const normalization = @import("normalization/root.zig");
 const case = @import("case/root.zig");
 const properties = @import("properties.zig");
+const script = @import("script/root.zig");
+const script_extensions = @import("script_extensions/root.zig");
 
 const blob = @embedFile("spoof/confusables_data.bin");
 const conformance = @embedFile("spoof/conformance.bin");
@@ -135,6 +137,151 @@ pub fn identifierAllowed(text: []const u8) Error!bool {
         cursor += length;
     }
     return true;
+}
+
+/// UTS #39 restriction levels, most restrictive first.
+pub const RestrictionLevel = enum {
+    ascii_only,
+    single_script,
+    highly_restrictive,
+    moderately_restrictive,
+    minimally_restrictive,
+    unrestricted,
+};
+
+const script_count = @typeInfo(script.Script).@"enum".fields.len;
+const ScriptSet = std.StaticBitSet(script_count + 4);
+
+// UTS #39 augments script sets with the composite script codes Jpan, Kore,
+// Hanb, and Hntl, which are not Script property values.
+const jpan_bit = script_count;
+const kore_bit = script_count + 1;
+const hanb_bit = script_count + 2;
+const hntl_bit = script_count + 3;
+
+fn augmentedScriptSet(codepoint: u21) ScriptSet {
+    var set = ScriptSet.initEmpty();
+    const extensions = script_extensions.forCodepoint(codepoint);
+    var index: usize = 0;
+    while (index < extensions.len()) : (index += 1) {
+        const value = extensions.at(index) orelse continue;
+        set.set(@intFromEnum(value));
+    }
+    if (set.isSet(@intFromEnum(script.Script.common)) or
+        set.isSet(@intFromEnum(script.Script.inherited)))
+    {
+        return ScriptSet.initFull();
+    }
+    if (set.isSet(@intFromEnum(script.Script.han))) {
+        set.set(hanb_bit);
+        set.set(hntl_bit);
+        set.set(jpan_bit);
+        set.set(kore_bit);
+    }
+    if (set.isSet(@intFromEnum(script.Script.hiragana)) or
+        set.isSet(@intFromEnum(script.Script.katakana)))
+    {
+        set.set(jpan_bit);
+    }
+    if (set.isSet(@intFromEnum(script.Script.hangul))) set.set(kore_bit);
+    if (set.isSet(@intFromEnum(script.Script.bopomofo))) set.set(hanb_bit);
+    if (set.isSet(@intFromEnum(script.Script.latin))) set.set(hntl_bit);
+    return set;
+}
+
+/// UAX #31 Table 5 recommended scripts.
+const recommended_scripts = blk: {
+    var set = ScriptSet.initEmpty();
+    const values = [_]script.Script{
+        .arabic,     .armenian,  .bengali,   .cyrillic, .devanagari,
+        .ethiopic,   .georgian,  .greek,     .gujarati, .gurmukhi,
+        .hangul,     .han,       .hebrew,    .hiragana, .katakana,
+        .kannada,    .khmer,     .lao,       .latin,    .malayalam,
+        .myanmar,    .odia,      .sinhala,   .tamil,    .telugu,
+        .thaana,     .thai,      .tibetan,
+    };
+    for (values) |value| set.set(@intFromEnum(value));
+    break :blk set;
+};
+
+fn decodeCodepoint(
+    text: []const u8,
+    cursor: *usize,
+) Error!u21 {
+    const length = std.unicode.utf8ByteSequenceLength(text[cursor.*]) catch
+        return error.InvalidUtf8;
+    if (cursor.* + length > text.len) return error.InvalidUtf8;
+    const codepoint = std.unicode.utf8Decode(
+        text[cursor.*..][0..length],
+    ) catch return error.InvalidUtf8;
+    cursor.* += length;
+    return codepoint;
+}
+
+/// Compute the UTS #39 restriction level of an identifier.
+///
+/// The default identifier profile is Identifier_Status=Allowed, so strings
+/// containing disallowed characters (spaces, emoji, ...) are Unrestricted.
+/// Han combined with Latin resolves to a single script because both carry
+/// the Hntl composite script; ICU 78 classifies that combination as Highly
+/// Restrictive instead.
+pub fn restrictionLevel(text: []const u8) Error!RestrictionLevel {
+    if (text.len == 0) return .ascii_only;
+    var ascii = true;
+    var resolved = ScriptSet.initFull();
+    var resolved_without_latin = ScriptSet.initFull();
+    var all_kore = true;
+    var all_hanb = true;
+    var all_jpan = true;
+    var has_without_latin = false;
+
+    var cursor: usize = 0;
+    while (cursor < text.len) {
+        const codepoint = try decodeCodepoint(text, &cursor);
+        if (!isAllowedIdentifier(codepoint)) return .unrestricted;
+        if (codepoint > 0x7F) ascii = false;
+        const set = augmentedScriptSet(codepoint);
+        resolved.setIntersection(set);
+        if (!set.isSet(@intFromEnum(script.Script.latin))) {
+            has_without_latin = true;
+            resolved_without_latin.setIntersection(set);
+            if (!set.isSet(kore_bit)) all_kore = false;
+            if (!set.isSet(hanb_bit)) all_hanb = false;
+            if (!set.isSet(jpan_bit)) all_jpan = false;
+        }
+    }
+
+    if (ascii) return .ascii_only;
+    if (!resolved.eql(ScriptSet.initEmpty())) return .single_script;
+    if (has_without_latin and (all_kore or all_hanb or all_jpan)) {
+        return .highly_restrictive;
+    }
+    if (has_without_latin) {
+        var index: usize = 0;
+        while (index < script_count) : (index += 1) {
+            if (!resolved_without_latin.isSet(index)) continue;
+            const value: script.Script = @enumFromInt(index);
+            if (value == .cyrillic or value == .greek) continue;
+            if (recommended_scripts.isSet(index)) {
+                return .moderately_restrictive;
+            }
+        }
+    }
+    return .minimally_restrictive;
+}
+
+/// True when the string's resolved script set is empty, i.e. its scripts
+/// have no common member (UTS #39 mixed-script detection).
+pub fn isMixedScript(text: []const u8) Error!bool {
+    var resolved = ScriptSet.initFull();
+    var seen = false;
+    var cursor: usize = 0;
+    while (cursor < text.len) {
+        const codepoint = try decodeCodepoint(text, &cursor);
+        resolved.setIntersection(augmentedScriptSet(codepoint));
+        seen = true;
+    }
+    return seen and resolved.eql(ScriptSet.initEmpty());
 }
 
 fn decodeUtf8(
@@ -309,6 +456,73 @@ test "identifier status" {
     try testing.expect(!(try identifierAllowed("a b")));
     try testing.expect(!(try identifierAllowed("")));
     try testing.expectError(error.InvalidUtf8, identifierAllowed("\xff"));
+}
+
+test "restriction levels" {
+    const testing = @import("std").testing;
+
+    try testing.expectEqual(
+        RestrictionLevel.ascii_only,
+        try restrictionLevel("abc123"),
+    );
+    try testing.expectEqual(
+        RestrictionLevel.ascii_only,
+        try restrictionLevel(""),
+    );
+    try testing.expectEqual(
+        RestrictionLevel.single_script,
+        try restrictionLevel("caf\u{00e9}"),
+    );
+    try testing.expectEqual(
+        RestrictionLevel.single_script,
+        try restrictionLevel("\u{0421}\u{0456}\u{0433}\u{0441}\u{04c0}\u{0435}"),
+    );
+    try testing.expectEqual(
+        RestrictionLevel.single_script,
+        try restrictionLevel("\u{65e5}\u{672c}\u{8a9e}"),
+    );
+    try testing.expectEqual(
+        RestrictionLevel.single_script,
+        try restrictionLevel("\u{306d}\u{30ac}"),
+    );
+    try testing.expectEqual(
+        RestrictionLevel.single_script,
+        try restrictionLevel("\u{d55c}\u{ad6d}\u{c5b4}"),
+    );
+    // Han and Latin share Hntl, so Latin + Han stays single-script.
+    try testing.expectEqual(
+        RestrictionLevel.single_script,
+        try restrictionLevel("abc\u{65e5}"),
+    );
+    try testing.expectEqual(
+        RestrictionLevel.highly_restrictive,
+        try restrictionLevel("abc\u{d55c}"),
+    );
+    try testing.expectEqual(
+        RestrictionLevel.moderately_restrictive,
+        try restrictionLevel("abc\u{05d0}"),
+    );
+    try testing.expectEqual(
+        RestrictionLevel.minimally_restrictive,
+        try restrictionLevel("\u{0421}ir\u{0441}l\u{0435}"),
+    );
+    try testing.expectEqual(
+        RestrictionLevel.minimally_restrictive,
+        try restrictionLevel("\u{03a9}mega"),
+    );
+    try testing.expectEqual(
+        RestrictionLevel.unrestricted,
+        try restrictionLevel("a b"),
+    );
+    try testing.expectEqual(
+        RestrictionLevel.unrestricted,
+        try restrictionLevel("\u{1f600}"),
+    );
+
+    try testing.expect(try isMixedScript("\u{0421}ir\u{0441}l\u{0435}"));
+    try testing.expect(!(try isMixedScript("abc")));
+    try testing.expect(!(try isMixedScript("\u{65e5}\u{672c}\u{8a9e}")));
+    try testing.expect(!(try isMixedScript("123")));
 }
 
 test "UTS 39 skeleton conformance" {
