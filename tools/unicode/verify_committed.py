@@ -442,6 +442,7 @@ GENERATORS = {
     "tools/unicode/normalization/generate_conformance.py": "c3e9f80b8fb410a2d142cfbb228941d01322672b28261c1e0c0de53eb662ee43",
     "tools/unicode/normalization/generate_data.py": "e61fd24b9b23e554ebded137825546a4378e61050eae3cbbe1863555df79f864",
     "tools/unicode/normalization/generate_casefold.py": "e22b83f28e534750a85dadff1ff6d24df83940dfff2ed2bb4e4dcef389bb075f",
+    "tools/unicode/locale/generate_matcher.py": "d184c9ae1b441f60d3bae49386ea476c53e538c9d2bf41051bfa761102f74690",
     "tools/unicode/case/generate_data.py": "c4b275209f5fa8695b35c22ddd5cb95d2e08f40f35868b901dc22b39726a4dc9",
     "tools/unicode/case/generate_full_data.py": "ac0b2ce2938d19da1c8b80289fcfbbcb0e7176a95736ca3cf0d6b0b9631a9ed8",
     "tools/unicode/collation/generate_data.py": "3e789930a4ee07357d7e89a26d9bf93fe598ce7555efdbd16c524e860f0e4c96",
@@ -615,6 +616,11 @@ GENERATED_TEXT = (
         "src/unicode/timezone/canonical_data.zig",
         "tools/unicode/timezone/generate_canonical.py",
         "2f5d7634ba45a09e0e67757a76567d871e1116057c11284526e490ad9e31c890",
+    ),
+    GeneratedText(
+        "src/unicode/locale/matcher_data.zig",
+        "tools/unicode/locale/generate_matcher.py",
+        "bd7e88838403175906dda8460a099f88b4f4479b326d0e3f6d20306f904fde7b",
     ),
 )
 SOURCE_SHA = re.compile(r"^// Source SHA-256: ([0-9a-f]{64})$", re.MULTILINE)

@@ -435,6 +435,11 @@ fn appendLowered(
     }
 }
 
+pub const matcher = @import("locale/matcher.zig");
+pub const bestMatchAlloc = matcher.bestMatchAlloc;
+pub const localeDistanceAlloc = matcher.distanceAlloc;
+pub const localeIsMatchAlloc = matcher.isMatchAlloc;
+
 /// Canonicalize a BCP 47 locale tag.
 pub fn canonicalizeAlloc(
     allocator: std.mem.Allocator,

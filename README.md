@@ -132,6 +132,12 @@ need without pulling in a font or layout engine.
   and variant ordering, validated by the official 1,773-case CLDR
   canonicalization fixture. Extension and private-use subtags are preserved;
   key/type aliases inside extensions are not applied.
+- CLDR 48 language matching (`localeBestMatchAlloc`, `localeDistanceAlloc`,
+  `localeIsMatchAlloc`): likely-subtag maximization, the 378 `languageMatch`
+  rules with one-way fallbacks, region variables including macroregion
+  expansion (`$americas`), paradigm-locale preference, per-desired demotion,
+  the 50 threshold and 4/5 region defaults used by ICU's `LocaleMatcher`,
+  and default-locale fallback. `und` is never maximized.
 - CLDR 48 person name formatting (`formatPersonNameAlloc`): title, given,
   given2, surname, surname2, generation, and credentials fields with
   informal, prefix, and core variants; length, usage, formality, and order
