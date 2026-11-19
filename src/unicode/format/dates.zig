@@ -1903,6 +1903,19 @@ pub fn parsePattern(
     return finishParsedDate(&state);
 }
 
+/// Parse `text` using the locale's best pattern for `skeleton`.
+pub fn parseSkeleton(
+    text: []const u8,
+    skeleton: []const u8,
+    locale_name: []const u8,
+    defaults: ParseDefaults,
+) ?DateTime {
+    var buffer: [64]u8 = undefined;
+    const pattern = skeletonPattern(locale_name, skeleton, &buffer) orelse
+        return null;
+    return parsePattern(text, pattern, locale_name, defaults);
+}
+
 fn matchPatternLiteral(text: []const u8, index: *usize, byte: u8) bool {
     if (byte == ' ' or byte == '\t' or byte == '\n' or byte == '\r') {
         skipDateSpace(text, index);
@@ -2461,6 +2474,12 @@ test "date pattern parsing" {
         .{},
     ).?;
     try testing.expectEqual(@as(i32, 8 * 3600), gmt.offset_seconds);
+
+    const skeleton = parseSkeleton("Mar 5, 2024", "yMMMd", "en", .{}).?;
+    try testing.expectEqual(@as(i32, 2024), skeleton.year);
+    try testing.expectEqual(@as(u8, 3), skeleton.month);
+    try testing.expectEqual(@as(u8, 5), skeleton.day);
+    try testing.expect(parseSkeleton("x", "not-a-skeleton", "en", .{}) == null);
 }
 
 test "date pattern round trips" {
@@ -2525,6 +2544,199 @@ test "date pattern round trips" {
         try testing.expectEqual(date_time.minute, parsed.minute);
         try testing.expectEqual(date_time.second, parsed.second);
     }
+}
+
+/// Calendar field for `fieldDifference`.
+pub const CalendarField = enum { year, month, day, hour, minute, second };
+
+/// Add whole days, keeping the time of day.
+pub fn addDays(date_time: DateTime, days: i64) DateTime {
+    const civil = civilFromDays(
+        daysFromCivil(date_time.year, date_time.month, date_time.day) + days,
+    );
+    var result = date_time;
+    result.year = civil.year;
+    result.month = civil.month;
+    result.day = civil.day;
+    return result;
+}
+
+/// Add whole months, clamping the day to the target month's length.
+pub fn addMonths(date_time: DateTime, months: i64) DateTime {
+    const total = @as(i64, date_time.year) * 12 +
+        @as(i64, date_time.month) - 1 + months;
+    const year: i32 = @intCast(@divFloor(total, 12));
+    const month: u8 = @intCast(@mod(total, 12) + 1);
+    var result = date_time;
+    result.year = year;
+    result.month = month;
+    const limit = daysInMonth(year, month);
+    if (result.day > limit) result.day = limit;
+    return result;
+}
+
+/// Add whole years, clamping February 29 to February 28 in common years.
+pub fn addYears(date_time: DateTime, years: i64) DateTime {
+    return addMonths(date_time, years * 12);
+}
+
+fn timeOfDaySeconds(date_time: DateTime) i64 {
+    return @as(i64, date_time.hour) * 3600 +
+        @as(i64, date_time.minute) * 60 + date_time.second;
+}
+
+/// Whole-field difference from `start` to `end`, truncated toward zero.
+/// A partial unit at the end of the range is not counted.
+pub fn fieldDifference(start: DateTime, end: DateTime, field: CalendarField) i64 {
+    const start_days = daysFromCivil(start.year, start.month, start.day);
+    const end_days = daysFromCivil(end.year, end.month, end.day);
+    const start_time = timeOfDaySeconds(start);
+    const end_time = timeOfDaySeconds(end);
+    switch (field) {
+        .year => return @divTrunc(
+            fieldDifference(start, end, .month),
+            12,
+        ),
+        .month => {
+            var months = (@as(i64, end.year) - start.year) * 12 +
+                (@as(i64, end.month) - start.month);
+            if (months > 0 and
+                (end.day < start.day or
+                    (end.day == start.day and end_time < start_time)))
+            {
+                months -= 1;
+            } else if (months < 0 and
+                (end.day > start.day or
+                    (end.day == start.day and end_time > start_time)))
+            {
+                months += 1;
+            }
+            return months;
+        },
+        .day => {
+            var days = end_days - start_days;
+            if (days > 0 and end_time < start_time) days -= 1;
+            if (days < 0 and end_time > start_time) days += 1;
+            return days;
+        },
+        .hour, .minute, .second => {
+            const seconds = (end_days - start_days) * 86400 +
+                end_time - start_time;
+            return switch (field) {
+                .hour => @divTrunc(seconds, 3600),
+                .minute => @divTrunc(seconds, 60),
+                else => seconds,
+            };
+        },
+    }
+}
+
+test "calendar arithmetic" {
+    const testing = @import("std").testing;
+
+    const february = DateTime{
+        .year = 2024,
+        .month = 2,
+        .day = 28,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    };
+    const march = addDays(february, 2);
+    try testing.expectEqual(@as(u8, 3), march.month);
+    try testing.expectEqual(@as(u8, 1), march.day);
+
+    const january_end = DateTime{
+        .year = 2024,
+        .month = 1,
+        .day = 31,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    };
+    const february_end = addMonths(january_end, 1);
+    try testing.expectEqual(@as(u8, 2), february_end.month);
+    try testing.expectEqual(@as(u8, 29), february_end.day);
+
+    const leap_day = DateTime{
+        .year = 2024,
+        .month = 2,
+        .day = 29,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    };
+    const next_year = addYears(leap_day, 1);
+    try testing.expectEqual(@as(i32, 2025), next_year.year);
+    try testing.expectEqual(@as(u8, 2), next_year.month);
+    try testing.expectEqual(@as(u8, 28), next_year.day);
+
+    const start = DateTime{
+        .year = 2024,
+        .month = 1,
+        .day = 15,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    };
+    try testing.expectEqual(
+        @as(i64, 1),
+        fieldDifference(start, .{
+            .year = 2024,
+            .month = 3,
+            .day = 14,
+            .hour = 0,
+            .minute = 0,
+            .second = 0,
+        }, .month),
+    );
+    try testing.expectEqual(
+        @as(i64, 2),
+        fieldDifference(start, .{
+            .year = 2024,
+            .month = 3,
+            .day = 15,
+            .hour = 0,
+            .minute = 0,
+            .second = 0,
+        }, .month),
+    );
+    try testing.expectEqual(
+        @as(i64, 61),
+        fieldDifference(start, .{
+            .year = 2024,
+            .month = 3,
+            .day = 16,
+            .hour = 0,
+            .minute = 0,
+            .second = 0,
+        }, .day),
+    );
+    const morning = DateTime{
+        .year = 2024,
+        .month = 1,
+        .day = 15,
+        .hour = 10,
+        .minute = 0,
+        .second = 0,
+    };
+    const earlier = DateTime{
+        .year = 2024,
+        .month = 3,
+        .day = 15,
+        .hour = 9,
+        .minute = 0,
+        .second = 0,
+    };
+    try testing.expectEqual(@as(i64, 1), fieldDifference(morning, earlier, .month));
+    try testing.expectEqual(
+        @as(i64, 59),
+        fieldDifference(morning, earlier, .day),
+    );
+    try testing.expectEqual(
+        @as(i64, 1439),
+        fieldDifference(morning, earlier, .hour),
+    );
 }
 
 test "date and time formatting" {
