@@ -212,6 +212,7 @@ pub const collationSortKeyCodepointsInto = collation_mod.sortKeyCodepointsInto;
 pub const collationSortKeyUtf16Alloc = collation_mod.sortKeyUtf16Alloc;
 pub const collationSortKeyUtf16Into = collation_mod.sortKeyUtf16Into;
 pub const collationCompare = collation_mod.compare;
+pub const collationCompareUtf16 = collation_mod.compareUtf16;
 pub const collation_uca_version = collation_mod.uca_version;
 pub const collation_cldr_version = collation_mod.cldr_version;
 

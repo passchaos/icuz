@@ -259,6 +259,61 @@ pub const Collator = struct {
         try self.sortKeyInto(allocator, text, &key);
         return key.toOwnedSlice(allocator);
     }
+
+    pub fn sortKeyUtf16Into(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        units: []const u16,
+        output: *std.ArrayList(u32),
+    ) error{ InvalidUtf16, OutOfMemory }!void {
+        return sortKeyUtf16Resolved(
+            allocator,
+            units,
+            self.options,
+            self.tailoring,
+            self.pages,
+            output,
+        );
+    }
+
+    pub fn sortKeyUtf16Alloc(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        units: []const u16,
+    ) error{ InvalidUtf16, OutOfMemory }![]u32 {
+        var key = std.ArrayList(u32).empty;
+        errdefer key.deinit(allocator);
+        try self.sortKeyUtf16Into(allocator, units, &key);
+        return key.toOwnedSlice(allocator);
+    }
+
+    /// Compare two UTF-8 strings using caller-owned scratch lists.
+    pub fn compare(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        a: []const u8,
+        b: []const u8,
+        key_a: *std.ArrayList(u32),
+        key_b: *std.ArrayList(u32),
+    ) error{ InvalidUtf8, OutOfMemory }!std.math.Order {
+        try self.sortKeyInto(allocator, a, key_a);
+        try self.sortKeyInto(allocator, b, key_b);
+        return std.mem.order(u32, key_a.items, key_b.items);
+    }
+
+    /// Compare two UTF-16 strings using caller-owned scratch lists.
+    pub fn compareUtf16(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        a: []const u16,
+        b: []const u16,
+        key_a: *std.ArrayList(u32),
+        key_b: *std.ArrayList(u32),
+    ) error{ InvalidUtf16, OutOfMemory }!std.math.Order {
+        try self.sortKeyUtf16Into(allocator, a, key_a);
+        try self.sortKeyUtf16Into(allocator, b, key_b);
+        return std.mem.order(u32, key_a.items, key_b.items);
+    }
 };
 
 fn sortKeyUtf8Resolved(
@@ -318,6 +373,18 @@ pub fn sortKeyUtf16Into(
     options: Options,
     output: *std.ArrayList(u32),
 ) error{ InvalidUtf16, OutOfMemory }!void {
+    const collator = Collator.init(options);
+    return collator.sortKeyUtf16Into(allocator, units, output);
+}
+
+fn sortKeyUtf16Resolved(
+    allocator: std.mem.Allocator,
+    units: []const u16,
+    options: Options,
+    locale_tailoring: ?tailorings.Tailoring,
+    tailoring_pages: ?*tailorings.PageIndex,
+    output: *std.ArrayList(u32),
+) error{ InvalidUtf16, OutOfMemory }!void {
     if (!utf16.validate(units)) return error.InvalidUtf16;
 
     var stack_codepoints: [512]u21 = undefined;
@@ -328,10 +395,12 @@ pub fn sortKeyUtf16Into(
             stack_codepoints[count] = codepoint;
             count += 1;
         }
-        return sortKeyCodepointsInto(
+        return sortKeyCodepointsResolved(
             allocator,
             stack_codepoints[0..count],
             options,
+            locale_tailoring,
+            tailoring_pages,
             output,
         );
     }
@@ -343,7 +412,14 @@ pub fn sortKeyUtf16Into(
     while (iterator.next()) |codepoint| {
         try codepoints.append(allocator, codepoint);
     }
-    try sortKeyCodepointsInto(allocator, codepoints.items, options, output);
+    try sortKeyCodepointsResolved(
+        allocator,
+        codepoints.items,
+        options,
+        locale_tailoring,
+        tailoring_pages,
+        output,
+    );
 }
 
 /// Return an allocator-owned sort key for UTF-16 text.
@@ -556,6 +632,21 @@ pub fn compare(
     const key_b = try sortKeyAlloc(allocator, b, options);
     defer allocator.free(key_b);
     return std.mem.order(u32, key_a, key_b);
+}
+
+/// Compare two UTF-16 strings.
+pub fn compareUtf16(
+    allocator: std.mem.Allocator,
+    a: []const u16,
+    b: []const u16,
+    options: Options,
+) error{ InvalidUtf16, OutOfMemory }!std.math.Order {
+    const collator = Collator.init(options);
+    var key_a = std.ArrayList(u32).empty;
+    defer key_a.deinit(allocator);
+    var key_b = std.ArrayList(u32).empty;
+    defer key_b.deinit(allocator);
+    return collator.compareUtf16(allocator, a, b, &key_a, &key_b);
 }
 
 const EntryMatch = struct {
@@ -1658,6 +1749,30 @@ test "collator reuses a resolved tailoring" {
     defer key.deinit(allocator);
     try collator.sortKeyInto(allocator, text, &key);
     try testing.expectEqualSlices(u32, direct, key.items);
+
+    const units = try std.unicode.utf8ToUtf16LeAlloc(allocator, text);
+    defer allocator.free(units);
+    try collator.sortKeyUtf16Into(allocator, units, &key);
+    try testing.expectEqualSlices(u32, direct, key.items);
+
+    var other = std.ArrayList(u32).empty;
+    defer other.deinit(allocator);
+    const z_units = try std.unicode.utf8ToUtf16LeAlloc(allocator, "z");
+    defer allocator.free(z_units);
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try collator.compare(allocator, "z", text, &key, &other),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try collator.compareUtf16(
+            allocator,
+            z_units,
+            units,
+            &key,
+            &other,
+        ),
+    );
 
     const unknown = Collator.init(.{ .locale = "zz" });
     try unknown.sortKeyInto(allocator, "abc", &key);
