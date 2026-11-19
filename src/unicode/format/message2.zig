@@ -1929,3 +1929,61 @@ test "message format 2 currency and offset functions" {
         try testing.expectEqualStrings("0", text);
     }
 }
+
+test "message format 2 selection examples" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    // Spec selection example 1: only the catch-all variant matches.
+    {
+        var message = try parse(
+            allocator,
+            ".input {$foo :string}\n.input {$bar :string}\n" ++
+                ".match $foo $bar\nbar bar {{All bar}}\n" ++
+                "foo foo {{All foo}}\n* * {{Otherwise}}\n",
+        );
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "foo", .value = .{ .string = "foo" } },
+            .{ .name = "bar", .value = .{ .string = "bar" } },
+        };
+        const text = try formatAlloc(allocator, &message, "en", &inputs);
+        defer allocator.free(text);
+        try testing.expectEqualStrings("Otherwise", text);
+    }
+    // Spec selection example 2: keys are compared left to right, so the
+    // earlier selector's exact key wins over a later selector's.
+    {
+        var message = try parse(
+            allocator,
+            ".input {$foo :string}\n.input {$bar :string}\n" ++
+                ".match $foo $bar\n* bar {{Any and bar}}\n" ++
+                "foo * {{Foo and any}}\nfoo bar {{Foo and bar}}\n" ++
+                "* * {{Otherwise}}\n",
+        );
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "foo", .value = .{ .string = "foo" } },
+            .{ .name = "bar", .value = .{ .string = "bar" } },
+        };
+        const text = try formatAlloc(allocator, &message, "en", &inputs);
+        defer allocator.free(text);
+        try testing.expectEqualStrings("Foo and bar", text);
+    }
+    // Spec selection example 3: an exact numeric key beats a category.
+    {
+        var message = try parse(
+            allocator,
+            ".input {$count :number}\n.match $count\n" ++
+                "one {{Category match}}\n1 {{Exact match}}\n" ++
+                "* {{Other match}}\n",
+        );
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "count", .value = .{ .number = 1 } },
+        };
+        const text = try formatAlloc(allocator, &message, "en", &inputs);
+        defer allocator.free(text);
+        try testing.expectEqualStrings("Exact match", text);
+    }
+}
