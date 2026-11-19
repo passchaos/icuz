@@ -1669,6 +1669,15 @@ fn removableBase(codepoint: u21) bool {
     return script.forCodepoint(codepoint) == .latin;
 }
 
+/// Latin-ASCII has no rule whose source starts below U+00A0, so ASCII
+/// characters pass through unchanged after normalization.
+const latin_ascii_ascii_identity = blk: {
+    @setEvalBranchQuota(100_000);
+    const range = transformPassRange(0, 0);
+    break :blk !range.has_lead and !range.has_negated and
+        (range.literals_start == range.literals_end or range.literal_min >= 0x80);
+};
+
 fn latinAsciiAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
     // Decode once and normalize in code-point space; going through the
     // UTF-8 form would encode the NFD text only to decode it again.
@@ -1701,11 +1710,37 @@ fn latinAsciiAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
     defer if (nfc_owned) |owned| allocator.free(owned);
     const nfc_codepoints = nfc_owned orelse stripped.items;
 
+    // Accent stripping leaves most Latin-script text pure ASCII; skip rule
+    // matching and per-code-point UTF-8 encoding entirely in that case.
+    if (latin_ascii_ascii_identity) {
+        var all_ascii = true;
+        for (nfc_codepoints) |codepoint| {
+            if (codepoint >= 0x80) {
+                all_ascii = false;
+                break;
+            }
+        }
+        if (all_ascii) {
+            var output = std.ArrayList(u8).empty;
+            errdefer output.deinit(allocator);
+            try output.ensureTotalCapacity(allocator, nfc_codepoints.len);
+            for (nfc_codepoints) |codepoint| {
+                output.appendAssumeCapacity(@intCast(codepoint));
+            }
+            return output.toOwnedSlice(allocator);
+        }
+    }
+
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
     const range = transformPassRange(0, 0);
     var index: usize = 0;
     while (index < nfc_codepoints.len) {
+        if (latin_ascii_ascii_identity and nfc_codepoints[index] < 0x80) {
+            try output.append(allocator, @intCast(nfc_codepoints[index]));
+            index += 1;
+            continue;
+        }
         if (findMatchInRange(range, nfc_codepoints, index, nfc_codepoints[0..index], 0)) |entry| {
             try appendTarget(allocator, &output, entry);
             index += entry.source_len;
