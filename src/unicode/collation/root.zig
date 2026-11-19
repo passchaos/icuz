@@ -40,6 +40,9 @@ pub const Options = struct {
     /// Compare runs of decimal digits by numeric value (ICU's numeric
     /// collation): `a2` sorts before `a10`, and leading zeros are ignored.
     numeric: bool = false,
+    /// Add a case level between the secondary and tertiary levels. Case
+    /// differences then stop affecting the tertiary level.
+    case_level: bool = false,
 };
 
 const data = @embedFile("data.bin");
@@ -185,7 +188,7 @@ pub fn sortKeyCodepointsInto(
         (if (locale_tailoring) |tailoring| tailoring.backwards else false);
 
     if (locale_tailoring == null and !shifted and case_first == .off and
-        !backwards and !options.numeric)
+        !backwards and !options.numeric and !options.case_level)
     {
         if (try appendAsciiSortKey(allocator, output, codepoints, options.strength)) {
             return;
@@ -228,7 +231,7 @@ pub fn sortKeyCodepointsInto(
         index += try appendElements(allocator, &ces, source, index, reorder);
     }
 
-    if (!shifted and case_first != .upper) {
+    if (!shifted and (case_first != .upper or options.case_level)) {
         // The common path can emit levels straight from the collation
         // elements without materializing the weighted copy.
         try appendLevelElements(allocator, output, ces.items, .primary);
@@ -243,6 +246,14 @@ pub fn sortKeyCodepointsInto(
             try appendLevelElements(allocator, output, ces.items, .secondary);
         }
         if (options.strength == .secondary) return;
+        if (options.case_level) {
+            try appendCaseLevelElements(
+                allocator,
+                output,
+                ces.items,
+                case_first,
+            );
+        }
         try appendLevelElements(allocator, output, ces.items, .tertiary);
         if (options.strength == .tertiary) return;
         try output.append(allocator, 0);
@@ -252,7 +263,9 @@ pub fn sortKeyCodepointsInto(
     const elements = try allocator.alloc(WeightedElement, ces.items.len);
     defer allocator.free(elements);
     transform(ces.items, elements, shifted);
-    if (case_first == .upper) applyCaseFirstUpper(elements);
+    if (case_first == .upper and !options.case_level) {
+        applyCaseFirstUpper(elements);
+    }
 
     try appendLevel(allocator, output, elements, .primary);
     if (options.strength == .primary) return;
@@ -264,6 +277,14 @@ pub fn sortKeyCodepointsInto(
     }
     if (options.strength == .secondary) return;
 
+    if (options.case_level) {
+        try appendCaseLevelWeighted(
+            allocator,
+            output,
+            elements,
+            case_first,
+        );
+    }
     try appendLevel(allocator, output, elements, .tertiary);
     if (options.strength == .tertiary) return;
 
@@ -797,6 +818,42 @@ fn appendLevelElements(
             .quaternary => 0,
         };
         if (weight != 0) try output.append(allocator, weight);
+    }
+    try output.append(allocator, 0);
+}
+
+fn appendCaseLevelElements(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    elements: []const CollationElement,
+    case_first: CaseFirst,
+) error{OutOfMemory}!void {
+    for (elements) |element| {
+        if (element.tertiary == 0) continue;
+        const upper = isUpperCaseTertiary(element.tertiary);
+        const weight: u32 = if (case_first == .upper)
+            (if (upper) 1 else 2)
+        else
+            (if (upper) 2 else 1);
+        try output.append(allocator, weight);
+    }
+    try output.append(allocator, 0);
+}
+
+fn appendCaseLevelWeighted(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    elements: []const WeightedElement,
+    case_first: CaseFirst,
+) error{OutOfMemory}!void {
+    for (elements) |element| {
+        if (element.tertiary == 0) continue;
+        const upper = isUpperCaseTertiary(element.tertiary);
+        const weight: u32 = if (case_first == .upper)
+            (if (upper) 1 else 2)
+        else
+            (if (upper) 2 else 1);
+        try output.append(allocator, weight);
     }
     try output.append(allocator, 0);
 }
@@ -1476,10 +1533,10 @@ test "ascii fast path keeps the quaternary separator" {
     try testing.expectEqual(@as(u32, 0), quaternary_key[quaternary_key.len - 1]);
 }
 
-test "numeric collation conformance" {
+test "collation options conformance" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
-    const fixture = @embedFile("numeric_conformance.bin");
+    const fixture = @embedFile("options_conformance.bin");
     try testing.expect(fixture.len >= 12);
     try testing.expectEqualStrings("CJNC", fixture[0..4]);
     const case_count = std.mem.readInt(u32, fixture[8..12], .little);
@@ -1498,6 +1555,7 @@ test "numeric collation conformance" {
             .little,
         );
         const expected: i8 = @bitCast(fixture[cursor + 5]);
+        const options_byte = fixture[cursor + 6];
         cursor += 8;
         const locale = fixture[cursor .. cursor + locale_length];
         cursor += locale_length;
@@ -1507,7 +1565,13 @@ test "numeric collation conformance" {
         cursor += second_length;
 
         const order = compare(allocator, first, second, .{
-            .numeric = true,
+            .numeric = options_byte & 1 != 0,
+            .case_level = options_byte & 2 != 0,
+            .case_first = if (options_byte & 4 != 0) .upper else null,
+            .variable_weighting = if (options_byte & 8 != 0)
+                .shifted
+            else
+                .non_ignorable,
             .locale = locale,
         }) catch {
             failures += 1;
@@ -1520,9 +1584,55 @@ test "numeric collation conformance" {
         };
         if (actual != expected) failures += 1;
     }
-    std.debug.print("numeric collation conformance: {d}/{d} cases passed\n", .{
+    std.debug.print("collation options conformance: {d}/{d} cases passed\n", .{
         case_count - failures,
         case_count,
     });
     try testing.expect(failures == 0);
+}
+
+test "case level collation" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const level = Options{ .case_level = true };
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "a", "A", level),
+    );
+    try testing.expectEqual(
+        std.math.Order.gt,
+        try compare(allocator, "A", "a", level),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "abc", "Abc", level),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "aB", "Ab", level),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "a1", "aA", level),
+    );
+
+    const upper = Options{ .case_level = true, .case_first = .upper };
+    try testing.expectEqual(
+        std.math.Order.gt,
+        try compare(allocator, "a", "A", upper),
+    );
+    try testing.expectEqual(
+        std.math.Order.gt,
+        try compare(allocator, "aB", "Ab", upper),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "a1", "aA", upper),
+    );
+
+    const shifted = Options{ .case_level = true, .variable_weighting = .shifted };
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "a b", "aB", shifted),
+    );
 }
