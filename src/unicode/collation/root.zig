@@ -1128,6 +1128,61 @@ const ascii_elements = blk: {
     break :blk .{ .usable = usable, .table = table };
 };
 
+/// Emit all requested levels from one pass over pure-ASCII text.
+fn appendAsciiLevels(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    codepoints: []const u21,
+    strength: Strength,
+) error{OutOfMemory}!bool {
+    var primary: [1024]u32 = undefined;
+    var secondary: [1024]u32 = undefined;
+    var tertiary: [1024]u32 = undefined;
+    var primary_len: usize = 0;
+    var secondary_len: usize = 0;
+    var tertiary_len: usize = 0;
+    const need_secondary = strength != .primary;
+    const need_tertiary = strength != .primary and strength != .secondary;
+    for (codepoints) |codepoint| {
+        const entry = ascii_elements.table[codepoint];
+        for (entry.elements[0..entry.count]) |element| {
+            if (element.primary != 0) {
+                if (primary_len == primary.len) return false;
+                primary[primary_len] = element.primary;
+                primary_len += 1;
+            }
+            if (need_secondary and element.secondary != 0) {
+                if (secondary_len == secondary.len) return false;
+                secondary[secondary_len] = element.secondary;
+                secondary_len += 1;
+            }
+            if (need_tertiary and element.tertiary != 0) {
+                if (tertiary_len == tertiary.len) return false;
+                tertiary[tertiary_len] = element.tertiary;
+                tertiary_len += 1;
+            }
+        }
+    }
+    const separator = strength == .quaternary or strength == .identical;
+    const total: usize = primary_len + 1 +
+        (if (need_secondary) secondary_len + 1 else 0) +
+        (if (need_tertiary) tertiary_len + 1 else 0) +
+        @as(usize, @intFromBool(separator));
+    try output.ensureTotalCapacity(allocator, total);
+    output.appendSliceAssumeCapacity(primary[0..primary_len]);
+    output.appendAssumeCapacity(0);
+    if (need_secondary) {
+        output.appendSliceAssumeCapacity(secondary[0..secondary_len]);
+        output.appendAssumeCapacity(0);
+    }
+    if (need_tertiary) {
+        output.appendSliceAssumeCapacity(tertiary[0..tertiary_len]);
+        output.appendAssumeCapacity(0);
+    }
+    if (separator) output.appendAssumeCapacity(0);
+    return true;
+}
+
 fn appendAsciiLevel(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u32),
@@ -1166,6 +1221,12 @@ fn appendLatinSortKey(
     }
 
     if (all_ascii and ascii_elements.usable) {
+        if (try appendAsciiLevels(allocator, output, codepoints, strength)) {
+            if (strength == .identical) {
+                try appendIdenticalLevel(allocator, output, codepoints);
+            }
+            return true;
+        }
         try output.ensureTotalCapacity(allocator, codepoints.len * 6 + 8);
         try appendAsciiLevel(allocator, output, codepoints, .primary);
         if (strength == .primary) return true;
