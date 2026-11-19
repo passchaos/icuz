@@ -125,6 +125,29 @@ pub fn sortKeyAlloc(
 ) error{ InvalidUtf8, OutOfMemory }![]u32 {
     if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
 
+    var key = std.ArrayList(u32).empty;
+    errdefer key.deinit(allocator);
+
+    // Most callers sort short labels and keys; decode those into a stack
+    // buffer so a sort key costs one allocation instead of two.
+    var stack_codepoints: [512]u21 = undefined;
+    if (text.len <= stack_codepoints.len) {
+        var count: usize = 0;
+        var cursor: usize = 0;
+        while (scalar.decodeValid(text, cursor)) |decoded| {
+            stack_codepoints[count] = decoded.codepoint;
+            count += 1;
+            cursor = decoded.next;
+        }
+        try sortKeyCodepointsInto(
+            allocator,
+            stack_codepoints[0..count],
+            options,
+            &key,
+        );
+        return key.toOwnedSlice(allocator);
+    }
+
     var codepoints = std.ArrayList(u21).empty;
     defer codepoints.deinit(allocator);
     try codepoints.ensureTotalCapacity(allocator, text.len);
@@ -134,9 +157,6 @@ pub fn sortKeyAlloc(
         try codepoints.append(allocator, decoded.codepoint);
         cursor = decoded.next;
     }
-
-    var key = std.ArrayList(u32).empty;
-    errdefer key.deinit(allocator);
     try sortKeyCodepointsInto(allocator, codepoints.items, options, &key);
     return key.toOwnedSlice(allocator);
 }
@@ -150,6 +170,25 @@ pub fn sortKeyCodepointsInto(
 ) error{OutOfMemory}!void {
     output.clearRetainingCapacity();
 
+    const locale_tailoring = if (options.locale) |locale|
+        tailorings.find(locale, options.collation)
+    else
+        null;
+    const reorder = if (locale_tailoring) |tailoring| tailoring.reorder else null;
+    const shifted = options.variable_weighting == .shifted;
+    const case_first = options.case_first orelse
+        (if (locale_tailoring) |tailoring| tailoring.case_first else .off);
+    const backwards = options.backwards_secondary orelse
+        (if (locale_tailoring) |tailoring| tailoring.backwards else false);
+
+    if (locale_tailoring == null and !shifted and case_first == .off and
+        !backwards)
+    {
+        if (try appendAsciiSortKey(allocator, output, codepoints, options.strength)) {
+            return;
+        }
+    }
+
     const normalized = try normalization.normalizeCodepointsAlloc(
         allocator,
         codepoints,
@@ -157,11 +196,6 @@ pub fn sortKeyCodepointsInto(
     );
     defer if (normalized) |owned| allocator.free(owned);
     const source = normalized orelse codepoints;
-    const locale_tailoring = if (options.locale) |locale|
-        tailorings.find(locale, options.collation)
-    else
-        null;
-    const reorder = if (locale_tailoring) |tailoring| tailoring.reorder else null;
 
     var ces = std.ArrayList(CollationElement).empty;
     defer ces.deinit(allocator);
@@ -179,15 +213,30 @@ pub fn sortKeyCodepointsInto(
         index += try appendElements(allocator, &ces, source, index, reorder);
     }
 
-    const shifted = options.variable_weighting == .shifted;
+    if (!shifted and case_first != .upper) {
+        // The common path can emit levels straight from the collation
+        // elements without materializing the weighted copy.
+        try appendLevelElements(allocator, output, ces.items, .primary);
+        if (options.strength == .primary) return;
+        if (backwards) {
+            try appendSecondaryLevelBackwardsElements(
+                allocator,
+                output,
+                ces.items,
+            );
+        } else {
+            try appendLevelElements(allocator, output, ces.items, .secondary);
+        }
+        if (options.strength == .secondary) return;
+        try appendLevelElements(allocator, output, ces.items, .tertiary);
+        if (options.strength == .tertiary) return;
+        try output.append(allocator, 0);
+        return;
+    }
+
     const elements = try allocator.alloc(WeightedElement, ces.items.len);
     defer allocator.free(elements);
     transform(ces.items, elements, shifted);
-
-    const case_first = options.case_first orelse
-        (if (locale_tailoring) |tailoring| tailoring.case_first else .off);
-    const backwards = options.backwards_secondary orelse
-        (if (locale_tailoring) |tailoring| tailoring.backwards else false);
     if (case_first == .upper) applyCaseFirstUpper(elements);
 
     try appendLevel(allocator, output, elements, .primary);
@@ -451,6 +500,109 @@ fn appendElements(
     return cursor - index;
 }
 
+const AsciiElement = struct {
+    primary: u32,
+    secondary: u32,
+    tertiary: u32,
+};
+
+const AsciiEntry = struct {
+    count: u8,
+    elements: [2]AsciiElement,
+};
+
+const ascii_elements = blk: {
+    @setEvalBranchQuota(2_000_000);
+    var table: [128]AsciiEntry = undefined;
+    var usable = true;
+    for (0..128) |codepoint| {
+        const sequence = [_]u21{@intCast(codepoint)};
+        if (findEntryExact(&sequence)) |entry| {
+            if (entry.len != 1 or entry.ce_count > 2) {
+                usable = false;
+                table[codepoint] = .{ .count = 0, .elements = undefined };
+                continue;
+            }
+            var stored = AsciiEntry{
+                .count = entry.ce_count,
+                .elements = undefined,
+            };
+            var element_index: usize = 0;
+            while (element_index < entry.ce_count) : (element_index += 1) {
+                const element = ceAt(
+                    @as(usize, entry.ce_offset) + element_index,
+                );
+                stored.elements[element_index] = .{
+                    .primary = element.primary,
+                    .secondary = element.secondary,
+                    .tertiary = element.tertiary,
+                };
+            }
+            table[codepoint] = stored;
+        } else {
+            usable = false;
+            table[codepoint] = .{ .count = 0, .elements = undefined };
+        }
+    }
+    // A contraction whose continuation is also ASCII could match inside a
+    // pure-ASCII string, so the one-character table would be incomplete.
+    var entry_index = pageStart(0);
+    while (entry_index < entry_count) : (entry_index += 1) {
+        const entry = entryAt(entry_index);
+        if (entry.first >= 128) break;
+        if (entry.len > 1 and (entry.second < 128 or
+            (entry.len > 2 and entry.third < 128)))
+        {
+            usable = false;
+        }
+    }
+    break :blk .{ .usable = usable, .table = table };
+};
+
+/// Emit a root-order sort key for pure-ASCII text from a compact table,
+/// bypassing normalization, page lookups, and the collation-element list.
+fn appendAsciiSortKey(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    codepoints: []const u21,
+    strength: Strength,
+) error{OutOfMemory}!bool {
+    if (!ascii_elements.usable) return false;
+    for (codepoints) |codepoint| {
+        if (codepoint >= 128) return false;
+    }
+    try output.ensureTotalCapacity(allocator, codepoints.len * 6 + 4);
+    try appendAsciiLevel(allocator, output, codepoints, .primary);
+    if (strength == .primary) return true;
+    try appendAsciiLevel(allocator, output, codepoints, .secondary);
+    if (strength == .secondary) return true;
+    try appendAsciiLevel(allocator, output, codepoints, .tertiary);
+    if (strength == .tertiary) return true;
+    try output.append(allocator, 0);
+    return true;
+}
+
+fn appendAsciiLevel(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    codepoints: []const u21,
+    level: Level,
+) error{OutOfMemory}!void {
+    for (codepoints) |codepoint| {
+        const entry = ascii_elements.table[codepoint];
+        for (entry.elements[0..entry.count]) |element| {
+            const weight = switch (level) {
+                .primary => element.primary,
+                .secondary => element.secondary,
+                .tertiary => element.tertiary,
+                .quaternary => 0,
+            };
+            if (weight != 0) try output.append(allocator, weight);
+        }
+    }
+    try output.append(allocator, 0);
+}
+
 fn implicitWeights(codepoint: u21) [2]u32 {
     if (properties.category(codepoint) != .Cn) {
         for (implicit.ranges) |range| {
@@ -539,6 +691,39 @@ fn transform(
 }
 
 const Level = enum { primary, secondary, tertiary, quaternary };
+
+fn appendLevelElements(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    elements: []const CollationElement,
+    level: Level,
+) error{OutOfMemory}!void {
+    for (elements) |element| {
+        const weight = switch (level) {
+            .primary => element.primary,
+            .secondary => element.secondary,
+            .tertiary => element.tertiary,
+            .quaternary => 0,
+        };
+        if (weight != 0) try output.append(allocator, weight);
+    }
+    try output.append(allocator, 0);
+}
+
+fn appendSecondaryLevelBackwardsElements(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    elements: []const CollationElement,
+) error{OutOfMemory}!void {
+    var index = elements.len;
+    while (index > 0) {
+        index -= 1;
+        if (elements[index].secondary != 0) {
+            try output.append(allocator, elements[index].secondary);
+        }
+    }
+    try output.append(allocator, 0);
+}
 
 fn appendLevel(
     allocator: std.mem.Allocator,
@@ -1113,4 +1298,24 @@ test "CLDR 48 shifted conformance" {
         shifted_conformance,
         .{ .strength = .quaternary, .variable_weighting = .shifted },
     );
+}
+
+test "ascii fast path keeps the quaternary separator" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const tertiary_key = try sortKeyAlloc(allocator, "ab", .{
+        .strength = .tertiary,
+    });
+    defer allocator.free(tertiary_key);
+    const quaternary_key = try sortKeyAlloc(allocator, "ab", .{
+        .strength = .quaternary,
+    });
+    defer allocator.free(quaternary_key);
+    try testing.expectEqual(tertiary_key.len + 1, quaternary_key.len);
+    try testing.expectEqualSlices(
+        u32,
+        tertiary_key,
+        quaternary_key[0..tertiary_key.len],
+    );
+    try testing.expectEqual(@as(u32, 0), quaternary_key[quaternary_key.len - 1]);
 }

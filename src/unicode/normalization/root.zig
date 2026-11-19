@@ -129,6 +129,9 @@ pub fn normalizeCodepointsInto(
     output: *std.ArrayList(u21),
 ) error{OutOfMemory}!void {
     const start = output.items.len;
+    // Decomposition rarely grows text beyond the input; reserve once so the
+    // per-code-point append does not trigger repeated reallocation.
+    try output.ensureUnusedCapacity(allocator, codepoints.len);
     const compatibility = form == .nfkc or form == .nfkd;
     for (codepoints) |codepoint| {
         try appendDecomposition(allocator, output, codepoint, compatibility);

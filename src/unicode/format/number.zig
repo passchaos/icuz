@@ -53,14 +53,17 @@ pub fn formatAlloc(
     };
 }
 
-fn resolveLocale(locale_name: []const u8, options: Options) data.Locale {
+fn resolveLocale(
+    locale_name: []const u8,
+    options: Options,
+    storage: *data.Locale,
+) *const data.Locale {
     const split = misc.splitNumberingSystem(locale_name);
-    var locale = findLocale(split.locale) orelse findLocale("en").?;
-    const name = options.numbering_system orelse split.system orelse return locale;
-    const system = numbering_systems.find(name) orelse return locale;
-    locale.digits = system.digits;
-    if (std.mem.eql(u8, name, locale.numbering_system)) return locale;
-    const latn = numbering_systems.find("latn") orelse return locale;
+    const base = findLocale(split.locale) orelse findLocale("en").?;
+    const name = options.numbering_system orelse split.system orelse return base;
+    const system = numbering_systems.find(name) orelse return base;
+    if (std.mem.eql(u8, name, base.numbering_system)) return base;
+    const latn = numbering_systems.find("latn") orelse return base;
     var request_decimal: []const u8 = "";
     var request_group: []const u8 = "";
     var request_minus: []const u8 = "";
@@ -75,29 +78,31 @@ fn resolveLocale(locale_name: []const u8, options: Options) data.Locale {
     var default_group: []const u8 = "";
     var default_minus: []const u8 = "";
     var default_plus: []const u8 = "";
-    if (numbering_systems.findOverride(split.locale, locale.numbering_system)) |entry| {
+    if (numbering_systems.findOverride(split.locale, base.numbering_system)) |entry| {
         default_decimal = entry.decimal;
         default_group = entry.group;
         default_minus = entry.minus;
         default_plus = entry.plus;
     }
-    locale.decimal = pickSymbol(
+    storage.* = base.*;
+    storage.digits = system.digits;
+    storage.decimal = pickSymbol(
         &.{ request_decimal, system.decimal, default_decimal, latn.decimal },
         ".",
     );
-    locale.group = pickSymbol(
+    storage.group = pickSymbol(
         &.{ request_group, system.group, default_group, latn.group },
         ",",
     );
-    locale.minus = pickSymbol(
-        &.{ request_minus, system.minus, default_minus, locale.minus },
+    storage.minus = pickSymbol(
+        &.{ request_minus, system.minus, default_minus, base.minus },
         "-",
     );
-    locale.plus = pickSymbol(
-        &.{ request_plus, system.plus, default_plus, locale.plus },
+    storage.plus = pickSymbol(
+        &.{ request_plus, system.plus, default_plus, base.plus },
         "+",
     );
-    return locale;
+    return storage;
 }
 
 fn pickSymbol(values: []const []const u8, fallback: []const u8) []const u8 {
@@ -113,7 +118,8 @@ fn formatStandardAlloc(
     locale_name: []const u8,
     options: Options,
 ) Error![]u8 {
-    const locale = resolveLocale(locale_name, options);
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, options, &locale_storage);
     var currency_display_text: []const u8 = "";
     if (options.style == .currency) {
         const code = options.currency orelse return error.MissingCurrency;
@@ -210,7 +216,8 @@ pub fn formatIntegerAlloc(
     {
         return formatAlloc(allocator, @floatFromInt(value), locale_name, options);
     }
-    const locale = resolveLocale(locale_name, options);
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, options, &locale_storage);
     var currency_display_text: []const u8 = "";
     if (options.style == .currency) {
         const code = options.currency orelse return error.MissingCurrency;
@@ -361,7 +368,8 @@ fn formatScientificAlloc(
     locale_name: []const u8,
     options: Options,
 ) Error![]u8 {
-    const locale = resolveLocale(locale_name, options);
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, options, &locale_storage);
     if (std.math.isNan(value)) return allocator.dupe(u8, locale.nan);
     if (std.math.isInf(value)) {
         var output = std.ArrayList(u8).empty;
@@ -496,7 +504,7 @@ fn compactCategory(
     fraction_digits: u8,
 ) plural.Category {
     const magnitude = @abs(value);
-    const scale = std.math.pow(f64, 10.0, @floatFromInt(fraction_digits));
+    const scale = pow10(fraction_digits);
     const rounded = roundHalfEven(magnitude, fraction_digits);
     if (fraction_digits == 0) {
         return plural.categoryForInteger(locale_name, @intFromFloat(rounded));
@@ -532,7 +540,8 @@ fn formatCompactAlloc(
     if (!std.math.isFinite(value) or magnitude < 1000) {
         return compactFallback(allocator, value, locale_name, options);
     }
-    const locale = resolveLocale(locale_name, options);
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, options, &locale_storage);
     const table = switch (options.compact_style) {
         .short => locale.compact_short,
         .long => locale.compact_long,
@@ -655,12 +664,12 @@ fn currencyDigits(code: []const u8) u8 {
     return currencies.fractionDigits(code);
 }
 
-fn currencyEntry(locale: data.Locale, code: []const u8) ?currencies.Entry {
+fn currencyEntry(locale: *const data.Locale, code: []const u8) ?currencies.Entry {
     return currencies.find(locale.id, code);
 }
 
 fn currencyDisplayText(
-    locale: data.Locale,
+    locale: *const data.Locale,
     code: []const u8,
     display: CurrencyDisplay,
 ) []const u8 {
@@ -677,7 +686,7 @@ fn currencyDisplayText(
 }
 
 fn currencyPatternText(
-    locale: data.Locale,
+    locale: *const data.Locale,
     options: Options,
     display_text: []const u8,
 ) []const u8 {
@@ -733,7 +742,7 @@ fn formatCurrencyNameAlloc(
     value: f64,
     locale_name: []const u8,
     options: Options,
-    locale: data.Locale,
+    locale: *const data.Locale,
     code: []const u8,
 ) Error![]u8 {
     const fraction_digits = options.max_fraction_digits orelse
@@ -831,7 +840,7 @@ fn formatParts(
     min_fraction: u8,
     negative: bool,
     pattern: Pattern,
-    locale: data.Locale,
+    locale: *const data.Locale,
     currency_display: []const u8,
     use_grouping: bool,
 ) Error![]u8 {
@@ -1065,8 +1074,18 @@ fn scanMultiplier(text: []const u8) u16 {
 
 /// Round `value` at `digits` fraction digits with ties going to the even
 /// digit, matching the HALF_EVEN mode ICU's DecimalFormat applies by default.
+const pow10_float = [_]f64{ 1, 10, 100, 1000, 10000, 100000, 1000000 };
+const pow10_int = [_]u64{ 1, 10, 100, 1000, 10000, 100000, 1000000 };
+
+fn pow10(digits: u8) f64 {
+    return if (digits < pow10_float.len)
+        pow10_float[digits]
+    else
+        std.math.pow(f64, 10.0, @floatFromInt(digits));
+}
+
 fn roundHalfEven(value: f64, digits: u8) f64 {
-    const scale = std.math.pow(f64, 10.0, @floatFromInt(digits));
+    const scale = pow10(digits);
     const scaled = value * scale;
     if (!std.math.isFinite(scaled)) return value;
     const lower = @floor(scaled);
@@ -1080,7 +1099,48 @@ fn roundHalfEven(value: f64, digits: u8) f64 {
     return rounded / scale;
 }
 
+fn formatUnsigned(buffer: []u8, value: u64) usize {
+    var temp: [20]u8 = undefined;
+    var index: usize = temp.len;
+    var remaining = value;
+    while (true) {
+        index -= 1;
+        temp[index] = '0' + @as(u8, @intCast(remaining % 10));
+        remaining /= 10;
+        if (remaining == 0) break;
+    }
+    const length = temp.len - index;
+    @memcpy(buffer[0..length], temp[index..]);
+    return length;
+}
+
+/// Write a pre-rounded non-negative value with exactly `digits` fraction
+/// digits. Integer arithmetic avoids Zig's general float formatter, which is
+/// several times slower for the small fixed precisions number patterns use.
 fn formatFloat(buffer: []u8, value: f64, digits: u8) []const u8 {
+    if (digits < pow10_float.len) {
+        const scaled = value * pow10_float[digits];
+        if (scaled < 9_007_199_254_740_992.0) {
+            const total: u64 = @intFromFloat(@round(scaled));
+            const scale: u64 = pow10_int[digits];
+            var fraction = total % scale;
+            var length = formatUnsigned(buffer, total / scale);
+            if (digits > 0) {
+                buffer[length] = '.';
+                length += 1;
+                var fraction_divisor: u64 = pow10_int[digits - 1];
+                while (fraction_divisor > 0) : (fraction_divisor /= 10) {
+                    const digit: u8 = @intCast(
+                        (fraction / fraction_divisor) % 10,
+                    );
+                    buffer[length] = '0' + digit;
+                    length += 1;
+                    fraction %= fraction_divisor;
+                }
+            }
+            return buffer[0..length];
+        }
+    }
     return switch (digits) {
         0 => std.fmt.bufPrint(buffer, "{d:.0}", .{value}) catch unreachable,
         1 => std.fmt.bufPrint(buffer, "{d:.1}", .{value}) catch unreachable,
@@ -1097,7 +1157,7 @@ fn appendGroupedDigits(
     output: *std.ArrayList(u8),
     digits: []const u8,
     pattern: Pattern,
-    locale: data.Locale,
+    locale: *const data.Locale,
     use_grouping: bool,
 ) Error!void {
     const length = digits.len;
@@ -1154,7 +1214,7 @@ fn appendDigit(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
     digit: u8,
-    locale: data.Locale,
+    locale: *const data.Locale,
 ) Error!void {
     const codepoint = locale.digits[@as(usize, digit)];
     var buffer: [4]u8 = undefined;
@@ -1167,7 +1227,7 @@ fn appendAffix(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
     affix: []const u8,
-    locale: data.Locale,
+    locale: *const data.Locale,
     currency_display: []const u8,
 ) Error!void {
     var in_quote = false;
@@ -1250,7 +1310,7 @@ fn currencySymbol(code: []const u8) []const u8 {
     return code;
 }
 
-fn findLocale(locale: []const u8) ?data.Locale {
+fn findLocale(locale: []const u8) ?*const data.Locale {
     if (lookup(locale)) |result| return result;
 
     var buffer: [64]u8 = undefined;
@@ -1267,7 +1327,7 @@ fn findLocale(locale: []const u8) ?data.Locale {
     return null;
 }
 
-fn lookup(locale: []const u8) ?data.Locale {
+fn lookup(locale: []const u8) ?*const data.Locale {
     var low: usize = 0;
     var high = data.locales.len;
     while (low < high) {
@@ -1276,7 +1336,7 @@ fn lookup(locale: []const u8) ?data.Locale {
         switch (std.mem.order(u8, entry.id, locale)) {
             .lt => low = mid + 1,
             .gt => high = mid,
-            .eq => return entry,
+            .eq => return &data.locales[mid],
         }
     }
     return null;
