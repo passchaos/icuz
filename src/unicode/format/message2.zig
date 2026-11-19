@@ -2,8 +2,9 @@
 //!
 //! Supported: simple messages, `.input`/`.local` declarations, quoted
 //! patterns, `.match` matchers with multiple selectors, expressions with
-//! `:string`, `:number`, `:integer`, `:date`, `:time`, and `:datetime`
-//! functions, numeric and plural selection, and attribute parsing
+//! `:string`, `:number`, `:integer`, `:offset`, `:currency`, `:date`,
+//! `:time`, and `:datetime` functions, numeric and plural selection, and
+//! attribute parsing
 //! (attributes are ignored). Markup parses and formats as an empty string,
 //! matching the spec's default string representation. Date selection and
 //! custom functions are rejected.
@@ -867,7 +868,7 @@ fn resolveInput(
     var value = context.findInput(declaration.name) orelse
         return error.UnresolvedVariable;
     if (declaration.expression.function) |function| {
-        value = try applyFunction(function, value);
+        value = try applyFunction(context, function, value);
     }
     return .{ .value = value, .function = declaration.expression.function };
 }
@@ -894,13 +895,17 @@ fn resolveExpression(
         return error.BadOperand;
     }
     if (expression.function) |own| {
-        value = try applyFunction(own, value);
+        value = try applyFunction(context, own, value);
         function = own;
     }
     return .{ .value = value, .function = function };
 }
 
-fn applyFunction(function: Function, value: Value) FormatError!Value {
+fn applyFunction(
+    context: *Context,
+    function: Function,
+    value: Value,
+) FormatError!Value {
     if (std.mem.eql(u8, function.name, "string")) {
         if (value != .string) return error.BadOperand;
         return value;
@@ -928,6 +933,46 @@ fn applyFunction(function: Function, value: Value) FormatError!Value {
                 const parsed = parseIsoDateTime(text) orelse
                     return error.BadOperand;
                 break :blk .{ .date = parsed };
+            },
+            else => error.BadOperand,
+        };
+    }
+    if (std.mem.eql(u8, function.name, "offset")) {
+        const base = switch (value) {
+            .number => |amount| amount,
+            else => return error.BadOperand,
+        };
+        var delta: f64 = 0;
+        var has_add = false;
+        var has_subtract = false;
+        for (function.options) |option| {
+            if (!std.mem.eql(u8, option.name, "add") and
+                !std.mem.eql(u8, option.name, "subtract"))
+            {
+                continue;
+            }
+            const text = try optionText(context, option);
+            const amount = std.fmt.parseInt(u32, text, 10) catch
+                return error.BadOption;
+            if (std.mem.eql(u8, option.name, "add")) {
+                if (has_add or has_subtract) return error.BadOption;
+                has_add = true;
+                delta = @floatFromInt(amount);
+            } else {
+                if (has_add or has_subtract) return error.BadOption;
+                has_subtract = true;
+                delta = -@as(f64, @floatFromInt(amount));
+            }
+        }
+        return .{ .number = base + delta };
+    }
+    if (std.mem.eql(u8, function.name, "currency")) {
+        return switch (value) {
+            .number => value,
+            .string => |text| blk: {
+                const parsed = std.fmt.parseFloat(f64, text) catch
+                    return error.BadOperand;
+                break :blk .{ .number = parsed };
             },
             else => error.BadOperand,
         };
@@ -1004,7 +1049,9 @@ fn formatResolved(
         },
         .number => |value| {
             if (function != null and !std.mem.eql(u8, name, "number") and
-                !std.mem.eql(u8, name, "integer"))
+                !std.mem.eql(u8, name, "integer") and
+                !std.mem.eql(u8, name, "offset") and
+                !std.mem.eql(u8, name, "currency"))
             {
                 return error.BadOperand;
             }
@@ -1274,10 +1321,17 @@ fn formatNumber(
 ) FormatError!void {
     var options = number.Options{};
     var suppress_sign = false;
+    var currency_buffer: [3]u8 = undefined;
+    var has_currency = false;
     const is_integer = if (function) |value_function|
         std.mem.eql(u8, value_function.name, "integer")
     else
         false;
+    const is_currency = if (function) |value_function|
+        std.mem.eql(u8, value_function.name, "currency")
+    else
+        false;
+    if (is_currency) options.style = .currency;
     if (function) |value_function| {
         for (value_function.options) |option| {
             if (std.mem.eql(u8, option.name, "minimumFractionDigits")) {
@@ -1323,10 +1377,55 @@ fn formatNumber(
                 }
             } else if (std.mem.eql(u8, option.name, "select")) {
                 // Selection-only option.
+            } else if (std.mem.eql(u8, option.name, "currency")) {
+                const text = try optionText(context, option);
+                if (text.len != 3) return error.BadOption;
+                for (text, 0..) |byte, index| {
+                    if (!std.ascii.isAlphabetic(byte)) {
+                        return error.BadOption;
+                    }
+                    currency_buffer[index] = std.ascii.toUpper(byte);
+                }
+                has_currency = true;
+            } else if (std.mem.eql(u8, option.name, "currencySign")) {
+                const text = try optionText(context, option);
+                if (std.mem.eql(u8, text, "accounting")) {
+                    options.accounting = true;
+                } else if (!std.mem.eql(u8, text, "standard")) {
+                    return error.BadOption;
+                }
+            } else if (std.mem.eql(u8, option.name, "currencyDisplay")) {
+                const text = try optionText(context, option);
+                if (std.mem.eql(u8, text, "symbol") or
+                    std.mem.eql(u8, text, "narrowSymbol"))
+                {
+                    options.currency_display = .symbol;
+                } else if (std.mem.eql(u8, text, "name")) {
+                    options.currency_display = .name;
+                } else if (std.mem.eql(u8, text, "code")) {
+                    options.currency_display = .code;
+                } else if (std.mem.eql(u8, text, "never")) {
+                    options.currency_display = .hidden;
+                } else {
+                    return error.BadOption;
+                }
+            } else if (std.mem.eql(u8, option.name, "fractionDigits")) {
+                const text = try optionText(context, option);
+                if (!std.mem.eql(u8, text, "auto")) {
+                    const digits = std.fmt.parseInt(u16, text, 10) catch
+                        return error.BadOption;
+                    if (digits > 99) return error.BadOption;
+                    options.min_fraction_digits = @intCast(digits);
+                    options.max_fraction_digits = @intCast(digits);
+                }
             } else {
                 // Unknown options are ignored for forward compatibility.
             }
         }
+    }
+    if (is_currency) {
+        if (!has_currency) return error.BadOption;
+        options.currency = &currency_buffer;
     }
     if (is_integer) {
         options.min_fraction_digits = 0;
@@ -1441,12 +1540,15 @@ fn matchKey(
         if (std.mem.eql(u8, value, key)) return .exact;
         return if (try nfcEqual(context, value, key)) .exact else .none;
     }
-    if (isDateFunction(function.name)) {
-        // Selection on date/time values is not required by the spec.
+    if (isDateFunction(function.name) or
+        std.mem.eql(u8, function.name, "currency"))
+    {
+        // Selection on these values is not required by the spec.
         return error.UnsupportedFunction;
     }
     if (std.mem.eql(u8, function.name, "number") or
-        std.mem.eql(u8, function.name, "integer"))
+        std.mem.eql(u8, function.name, "integer") or
+        std.mem.eql(u8, function.name, "offset"))
     {
         const value = switch (selector.value) {
             .number => |number_value| number_value,
@@ -1759,5 +1861,71 @@ test "message format 2 date functions" {
             error.BadOperand,
             formatAlloc(allocator, &message, "en", &inputs),
         );
+    }
+}
+
+test "message format 2 currency and offset functions" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    {
+        var message = try parse(
+            allocator,
+            "{12.5 :currency currency=USD}",
+        );
+        defer message.deinit();
+        const text = try formatAlloc(allocator, &message, "en", &.{});
+        defer allocator.free(text);
+        try testing.expectEqualStrings("$12.50", text);
+    }
+    {
+        var message = try parse(
+            allocator,
+            "{-12.5 :currency currency=USD currencySign=accounting}",
+        );
+        defer message.deinit();
+        const text = try formatAlloc(allocator, &message, "en", &.{});
+        defer allocator.free(text);
+        try testing.expectEqualStrings("($12.50)", text);
+    }
+    {
+        var message = try parse(
+            allocator,
+            ".input {$n :number}\n.local $o = {$n :offset add=1}\n{{{$o}}}",
+        );
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "n", .value = .{ .number = 4 } },
+        };
+        const text = try formatAlloc(allocator, &message, "en", &inputs);
+        defer allocator.free(text);
+        try testing.expectEqualStrings("5", text);
+    }
+    {
+        var message = try parse(
+            allocator,
+            ".input {$n :number}\n.local $o = {$n :offset add=1}\n" ++
+                ".match $o\none {{one}}\n* {{many}}\n",
+        );
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "n", .value = .{ .number = 0 } },
+        };
+        const text = try formatAlloc(allocator, &message, "en", &inputs);
+        defer allocator.free(text);
+        try testing.expectEqualStrings("one", text);
+    }
+    {
+        var message = try parse(
+            allocator,
+            ".input {$n :number}\n.local $o = {$n :offset subtract=1}\n{{{$o}}}",
+        );
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "n", .value = .{ .number = 1 } },
+        };
+        const text = try formatAlloc(allocator, &message, "en", &inputs);
+        defer allocator.free(text);
+        try testing.expectEqualStrings("0", text);
     }
 }
