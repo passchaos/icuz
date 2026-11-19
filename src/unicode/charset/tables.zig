@@ -141,13 +141,26 @@ pub fn reverseLookupPaged(
     const codepoints_base = section.offset + 4;
     const pointers_base = codepoints_base + count * 4;
     const page: usize = @as(usize, codepoint) >> 8;
-    var low: usize = pages[page];
-    var high: usize = if (page + 1 < 0x1100) pages[page + 1] else count;
-    while (low < high) {
-        const mid = low + (high - low) / 2;
+    const low: usize = pages[page];
+    const high: usize = if (page + 1 < 0x1100) pages[page + 1] else count;
+    // A page holds only a handful of records; a sequential scan touches one
+    // or two cache lines instead of chasing dependent binary-search probes.
+    if (high - low <= 8) {
+        var cursor = low;
+        while (cursor < high) : (cursor += 1) {
+            const value = readU32(codepoints_base + cursor * 4);
+            if (value == codepoint) return readU16(pointers_base + cursor * 2);
+            if (value > codepoint) break;
+        }
+        return null;
+    }
+    var low_mut = low;
+    var high_mut = high;
+    while (low_mut < high_mut) {
+        const mid = low_mut + (high_mut - low_mut) / 2;
         const value = readU32(codepoints_base + mid * 4);
         if (value == codepoint) return readU16(pointers_base + mid * 2);
-        if (value < codepoint) low = mid + 1 else high = mid;
+        if (value < codepoint) low_mut = mid + 1 else high_mut = mid;
     }
     return null;
 }
