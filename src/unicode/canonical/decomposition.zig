@@ -17627,9 +17627,40 @@ const compat_recursive_components = [_]u21{
     0x9ebb,  0x4d56,  0x9ef9,  0x9efe,  0x9f05,  0x9f0f,  0x9f16,  0x9f3b,  0x2a600,
 };
 
-fn lookup(codepoint: u21, records: []const Record, components: []const u21) ?[]const u21 {
-    var low: usize = 0;
-    var high: usize = records.len;
+/// Page index for a record table: `index[page]` is the first record whose
+/// codepoint is at or above `page * 256`, so a lookup only searches the
+/// records inside one page.
+fn buildPageIndex(records: []const Record) [0x1100]u16 {
+    @setEvalBranchQuota(1_000_000);
+    var index: [0x1100]u16 = @splat(0);
+    var record_index: usize = 0;
+    for (0..0x1100) |page| {
+        const base = page * 256;
+        while (record_index < records.len and
+            records[record_index].codepoint < base)
+        {
+            record_index += 1;
+        }
+        index[page] = @intCast(record_index);
+    }
+    return index;
+}
+
+const direct_index = buildPageIndex(&direct_records);
+const recursive_index = buildPageIndex(&recursive_records);
+const mark_leading_index = buildPageIndex(&mark_leading_records);
+const compat_direct_index = buildPageIndex(&compat_direct_records);
+const compat_recursive_index = buildPageIndex(&compat_recursive_records);
+
+fn lookup(
+    codepoint: u21,
+    records: []const Record,
+    index: []const u16,
+    components: []const u21,
+) ?[]const u21 {
+    const page = codepoint >> 8;
+    var low: usize = index[page];
+    var high: usize = if (page + 1 < 0x1100) index[page + 1] else records.len;
     while (low < high) {
         const mid = low + (high - low) / 2;
         const record = records[mid];
@@ -17646,27 +17677,47 @@ fn lookup(codepoint: u21, records: []const Record, components: []const u21) ?[]c
 
 /// Direct canonical decomposition (one step, no recursive expansion).
 pub fn directForCodepoint(codepoint: u21) ?[]const u21 {
-    return lookup(codepoint, &direct_records, &direct_components);
+    return lookup(codepoint, &direct_records, &direct_index, &direct_components);
 }
 
 /// Recursively expanded canonical decomposition (NFD components).
 pub fn forCodepoint(codepoint: u21) ?[]const u21 {
-    return lookup(codepoint, &recursive_records, &recursive_components);
+    return lookup(
+        codepoint,
+        &recursive_records,
+        &recursive_index,
+        &recursive_components,
+    );
 }
 
 /// Canonical decomposition whose first component is a mark.
 pub fn markLeadingForCodepoint(codepoint: u21) ?[]const u21 {
-    return lookup(codepoint, &mark_leading_records, &mark_leading_components);
+    return lookup(
+        codepoint,
+        &mark_leading_records,
+        &mark_leading_index,
+        &mark_leading_components,
+    );
 }
 
 /// Direct compatibility or canonical decomposition (one step).
 pub fn compatibilityDirectForCodepoint(codepoint: u21) ?[]const u21 {
-    return lookup(codepoint, &compat_direct_records, &compat_direct_components);
+    return lookup(
+        codepoint,
+        &compat_direct_records,
+        &compat_direct_index,
+        &compat_direct_components,
+    );
 }
 
 /// Recursively expanded compatibility decomposition (NFKD components).
 pub fn compatibilityForCodepoint(codepoint: u21) ?[]const u21 {
-    return lookup(codepoint, &compat_recursive_records, &compat_recursive_components);
+    return lookup(
+        codepoint,
+        &compat_recursive_records,
+        &compat_recursive_index,
+        &compat_recursive_components,
+    );
 }
 
 test "canonical and compatibility decompositions" {

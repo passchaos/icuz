@@ -382,10 +382,10 @@ BLOBS = (
 
 GENERATORS = {
     "tools/generate_canonical_combining_class.py": "b8064fb61377c6bca1604c2bd35c6a1db37be5187762c7419ec90b4b19527b82",
-    "tools/generate_canonical_decomposition.py": "fd4e57c7fd6e96af04082f591a193371bd97e1e8856152072d3e434ea8c0813d",
+    "tools/generate_canonical_decomposition.py": "450c932dbd278208bccd3ab8bb26f04f1b18a96051fc03944393f5d73e3ad6d8",
     "tools/generate_nonspacing_marks.py": "12d45f34ce2891ccf1b342bc8f44c6fe32e15e019d7a41489d8036dee9f8555c",
     "tools/unicode/normalization/generate_conformance.py": "c3e9f80b8fb410a2d142cfbb228941d01322672b28261c1e0c0de53eb662ee43",
-    "tools/unicode/normalization/generate_data.py": "8ff9437a02bedd3048552a06c46e12377e626242e8f0146abaa400933742cd86",
+    "tools/unicode/normalization/generate_data.py": "d86a7ecfe3f6d79ab89180d16011f859aec1ae1c11992f31e7c8db26fc9b6d25",
     "tools/unicode/case/generate_data.py": "c4b275209f5fa8695b35c22ddd5cb95d2e08f40f35868b901dc22b39726a4dc9",
     "tools/unicode/case/generate_full_data.py": "ac0b2ce2938d19da1c8b80289fcfbbcb0e7176a95736ca3cf0d6b0b9631a9ed8",
     "tools/unicode/collation/generate_data.py": "3e789930a4ee07357d7e89a26d9bf93fe598ce7555efdbd16c524e860f0e4c96",
@@ -429,7 +429,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/canonical/decomposition.zig",
         "tools/generate_canonical_decomposition.py",
-        "5489909ff9ef7eaf0ef16a605f336abf1808f5b9338ef1eb6a0c44cda1b83f84",
+        "deb8804398b767eaaf0c0bd3765ea5e0059073612005aed80f8ac9a193c3f240",
     ),
     GeneratedText(
         "src/unicode/mark/nonspacing.zig",
@@ -439,7 +439,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/normalization/data.zig",
         "tools/unicode/normalization/generate_data.py",
-        "a5bcfb68fcc7d82e8f90db62ba529315f587a57eeafe4cd46576d98ef7720d48",
+        "e9d3cc7b17119c477171f12ca86ce86dbdc82b3b43215212878311d897fde59a",
     ),
     GeneratedText(
         "src/unicode/name/ranges.zig",
