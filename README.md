@@ -174,9 +174,10 @@ need without pulling in a font or layout engine.
   `:integer`, `:offset`, and `:currency` formatting with exact-value and
   plural/ordinal selection, and `:date`/`:time`/`:datetime` formatting from
   ISO 8601 strings or DateTime values (date fields/length and time precision
-  options). Markup parses and formats as an empty string, matching the
-  spec's default; selection on date and currency values is rejected as
-  unsupported.
+  options). Custom functions plug in through a handler registry with
+  resolve/format/select callbacks (`formatAllocWithRegistry`). Markup parses
+  and formats as an empty string, matching the spec's default; selection on
+  date and currency values is rejected as unsupported.
 - UTF-16 validation, iteration, and UTF-8/UTF-16 conversion helpers.
 - Charset conversion for UTF-8/16/32, ASCII, Latin-1, 28 legacy single-byte
   encodings, GBK/GB18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, and EUC-KR,

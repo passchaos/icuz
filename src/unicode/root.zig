@@ -341,6 +341,10 @@ pub const Message2Input = message2_mod.Input;
 pub const Message2Value = message2_mod.Value;
 pub const message2Parse = message2_mod.parse;
 pub const message2FormatAlloc = message2_mod.formatAlloc;
+pub const message2FormatAllocWithRegistry =
+    message2_mod.formatAllocWithRegistry;
+pub const Message2Registry = message2_mod.Registry;
+pub const Message2Handler = message2_mod.Handler;
 
 pub const CharsetEncoding = charset_mod.Encoding;
 pub const CharsetErrorMode = charset_mod.ErrorMode;

@@ -47,6 +47,61 @@ pub const Input = struct {
     value: Value,
 };
 
+/// Selection preference for a variant key.
+pub const MatchScore = enum(u8) {
+    none = 0,
+    category = 1,
+    exact = 2,
+};
+
+/// One resolved literal option passed to a custom function handler.
+pub const ResolvedOption = struct {
+    name: []const u8,
+    value: []const u8,
+};
+
+/// Custom function handler. All callbacks are optional; a missing
+/// `resolve` keeps the operand value unchanged, a missing `select` makes
+/// the function unusable as a selector.
+pub const Handler = struct {
+    context: ?*anyopaque = null,
+    resolve: ?*const fn (
+        ?*anyopaque,
+        std.mem.Allocator,
+        Value,
+    ) FormatError!Value = null,
+    format: ?*const fn (
+        ?*anyopaque,
+        std.mem.Allocator,
+        []const u8,
+        Value,
+        []const ResolvedOption,
+        *std.ArrayList(u8),
+    ) FormatError!void = null,
+    select: ?*const fn (
+        ?*anyopaque,
+        Value,
+        []const u8,
+    ) FormatError!MatchScore = null,
+};
+
+/// Custom function registry. Built-in function names take precedence.
+pub const Registry = struct {
+    entries: []const Entry = &.{},
+
+    pub const Entry = struct {
+        name: []const u8,
+        handler: Handler,
+    };
+
+    pub fn find(self: Registry, name: []const u8) ?Handler {
+        for (self.entries) |entry| {
+            if (std.mem.eql(u8, entry.name, name)) return entry.handler;
+        }
+        return null;
+    }
+};
+
 pub const Message = struct {
     arena: std.heap.ArenaAllocator,
     declarations: []const Declaration,
@@ -763,6 +818,7 @@ const Context = struct {
     allocator: std.mem.Allocator,
     locale: []const u8,
     inputs: []const Input,
+    registry: *const Registry,
     variables: std.ArrayList(Resolved),
     names: std.ArrayList([]const u8),
     scratch: std.ArrayList(u8),
@@ -827,10 +883,28 @@ pub fn formatAlloc(
     locale: []const u8,
     inputs: []const Input,
 ) FormatError![]u8 {
+    return formatAllocWithRegistry(
+        allocator,
+        message,
+        locale,
+        inputs,
+        &.{},
+    );
+}
+
+/// Format a message with a custom function registry.
+pub fn formatAllocWithRegistry(
+    allocator: std.mem.Allocator,
+    message: *const Message,
+    locale: []const u8,
+    inputs: []const Input,
+    registry: *const Registry,
+) FormatError![]u8 {
     var context = Context{
         .allocator = allocator,
         .locale = locale,
         .inputs = inputs,
+        .registry = registry,
         .variables = .empty,
         .names = .empty,
         .scratch = .empty,
@@ -966,6 +1040,12 @@ fn applyFunction(
         }
         return .{ .number = base + delta };
     }
+    if (context.registry.find(function.name)) |handler| {
+        if (handler.resolve) |resolve_function| {
+            return resolve_function(handler.context, context.allocator, value);
+        }
+        return value;
+    }
     if (std.mem.eql(u8, function.name, "currency")) {
         return switch (value) {
             .number => value,
@@ -1038,6 +1118,38 @@ fn formatResolved(
 ) FormatError!void {
     const function = resolved.function;
     const name = if (function) |value| value.name else "";
+    if (function) |value_function| {
+        if (!isBuiltinFunction(value_function.name)) {
+            const handler = context.registry.find(value_function.name) orelse
+                return error.UnsupportedFunction;
+            const format_function = handler.format orelse
+                return error.UnsupportedFunction;
+            var options = std.ArrayList(ResolvedOption).empty;
+            defer options.deinit(context.allocator);
+            for (value_function.options) |option| {
+                const text = switch (option.value) {
+                    .literal => |raw| try context.unescape(raw),
+                    .variable => return error.BadOption,
+                };
+                const copy = try context.allocator.dupe(u8, text);
+                errdefer context.allocator.free(copy);
+                try context.owned.append(context.allocator, copy);
+                try options.append(context.allocator, .{
+                    .name = option.name,
+                    .value = copy,
+                });
+            }
+            try format_function(
+                handler.context,
+                context.allocator,
+                context.locale,
+                resolved.value,
+                options.items,
+                output,
+            );
+            return;
+        }
+    }
     switch (resolved.value) {
         .string => |text| {
             if (function != null and
@@ -1070,6 +1182,15 @@ fn isDateFunction(name: []const u8) bool {
     return std.mem.eql(u8, name, "date") or
         std.mem.eql(u8, name, "time") or
         std.mem.eql(u8, name, "datetime");
+}
+
+fn isBuiltinFunction(name: []const u8) bool {
+    return std.mem.eql(u8, name, "string") or
+        std.mem.eql(u8, name, "number") or
+        std.mem.eql(u8, name, "integer") or
+        std.mem.eql(u8, name, "offset") or
+        std.mem.eql(u8, name, "currency") or
+        isDateFunction(name);
 }
 
 fn ownResolved(context: *Context, resolved: Resolved) FormatError!Resolved {
@@ -1462,12 +1583,6 @@ fn optionDigit(context: *Context, option: Option) FormatError!u8 {
 
 const max_selectors = 16;
 
-const MatchScore = enum(u8) {
-    none = 0,
-    category = 1,
-    exact = 2,
-};
-
 fn selectVariant(
     context: *Context,
     matcher: Matcher,
@@ -1575,6 +1690,11 @@ fn matchKey(
                 return error.BadOperand;
         if (std.mem.eql(u8, key, @tagName(category))) return .category;
         return .none;
+    }
+    if (context.registry.find(function.name)) |handler| {
+        if (handler.select) |select_function| {
+            return select_function(handler.context, selector.value, key);
+        }
     }
     return error.UnsupportedFunction;
 }
@@ -1985,5 +2105,106 @@ test "message format 2 selection examples" {
         const text = try formatAlloc(allocator, &message, "en", &inputs);
         defer allocator.free(text);
         try testing.expectEqualStrings("Exact match", text);
+    }
+}
+
+fn upperResolve(
+    _: ?*anyopaque,
+    _: std.mem.Allocator,
+    value: Value,
+) FormatError!Value {
+    return value;
+}
+
+fn upperFormat(
+    _: ?*anyopaque,
+    allocator: std.mem.Allocator,
+    _: []const u8,
+    value: Value,
+    _: []const ResolvedOption,
+    output: *std.ArrayList(u8),
+) FormatError!void {
+    const text = switch (value) {
+        .string => |string| string,
+        else => return error.BadOperand,
+    };
+    for (text) |byte| try output.append(allocator, std.ascii.toUpper(byte));
+}
+
+fn upperSelect(
+    _: ?*anyopaque,
+    value: Value,
+    key: []const u8,
+) FormatError!MatchScore {
+    const text = switch (value) {
+        .string => |string| string,
+        else => return error.BadOperand,
+    };
+    return if (std.ascii.eqlIgnoreCase(text, key)) .exact else .none;
+}
+
+test "message format 2 custom functions" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const registry = Registry{ .entries = &.{
+        .{
+            .name = "upper",
+            .handler = .{
+                .resolve = upperResolve,
+                .format = upperFormat,
+                .select = upperSelect,
+            },
+        },
+    } };
+
+    {
+        var message = try parse(
+            allocator,
+            ".input {$name :upper}\n{{{$name}}}",
+        );
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "name", .value = .{ .string = "world" } },
+        };
+        const text = try formatAllocWithRegistry(
+            allocator,
+            &message,
+            "en",
+            &inputs,
+            &registry,
+        );
+        defer allocator.free(text);
+        try testing.expectEqualStrings("WORLD", text);
+    }
+    {
+        var message = try parse(
+            allocator,
+            ".input {$os :upper}\n.match $os\n" ++
+                "WINDOWS {{Settings}}\n* {{Preferences}}\n",
+        );
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "os", .value = .{ .string = "windows" } },
+        };
+        const text = try formatAllocWithRegistry(
+            allocator,
+            &message,
+            "en",
+            &inputs,
+            &registry,
+        );
+        defer allocator.free(text);
+        try testing.expectEqualStrings("Settings", text);
+    }
+    {
+        var message = try parse(allocator, "{$name :upper}");
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "name", .value = .{ .string = "world" } },
+        };
+        try testing.expectError(
+            error.UnsupportedFunction,
+            formatAlloc(allocator, &message, "en", &inputs),
+        );
     }
 }
