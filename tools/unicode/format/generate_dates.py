@@ -124,27 +124,63 @@ def parse_locale(path: Path) -> tuple[str, dict]:
             DAY_KEYS,
             days.get("abbreviated", {}),
         ),
-        "am_wide": (
-            day_periods.get("wide", {}).get("am")
-            or day_periods.get("abbreviated", {}).get("am")
-            or "AM"
+        "am_wide": day_period_value(
+            (
+                own_wide[0],
+                day_periods.get("wide", {}).get("am"),
+                day_periods.get("abbreviated", {}).get("am"),
+            ),
+            "am",
+            "AM",
         ),
-        "pm_wide": (
-            day_periods.get("wide", {}).get("pm")
-            or day_periods.get("abbreviated", {}).get("pm")
-            or "PM"
+        "pm_wide": day_period_value(
+            (
+                own_wide[1],
+                day_periods.get("wide", {}).get("pm"),
+                day_periods.get("abbreviated", {}).get("pm"),
+            ),
+            "pm",
+            "PM",
         ),
-        "am_abbreviated": day_periods.get("abbreviated", {}).get("am", "AM"),
-        "pm_abbreviated": day_periods.get("abbreviated", {}).get("pm", "PM"),
-        "am_narrow": (
-            day_periods.get("narrow", {}).get("am")
-            or day_periods.get("abbreviated", {}).get("am")
-            or "a"
+        "am_abbreviated": day_period_value(
+            (
+                own_abbreviated[0],
+                own_wide[0],
+                day_periods.get("abbreviated", {}).get("am"),
+                day_periods.get("wide", {}).get("am"),
+            ),
+            "am",
+            "AM",
         ),
-        "pm_narrow": (
-            day_periods.get("narrow", {}).get("pm")
-            or day_periods.get("abbreviated", {}).get("pm")
-            or "p"
+        "pm_abbreviated": day_period_value(
+            (
+                own_abbreviated[1],
+                own_wide[1],
+                day_periods.get("abbreviated", {}).get("pm"),
+                day_periods.get("wide", {}).get("pm"),
+            ),
+            "pm",
+            "PM",
+        ),
+        "am_narrow": day_period_value(
+            (
+                own_narrow[0],
+                own_abbreviated[0],
+                own_wide[0],
+                day_periods.get("narrow", {}).get("am"),
+            ),
+            "am",
+            "a",
+        ),
+        "pm_narrow": day_period_value(
+            (
+                own_narrow[1],
+                own_abbreviated[1],
+                own_wide[1],
+                day_periods.get("narrow", {}).get("pm"),
+            ),
+            "pm",
+            "p",
         ),
         "era_wide": names(eras.get("eraNames", {}), ["0", "1"], {"0": "BC", "1": "AD"}),
         "era_abbreviated": names(
@@ -570,6 +606,39 @@ def parse_locale_xml(
     months = format_widths("months")
     days = format_widths("days")
     day_periods = format_widths("dayPeriods")
+
+    def own_day_period(width: str):
+        # Prefer am/pm defined by the locale itself (excluding root); CLDR
+        # day periods without am/pm derive from morning2/afternoon1.
+        for name in parent_chain(locale):
+            if name == "root":
+                break
+            calendar = load_calendar(archive, name, cache)
+            data = (
+                calendar.get("dayPeriods", {})
+                .get("format", {})
+                .get(width, {})
+            )
+            am = data.get("am")
+            pm = data.get("pm")
+            if am or pm:
+                return am, pm
+            morning = data.get("morning2")
+            afternoon = data.get("afternoon1")
+            if morning or afternoon:
+                return morning, afternoon
+        return None, None
+
+    own_wide = own_day_period("wide")
+    own_abbreviated = own_day_period("abbreviated")
+    own_narrow = own_day_period("narrow")
+
+    def day_period_value(chain, key, fallback):
+        for value in chain:
+            if value:
+                return value
+        return fallback
+
     eras = dict(gregorian.get("eras", {}))
     # CLDR falls back from a missing eraNames to eraAbbr when the locale has
     # no full era names of its own (root's names are a last resort).
@@ -629,27 +698,63 @@ def parse_locale_xml(
             DAY_KEYS,
             days.get("abbreviated", {}),
         ),
-        "am_wide": (
-            day_periods.get("wide", {}).get("am")
-            or day_periods.get("abbreviated", {}).get("am")
-            or "AM"
+        "am_wide": day_period_value(
+            (
+                own_wide[0],
+                day_periods.get("wide", {}).get("am"),
+                day_periods.get("abbreviated", {}).get("am"),
+            ),
+            "am",
+            "AM",
         ),
-        "pm_wide": (
-            day_periods.get("wide", {}).get("pm")
-            or day_periods.get("abbreviated", {}).get("pm")
-            or "PM"
+        "pm_wide": day_period_value(
+            (
+                own_wide[1],
+                day_periods.get("wide", {}).get("pm"),
+                day_periods.get("abbreviated", {}).get("pm"),
+            ),
+            "pm",
+            "PM",
         ),
-        "am_abbreviated": day_periods.get("abbreviated", {}).get("am", "AM"),
-        "pm_abbreviated": day_periods.get("abbreviated", {}).get("pm", "PM"),
-        "am_narrow": (
-            day_periods.get("narrow", {}).get("am")
-            or day_periods.get("abbreviated", {}).get("am")
-            or "a"
+        "am_abbreviated": day_period_value(
+            (
+                own_abbreviated[0],
+                own_wide[0],
+                day_periods.get("abbreviated", {}).get("am"),
+                day_periods.get("wide", {}).get("am"),
+            ),
+            "am",
+            "AM",
         ),
-        "pm_narrow": (
-            day_periods.get("narrow", {}).get("pm")
-            or day_periods.get("abbreviated", {}).get("pm")
-            or "p"
+        "pm_abbreviated": day_period_value(
+            (
+                own_abbreviated[1],
+                own_wide[1],
+                day_periods.get("abbreviated", {}).get("pm"),
+                day_periods.get("wide", {}).get("pm"),
+            ),
+            "pm",
+            "PM",
+        ),
+        "am_narrow": day_period_value(
+            (
+                own_narrow[0],
+                own_abbreviated[0],
+                own_wide[0],
+                day_periods.get("narrow", {}).get("am"),
+            ),
+            "am",
+            "a",
+        ),
+        "pm_narrow": day_period_value(
+            (
+                own_narrow[1],
+                own_abbreviated[1],
+                own_wide[1],
+                day_periods.get("narrow", {}).get("pm"),
+            ),
+            "pm",
+            "p",
         ),
         "era_wide": names(
             eras.get("eraNames", {}),

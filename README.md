@@ -70,6 +70,10 @@ need without pulling in a font or layout engine.
   covers 1850-2150 with cycle era, leap month, and month-length data.
   Validated by a 24,645-case conversion fixture and a 12,888-case PyICU
   formatting fixture.
+- CLDR 48 date and time interval formatting for 87 locales, using ICU's
+  repeated-field pattern splitting, greatest-difference selection,
+  single-date collapse, hour-cycle-aware time skeletons, and locale
+  fallback formatting, validated by a 160-case PyICU fixture.
 - IANA tzdata 2026e time zones for 597 IDs, including backward link names,
   with transition-based UTC offset and daylight resolution from 1970 through
   2100, local/UTC conversion, and zone-aware Unix timestamp formatting.

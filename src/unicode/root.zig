@@ -240,6 +240,7 @@ pub const number_cldr_version = number_mod.cldr_version;
 const rbnf_mod = @import("./format/rbnf.zig");
 const timezone_mod = @import("./timezone/root.zig");
 const calendar_mod = @import("./format/calendar.zig");
+const intervals_mod = @import("./format/intervals.zig");
 const chinese_calendar_mod = @import("./format/chinese_calendar.zig");
 pub const RbnfTag = rbnf_mod.Tag;
 pub const formatRbnfAlloc = rbnf_mod.formatAlloc;
@@ -283,6 +284,8 @@ pub const calendarDaysFromGregorian = calendar_mod.daysFromGregorian;
 pub const formatDateInCalendarAlloc = dates_mod.formatDateInCalendarAlloc;
 pub const formatDateTimeInCalendarAlloc = dates_mod.formatDateTimeInCalendarAlloc;
 pub const formatPatternInCalendarAlloc = dates_mod.formatPatternInCalendarAlloc;
+pub const formatDateIntervalAlloc = intervals_mod.formatDateIntervalAlloc;
+pub const formatTimeIntervalAlloc = intervals_mod.formatTimeIntervalAlloc;
 pub const date_cldr_version = dates_mod.cldr_version;
 
 pub const MessageArgument = message_mod.Argument;
@@ -554,6 +557,7 @@ test {
     _ = rbnf_mod;
     _ = timezone_mod;
     _ = calendar_mod;
+    _ = intervals_mod;
     _ = chinese_calendar_mod;
     _ = message_mod;
     _ = charset_mod;

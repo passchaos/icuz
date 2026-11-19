@@ -49,6 +49,8 @@ BLOBS = (
     Blob("src/unicode/format/calendar_conformance.bin", b"CJKC", 1, "74c7ceb16c2d2526e9d9b3a6b2c21681df50c69564b98385a364c6f996977ff9", version=(0, 0, 0)),
     Blob("src/unicode/format/calendars_data.bin", b"CJKD", 1, "c7b3d29c4b739621e6a6345b405317327208b58395e9c34b0c7ed68688e8de8b", version=(0, 0, 0)),
     Blob("src/unicode/format/chinese_data.bin", b"CJK1", 1, "f841e6f49dc0a6781223ec6e12ff6382e915911ef1a74d25a3916a6b66a8914a", version=(0, 0, 0)),
+    Blob("src/unicode/format/intervals_data.bin", b"CJIV", 1, "2ee687e7ac5db9281ebcbec37f4f0437775fe70cbcb77f4a5cbe6c59d982aa38", version=(0, 0, 0)),
+    Blob("src/unicode/format/interval_conformance.bin", b"CJI1", 1, "6c403ae90092aa49d33a3fd3dbb2ad4c17d199f7d27253bb25ef6e811211db45", version=(0, 0, 0)),
     Blob("src/unicode/format/calendar_format_conformance.bin", b"CJKF", 1, "ffa627f64f42870b6d2ba203ff8abb707c7124360d910bab7f93cd41808d305f", version=(0, 0, 0)),
     Blob("src/unicode/transliterate/data.bin", b"CJTR", 19, "1190245efaa8c9a54fb02dbfa5cc19cbbe5d36576b49efc060cbf65801cf07c1", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/und_fonipa_ar_conformance.bin", b"CJQ8", 1, "df5e3c2037f7d6f8b2bcab29859548555aafc5d70be90454461275858c533d88", version=(48, 0, 0)),
@@ -421,7 +423,9 @@ GENERATORS = {
     "tools/unicode/format/generate_calendars.py": "75fca549c55d23cab00114d1ff094b0da7775980e75ed22eab87faa98f9803e5",
     "tools/unicode/format/generate_calendar_format_conformance.py": "72f5f216c79e094e76a7e001458a85bac9ab78b28e73301726dac10d8430c5e2",
     "tools/unicode/format/generate_chinese.py": "9146656817fb532852049e86122b86224c4705b52b8d8ff75730d8a7a08177ad",
-    "tools/unicode/format/generate_dates.py": "38b1f674627312b74af2a31253cf6ad783f1e727f29c68d056ade52cbad439c1",
+    "tools/unicode/format/generate_intervals.py": "d27fec153fce9faaf81f19807da0586e7f4482baf1f73f8665e910faf00c47de",
+    "tools/unicode/format/generate_interval_conformance.py": "1cb95944c746a5f8276b9ba27212c8871da0c361e424af9385655731398f46cc",
+    "tools/unicode/format/generate_dates.py": "cb9ae3350d32eb4d2289205872f53ffe07cef3a1c4d8549c3a7b2ba5fd94b0d5",
     "tools/unicode/format/generate_misc.py": "b126eb131c01bfdd7541ca78496df0b2e0a49e3a0524a666b4b9fd1d55c17086",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
     "tools/unicode/transliterate/generate_data.py": "059f2264e4ca5aa9aa8376d14f65e281528d2c43e1ad7e42d18a4b1da7808749",
@@ -499,7 +503,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/format/dates_data.zig",
         "tools/unicode/format/generate_dates.py",
-        "2660a1ebd9fc76eb081bc6bc71069c1c9fdab1386cca165315bc1174ca59aeb3",
+        "523f68d4a936be22b818ccc3214672106d360bec2a45e0c9b9003b462e5fcda3",
     ),
     GeneratedText(
         "src/unicode/format/list_data.zig",
@@ -835,6 +839,20 @@ def check_layout(blob: Blob, data: bytes) -> None:
     elif magic == b"CJK1":
         year_count = struct.unpack_from("<H", data, 8)[0]
         assert 12 + year_count * 12 == len(data)
+    elif magic == b"CJIV":
+        locale_count = struct.unpack_from("<H", data, 8)[0]
+        entry_count, string_len = struct.unpack_from("<II", data, 12)
+        assert (
+            24 + locale_count * 16 + entry_count * 12 + string_len == len(data)
+        )
+    elif magic == b"CJI1":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            locale_len = data[offset]
+            expected_len = struct.unpack_from("<H", data, offset + 20)[0]
+            offset += 24 + locale_len + expected_len
+        assert offset == len(data)
     elif magic == b"CJKF":
         case_count = struct.unpack_from("<I", data, 8)[0]
         offset = 12
