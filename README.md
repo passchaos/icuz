@@ -31,9 +31,9 @@ need without pulling in a font or layout engine.
   `Intl.Segmenter` covers all five dictionaries.
 - Runtime ICU break rules (`break_rules.compileAlloc`): `$set` variables,
   UnicodeSets, `.`, grouping with `|` alternation, `?`/`*`/`+`
-  quantifiers, `{status}` tags, longest-match boundaries, and ICU's
-  single-code-point fallback, validated by a 19-case PyICU
-  `RuleBasedBreakIterator` fixture.
+  quantifiers, `/` lookahead, `{status}` tags, reverse-rule skipping,
+  longest-match boundaries, and ICU's single-code-point fallback,
+  validated by a 25-case PyICU `RuleBasedBreakIterator` fixture.
 - UAX #50 vertical orientation.
 - Unicode 17 Arabic joining properties and the joining state machine.
 - Character names and aliases, including algorithmic CJK/Tangut/Egyptian/

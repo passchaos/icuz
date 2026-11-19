@@ -33,6 +33,7 @@ const Element = union(enum) {
 
 const Rule = struct {
     pieces: []const Piece,
+    lookahead: []const Piece = &.{},
     status: u32 = 0,
 };
 
@@ -94,6 +95,7 @@ pub const Iterator = struct {
         for (self.rules.rules) |rule| {
             if (matchSequence(rule.pieces, self.codepoints, self.position)) |end| {
                 if (end > self.position and
+                    lookaheadMatches(rule.lookahead, self.codepoints, end) and
                     (best_end == null or end > best_end.?))
                 {
                     best_end = end;
@@ -112,6 +114,15 @@ pub const Iterator = struct {
         return self.last_status;
     }
 };
+
+fn lookaheadMatches(
+    pieces: []const Piece,
+    codepoints: []const u21,
+    position: usize,
+) bool {
+    if (pieces.len == 0) return true;
+    return matchSequence(pieces, codepoints, position) != null;
+}
 
 fn matchSequence(
     pieces: []const Piece,
@@ -358,10 +369,48 @@ const Parser = struct {
     }
 
     fn parseRule(self: *Parser, statement: []const u8) Error!void {
+        var pattern_text = std.mem.trim(u8, statement, " \t\r\n");
+        var reverse_only = false;
+        if (pattern_text.len > 0 and pattern_text[0] == '!') {
+            reverse_only = true;
+            pattern_text = std.mem.trimStart(u8, pattern_text[1..], " \t\r\n");
+        }
+        var status: u32 = 0;
+        if (pattern_text.len > 0 and pattern_text[pattern_text.len - 1] == '}') {
+            if (std.mem.lastIndexOfScalar(u8, pattern_text, '{')) |open| {
+                status = std.fmt.parseInt(
+                    u32,
+                    pattern_text[open + 1 .. pattern_text.len - 1],
+                    10,
+                ) catch return error.InvalidRule;
+                pattern_text = std.mem.trim(
+                    u8,
+                    pattern_text[0..open],
+                    " \t\r\n",
+                );
+            }
+        }
+        var segment_text = pattern_text;
+        var lookahead_text: []const u8 = "";
+        if (findUnquoted(pattern_text, '/')) |slash| {
+            segment_text = pattern_text[0..slash];
+            lookahead_text = pattern_text[slash + 1 ..];
+        }
+        const pieces = try self.parsePieces(segment_text);
+        if (pieces.len == 0) return error.InvalidRule;
+        if (reverse_only) return;
+        const lookahead = try self.parsePieces(lookahead_text);
+        try self.rules.append(self.arena, .{
+            .pieces = pieces,
+            .lookahead = lookahead,
+            .status = status,
+        });
+    }
+
+    fn parseRuleBody(self: *Parser, statement: []const u8) Error!void {
         var pieces = std.ArrayList(Piece).empty;
         errdefer pieces.deinit(self.arena);
         var index: usize = 0;
-        var status: u32 = 0;
         while (index < statement.len) {
             const byte = statement[index];
             if (std.ascii.isWhitespace(byte)) {
@@ -416,20 +465,6 @@ const Parser = struct {
                         .element = .{ .group = alternatives },
                     });
                 },
-                '{' => {
-                    const close = std.mem.indexOfScalarPos(
-                        u8,
-                        statement,
-                        index,
-                        '}',
-                    ) orelse return error.InvalidRule;
-                    status = std.fmt.parseInt(
-                        u32,
-                        statement[index + 1 .. close],
-                        10,
-                    ) catch return error.InvalidRule;
-                    index = close + 1;
-                },
                 '?', '*', '+' => {
                     if (pieces.items.len == 0) return error.InvalidRule;
                     pieces.items[pieces.items.len - 1].quantifier = switch (byte) {
@@ -457,7 +492,6 @@ const Parser = struct {
         if (pieces.items.len == 0) return error.InvalidRule;
         try self.rules.append(self.arena, .{
             .pieces = try pieces.toOwnedSlice(self.arena),
-            .status = status,
         });
     }
 
@@ -720,6 +754,36 @@ fn extractSetPattern(text: []const u8, index: *usize) Error![]const u8 {
         index.* += 1;
     }
     return error.InvalidRule;
+}
+
+fn findUnquoted(text: []const u8, needle: u8) ?usize {
+    var index: usize = 0;
+    var quoted = false;
+    var bracket_depth: usize = 0;
+    var paren_depth: usize = 0;
+    while (index < text.len) {
+        const byte = text[index];
+        if (byte == '\\' and !quoted) {
+            index += @min(@as(usize, 2), text.len - index);
+            continue;
+        }
+        if (byte == '\'') {
+            quoted = !quoted;
+            index += 1;
+            continue;
+        }
+        if (!quoted) {
+            if (byte == '[') bracket_depth += 1;
+            if (byte == ']' and bracket_depth > 0) bracket_depth -= 1;
+            if (bracket_depth == 0) {
+                if (byte == '(') paren_depth += 1;
+                if (byte == ')' and paren_depth > 0) paren_depth -= 1;
+                if (paren_depth == 0 and byte == needle) return index;
+            }
+        }
+        index += 1;
+    }
+    return null;
 }
 
 fn findMatchingParen(text: []const u8, open_index: usize) ?usize {
