@@ -105,10 +105,10 @@ need without pulling in a font or layout engine.
   FONIPA-to-Amharic pipelines, and
   NFC/NFD/NFKC/NFKD transforms, plus the `Hex-Any` / `Any-Hex` escape
   transforms and the `Name-Any` / `Any-Name` character-name transforms.
-  Two hundred ninety-seven
+  Three hundred seven
   transforms are compiled (including 138 auto-discovered CLDR pipelines);
   thirty ship official CLDR conformance
-  fixtures, and two hundred seventy-two (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
+  fixtures, and two hundred eighty-two (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, the nine script-to-InterIndic
   transforms, Cherokee FONIPA, Zulu FONIPA,
   Navajo FONIPA, Sinhala FONIPA, Spanish FONIPA, Xhosa FONIPA,
@@ -166,9 +166,9 @@ need without pulling in a font or layout engine.
 
 `icuz` is not a drop-in ICU replacement. Its transliteration support is a
 compiled rule-table engine covering the constructs listed above, not a
-general runtime ICU-rule interpreter: compound transforms, arbitrary
-embedded transform calls (case calls are supported), `::Any-Title`
-steps, and script-extension based filters are not yet supported. Regular expressions and display/layout
+general runtime ICU-rule interpreter: arbitrary embedded transform
+calls (case calls are supported) and script-extension (`scx=`) based
+filters are not yet supported. Regular expressions and display/layout
 tailoring are also out of scope. Collation supports root ordering plus CLDR
 standard and common
 non-standard tailorings, including locale `caseFirst`, backwards secondary
