@@ -54,7 +54,7 @@ need without pulling in a font or layout engine.
 - CLDR 48 cardinal plural rules for 224 locales and ordinal plural rules for
   110 locales, including both CLDR sample conformance fixtures.
 - CLDR 48 decimal, percent, currency, scientific, and compact number
-  formatting for 87 locales, with locale symbols, grouping, fraction-digit
+  formatting for 111 locales, with locale symbols, grouping, fraction-digit
   options, 25 currencies with locale-specific symbols/names/codes and
   currency-specific fraction digits, accounting parentheses, short/long
   compact notation, and ICU-style number skeletons.
@@ -68,6 +68,10 @@ need without pulling in a font or layout engine.
 - CLDR 48 unit formatting for 87 locales and 60 units across length, mass,
   temperature, speed, area, volume, duration, digital, energy, power,
   pressure, frequency, angle, and concentration, with long and short forms.
+- CLDR 48 RBNF rule-based number formatting for 112 locales, covering
+  spellout and ordinal rule sets with negative, decimal, fraction, and
+  optional rule branches, plural substitutions, Indian grouping, fraction
+  rule sets, and an 6,840-case PyICU differential conformance fixture.
 - ICU-style message formatting with positional/named arguments, plural,
   selectordinal, and select branches, `#` substitution, number/date arguments,
   and quoting.

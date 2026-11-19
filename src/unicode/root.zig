@@ -237,6 +237,11 @@ pub const formatNumberSkeletonIntegerAlloc =
     number_mod.formatSkeletonIntegerAlloc;
 pub const number_cldr_version = number_mod.cldr_version;
 
+const rbnf_mod = @import("./format/rbnf.zig");
+pub const RbnfTag = rbnf_mod.Tag;
+pub const formatRbnfAlloc = rbnf_mod.formatAlloc;
+pub const rbnf_cldr_version = rbnf_mod.cldr_version;
+
 pub const DateTime = dates_mod.DateTime;
 pub const DateStyle = dates_mod.Style;
 pub const formatDateAlloc = dates_mod.formatDateAlloc;
@@ -513,6 +518,7 @@ test {
     _ = plural_mod;
     _ = number_mod;
     _ = dates_mod;
+    _ = rbnf_mod;
     _ = message_mod;
     _ = charset_mod;
     _ = transliterate_mod;
