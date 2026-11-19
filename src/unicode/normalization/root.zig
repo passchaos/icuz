@@ -128,15 +128,20 @@ fn normalizeFusedInto(
                     text[stable_start..starter_offset],
                 );
             }
-            const end = segmentEnd(text, starter_offset);
-            if (!try normalizeSegmentFastInto(
+            const end = (try normalizeSegmentFastAt(
                 allocator,
-                text[starter_offset..end],
+                text,
+                starter_offset,
                 form,
                 output,
-            )) {
-                try normalizeSegmentInto(&engine, text[starter_offset..end]);
-            }
+            )) orelse blk: {
+                const fallback_end = segmentEnd(text, starter_offset);
+                try normalizeSegmentInto(
+                    &engine,
+                    text[starter_offset..fallback_end],
+                );
+                break :blk fallback_end;
+            };
             stable_start = end;
             index = end;
             starter = null;
@@ -661,46 +666,68 @@ fn normalizeSegmentInto(
 /// Normalize one starter segment using stack storage. Returns false when the
 /// decomposed segment exceeds the stack buffer, so the caller can fall back to
 /// the incremental engine.
-fn normalizeSegmentFastInto(
+/// Normalize the starter segment beginning at `start` using stack storage,
+/// decoding the segment once. Returns the byte offset just past the segment,
+/// or null when the decomposed segment exceeds the stack buffer.
+fn normalizeSegmentFastAt(
     allocator: std.mem.Allocator,
     text: []const u8,
+    start: usize,
     form: Form,
     output: *std.ArrayList(u8),
-) Error!bool {
+) Error!?usize {
     const compatibility = form == .nfkc or form == .nfkd;
     const compose = form == .nfc or form == .nfkc;
     var storage: [64]u21 = undefined;
+    var classes: [64]u8 = undefined;
     var length: usize = 0;
-    var index: usize = 0;
+    var index = start;
+    var first = true;
     while (index < text.len) {
-        if (text[index] < 0x80) {
-            if (length == storage.len) return false;
-            storage[length] = text[index];
-            length += 1;
-            index += 1;
-            continue;
-        }
         const sequence_len = std.unicode.utf8ByteSequenceLength(text[index]) catch
             return error.InvalidUtf8;
         if (index + sequence_len > text.len) return error.InvalidUtf8;
         const codepoint = std.unicode.utf8Decode(
             text[index..][0..sequence_len],
         ) catch return error.InvalidUtf8;
+        if (!first) {
+            const class = combining_class.forCodepoint(codepoint);
+            if (class == 0 and !data.isCompositionSecond(codepoint) and
+                !isHangulVOrT(codepoint))
+            {
+                break;
+            }
+        }
+        first = false;
         index += sequence_len;
-        if (data.isSimplePage(codepoint, compatibility)) {
-            if (length == storage.len) return false;
+        if (codepoint < 0x80) {
+            if (length == storage.len) return null;
             storage[length] = codepoint;
+            classes[length] = 0;
+            length += 1;
+            continue;
+        }
+        if (data.isSimplePage(codepoint, compatibility)) {
+            if (length == storage.len) return null;
+            storage[length] = codepoint;
+            classes[length] = 0;
             length += 1;
             continue;
         }
         var parts: [64]u21 = undefined;
         const count = decomposeInto(&parts, codepoint, compatibility);
-        if (length + count > storage.len) return false;
-        @memcpy(storage[length..][0..count], parts[0..count]);
-        length += count;
+        if (length + count > storage.len) return null;
+        for (parts[0..count]) |part| {
+            storage[length] = part;
+            classes[length] = combining_class.forCodepoint(part);
+            length += 1;
+        }
     }
-    canonicalOrder(storage[0..length]);
-    const final_len = if (compose) composeSlice(storage[0..length]) else length;
+    canonicalOrderWithClasses(storage[0..length], classes[0..length]);
+    const final_len = if (compose)
+        composeSliceWithClasses(storage[0..length], classes[0..length])
+    else
+        length;
     try output.ensureUnusedCapacity(allocator, final_len * 4);
     var encoded: [4]u8 = undefined;
     for (storage[0..final_len]) |codepoint| {
@@ -708,7 +735,7 @@ fn normalizeSegmentFastInto(
             unreachable;
         output.appendSliceAssumeCapacity(encoded[0..encoded_len]);
     }
-    return true;
+    return index;
 }
 
 fn normalizeChangedFormInto(
@@ -966,6 +993,71 @@ fn appendDecomposition(
         return;
     }
     try output.append(allocator, codepoint);
+}
+
+/// Canonical ordering with precomputed combining classes.
+fn canonicalOrderWithClasses(codepoints: []u21, classes: []u8) void {
+    std.debug.assert(codepoints.len == classes.len);
+    var sequence_start: usize = 0;
+    for (classes, 0..) |class, index| {
+        if (class == 0) {
+            sortMarksWithClasses(
+                codepoints[sequence_start..index],
+                classes[sequence_start..index],
+            );
+            sequence_start = index + 1;
+        }
+    }
+    sortMarksWithClasses(
+        codepoints[sequence_start..],
+        classes[sequence_start..],
+    );
+}
+
+fn sortMarksWithClasses(codepoints: []u21, classes: []u8) void {
+    var index: usize = 1;
+    while (index < codepoints.len) : (index += 1) {
+        const codepoint = codepoints[index];
+        const class = classes[index];
+        var move = index;
+        while (move > 0 and classes[move - 1] > class) : (move -= 1) {
+            codepoints[move] = codepoints[move - 1];
+            classes[move] = classes[move - 1];
+        }
+        codepoints[move] = codepoint;
+        classes[move] = class;
+    }
+}
+
+/// Composition using precomputed combining classes.
+fn composeSliceWithClasses(items: []u21, classes: []const u8) usize {
+    std.debug.assert(items.len == classes.len);
+    if (items.len < 2) return items.len;
+    var output_len: usize = 1;
+    var starter_index: usize = 0;
+    var starter = items[0];
+    var previous_class: u8 = 0;
+    for (items[1..], classes[1..]) |codepoint, class| {
+        const composite = if ((data.isCompositionSecond(codepoint) or
+            isHangulVOrT(codepoint)) and
+            (previous_class == 0 or previous_class < class))
+            composePair(starter, codepoint)
+        else
+            null;
+        if (composite) |value| {
+            items[starter_index] = value;
+            starter = value;
+            continue;
+        }
+        items[output_len] = codepoint;
+        if (class == 0) {
+            starter_index = output_len;
+            starter = codepoint;
+        }
+        previous_class = class;
+        output_len += 1;
+    }
+    return output_len;
 }
 
 /// Sort the marks of every starter segment into canonical order.
