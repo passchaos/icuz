@@ -19,7 +19,7 @@ const string_length = readU32(24);
 const locale_offset = header_len;
 const locale_calendar_offset = locale_offset + locale_count * 12;
 const record_offset = locale_calendar_offset + locale_calendar_count * 4;
-const month_offset = record_offset + record_count * 32;
+const month_offset = record_offset + record_count * 48;
 const era_offset = month_offset + month_count * 12;
 const strings_offset = era_offset + era_count * 16;
 
@@ -110,10 +110,11 @@ const Record = struct {
     era_count: u16,
     leap_month_start: u16,
     patterns: [4]u32,
+    leap_patterns: [4]u32,
 };
 
 fn recordAt(index: usize) Record {
-    const base = record_offset + index * 32;
+    const base = record_offset + index * 48;
     return .{
         .calendar = blob[base],
         .flags = blob[base + 1],
@@ -128,6 +129,12 @@ fn recordAt(index: usize) Record {
             readU32(base + 20),
             readU32(base + 24),
             readU32(base + 28),
+        },
+        .leap_patterns = .{
+            readU32(base + 32),
+            readU32(base + 36),
+            readU32(base + 40),
+            readU32(base + 44),
         },
     };
 }
@@ -233,6 +240,30 @@ pub fn eraName(
         }
     }
     return "";
+}
+
+/// Leap-month name pattern for a width (for example `{0}bis`).
+pub fn leapPattern(
+    locale_name: []const u8,
+    calendar: u8,
+    width: Width,
+) []const u8 {
+    const record = findRecord(locale_name, calendar) orelse return "";
+    const value = switch (width) {
+        .wide => record.leap_patterns[0],
+        .abbreviated => record.leap_patterns[1],
+        .narrow => record.leap_patterns[2],
+    };
+    return strAt(value);
+}
+
+/// Leap-month pattern for numeric months (for example `{0}bis`).
+pub fn numericLeapPattern(
+    locale_name: []const u8,
+    calendar: u8,
+) []const u8 {
+    const record = findRecord(locale_name, calendar) orelse return "";
+    return strAt(record.leap_patterns[3]);
 }
 
 /// Resolved date pattern for a style, or null when the locale has none.

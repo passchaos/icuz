@@ -46,9 +46,10 @@ BLOBS = (
     Blob("src/unicode/timezone/conformance.bin", b"CJTQ", 1, "2d7379dfa94750ba19d77d7e188b8d34d44500ece9226a0858fa91a1311604cd", version=(5, 0, 0)),
     Blob("src/unicode/timezone/names_data.bin", b"CJZN", 1, "8abd4b636506394ada23facfcaba28635086b0546c3d90e4822c45a87d2eec63", version=(0, 0, 0)),
     Blob("src/unicode/timezone/names_conformance.bin", b"CJZQ", 1, "37bb4e1d88ef57f1ef8ef4acb735974f755de49f906548c9adf5c96e96070269", version=(0, 0, 0)),
-    Blob("src/unicode/format/calendar_conformance.bin", b"CJKC", 1, "6f3a9c22adee479731d15c2268993c2843996a3e5a3c0e0b517ff3d32596b713", version=(0, 0, 0)),
-    Blob("src/unicode/format/calendars_data.bin", b"CJKD", 1, "1bf26d0a533657631032833e327f28afbe26a5af3bfcff48be0da6422526164f", version=(0, 0, 0)),
-    Blob("src/unicode/format/calendar_format_conformance.bin", b"CJKF", 1, "1b7a40271b83feb7934ad21e2147b5f121fa5a25767f76a63a47281f1b8448bd", version=(0, 0, 0)),
+    Blob("src/unicode/format/calendar_conformance.bin", b"CJKC", 1, "74c7ceb16c2d2526e9d9b3a6b2c21681df50c69564b98385a364c6f996977ff9", version=(0, 0, 0)),
+    Blob("src/unicode/format/calendars_data.bin", b"CJKD", 1, "c7b3d29c4b739621e6a6345b405317327208b58395e9c34b0c7ed68688e8de8b", version=(0, 0, 0)),
+    Blob("src/unicode/format/chinese_data.bin", b"CJK1", 1, "f841e6f49dc0a6781223ec6e12ff6382e915911ef1a74d25a3916a6b66a8914a", version=(0, 0, 0)),
+    Blob("src/unicode/format/calendar_format_conformance.bin", b"CJKF", 1, "ffa627f64f42870b6d2ba203ff8abb707c7124360d910bab7f93cd41808d305f", version=(0, 0, 0)),
     Blob("src/unicode/transliterate/data.bin", b"CJTR", 19, "1190245efaa8c9a54fb02dbfa5cc19cbbe5d36576b49efc060cbf65801cf07c1", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/und_fonipa_ar_conformance.bin", b"CJQ8", 1, "df5e3c2037f7d6f8b2bcab29859548555aafc5d70be90454461275858c533d88", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/und_fonipa_fa_conformance.bin", b"CJQ9", 1, "288bdee8e257da3b27887ba33ea4cd7f5889db16dc89e5264607786a578c4dac", version=(48, 0, 0)),
@@ -416,9 +417,10 @@ GENERATORS = {
     "tools/unicode/timezone/generate_conformance.py": "e33e364b94ce4af82a99830f155c627bf167990453e1ecb4201eaf86ce131279",
     "tools/unicode/timezone/generate_names.py": "025b7427e70f8ccff6b7e71746996e584017524c020eea4897f2bdaad839914f",
     "tools/unicode/timezone/generate_names_conformance.py": "587cf43214994d50284df22248ed28f2bf60c96c5e17ad21c14da33cee43f9eb",
-    "tools/unicode/format/generate_calendar_conformance.py": "a94e7dd27b5d588ad1ca2c7bf4bc43b6d199816aeccfac5e27bfc09c3faf27b8",
-    "tools/unicode/format/generate_calendars.py": "336ab47e4898db552228ea16f9ef9854ceb3e1c3f9ec31699a0aedd81eac58cd",
-    "tools/unicode/format/generate_calendar_format_conformance.py": "977c6c028f2db596a8d322b95d4ad3622dcd80ad43da24a66d9323894d6f3ba9",
+    "tools/unicode/format/generate_calendar_conformance.py": "f668a425bfeabb31b9c373dea930f69a9a5d8dfbe479840dda70ae5a978dd0a9",
+    "tools/unicode/format/generate_calendars.py": "75fca549c55d23cab00114d1ff094b0da7775980e75ed22eab87faa98f9803e5",
+    "tools/unicode/format/generate_calendar_format_conformance.py": "72f5f216c79e094e76a7e001458a85bac9ab78b28e73301726dac10d8430c5e2",
+    "tools/unicode/format/generate_chinese.py": "9146656817fb532852049e86122b86224c4705b52b8d8ff75730d8a7a08177ad",
     "tools/unicode/format/generate_dates.py": "38b1f674627312b74af2a31253cf6ad783f1e727f29c68d056ade52cbad439c1",
     "tools/unicode/format/generate_misc.py": "b126eb131c01bfdd7541ca78496df0b2e0a49e3a0524a666b4b9fd1d55c17086",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
@@ -824,12 +826,15 @@ def check_layout(blob: Blob, data: bytes) -> None:
             36
             + locale_count * 12
             + locale_cal_count * 4
-            + record_count * 32
+            + record_count * 48
             + month_count * 12
             + era_count * 16
             + string_len
             == len(data)
         )
+    elif magic == b"CJK1":
+        year_count = struct.unpack_from("<H", data, 8)[0]
+        assert 12 + year_count * 12 == len(data)
     elif magic == b"CJKF":
         case_count = struct.unpack_from("<I", data, 8)[0]
         offset = 12

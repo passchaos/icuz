@@ -61,6 +61,7 @@ CALENDARS = (
     (10, "ethiopic", ()),
     (11, "ethiopic-amete-alem", ("ethiopic",)),
     (12, "hebrew", ()),
+    (13, "chinese", ()),
     (14, "iso8601", ()),
 )
 
@@ -156,6 +157,26 @@ def era_data(element) -> dict:
     return data
 
 
+def month_pattern_data(element) -> dict:
+    data = {}
+    if element is None:
+        return data
+    patterns = element.find("monthPatterns")
+    if patterns is None:
+        return data
+    for context in patterns.findall("monthPatternContext"):
+        context_type = context.get("type")
+        for width in context.findall("monthPatternWidth"):
+            width_type = width.get("type")
+            for pattern in width.findall("monthPattern"):
+                if pattern.get("type") != "leap":
+                    continue
+                value = (pattern.text or "").strip()
+                if value:
+                    data[(context_type, width_type)] = value
+    return data
+
+
 def pattern_data(element) -> dict:
     data = {}
     if element is None:
@@ -171,7 +192,7 @@ def pattern_data(element) -> dict:
 def merged_calendar_data(archive, locale: str, cache: dict) -> dict:
     """Collect month/era/pattern data for every calendar from the chain."""
     chain = parent_chain(locale)
-    result = {index: {"months": {}, "eras": {}, "patterns": {}}
+    result = {index: {"months": {}, "eras": {}, "patterns": {}, "leap": {}}
               for index, _name, _fallbacks in CALENDARS}
     for name in chain:
         document = load_document(archive, name, cache)
@@ -188,6 +209,8 @@ def merged_calendar_data(archive, locale: str, cache: dict) -> dict:
                     result[index]["eras"].setdefault(key, value)
                 for key, value in pattern_data(element).items():
                     result[index]["patterns"].setdefault(key, value)
+                for key, value in month_pattern_data(element).items():
+                    result[index]["leap"].setdefault(key, value)
     for name in chain:
         document = load_document(archive, name, cache)
         if document is None:
@@ -294,7 +317,7 @@ def render(locale_records: dict, cache: dict) -> bytes:
         entries = locale_records[locale]
         cal_start = len(locale_calendar_bytes) // 4
         for calendar_index in sorted(entries):
-            months, leap_months, eras, patterns = entries[calendar_index]
+            months, leap_months, eras, patterns, leap_patterns = entries[calendar_index]
             key = hashlib.sha256(
                 repr((months, eras, patterns)).encode("utf-8")
             ).hexdigest()
@@ -338,6 +361,10 @@ def render(locale_records: dict, cache: dict) -> bytes:
                         len(eras),
                         leap_start if leap_months else 0,
                         *(intern(patterns.get(style, "")) for style in STYLES),
+                        intern(leap_patterns["wide"]),
+                        intern(leap_patterns["abbreviated"]),
+                        intern(leap_patterns["narrow"]),
+                        intern(leap_patterns["numeric"]),
                     )
                 )
             locale_calendar_bytes += struct.pack(
@@ -356,7 +383,7 @@ def render(locale_records: dict, cache: dict) -> bytes:
 
     record_bytes = bytearray()
     for record in records:
-        record_bytes += struct.pack("<BBBBIIHHIIII", *record)
+        record_bytes += struct.pack("<BBBBIIHHIIIIIIII", *record)
 
     header = bytearray(b"CJKD")
     header += struct.pack(
@@ -408,7 +435,25 @@ def main() -> int:
                 for style in STYLES:
                     if not patterns.get(style):
                         patterns[style] = root_raw[index]["patterns"].get(style, "")
-                entries[index] = (months, leap_months, eras, patterns)
+                raw_leap = dict(root_raw[index]["leap"])
+                raw_leap.update(merged[index]["leap"])
+                wide = raw_leap.get(("format", "wide"), "")
+                leap_patterns = {
+                    "wide": wide,
+                    "abbreviated": raw_leap.get(("format", "abbreviated"), wide),
+                    "narrow": raw_leap.get(
+                        ("format", "narrow"),
+                        raw_leap.get(("stand-alone", "narrow"), wide),
+                    ),
+                    "numeric": raw_leap.get(("numeric", "all"), wide),
+                }
+                entries[index] = (
+                    months,
+                    leap_months,
+                    eras,
+                    patterns,
+                    leap_patterns,
+                )
             locale_records[locale] = entries
 
     blob = render(locale_records, cache)

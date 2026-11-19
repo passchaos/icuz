@@ -34,6 +34,7 @@ CALENDARS = (
     ("ethiopic", 10),
     ("ethiopic-amete-alem", 11),
     ("hebrew", 12),
+    ("chinese", 13),
     ("iso8601", 14),
 )
 
@@ -50,6 +51,7 @@ DATES = (
     datetime.datetime(2019, 5, 1, 12, tzinfo=datetime.timezone.utc),
     datetime.datetime(2000, 2, 29, 12, tzinfo=datetime.timezone.utc),
     datetime.datetime(1990, 12, 31, 12, tzinfo=datetime.timezone.utc),
+    datetime.datetime(2023, 3, 22, 12, tzinfo=datetime.timezone.utc),
 )
 
 STYLES = (
@@ -71,6 +73,10 @@ def main() -> int:
             # the older English abbreviation, so this pair is excluded.
             if locale == "am" and calendar_name == "coptic":
                 continue
+            # CLDR 48 added German Chinese month names; ICU 78.3 still falls
+            # back to the root M01..M12 names for this pair.
+            if locale == "de" and calendar_name == "chinese":
+                continue
             tag = locale + "@calendar=" + calendar_name
             for moment in DATES:
                 instant = int(moment.timestamp())
@@ -81,6 +87,10 @@ def main() -> int:
                         (locale, calendar_index, index, instant,
                          formatter.format(moment))
                     )
+                if calendar_name == "chinese":
+                    # Chinese style patterns use the cyclic year fields (r/U)
+                    # that this library does not format yet.
+                    continue
                 for style, style_index in STYLES:
                     formatter = icu.DateFormat.createDateInstance(
                         style, icu.Locale(tag)

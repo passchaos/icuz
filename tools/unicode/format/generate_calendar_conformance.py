@@ -31,6 +31,7 @@ CALENDARS = (
     ("ethiopic", 10),
     ("ethiopic-amete-alem", 11),
     ("hebrew", 12),
+    ("chinese", 13),
     ("iso8601", 14),
 )
 
@@ -82,7 +83,9 @@ def main() -> int:
             calendar.setTime(moment)
             era = calendar.get(calendar.ERA)
             year = calendar.get(calendar.YEAR)
-            month = int(month_formatter.format(moment))
+            month_text = month_formatter.format(moment)
+            match = __import__("re").match(r"\d+", month_text)
+            month = int(match.group(0)) if match else 0
             day = calendar.get(calendar.DATE)
             days = (date - epoch).days
             cases.append((index, era, year, month, day, days))

@@ -6,6 +6,7 @@
 //! instant. Era indices are CLDR era types.
 
 const std = @import("std");
+const chinese_calendar = @import("chinese_calendar.zig");
 
 pub const Calendar = enum {
     gregorian,
@@ -601,17 +602,17 @@ pub fn fromDays(calendar: Calendar, days: i64) Date {
         .islamic_tbla => islamicDate(days, 1948439),
         .islamic_umalqura => umalquraDate(days),
         .hebrew => hebrewDate(days),
+        .chinese => chinese_calendar.fromDays(days) orelse .{
+            .era = 0,
+            .year = civil.year,
+            .month = civil.month,
+            .day = civil.day,
+        },
         .persian => persianDate(days),
         .indian => indianDate(civil, days),
         .coptic => copticDate(days),
         .ethiopic => ethiopicDate(days),
         .ethiopic_amete_alem => ethiopicAmeteAlemDate(days),
-        else => .{
-            .era = if (civil.year <= 0) 0 else 1,
-            .year = if (civil.year <= 0) 1 - civil.year else civil.year,
-            .month = civil.month,
-            .day = civil.day,
-        },
     };
 }
 

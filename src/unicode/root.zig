@@ -240,6 +240,7 @@ pub const number_cldr_version = number_mod.cldr_version;
 const rbnf_mod = @import("./format/rbnf.zig");
 const timezone_mod = @import("./timezone/root.zig");
 const calendar_mod = @import("./format/calendar.zig");
+const chinese_calendar_mod = @import("./format/chinese_calendar.zig");
 pub const RbnfTag = rbnf_mod.Tag;
 pub const formatRbnfAlloc = rbnf_mod.formatAlloc;
 pub const rbnf_cldr_version = rbnf_mod.cldr_version;
@@ -553,6 +554,7 @@ test {
     _ = rbnf_mod;
     _ = timezone_mod;
     _ = calendar_mod;
+    _ = chinese_calendar_mod;
     _ = message_mod;
     _ = charset_mod;
     _ = transliterate_mod;

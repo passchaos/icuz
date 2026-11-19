@@ -41,6 +41,12 @@ const FieldOverrides = struct {
     month: ?u8 = null,
     day: ?u8 = null,
     gannen: bool = false,
+    leap_month: bool = false,
+    era_numeric: bool = false,
+    leap_wide: []const u8 = "",
+    leap_abbreviated: []const u8 = "",
+    leap_narrow: []const u8 = "",
+    leap_numeric: []const u8 = "",
     era: ?u16 = null,
     months: ?calendars.MonthTable = null,
     era_wide: ?[]const u8 = null,
@@ -211,6 +217,24 @@ fn calendarOverrides(
         .era = value.era,
         .gannen = calendar == .japanese and value.year == 1 and
             isJapaneseLocale(locale_name),
+        .leap_month = value.leap_month,
+        .era_numeric = calendar == .chinese,
+        .leap_wide = if (value.leap_month)
+            calendars.leapPattern(locale_name, index, .wide)
+        else
+            "",
+        .leap_abbreviated = if (value.leap_month)
+            calendars.leapPattern(locale_name, index, .abbreviated)
+        else
+            "",
+        .leap_narrow = if (value.leap_month)
+            calendars.leapPattern(locale_name, index, .narrow)
+        else
+            "",
+        .leap_numeric = if (value.leap_month)
+            calendars.numericLeapPattern(locale_name, index)
+        else
+            "",
         .months = calendars.monthTable(locale_name, index, value.leap_year),
         .era_wide = calendars.eraName(locale_name, index, value.era, .wide),
         .era_abbreviated = calendars.eraName(locale_name, index, value.era, .abbreviated),
@@ -549,6 +573,26 @@ fn formatPatternWithLocale(
     return output.toOwnedSlice(allocator);
 }
 
+fn appendPatternValue(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    pattern: []const u8,
+    value: []const u8,
+) Error!void {
+    var index: usize = 0;
+    while (index < pattern.len) {
+        if (pattern[index] == '{' and index + 2 < pattern.len and
+            pattern[index + 1] == '0' and pattern[index + 2] == '}')
+        {
+            try output.appendSlice(allocator, value);
+            index += 3;
+            continue;
+        }
+        try output.append(allocator, pattern[index]);
+        index += 1;
+    }
+}
+
 fn appendField(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
@@ -562,6 +606,16 @@ fn appendField(
 ) Error!void {
     switch (field) {
         'G' => {
+            if (overrides.era_numeric) {
+                try appendPaddedNumber(
+                    allocator,
+                    output,
+                    overrides.era orelse 0,
+                    1,
+                    locale,
+                );
+                return;
+            }
             const value = if (overrides.era != null)
                 if (length >= 5)
                     overrides.era_narrow orelse ""
@@ -603,13 +657,25 @@ fn appendField(
         'M', 'L' => {
             const month = @min(@max(overrides.month orelse date_time.month, 1), 13);
             if (length <= 2) {
-                try appendPaddedNumber(
-                    allocator,
-                    output,
-                    month,
-                    length,
-                    locale,
-                );
+                if (overrides.leap_month and overrides.leap_numeric.len != 0) {
+                    var number = std.ArrayList(u8).empty;
+                    defer number.deinit(allocator);
+                    try appendPaddedNumber(allocator, &number, month, length, locale);
+                    try appendPatternValue(
+                        allocator,
+                        output,
+                        overrides.leap_numeric,
+                        number.items,
+                    );
+                } else {
+                    try appendPaddedNumber(
+                        allocator,
+                        output,
+                        month,
+                        length,
+                        locale,
+                    );
+                }
             } else {
                 const names: []const []const u8 = if (overrides.months) |months|
                     if (length == 3)
@@ -626,7 +692,18 @@ fn appendField(
                     else
                         locale.months_narrow[0..];
                 const index = @min(month - 1, names.len - 1);
-                try output.appendSlice(allocator, names[index]);
+                const name = names[index];
+                const leap_pattern = if (length == 3)
+                    overrides.leap_abbreviated
+                else if (length == 4)
+                    overrides.leap_wide
+                else
+                    overrides.leap_narrow;
+                if (overrides.leap_month and leap_pattern.len != 0) {
+                    try appendPatternValue(allocator, output, leap_pattern, name);
+                } else {
+                    try output.appendSlice(allocator, name);
+                }
             }
         },
         'd' => try appendPaddedNumber(
