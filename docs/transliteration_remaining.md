@@ -94,6 +94,12 @@ Known failing transforms (PyICU differential fixtures): none. Every
 compiled transform passes its fixture; the remaining gaps are transforms
 that are not compiled yet (see section 1).
 
+Multi-element source groups with optional parts are still skipped, so
+`Latin-Greek` macron vowels come out as base vowel plus combining marks
+(`hā` → `ἀ` + macron + rough breathing instead of `ἁ`). The same pattern
+covers `Latin-Arabic`'s `t ($notAbove+) ̈` rule and `InterIndic-Arabic`'s
+`($alif) $alif+` collapse.
+
 `Greek-Latin`, `Latin-Greek`, `Hebrew-Latin`, `Latin-Hebrew`,
 `ug-ug_FONIPA`, and `Maldivian-Latin/BGN` pass their PyICU fixtures
 after output-context stripping, nested-context order fixes, insertion
