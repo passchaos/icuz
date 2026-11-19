@@ -216,6 +216,7 @@ BLOBS = (
     Blob("src/unicode/line_break/data.bin", b"CJL2", 2, "0fef55798282a97581de58698c3617ee0990a52ff40342230fd083f6f881fa92"),
     Blob("src/unicode/normalization/conformance.bin", b"CJNF", 1, "ed9089885715ea3e92f550d0f462e7fa53a681870b95402dc1cae85fd7d17f45"),
     Blob("src/unicode/normalization/quick_check.bin", b"CJQ1", 1, "43650bd3f029bc64fbca0952c2943babd2354cf302a91299583643219a1f701a"),
+    Blob("src/unicode/normalization/casefold_data.bin", b"CJQF", 1, "a976281bf305c47711e7b9931ab5cea6d97ea5def08d7ce3f34f0f8ca0dbf85f"),
     Blob("src/unicode/properties/data.bin", b"CJP2", 2, "a7fde8a4eed944cb36af2b2fa8970307989eeca9f6168e0f2b2e69de26450dea"),
     Blob("src/unicode/script/data.bin", b"CJS1", 1, "568090d12531a38659e1e936779464ed05eb3610b443429928fc97eaf119dbdf"),
     Blob("src/unicode/script_extensions/data.bin", b"CJSE", 1, "43135c269af32f24e43b55c94c33205ec715e5f43dddb1ac5b218929e754016b"),
@@ -440,6 +441,7 @@ GENERATORS = {
     "tools/generate_nonspacing_marks.py": "12d45f34ce2891ccf1b342bc8f44c6fe32e15e019d7a41489d8036dee9f8555c",
     "tools/unicode/normalization/generate_conformance.py": "c3e9f80b8fb410a2d142cfbb228941d01322672b28261c1e0c0de53eb662ee43",
     "tools/unicode/normalization/generate_data.py": "e61fd24b9b23e554ebded137825546a4378e61050eae3cbbe1863555df79f864",
+    "tools/unicode/normalization/generate_casefold.py": "e22b83f28e534750a85dadff1ff6d24df83940dfff2ed2bb4e4dcef389bb075f",
     "tools/unicode/case/generate_data.py": "c4b275209f5fa8695b35c22ddd5cb95d2e08f40f35868b901dc22b39726a4dc9",
     "tools/unicode/case/generate_full_data.py": "ac0b2ce2938d19da1c8b80289fcfbbcb0e7176a95736ca3cf0d6b0b9631a9ed8",
     "tools/unicode/collation/generate_data.py": "3e789930a4ee07357d7e89a26d9bf93fe598ce7555efdbd16c524e860f0e4c96",
@@ -647,6 +649,19 @@ def check_layout(blob: Blob, data: bytes) -> None:
         assert offset == len(data)
     elif magic in (b"CJGB", b"CJWB", b"CJSB", b"CJC1", b"CJQ1"):
         check_page_table(data, 1)
+    elif magic == b"CJQF":
+        (
+            mapping_count,
+            removal_count,
+            pool_count,
+            mapping_offset,
+            removal_offset,
+            pool_offset,
+        ) = struct.unpack_from("<IIIIII", data, 8)
+        assert mapping_offset == 32
+        assert removal_offset == mapping_offset + mapping_count * 12
+        assert pool_offset == removal_offset + removal_count * 8
+        assert pool_offset + pool_count * 4 == len(data)
     elif magic == b"CJP2":
         index_count, page_count = struct.unpack_from("<HH", data, 8)
         assert index_count == 0x1100

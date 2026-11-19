@@ -173,6 +173,8 @@ pub const isNormalizedUtf16 = normalization.isNormalizedUtf16;
 pub const Normalizer = normalization.Normalizer;
 pub const isNormalizedNfc = normalization.isNormalized;
 pub const isNormalizedNfcAssumeValid = normalization.isNormalizedAssumeValid;
+pub const nfkcCasefoldAlloc =
+    @import("./normalization/casefold.zig").nfkcCasefoldAlloc;
 
 pub const simpleLower = case_mod.simpleLower;
 pub const simpleUpper = case_mod.simpleUpper;
@@ -613,6 +615,7 @@ test {
     _ = canonical_combining_class;
     _ = canonical_decomposition;
     _ = normalization;
+    _ = @import("./normalization/casefold.zig");
     _ = case_mod;
     _ = name_mod;
     _ = set_mod;

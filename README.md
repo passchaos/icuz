@@ -16,7 +16,10 @@ need without pulling in a font or layout engine.
 - UAX #14 line-break opportunities.
 - UAX #15 normalization: NFC, NFD, NFKC, and NFKD, with `normalizeFormInto`,
   `spanQuickCheckYes`, code-point and UTF-16 forms, and a memory-bounded
-  streaming `Normalizer` for chunked input.
+  streaming `Normalizer` for chunked input. NFKC_Casefold
+  (`nfkcCasefoldAlloc`) applies the derived NFKC_CF mapping and the
+  required final NFC pass, with an ASCII fast path and the complete
+  Unicode 17 mapping table.
 - Simple lower/upper/title mappings, full case folding, and full
   lower/upper/title mappings with `Final_Sigma`, Turkic, and Lithuanian
   context rules.
