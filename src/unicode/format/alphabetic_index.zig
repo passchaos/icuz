@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const collation = @import("../collation/root.zig");
+const tailorings = @import("../collation/tailorings.zig");
 const locale_mod = @import("../locale.zig");
 const properties = @import("../properties.zig");
 const script_mod = @import("../script/root.zig");
@@ -118,6 +119,16 @@ fn decodeFirst(text: []const u8) ?u21 {
     return std.unicode.utf8Decode(text[0..length]) catch null;
 }
 
+const pinyin_letters = [_][]const u8{
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+    "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+};
+
+fn languageOf(locale: []const u8) []const u8 {
+    const end = std.mem.indexOfAny(u8, locale, "_-@") orelse locale.len;
+    return locale[0..end];
+}
+
 fn firstLetterScript(text: []const u8) ?script_mod.Script {
     var cursor: usize = 0;
     while (cursor < text.len) {
@@ -148,6 +159,7 @@ pub const AlphabeticIndex = struct {
     labels: []Label = &.{},
     labels_storage: []Label = &.{},
     label_script: ?script_mod.Script = null,
+    pinyin: bool = false,
     scratch: std.ArrayList(u32) = .empty,
 
     pub fn init(
@@ -248,7 +260,71 @@ pub const AlphabeticIndex = struct {
                 }
             }
         }
+        try index.setupPinyin();
         return index;
+    }
+
+    /// Replace the Latin A-Z index labels with the collation's Chinese
+    /// `BASE+A-Z` boundaries when the locale defaults to pinyin.
+    fn setupPinyin(self: *AlphabeticIndex) Error!void {
+        if (!std.mem.eql(u8, languageOf(self.locale), "zh")) return;
+        const tailoring = tailorings.find(self.locale, "standard") orelse return;
+        if (!std.mem.eql(u8, tailoring.collation_type, "pinyin")) return;
+        const present = tailorings.baseLetterBoundaries(tailoring);
+
+        const storage = try self.allocator.alloc(Label, 26);
+        var initialized: usize = 0;
+        errdefer {
+            for (storage[0..initialized]) |label| {
+                self.allocator.free(label.key);
+            }
+            self.allocator.free(storage);
+        }
+        var keys: [26]?[]u32 = .{null} ** 26;
+        errdefer for (keys) |key| {
+            if (key) |value| self.allocator.free(value);
+        };
+        for (0..26) |letter| {
+            if (!present[letter]) continue;
+            const boundary = [_]u8{
+                0xEF,
+                0xB7,
+                0x90,
+                'A' + @as(u8, @intCast(letter)),
+            };
+            self.scratch.clearRetainingCapacity();
+            try self.collator.sortKeyInto(self.allocator, &boundary, &self.scratch);
+            keys[letter] = try self.allocator.dupe(u32, self.scratch.items);
+        }
+        // Pinyin has no I, U, or V initials. Give those buckets the next
+        // existing boundary so the label list stays A-Z and sorted.
+        var next: ?[]const u32 = null;
+        var letter: usize = 26;
+        while (letter > 0) {
+            letter -= 1;
+            if (keys[letter]) |key| {
+                next = key;
+            } else if (next) |key| {
+                keys[letter] = try self.allocator.dupe(u32, key);
+            }
+        }
+        for (0..26) |index| {
+            const key = keys[index] orelse continue;
+            storage[index] = .{
+                .text = pinyin_letters[index],
+                .key = key,
+            };
+            keys[index] = null;
+            initialized += 1;
+        }
+        for (self.labels) |label| self.allocator.free(label.key);
+        if (self.labels_storage.len != 0) {
+            self.allocator.free(self.labels_storage);
+        }
+        self.labels_storage = storage;
+        self.labels = storage;
+        self.label_script = .latin;
+        self.pinyin = true;
     }
 
     pub fn deinit(self: *AlphabeticIndex) void {
@@ -278,9 +354,25 @@ pub const AlphabeticIndex = struct {
         if (self.labels.len == 0) return 0;
         if (!std.unicode.utf8ValidateSlice(name)) return error.InvalidUtf8;
 
-        // Names whose first code point is a letter in another script belong
-        // to the overflow bucket, matching the CLDR index label script.
-        if (decodeFirst(name)) |codepoint| {
+        if (self.pinyin) {
+            if (decodeFirst(name)) |codepoint| {
+                if (codepoint >= 'A' and codepoint <= 'Z') {
+                    return 1 + @as(usize, codepoint - 'A');
+                }
+                if (codepoint >= 'a' and codepoint <= 'z') {
+                    return 1 + @as(usize, codepoint - 'a');
+                }
+                if (properties.isLetter(codepoint)) {
+                    if (script_mod.forCodepoint(codepoint) != .han) {
+                        return self.labels.len + 1;
+                    }
+                } else {
+                    return 0;
+                }
+            }
+        } else if (decodeFirst(name)) |codepoint| {
+            // Names whose first code point is a letter in another script
+            // belong to the overflow bucket, matching the CLDR label script.
             if (properties.isLetter(codepoint)) {
                 const name_script = script_mod.forCodepoint(codepoint);
                 if (self.label_script) |label_script| {
@@ -380,4 +472,35 @@ test "alphabetic index labels and buckets" {
         error.InvalidUtf8,
         english.bucketFor("\xff"),
     );
+}
+
+test "Chinese alphabetic index uses pinyin buckets" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var chinese = try AlphabeticIndex.init(allocator, "zh");
+    defer chinese.deinit();
+    try testing.expectEqual(@as(usize, 28), chinese.bucketCount());
+    try testing.expectEqualStrings("A", chinese.bucketLabel(1));
+    try testing.expectEqualStrings("Z", chinese.bucketLabel(26));
+    const cases = [_]struct { name: []const u8, bucket: usize }{
+        .{ .name = "阿", .bucket = 1 },
+        .{ .name = "八", .bucket = 2 },
+        .{ .name = "中", .bucket = 26 },
+        .{ .name = "中国", .bucket = 26 },
+        .{ .name = "Apple", .bucket = 1 },
+        .{ .name = "zebra", .bucket = 26 },
+        .{ .name = "1st", .bucket = 0 },
+        .{ .name = "Иван", .bucket = 27 },
+    };
+    for (cases) |case| {
+        try testing.expectEqual(case.bucket, try chinese.bucketFor(case.name));
+    }
+
+    // Traditional Chinese uses the stroke index, whose labels are Kangxi
+    // radicals; a Han name is not redirected through pinyin.
+    var traditional = try AlphabeticIndex.init(allocator, "zh-Hant");
+    defer traditional.deinit();
+    try testing.expectEqualStrings("一", traditional.bucketLabel(1));
+    try testing.expect(try traditional.bucketFor("八") != 2);
 }

@@ -152,8 +152,11 @@ need without pulling in a font or layout engine.
   characters ordered by the locale's primary collation, underflow and
   overflow buckets, script-aware overflow, and label deduplication by
   primary weight, validated against ICU 78 bucket labels and indices for
-  en, sv, es, tr, ru, and hi. Chinese pinyin bucket redirection and inflow
-  buckets for skipped scripts are not included.
+  en, sv, es, tr, ru, and hi. Chinese pinyin indexes use the collation's
+  `BASE+A-Z` contractions, so Han names land in the bucket of their pinyin
+  initial and Latin names are redirected to the matching pinyin bucket;
+  Traditional Chinese uses the stroke index. Inflow buckets for skipped
+  scripts are not included.
 - Numbering system selection for number and date formatting across 78 CLDR
   numeric systems (latn, arab, arabext, thai, deva, beng, hanidec,
   fullwide, and others) through `@numbers=`/`-u-nu-` locale keywords or an

@@ -178,6 +178,23 @@ pub fn sequenceCodepoint(rule: Rule, index: usize) u21 {
     return @intCast(readU32(offset));
 }
 
+/// Chinese `BASE+A-Z` index boundaries present in this tailoring.
+pub fn baseLetterBoundaries(tailoring: Tailoring) [26]bool {
+    var result = [_]bool{false} ** 26;
+    var index = tailoring.rule_start;
+    const end = tailoring.rule_start + tailoring.rule_count;
+    while (index < end) : (index += 1) {
+        const rule = ruleAt(index);
+        if (rule.first > 0xFDD0) break;
+        if (rule.first != 0xFDD0 or rule.sequence_len != 2) continue;
+        const second = sequenceCodepoint(rule, 1);
+        if (second >= 'A' and second <= 'Z') {
+            result[second - 'A'] = true;
+        }
+    }
+    return result;
+}
+
 /// True when a multi-codepoint rule continues with a non-combining-mark
 /// scalar, so a per-code-point primary search cannot ignore contractions.
 pub fn hasNonMarkContraction(tailoring: Tailoring) bool {
