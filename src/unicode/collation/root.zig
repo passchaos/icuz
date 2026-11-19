@@ -607,7 +607,7 @@ fn sortKeyCodepointsResolved(
     var stack_ces: [512]CollationElement = undefined;
     var ces = CeBuffer.init(allocator, &stack_ces);
     defer ces.deinit();
-    try ces.ensureTotalCapacity(source.len * 2 + 8);
+    try ces.ensureTotalCapacity(source.len + 8);
 
     var index: usize = 0;
     while (index < source.len) {
@@ -643,6 +643,19 @@ fn sortKeyCodepointsResolved(
     if (!shifted and (case_first != .upper or options.case_level)) {
         // The common path can emit levels straight from the collation
         // elements without materializing the weighted copy.
+        if (!backwards and !options.case_level and
+            try appendLevelElementsAll(
+                allocator,
+                output,
+                ces.items(),
+                options.strength,
+            ))
+        {
+            if (options.strength == .identical) {
+                try appendIdenticalLevel(allocator, output, codepoints);
+            }
+            return;
+        }
         try appendLevelElements(allocator, output, ces.items(), .primary);
         if (options.strength == .primary) return;
         if (backwards) {
@@ -1153,6 +1166,12 @@ fn appendLatinSortKey(
         }
     }
 
+    if (try appendLatinLevels(allocator, output, source, strength)) {
+        if (strength == .identical) {
+            try appendIdenticalLevel(allocator, output, codepoints);
+        }
+        return true;
+    }
     try output.ensureTotalCapacity(allocator, source.len * 9 + 8);
     try appendLatinLevel(allocator, output, source, .primary);
     if (strength == .primary) return true;
@@ -1241,7 +1260,7 @@ fn appendTailoredLatinSortKey(
     var stack_ces: [512]LatinElement = undefined;
     var ces = ElementBuffer(LatinElement).init(allocator, &stack_ces);
     defer ces.deinit();
-    try ces.ensureTotalCapacity(source.len * 2 + 8);
+    try ces.ensureTotalCapacity(source.len + 8);
     var index: usize = 0;
     while (index < source.len) {
         const codepoint = source[index];
@@ -1268,6 +1287,12 @@ fn appendTailoredLatinSortKey(
         index += 1;
     }
 
+    if (try appendLatinCesLevels(allocator, output, ces.items(), strength)) {
+        if (strength == .identical) {
+            try appendIdenticalLevel(allocator, output, codepoints);
+        }
+        return true;
+    }
     try output.ensureTotalCapacity(allocator, ces.items().len * 3 + 8);
     try appendLatinCesLevel(allocator, output, ces.items(), .primary);
     if (strength == .primary) return true;
@@ -1278,6 +1303,58 @@ fn appendTailoredLatinSortKey(
     try output.append(allocator, 0);
     if (strength == .quaternary) return true;
     try appendIdenticalLevel(allocator, output, codepoints);
+    return true;
+}
+
+/// Emit all requested levels from one pass over the tailored elements.
+fn appendLatinCesLevels(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    elements: []const LatinElement,
+    strength: Strength,
+) error{OutOfMemory}!bool {
+    var primary: [1024]u32 = undefined;
+    var secondary: [1024]u32 = undefined;
+    var tertiary: [1024]u32 = undefined;
+    var primary_len: usize = 0;
+    var secondary_len: usize = 0;
+    var tertiary_len: usize = 0;
+    const need_secondary = strength != .primary;
+    const need_tertiary = strength != .primary and strength != .secondary;
+    for (elements) |element| {
+        if (element.primary != 0) {
+            if (primary_len == primary.len) return false;
+            primary[primary_len] = element.primary;
+            primary_len += 1;
+        }
+        if (need_secondary and element.secondary != 0) {
+            if (secondary_len == secondary.len) return false;
+            secondary[secondary_len] = element.secondary;
+            secondary_len += 1;
+        }
+        if (need_tertiary and element.tertiary != 0) {
+            if (tertiary_len == tertiary.len) return false;
+            tertiary[tertiary_len] = element.tertiary;
+            tertiary_len += 1;
+        }
+    }
+    const separator = strength == .quaternary or strength == .identical;
+    const total: usize = primary_len + 1 +
+        (if (need_secondary) secondary_len + 1 else 0) +
+        (if (need_tertiary) tertiary_len + 1 else 0) +
+        @as(usize, @intFromBool(separator));
+    try output.ensureTotalCapacity(allocator, total);
+    output.appendSliceAssumeCapacity(primary[0..primary_len]);
+    output.appendAssumeCapacity(0);
+    if (need_secondary) {
+        output.appendSliceAssumeCapacity(secondary[0..secondary_len]);
+        output.appendAssumeCapacity(0);
+    }
+    if (need_tertiary) {
+        output.appendSliceAssumeCapacity(tertiary[0..tertiary_len]);
+        output.appendAssumeCapacity(0);
+    }
+    if (separator) output.appendAssumeCapacity(0);
     return true;
 }
 
@@ -1382,6 +1459,63 @@ fn appendIdenticalLevel(
         }
     }
     try output.append(allocator, 0);
+}
+
+/// Emit all requested levels from one pass over the source. Returns false
+/// when the stack level buffers overflow, so the caller can use the
+/// multi-pass path.
+fn appendLatinLevels(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    source: []const u21,
+    strength: Strength,
+) error{OutOfMemory}!bool {
+    var primary: [1024]u32 = undefined;
+    var secondary: [1024]u32 = undefined;
+    var tertiary: [1024]u32 = undefined;
+    var primary_len: usize = 0;
+    var secondary_len: usize = 0;
+    var tertiary_len: usize = 0;
+    const need_secondary = strength != .primary;
+    const need_tertiary = strength != .primary and strength != .secondary;
+    for (source) |codepoint| {
+        const entry = latin_elements.table[codepoint];
+        for (entry.elements[0..entry.count]) |element| {
+            if (element.primary != 0) {
+                if (primary_len == primary.len) return false;
+                primary[primary_len] = element.primary;
+                primary_len += 1;
+            }
+            if (need_secondary and element.secondary != 0) {
+                if (secondary_len == secondary.len) return false;
+                secondary[secondary_len] = element.secondary;
+                secondary_len += 1;
+            }
+            if (need_tertiary and element.tertiary != 0) {
+                if (tertiary_len == tertiary.len) return false;
+                tertiary[tertiary_len] = element.tertiary;
+                tertiary_len += 1;
+            }
+        }
+    }
+    const separator = strength == .quaternary or strength == .identical;
+    const total: usize = primary_len + 1 +
+        (if (need_secondary) secondary_len + 1 else 0) +
+        (if (need_tertiary) tertiary_len + 1 else 0) +
+        @as(usize, @intFromBool(separator));
+    try output.ensureTotalCapacity(allocator, total);
+    output.appendSliceAssumeCapacity(primary[0..primary_len]);
+    output.appendAssumeCapacity(0);
+    if (need_secondary) {
+        output.appendSliceAssumeCapacity(secondary[0..secondary_len]);
+        output.appendAssumeCapacity(0);
+    }
+    if (need_tertiary) {
+        output.appendSliceAssumeCapacity(tertiary[0..tertiary_len]);
+        output.appendAssumeCapacity(0);
+    }
+    if (separator) output.appendAssumeCapacity(0);
+    return true;
 }
 
 fn appendLatinLevel(
@@ -1595,6 +1729,59 @@ fn appendLevelElements(
         if (weight != 0) try output.append(allocator, weight);
     }
     try output.append(allocator, 0);
+}
+
+/// Emit primary/secondary/tertiary levels from one pass over the collation
+/// elements. Returns false when the stack level buffers overflow.
+fn appendLevelElementsAll(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    elements: []const CollationElement,
+    strength: Strength,
+) error{OutOfMemory}!bool {
+    var primary: [1024]u32 = undefined;
+    var secondary: [1024]u32 = undefined;
+    var tertiary: [1024]u32 = undefined;
+    var primary_len: usize = 0;
+    var secondary_len: usize = 0;
+    var tertiary_len: usize = 0;
+    const need_secondary = strength != .primary;
+    const need_tertiary = strength != .primary and strength != .secondary;
+    for (elements) |element| {
+        if (element.primary != 0) {
+            if (primary_len == primary.len) return false;
+            primary[primary_len] = element.primary;
+            primary_len += 1;
+        }
+        if (need_secondary and element.secondary != 0) {
+            if (secondary_len == secondary.len) return false;
+            secondary[secondary_len] = element.secondary;
+            secondary_len += 1;
+        }
+        if (need_tertiary and element.tertiary != 0) {
+            if (tertiary_len == tertiary.len) return false;
+            tertiary[tertiary_len] = element.tertiary;
+            tertiary_len += 1;
+        }
+    }
+    const separator = strength == .quaternary or strength == .identical;
+    const total: usize = primary_len + 1 +
+        (if (need_secondary) secondary_len + 1 else 0) +
+        (if (need_tertiary) tertiary_len + 1 else 0) +
+        @as(usize, @intFromBool(separator));
+    try output.ensureTotalCapacity(allocator, total);
+    output.appendSliceAssumeCapacity(primary[0..primary_len]);
+    output.appendAssumeCapacity(0);
+    if (need_secondary) {
+        output.appendSliceAssumeCapacity(secondary[0..secondary_len]);
+        output.appendAssumeCapacity(0);
+    }
+    if (need_tertiary) {
+        output.appendSliceAssumeCapacity(tertiary[0..tertiary_len]);
+        output.appendAssumeCapacity(0);
+    }
+    if (separator) output.appendAssumeCapacity(0);
+    return true;
 }
 
 fn appendCaseLevelElements(
