@@ -76,6 +76,62 @@ const CollationElement = struct {
     variable: bool,
 };
 
+/// Collation-element buffer that starts on the stack and spills to the heap
+/// only for long inputs, so a typical sort key costs no allocation.
+const CeBuffer = struct {
+    stack: []CollationElement,
+    len: usize = 0,
+    heap: ?std.ArrayList(CollationElement) = null,
+    allocator: std.mem.Allocator,
+
+    fn init(allocator: std.mem.Allocator, stack: []CollationElement) CeBuffer {
+        return .{ .stack = stack, .allocator = allocator };
+    }
+
+    fn deinit(self: *CeBuffer) void {
+        if (self.heap) |*list| list.deinit(self.allocator);
+    }
+
+    fn items(self: *const CeBuffer) []const CollationElement {
+        return if (self.heap) |list| list.items else self.stack[0..self.len];
+    }
+
+    fn ensureTotalCapacity(
+        self: *CeBuffer,
+        capacity: usize,
+    ) error{OutOfMemory}!void {
+        if (capacity <= self.stack.len) return;
+        if (self.heap) |*list| {
+            try list.ensureTotalCapacity(self.allocator, capacity);
+            return;
+        }
+        var list = std.ArrayList(CollationElement).empty;
+        try list.ensureTotalCapacity(self.allocator, capacity);
+        try list.appendSlice(self.allocator, self.stack[0..self.len]);
+        self.heap = list;
+        self.len = 0;
+    }
+
+    fn append(
+        self: *CeBuffer,
+        allocator: std.mem.Allocator,
+        element: CollationElement,
+    ) error{OutOfMemory}!void {
+        _ = allocator;
+        if (self.heap) |*list| {
+            try list.append(self.allocator, element);
+            return;
+        }
+        if (self.len < self.stack.len) {
+            self.stack[self.len] = element;
+            self.len += 1;
+            return;
+        }
+        try self.ensureTotalCapacity(self.stack.len * 2);
+        try self.heap.?.append(self.allocator, element);
+    }
+};
+
 const WeightedElement = struct {
     primary: u32,
     secondary: u32,
@@ -223,9 +279,10 @@ pub fn sortKeyCodepointsInto(
     defer if (normalized) |owned| allocator.free(owned);
     const source = normalized orelse codepoints;
 
-    var ces = std.ArrayList(CollationElement).empty;
-    defer ces.deinit(allocator);
-    try ces.ensureTotalCapacity(allocator, source.len * 2 + 8);
+    var stack_ces: [512]CollationElement = undefined;
+    var ces = CeBuffer.init(allocator, &stack_ces);
+    defer ces.deinit();
+    try ces.ensureTotalCapacity(source.len * 2 + 8);
 
     var index: usize = 0;
     while (index < source.len) {
@@ -254,27 +311,27 @@ pub fn sortKeyCodepointsInto(
     if (!shifted and (case_first != .upper or options.case_level)) {
         // The common path can emit levels straight from the collation
         // elements without materializing the weighted copy.
-        try appendLevelElements(allocator, output, ces.items, .primary);
+        try appendLevelElements(allocator, output, ces.items(), .primary);
         if (options.strength == .primary) return;
         if (backwards) {
             try appendSecondaryLevelBackwardsElements(
                 allocator,
                 output,
-                ces.items,
+                ces.items(),
             );
         } else {
-            try appendLevelElements(allocator, output, ces.items, .secondary);
+            try appendLevelElements(allocator, output, ces.items(), .secondary);
         }
         if (options.strength == .secondary) return;
         if (options.case_level) {
             try appendCaseLevelElements(
                 allocator,
                 output,
-                ces.items,
+                ces.items(),
                 case_first,
             );
         }
-        try appendLevelElements(allocator, output, ces.items, .tertiary);
+        try appendLevelElements(allocator, output, ces.items(), .tertiary);
         if (options.strength == .tertiary) return;
         try output.append(allocator, 0);
         if (options.strength == .quaternary) return;
@@ -282,9 +339,9 @@ pub fn sortKeyCodepointsInto(
         return;
     }
 
-    const elements = try allocator.alloc(WeightedElement, ces.items.len);
+    const elements = try allocator.alloc(WeightedElement, ces.items().len);
     defer allocator.free(elements);
-    transform(ces.items, elements, shifted);
+    transform(ces.items(), elements, shifted);
     if (case_first == .upper and !options.case_level) {
         applyCaseFirstUpper(elements);
     }
@@ -388,7 +445,7 @@ fn reorderPrimary(map: tailorings.Reorder, primary: u32) u32 {
 
 fn appendEntry(
     allocator: std.mem.Allocator,
-    ces: *std.ArrayList(CollationElement),
+    ces: *CeBuffer,
     entry: Entry,
     reorder: ?tailorings.Reorder,
 ) error{OutOfMemory}!void {
@@ -424,7 +481,7 @@ fn appendEntry(
 
 fn appendTailored(
     allocator: std.mem.Allocator,
-    ces: *std.ArrayList(CollationElement),
+    ces: *CeBuffer,
     rule: tailorings.Rule,
 ) error{OutOfMemory}!void {
     var index: usize = 0;
@@ -441,7 +498,7 @@ fn appendTailored(
 
 fn appendImplicit(
     allocator: std.mem.Allocator,
-    ces: *std.ArrayList(CollationElement),
+    ces: *CeBuffer,
     codepoint: u21,
     reorder: ?tailorings.Reorder,
 ) error{OutOfMemory}!void {
@@ -477,7 +534,7 @@ fn appendImplicit(
 
 fn appendSingle(
     allocator: std.mem.Allocator,
-    ces: *std.ArrayList(CollationElement),
+    ces: *CeBuffer,
     codepoint: u21,
     reorder: ?tailorings.Reorder,
 ) error{OutOfMemory}!void {
@@ -490,7 +547,7 @@ fn appendSingle(
 
 fn appendElements(
     allocator: std.mem.Allocator,
-    ces: *std.ArrayList(CollationElement),
+    ces: *CeBuffer,
     codepoints: []const u21,
     index: usize,
     reorder: ?tailorings.Reorder,
@@ -998,7 +1055,7 @@ comptime {
 /// digits from different numbering systems compare equal.
 fn appendNumeric(
     allocator: std.mem.Allocator,
-    ces: *std.ArrayList(CollationElement),
+    ces: *CeBuffer,
     digits: []const u21,
 ) error{OutOfMemory}!void {
     var start: usize = 0;
