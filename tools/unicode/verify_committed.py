@@ -469,7 +469,7 @@ GENERATORS = {
     "tools/unicode/format/generate_unit_conformance.py": "7a1aca3892b688d6bce1c8a6f1a1d7af789e69f12f0ab18305ea5127949e8eb5",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
     "tools/unicode/set/generate_conformance.py": "2aa1d6db18bcb6d0cb0f77c5ed449643089f158f33bc431bf89fcda932c42592",
-    "tools/unicode/transliterate/generate_data.py": "17db2622f0c5c01b0231a862d62108dcf373b075accc067c23e8b591d1e841e5",
+    "tools/unicode/transliterate/generate_data.py": "91afe85d49b11897378768e79e555df7154e4ab50c03754590e0c6df7f25cccf",
     "tools/unicode/transliterate/generate_pipeline_conformance.py": "982fe737c3d663f0d7e69715461cd6dbfa73c759a134c9abc67c98aa201e4bb6",
     "tools/unicode/break/generate_dictionaries.py": "bdbd4c4e9c999b4cea6a8924b08c72a49719c857e26dea82fc50940ee145e264",
     "tools/unicode/break/generate_conformance.py": "785d56bab3f388e70b5260ce03f198294fb82b68925c12ff4e571d705480bb8c",

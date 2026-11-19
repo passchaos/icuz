@@ -1111,13 +1111,20 @@ def split_rule(line: str):
 
 
 def extract_rule(xml: str) -> str:
-    match = re.search(r"<tRule><!\[CDATA\[(.*?)\]\]></tRule>", xml, re.S)
-    if match is None:
-        match = re.search(r"<tRule>(.*?)</tRule>", xml, re.S)
-    if match is None:
+    # ICU concatenates every <tRule> element in document order (ug-Latin
+    # ships its rules as 163 separate elements).
+    parts: list[str] = []
+    for match in re.finditer(r"<tRule>(.*?)</tRule>", xml, re.S):
+        body = match.group(1)
+        cdata = re.fullmatch(r"\s*<!\[CDATA\[(.*?)\]\]>\s*", body, re.S)
+        if cdata is not None:
+            parts.append(cdata.group(1))
+        else:
+            # Plain-text tRules may contain XML comments that disable rules.
+            parts.append(re.sub(r"<!--.*?-->", "", body, flags=re.S))
+    if not parts:
         raise SystemExit("transform is missing tRule")
-    # Plain-text tRules may contain XML comments that disable rules.
-    return re.sub(r"<!--.*?-->", "", match.group(1), flags=re.S)
+    return "\n".join(parts)
 
 
 def simple_rules(rules: str, *, both: bool):
@@ -3171,7 +3178,9 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             repeat_set = frozenset(
                 alternative[0] for alternative in terms[0][0]
             )
-            repeat_minimum = terms[0][1]
+            # ICU never fires a rule on an empty source match, so a `*`
+            # quantifier behaves like `+` for rule application.
+            repeat_minimum = max(terms[0][1], 1)
         sources = expand_source_terms(terms) if repeat_set is None else [()]
         if sources is None:
             continue
