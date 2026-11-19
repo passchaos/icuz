@@ -138,6 +138,36 @@ fn ElementBuffer(comptime T: type) type {
 }
 
 const CeBuffer = ElementBuffer(CollationElement);
+const LevelBuffer = ElementBuffer(u32);
+
+/// Collects primary, secondary, and tertiary weights straight from the
+/// collation-element stream, so root sort keys do not need an intermediate
+/// element buffer. The strength is comptime so unused levels drop out.
+fn LevelSink(comptime strength: Strength) type {
+    return struct {
+        primary: *LevelBuffer,
+        secondary: *LevelBuffer,
+        tertiary: *LevelBuffer,
+
+        fn append(
+            self: *@This(),
+            allocator: std.mem.Allocator,
+            element: CollationElement,
+        ) error{OutOfMemory}!void {
+            if (element.primary != 0) {
+                try self.primary.append(allocator, element.primary);
+            }
+            if (strength != .primary and element.secondary != 0) {
+                try self.secondary.append(allocator, element.secondary);
+            }
+            if (strength != .primary and strength != .secondary and
+                element.tertiary != 0)
+            {
+                try self.tertiary.append(allocator, element.tertiary);
+            }
+        }
+    };
+}
 
 const WeightedElement = struct {
     primary: u32,
@@ -632,6 +662,24 @@ fn sortKeyCodepointsResolved(
     defer if (normalized) |owned| allocator.free(owned);
     const source = normalized orelse codepoints;
 
+    // Root collation without weighting or case-level options can emit the
+    // three levels directly while scanning, skipping the collation-element
+    // buffer and its second pass. Short inputs stay on the buffered path:
+    // their elements fit in the stack buffer, where the extra pass is
+    // cheaper than three interleaved level buffers.
+    if (source.len > 512 and locale_tailoring == null and !shifted and
+        case_first == .off and !backwards and !options.numeric and
+        !options.case_level and options.strength != .quaternary)
+    {
+        return appendRootLevelsDirect(
+            allocator,
+            output,
+            codepoints,
+            source,
+            options.strength,
+        );
+    }
+
     var stack_ces: [512]CollationElement = undefined;
     var ces = CeBuffer.init(allocator, &stack_ces);
     defer ces.deinit();
@@ -665,7 +713,14 @@ fn sortKeyCodepointsResolved(
                 }
             }
         }
-        index += try appendElements(allocator, &ces, source, index, reorder);
+        index += try appendElements(
+            allocator,
+            &ces,
+            source,
+            index,
+            reorder,
+            shifted,
+        );
     }
 
     if (!shifted and (case_first != .upper or options.case_level)) {
@@ -833,7 +888,7 @@ fn reorderPrimary(map: tailorings.Reorder, primary: u32) u32 {
 
 fn appendEntry(
     allocator: std.mem.Allocator,
-    ces: *CeBuffer,
+    ces: anytype,
     entry: Entry,
     reorder: ?tailorings.Reorder,
 ) error{OutOfMemory}!void {
@@ -886,7 +941,7 @@ fn appendTailored(
 
 fn appendImplicit(
     allocator: std.mem.Allocator,
-    ces: *CeBuffer,
+    ces: anytype,
     codepoint: u21,
     reorder: ?tailorings.Reorder,
 ) error{OutOfMemory}!void {
@@ -935,11 +990,30 @@ fn appendSingle(
 
 fn appendElements(
     allocator: std.mem.Allocator,
-    ces: *CeBuffer,
+    ces: anytype,
     codepoints: []const u21,
     index: usize,
     reorder: ?tailorings.Reorder,
+    shifted: bool,
 ) error{OutOfMemory}!usize {
+    const first = codepoints[index];
+    // Root ASCII entries are precomputed; skip the page-table lookup unless
+    // the character starts a contraction or needs shifted variable weights.
+    if (reorder == null and !shifted and first < 128 and
+        ascii_elements.usable and
+        !ascii_contractions[@as(usize, first)])
+    {
+        const ascii_entry = ascii_elements.table[@as(usize, first)];
+        for (ascii_entry.elements[0..ascii_entry.count]) |element| {
+            try ces.append(allocator, .{
+                .primary = element.primary,
+                .secondary = element.secondary,
+                .tertiary = element.tertiary,
+                .variable = false,
+            });
+        }
+        return 1;
+    }
     var sequence: [3]u21 = .{ codepoints[index], 0, 0 };
     var length: usize = 1;
     var entry: ?Entry = null;
@@ -1002,9 +1076,110 @@ fn appendElements(
             skipped.items,
             skipped_offset,
             reorder,
+            shifted,
         );
     }
     return cursor - index;
+}
+
+/// Emit root-collation sort-key levels directly from the collation-element
+/// stream, without materializing the intermediate element buffer.
+fn appendRootLevelsDirect(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    codepoints: []const u21,
+    source: []const u21,
+    strength: Strength,
+) error{OutOfMemory}!void {
+    return switch (strength) {
+        .primary => appendRootLevelsStrength(
+            allocator,
+            output,
+            codepoints,
+            source,
+            .primary,
+        ),
+        .secondary => appendRootLevelsStrength(
+            allocator,
+            output,
+            codepoints,
+            source,
+            .secondary,
+        ),
+        .tertiary => appendRootLevelsStrength(
+            allocator,
+            output,
+            codepoints,
+            source,
+            .tertiary,
+        ),
+        .identical => appendRootLevelsStrength(
+            allocator,
+            output,
+            codepoints,
+            source,
+            .identical,
+        ),
+        .quaternary => unreachable,
+    };
+}
+
+fn appendRootLevelsStrength(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    codepoints: []const u21,
+    source: []const u21,
+    comptime strength: Strength,
+) error{OutOfMemory}!void {
+    var primary_stack: [512]u32 = undefined;
+    var secondary_stack: [512]u32 = undefined;
+    var tertiary_stack: [512]u32 = undefined;
+    var primary = LevelBuffer.init(allocator, &primary_stack);
+    defer primary.deinit();
+    var secondary = LevelBuffer.init(allocator, &secondary_stack);
+    defer secondary.deinit();
+    var tertiary = LevelBuffer.init(allocator, &tertiary_stack);
+    defer tertiary.deinit();
+    var sink = LevelSink(strength){
+        .primary = &primary,
+        .secondary = &secondary,
+        .tertiary = &tertiary,
+    };
+
+    var index: usize = 0;
+    while (index < source.len) {
+        index += try appendElements(
+            allocator,
+            &sink,
+            source,
+            index,
+            null,
+            false,
+        );
+    }
+
+    const need_secondary = strength != .primary;
+    const need_tertiary = strength != .primary and strength != .secondary;
+    const separator = strength == .identical;
+    const total = primary.items().len + 1 +
+        (if (need_secondary) secondary.items().len + 1 else 0) +
+        (if (need_tertiary) tertiary.items().len + 1 else 0) +
+        @as(usize, @intFromBool(separator));
+    try output.ensureTotalCapacity(allocator, total);
+    output.appendSliceAssumeCapacity(primary.items());
+    output.appendAssumeCapacity(0);
+    if (need_secondary) {
+        output.appendSliceAssumeCapacity(secondary.items());
+        output.appendAssumeCapacity(0);
+    }
+    if (need_tertiary) {
+        output.appendSliceAssumeCapacity(tertiary.items());
+        output.appendAssumeCapacity(0);
+    }
+    if (separator) {
+        output.appendAssumeCapacity(0);
+        try appendIdenticalLevel(allocator, output, codepoints);
+    }
 }
 
 const LatinElement = struct {
@@ -1126,6 +1301,19 @@ const ascii_elements = blk: {
         }
     }
     break :blk .{ .usable = usable, .table = table };
+};
+
+/// ASCII code points that start a contraction; those keep the generic path.
+const ascii_contractions = blk: {
+    @setEvalBranchQuota(100_000);
+    var flags = [_]bool{false} ** 128;
+    var entry_index = pageStart(0);
+    while (entry_index < entry_count) : (entry_index += 1) {
+        const entry = entryAt(entry_index);
+        if (entry.first >= 128) break;
+        if (entry.len > 1) flags[@as(usize, entry.first)] = true;
+    }
+    break :blk flags;
 };
 
 /// Emit all requested levels from one pass over pure-ASCII text.
