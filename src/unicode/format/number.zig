@@ -2631,6 +2631,61 @@ test "localized number parsing" {
     try testing.expect(parseInt("inf", "en", .{}) == null);
 }
 
+test "number parsing conformance" {
+    const testing = @import("std").testing;
+    const fixture = @embedFile("parse_conformance.bin");
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJXN", fixture[0..4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var index: usize = 0;
+    while (index < case_count) : (index += 1) {
+        const expected = @as(
+            f64,
+            @bitCast(std.mem.readInt(u64, fixture[cursor..][0..8], .little)),
+        );
+        const style = fixture[cursor + 8];
+        const locale_len = fixture[cursor + 9];
+        const text_len = std.mem.readInt(
+            u16,
+            fixture[cursor + 10 ..][0..2],
+            .little,
+        );
+        cursor += 12;
+        const locale = fixture[cursor..][0..locale_len];
+        cursor += locale_len;
+        const text = fixture[cursor..][0..text_len];
+        cursor += text_len;
+
+        const parsed = parseFloat(text, locale, .{
+            .style = if (style == 3) .percent else .decimal,
+        });
+        if (parsed) |value| {
+            const tolerance = @max(@abs(expected) * 1e-9, 1e-12);
+            if (@abs(value - expected) > tolerance) {
+                failures += 1;
+                if (failures <= 10) {
+                    std.debug.print(
+                        "parse mismatch {s} '{s}': got {d}, want {d}\n",
+                        .{ locale, text, value, expected },
+                    );
+                }
+            }
+        } else {
+            failures += 1;
+            if (failures <= 10) {
+                std.debug.print(
+                    "parse failed {s} '{s}' (want {d})\n",
+                    .{ locale, text, expected },
+                );
+            }
+        }
+    }
+    try testing.expectEqual(fixture.len, cursor);
+    try testing.expectEqual(@as(usize, 0), failures);
+}
+
 test "decimal number formatting" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
