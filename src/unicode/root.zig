@@ -296,6 +296,9 @@ pub const timeZoneGmtOffsetAlloc = timezone_mod.names.gmtOffsetAlloc;
 pub const timeZoneExemplarCityAlloc = timezone_mod.names.exemplarCityAlloc;
 pub const windowsIdForTimeZone = timezone_mod.windows.windowsIdForZone;
 pub const timeZoneIdForWindowsId = timezone_mod.windows.zoneForWindowsId;
+pub const canonicalTimeZoneId = timezone_mod.canonical.canonicalId;
+pub const ianaTimeZoneId = timezone_mod.canonical.ianaId;
+pub const timeZoneRegion = timezone_mod.canonical.regionForZone;
 
 pub const DateTime = dates_mod.DateTime;
 pub const DateStyle = dates_mod.Style;
@@ -630,6 +633,7 @@ test {
     _ = rbnf_mod;
     _ = timezone_mod;
     _ = timezone_mod.windows;
+    _ = timezone_mod.canonical;
     _ = calendar_mod;
     _ = intervals_mod;
     _ = durations_mod;

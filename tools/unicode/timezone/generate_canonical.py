@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""Generate CLDR canonical time zone IDs, IANA IDs, and regions.
+
+Usage:
+    generate_canonical.py cldr-common-48.zip tzdata_dir out_dir
+
+Reads CLDR `common/bcp47/timezone.xml` for the canonical long IDs and IANA
+preferences, and the IANA tzdata `backward` links plus `zone1970.tab` for
+legacy link names and country mappings. Emits a sorted `canonical_data.zig`
+table consumed by src/unicode/timezone/canonical.zig.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import sys
+import xml.etree.ElementTree as ET
+import zipfile
+from pathlib import Path
+
+CLDR_SHA256 = "06c7c698d6fd8d67cefac15a0206b0109b00e0ef1636f86f84449fa959561f74"
+CLDR_VERSION = 48
+TZDATA_VERSION = "2026e"
+
+ZIC_SOURCES = (
+    "africa",
+    "antarctica",
+    "asia",
+    "australasia",
+    "europe",
+    "northamerica",
+    "southamerica",
+    "etcetera",
+    "backward",
+)
+
+
+def zig_string(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def parse_links(tzdata: Path) -> dict[str, str]:
+    links: dict[str, str] = {}
+    for name in ZIC_SOURCES:
+        for raw in (tzdata / name).read_text(encoding="utf-8").splitlines():
+            line = raw.split("#", 1)[0].strip()
+            if not line.startswith("Link"):
+                continue
+            fields = line.split()
+            if len(fields) < 3:
+                continue
+            links[fields[2]] = fields[1]
+    return links
+
+
+def resolve_links(links: dict[str, str]) -> dict[str, str]:
+    resolved: dict[str, str] = {}
+    for link in links:
+        target = links[link]
+        seen = {link}
+        while target in links and target not in seen:
+            seen.add(target)
+            target = links[target]
+        resolved[link] = target
+    return resolved
+
+
+def parse_regions(tzdata: Path) -> dict[str, str]:
+    regions: dict[str, str] = {}
+    for raw in (tzdata / "zone1970.tab").read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        fields = line.split("\t")
+        if len(fields) < 3:
+            continue
+        # The first country is the primary region; multi-country zones keep it.
+        regions[fields[2]] = fields[0].split(",")[0]
+    return regions
+
+
+def name_region(name: str, explicit: str | None) -> str:
+    if explicit:
+        return explicit
+    if len(name) == 5 and name.isalpha():
+        return name[:2].upper()
+    return "001"
+
+
+def main() -> None:
+    if len(sys.argv) != 4:
+        raise SystemExit(__doc__)
+    archive = Path(sys.argv[1])
+    tzdata = Path(sys.argv[2])
+    out_dir = Path(sys.argv[3])
+    version = (tzdata / "version").read_text(encoding="utf-8").strip()
+    if version != TZDATA_VERSION:
+        raise SystemExit(
+            f"{tzdata}: expected tzdata {TZDATA_VERSION}, found {version}"
+        )
+    data = archive.read_bytes()
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != CLDR_SHA256:
+        raise SystemExit(
+            f"{archive}: expected CLDR {CLDR_VERSION} SHA-256 "
+            f"{CLDR_SHA256}, found {actual}"
+        )
+    with zipfile.ZipFile(archive) as zf:
+        xml = zf.read("common/bcp47/timezone.xml")
+    root = ET.fromstring(xml)
+
+    # CLDR canonical long IDs take precedence over tzdata link direction.
+    cldr_canonical: dict[str, str] = {}
+    cldr_iana: dict[str, str] = {}
+    cldr_region: dict[str, str] = {}
+    for element in root.iter("type"):
+        alias = element.get("alias")
+        if not alias:
+            continue
+        long_ids = alias.split()
+        canonical = long_ids[0]
+        for long_id in long_ids:
+            cldr_canonical[long_id] = canonical
+        if element.get("iana"):
+            cldr_iana[canonical] = element.get("iana")
+        cldr_region[canonical] = name_region(
+            element.get("name", ""),
+            element.get("region"),
+        )
+
+    links = resolve_links(parse_links(tzdata))
+    zone_regions = parse_regions(tzdata)
+
+    ids = set(links) | set(cldr_canonical) | set(zone_regions)
+    entries: list[tuple[str, str, str, str]] = []
+    for zone in sorted(ids):
+        canonical = cldr_canonical.get(zone)
+        if canonical is None:
+            target = links.get(zone, zone)
+            canonical = cldr_canonical.get(target, target)
+        iana = cldr_iana.get(canonical)
+        if iana is None:
+            iana = links.get(zone, zone)
+            iana = cldr_canonical.get(iana, iana)
+        region = cldr_region.get(canonical)
+        if region is None or region == "001":
+            # The CLDR short name did not encode a region; fall back to the
+            # tzdata country for the link target or canonical zone.
+            region = (
+                zone_regions.get(links.get(zone, zone))
+                or zone_regions.get(canonical)
+                or "001"
+            )
+        entries.append((zone, canonical, iana, region))
+
+    lines = [
+        f"// Generated by tools/unicode/timezone/generate_canonical.py from CLDR {CLDR_VERSION}",
+        f"// and tzdata {TZDATA_VERSION}.",
+        f"// cldr-common-48.zip SHA-256: {CLDR_SHA256}",
+        "",
+        "pub const Zone = struct {",
+        "    id: []const u8,",
+        "    canonical: []const u8,",
+        "    iana: []const u8,",
+        "    region: []const u8,",
+        "};",
+        "",
+        "/// Sorted by ID.",
+        "pub const zones = [_]Zone{",
+    ]
+    for zone, canonical, iana, region in entries:
+        lines.append(
+            "    .{ .id = %s, .canonical = %s, .iana = %s, .region = %s },"
+            % (
+                zig_string(zone),
+                zig_string(canonical),
+                zig_string(iana),
+                zig_string(region),
+            )
+        )
+    lines.append("};")
+    lines.append("")
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "canonical_data.zig").write_text("\n".join(lines))
+    print(
+        f"wrote {out_dir / 'canonical_data.zig'}: "
+        f"{len(entries)} zone IDs, {len(cldr_canonical)} CLDR long IDs"
+    )
+
+
+if __name__ == "__main__":
+    main()

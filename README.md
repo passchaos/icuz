@@ -179,6 +179,11 @@ need without pulling in a font or layout engine.
   `timeZoneIdForWindowsId`): 139 Windows IDs over 445 IANA zones, with
   region-specific lookups and the ICU `001` fallback semantics of
   `ucal_getWindowsTimeZoneID` and `ucal_getTimeZoneIDForWindowsID`.
+- CLDR 48 canonical time zone IDs (`canonicalTimeZoneId`), preferred IANA
+  IDs (`ianaTimeZoneId`), and regions (`timeZoneRegion`) for 601 long IDs,
+  including legacy links such as `US/Pacific` and `Asia/Kolkata` and the
+  `001` world region, matching ICU's `getCanonicalID`, `getIanaID`, and
+  `getRegion`.
 - CLDR 48 list formatting for 87 locales, including and/or and unit list
   styles with narrow/short variants.
 - CLDR 48 relative time for 87 locales, including yesterday/today/tomorrow

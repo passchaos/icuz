@@ -39,6 +39,7 @@ pub const tzdata_version = blob[strings_offset + @as(usize, tzdata_offset) ..][0
 
 pub const names = @import("names.zig");
 pub const windows = @import("windows.zig");
+pub const canonical = @import("canonical.zig");
 
 pub const Offset = struct {
     /// Seconds east of UTC.

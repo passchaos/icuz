@@ -7,6 +7,7 @@
 
 const std = @import("std");
 
+const canonical = @import("canonical.zig");
 const data = @import("windows_data.zig");
 
 pub const windows_ids = &data.windows_ids;
@@ -29,7 +30,11 @@ pub fn zoneForWindowsId(windows_id: []const u8, region: ?[]const u8) ?[]const u8
 /// Returns null for IDs that do not appear in the CLDR mapping. Link names
 /// that are listed in `windowsZones.xml` map like their target zone.
 pub fn windowsIdForZone(zone_id: []const u8) ?[]const u8 {
-    const zone = zoneIndex(zone_id) orelse return null;
+    // The CLDR mapping is keyed by canonical long IDs, so resolve legacy
+    // links such as `US/Pacific` first, falling back to the raw ID.
+    const canonical_id = canonical.canonicalId(zone_id) orelse zone_id;
+    const zone = zoneIndex(canonical_id) orelse zoneIndex(zone_id) orelse
+        return null;
     var low: usize = 0;
     var high: usize = data.by_zone.len;
     while (low < high) {
@@ -150,6 +155,10 @@ test "Windows time zone mapping matches ICU" {
     try std.testing.expectEqualStrings(
         "Dateline Standard Time",
         windowsIdForZone("Etc/GMT+12").?,
+    );
+    try std.testing.expectEqualStrings(
+        "Pacific Standard Time",
+        windowsIdForZone("US/Pacific").?,
     );
     try std.testing.expect(zoneForWindowsId("Not A Windows Zone", null) == null);
     try std.testing.expect(windowsIdForZone("Mars/Olympus_Mons") == null);

@@ -465,6 +465,7 @@ GENERATORS = {
     "tools/unicode/timezone/generate_names.py": "025b7427e70f8ccff6b7e71746996e584017524c020eea4897f2bdaad839914f",
     "tools/unicode/timezone/generate_names_conformance.py": "587cf43214994d50284df22248ed28f2bf60c96c5e17ad21c14da33cee43f9eb",
     "tools/unicode/timezone/generate_windows.py": "cdebf425942f5ca35141abbbca0a086b2f7d5434a43e64b578a3c7c4f3e764a9",
+    "tools/unicode/timezone/generate_canonical.py": "56b624ed3b73276214a7a17d71daf4bf3d19a0a13317149be6fd17aa9bc4c8e2",
     "tools/unicode/format/generate_calendar_conformance.py": "f668a425bfeabb31b9c373dea930f69a9a5d8dfbe479840dda70ae5a978dd0a9",
     "tools/unicode/format/generate_calendars.py": "75fca549c55d23cab00114d1ff094b0da7775980e75ed22eab87faa98f9803e5",
     "tools/unicode/format/generate_calendar_format_conformance.py": "72f5f216c79e094e76a7e001458a85bac9ab78b28e73301726dac10d8430c5e2",
@@ -609,6 +610,11 @@ GENERATED_TEXT = (
         "src/unicode/timezone/windows_data.zig",
         "tools/unicode/timezone/generate_windows.py",
         "d90584e9a0ccf5ace20ec73f92c1ce1157474caaa19c2b0f5fcdb9100e904285",
+    ),
+    GeneratedText(
+        "src/unicode/timezone/canonical_data.zig",
+        "tools/unicode/timezone/generate_canonical.py",
+        "2f5d7634ba45a09e0e67757a76567d871e1116057c11284526e490ad9e31c890",
     ),
 )
 SOURCE_SHA = re.compile(r"^// Source SHA-256: ([0-9a-f]{64})$", re.MULTILINE)
