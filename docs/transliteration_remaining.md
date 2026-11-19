@@ -2,10 +2,10 @@
 
 Status after the CLDR 48 rule-engine push:
 
-- 305 compiled table transforms plus 15 named engines (`NFC`, `NFD`,
+- 307 compiled table transforms plus 15 named engines (`NFC`, `NFD`,
   `NFKC`, `NFKD`, `Any-Lower`, `Any-Upper`, `Any-Title`, `Any-Null`,
   `Null`, `Hex-Any`, `Any-Hex`, `Name-Any`, `Any-Name`).
-- 310 conformance fixtures: 30 official CLDR test-data files and 280 PyICU
+- 312 conformance fixtures: 30 official CLDR test-data files and 282 PyICU
   differential fixtures.
 - Blob format CJTR v19 (36-byte transform records with `filter_set`,
   `final_case`, `next_transform`, `pre_transform`, and per-pass operation
@@ -52,6 +52,12 @@ Status after the CLDR 48 rule-engine push:
   (`[[:^ccc=0:] & [:^ccc=230:]]`, `[^[:L:][:M:][:N:]]`).
 - Source quantifiers are greedy, matching ICU's regex behavior
   (`X?`, `X*`, `X+` try the longest repetition first).
+- Class variables are expanded textually before `{...}` string splitting,
+  so strings nested inside a variable's class survive; hidden alternatives
+  (a prefix already matched by an earlier context-free rule) are dropped
+  like ICU's masked-rule handling.
+- `und_FONIPA-ar` and `und_FONIPA-fa` compile and pass their PyICU
+  fixtures (280 cases each).
 
 Verification commands:
 
@@ -72,7 +78,7 @@ sections with steps. Remaining gaps:
   own halfwidth conversion instead of the `::[set] Halfwidth-Fullwidth;`
   step.
 - Pipelines whose components are not compiled (for example
-  `und_FONIPA-ar`, `es_FONIPA-ja`, `und_FONIPA-fa`).
+  `es_FONIPA-ja`, whose `und_FONIPA-ja` component is not part of CLDR 48).
 
 ## 2. ICU rule specificity / hidden-rule ordering
 

@@ -3158,6 +3158,16 @@ const conformance_fixtures = [_]struct {
         .name = "und_FONIPA-chr",
     },
     .{
+        .bytes = @embedFile("transliterate/und_fonipa_ar_conformance.bin"),
+        .magic = "CJQ8".*,
+        .name = "und_FONIPA-ar",
+    },
+    .{
+        .bytes = @embedFile("transliterate/und_fonipa_fa_conformance.bin"),
+        .magic = "CJQ9".*,
+        .name = "und_FONIPA-fa",
+    },
+    .{
         .bytes = @embedFile("transliterate/fa_fa_fonipa_conformance.bin"),
         .magic = "CJEP".*,
         .name = "fa-fa_FONIPA",
@@ -4060,6 +4070,43 @@ test "transform-reference steps run in compound order" {
         "\u{310B}\u{3127}\u{2C7} \u{310F}\u{3120}\u{2C7}",
         bopomofo,
     );
+}
+
+test "FONIPA Arabic and Persian transforms" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const arabic = try transliterateByNameAlloc(
+        allocator,
+        "test",
+        "und_FONIPA-ar",
+    );
+    defer allocator.free(arabic);
+    try testing.expectEqualStrings(
+        "\u{062A}\u{064A}\u{0633}\u{062A}",
+        arabic,
+    );
+
+    const persian = try transliterateByNameAlloc(
+        allocator,
+        "test",
+        "und_FONIPA-fa",
+    );
+    defer allocator.free(persian);
+    try testing.expectEqualStrings(
+        "\u{062A}\u{06CC}\u{0633}\u{062A}",
+        persian,
+    );
+
+    // `ʔ → ;` masks the `{ʔ̞}` alternative of the later class rule, so the
+    // glottal stop is deleted and the combining mark survives.
+    const masked = try transliterateByNameAlloc(
+        allocator,
+        "\u{0294}\u{031E}",
+        "und_FONIPA-fa",
+    );
+    defer allocator.free(masked);
+    try testing.expectEqualStrings("\u{031E}", masked);
 }
 
 test "CLDR transform conformance" {

@@ -166,6 +166,8 @@ TRANSFORMS = (
     ("ja_Latn-ru", "ja_Latn-ru", "context"),
     ("ru-ja", "ru-ja", "context"),
     ("es_FONIPA-es_419_FONIPA", "es_FONIPA-es_419_FONIPA", "context"),
+    ("und_FONIPA-ar", "und_FONIPA-ar", "context"),
+    ("und_FONIPA-fa", "und_FONIPA-fa", "context"),
     ("cs_FONIPA-ja", "cs_FONIPA-ja", "context"),
     ("es_FONIPA-ja", "es_FONIPA-ja", "context"),
     ("dsb-dsb_FONIPA", "dsb-dsb_FONIPA", "context"),
@@ -2391,9 +2393,60 @@ def expand_source_groups(source_text: str, target_text: str, variables):
     return results if results else None
 
 
+def expand_class_variables(content: str, variables: dict[str, str], depth: int = 0):
+    """Substitute `$name` references textually inside a class body.
+
+    UnicodeSet variables may themselves contain `{...}` string elements;
+    substituting the raw definition before string splitting keeps those
+    strings intact instead of treating the braces as literal characters.
+    """
+    if depth > 8:
+        return content
+    output: list[str] = []
+    index = 0
+    while index < len(content):
+        character = content[index]
+        if character == "\\":
+            output.append(content[index : index + 2])
+            index += 2
+            continue
+        if character == "'":
+            output.append(character)
+            index += 1
+            while index < len(content):
+                output.append(content[index])
+                if content[index] == "'":
+                    index += 1
+                    break
+                index += 1
+            continue
+        if character == "$":
+            end = index + 1
+            while end < len(content) and (
+                content[end].isalnum() or content[end] == "_"
+            ):
+                end += 1
+            raw = variables.get(content[index:end])
+            if raw is None or end == index + 1:
+                output.append(content[index:end])
+            elif raw.startswith("[") and raw.endswith("]"):
+                output.append(
+                    "["
+                    + expand_class_variables(raw[1:-1], variables, depth + 1)
+                    + "]"
+                )
+            else:
+                output.append(raw)
+            index = end
+            continue
+        output.append(character)
+        index += 1
+    return "".join(output)
+
+
 def class_alternatives(content: str, variables: dict[str, str]):
     """Expand a class body into source alternatives, including strings."""
-    split = split_class_strings(content)
+    split = split_class_strings(expand_class_variables(content, variables))
     if split is None:
         return None
     body, strings = split
@@ -2740,6 +2793,7 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
     entries = []
     priority = 0
     pass_index = 0
+    compiled_sources: dict[int, set[tuple[int, ...]]] = {}
     pre_normalization, post_normalization, pass_operations = (
         classify_pass_operations(
             rules,
@@ -3073,8 +3127,22 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
             case_call = parse_case_call(right)
         if reverse and repeat_set is not None:
             continue
+        # ICU hides a rule alternative when an earlier context-free rule
+        # already matches one of its prefixes (`ʔ → ;` hides the `{ʔ̞}`
+        # alternative of a later class rule).
+        has_context = before_alts != [None] or after_alts != [None]
+        masked_sources = (
+            compiled_sources.setdefault(pass_index, set())
+            if not has_context and repeat_set is None
+            else None
+        )
         for source in sources:
             if not source and repeat_set is None:
+                continue
+            if masked_sources is not None and any(
+                source[:length] in masked_sources
+                for length in range(1, len(source) + 1)
+            ):
                 continue
             if context_target is not None:
                 target = context_target
@@ -3116,6 +3184,8 @@ def table_entries_with_contexts(rules: str, reverse: bool = False):
                             context_capture,
                         )
                     )
+        if masked_sources is not None:
+            masked_sources.update(sources)
         priority += 1
     if reverse:
         # ICU reverses the order of the passes (segments split by ::Null;)
