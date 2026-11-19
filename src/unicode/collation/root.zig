@@ -267,6 +267,34 @@ pub const Collator = struct {
         );
     }
 
+    /// True when the ASCII root fast paths are available.
+    pub fn asciiFastPathUsable(self: *const Collator) bool {
+        return self.tailoring == null and ascii_elements.usable;
+    }
+
+    /// Primary weights of one ASCII scalar under the root collation.
+    pub const AsciiPrimary = struct {
+        values: [2]u32 = .{ 0, 0 },
+        count: u8 = 0,
+    };
+
+    pub fn asciiPrimaryWeights(self: *const Collator, codepoint: u21) AsciiPrimary {
+        if (self.tailoring != null or codepoint >= 128 or
+            !ascii_elements.usable)
+        {
+            return .{};
+        }
+        const entry = ascii_elements.table[codepoint];
+        var result = AsciiPrimary{};
+        for (entry.elements[0..entry.count]) |element| {
+            if (element.primary != 0 and result.count < result.values.len) {
+                result.values[result.count] = element.primary;
+                result.count += 1;
+            }
+        }
+        return result;
+    }
+
     /// First primary weight for an ASCII scalar when no tailoring applies,
     /// or null when the key depends on the locale or the character has no
     /// primary weight.

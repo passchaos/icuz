@@ -31,6 +31,7 @@ pub const Search = struct {
     /// Direct-mapped cache of the first primary weight per code point.
     primary_cache: [64]u64,
     needle_empty: bool,
+    fast_ascii_primary: bool,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -48,6 +49,7 @@ pub const Search = struct {
             .text_offsets = .empty,
             .primary_cache = @splat(0),
             .needle_empty = needle.len == 0,
+            .fast_ascii_primary = false,
         };
         errdefer search.deinit();
         if (!search.needle_empty) {
@@ -62,6 +64,15 @@ pub const Search = struct {
                 allocator,
                 search.needle_key.items[0..primary_length],
             );
+            search.fast_ascii_primary = search.needle_primary.items.len > 0 and
+                isAscii(needle) and
+                options.strength == .primary and
+                options.variable_weighting == .non_ignorable and
+                !options.numeric and
+                !options.case_level and
+                options.case_first == null and
+                options.backwards_secondary == null and
+                search.collator.asciiFastPathUsable();
         }
         return search;
     }
@@ -77,6 +88,9 @@ pub const Search = struct {
     /// Find the first match at or after the byte offset `start`.
     pub fn find(self: *Search, text: []const u8, start: usize) Error!?usize {
         if (self.needle_empty) return if (start <= text.len) start else null;
+        if (self.fast_ascii_primary and isAscii(text)) {
+            return self.findAsciiPrimary(text, start);
+        }
         try self.decodeText(text);
 
         const codepoints = self.text_codepoints.items;
@@ -170,6 +184,43 @@ pub const Search = struct {
                 if (!breakable and end >= contraction_limit) breakable = true;
             }
             index += 1;
+        }
+        return null;
+    }
+
+    /// Root-collation primary search for ASCII text. Avoids decoding and
+    /// building a sort key per candidate.
+    fn findAsciiPrimary(self: *Search, text: []const u8, start: usize) ?usize {
+        if (start > text.len) return null;
+        const needle = self.needle_primary.items;
+        const first = needle[0];
+        var position = start;
+        while (position < text.len) {
+            const weights = self.collator.asciiPrimaryWeights(text[position]);
+            if (weights.count != 0 and weights.values[0] != first) {
+                position += 1;
+                continue;
+            }
+            var needle_index: usize = 0;
+            var cursor = position;
+            var matched = true;
+            while (needle_index < needle.len and cursor < text.len) {
+                const current = self.collator.asciiPrimaryWeights(text[cursor]);
+                var element_index: usize = 0;
+                while (element_index < current.count) : (element_index += 1) {
+                    if (needle_index == needle.len or
+                        current.values[element_index] != needle[needle_index])
+                    {
+                        matched = false;
+                        break;
+                    }
+                    needle_index += 1;
+                }
+                if (!matched) break;
+                cursor += 1;
+            }
+            if (matched and needle_index == needle.len) return position;
+            position += 1;
         }
         return null;
     }
@@ -381,3 +432,62 @@ test "locale-aware search" {
     );
 }
 
+fn isAscii(text: []const u8) bool {
+    const high_bits: u64 = 0x8080_8080_8080_8080;
+    var index: usize = 0;
+    while (index + 8 <= text.len) : (index += 8) {
+        const word = std.mem.readInt(u64, text[index..][0..8], .little);
+        if (word & high_bits != 0) return false;
+    }
+    while (index < text.len) : (index += 1) {
+        if (text[index] >= 0x80) return false;
+    }
+    return true;
+}
+
+test "ASCII primary fast path matches the general search" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const options = Options{ .strength = .primary };
+    const texts = [_][]const u8{
+        "The quick brown fox jumps over the lazy dog.",
+        "fffox fox FOX",
+        "a b c",
+        "x\nfox",
+        "no match here",
+        "",
+    };
+    const needles = [_][]const u8{
+        "fox",
+        "FOX",
+        "o",
+        " ",
+        "a",
+        "wombat",
+        "\n",
+        "\nfox",
+        " f",
+        "f",
+        "ff",
+        "b c",
+    };
+    for (texts) |text| {
+        for (needles) |needle| {
+            var fast = try Search.init(allocator, needle, options);
+            defer fast.deinit();
+            var general = try Search.init(allocator, needle, options);
+            defer general.deinit();
+            try testing.expect(fast.fast_ascii_primary or
+                !isAscii(text) or
+                needle.len == 0);
+            general.fast_ascii_primary = false;
+            var start: usize = 0;
+            while (start <= text.len) : (start += 1) {
+                try testing.expectEqual(
+                    general.find(text, start),
+                    fast.find(text, start),
+                );
+            }
+        }
+    }
+}
