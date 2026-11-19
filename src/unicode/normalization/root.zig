@@ -59,6 +59,102 @@ pub fn normalizeNfkdAlloc(
     return normalizeFormAlloc(allocator, text, .nfkd);
 }
 
+/// Validate UTF-8, copy stable spans verbatim, and normalize only the spans
+/// that can change, all in one pass. Returns whether any edit was applied.
+/// Output is untouched when the text is already normalized.
+fn normalizeFusedInto(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    form: Form,
+    output: *std.ArrayList(u8),
+) Error!bool {
+    const ascii_end = asciiPrefixLen(text);
+    if (ascii_end == text.len) return false;
+
+    const compatibility = form == .nfkc or form == .nfkd;
+    var engine = SegmentEngine(Utf8Sink){
+        .allocator = allocator,
+        .sink = .{ .list = output, .allocator = allocator },
+        .compatibility = compatibility,
+        .compose = form == .nfc or form == .nfkc,
+    };
+    defer engine.deinit();
+    var stable_start: usize = 0;
+    var changed = false;
+    var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
+    var starter_offset: usize = if (ascii_end > 0) ascii_end - 1 else 0;
+    var previous_input_class: u8 = 0;
+    var index: usize = ascii_end;
+    while (index < text.len) {
+        if (text[index] < 0x80) {
+            var end = index;
+            while (end < text.len and text[end] < 0x80) end += 1;
+            starter = text[end - 1];
+            starter_offset = end - 1;
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
+        const start = index;
+        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+            return error.InvalidUtf8;
+        if (index + length > text.len) return error.InvalidUtf8;
+        const codepoint = std.unicode.utf8Decode(
+            text[index..][0..length],
+        ) catch return error.InvalidUtf8;
+        index += length;
+        if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
+            starter = codepoint;
+            starter_offset = start;
+            previous_input_class = 0;
+            continue;
+        }
+        const quick_check = data.quickCheck(codepoint, form);
+        const current_class = combining_class.forCodepoint(codepoint);
+        const edit = quick_check == .no or
+            (current_class != 0 and previous_input_class > current_class) or
+            (quick_check == .maybe and starter != null and
+                (previous_input_class == 0 or
+                    previous_input_class < current_class) and
+                pairChangesUnderForm(starter.?, codepoint, form));
+        if (edit) {
+            if (!changed) {
+                try output.ensureUnusedCapacity(allocator, text.len + 16);
+                changed = true;
+            }
+            if (starter_offset > stable_start) {
+                try output.appendSlice(
+                    allocator,
+                    text[stable_start..starter_offset],
+                );
+            }
+            const end = segmentEnd(text, starter_offset);
+            if (!try normalizeSegmentFastInto(
+                allocator,
+                text[starter_offset..end],
+                form,
+                output,
+            )) {
+                try normalizeSegmentInto(&engine, text[starter_offset..end]);
+            }
+            stable_start = end;
+            index = end;
+            starter = null;
+            starter_offset = end;
+            previous_input_class = 0;
+            continue;
+        }
+        if (current_class == 0) {
+            starter = codepoint;
+            starter_offset = start;
+        }
+        previous_input_class = current_class;
+    }
+    if (!changed) return false;
+    try output.appendSlice(allocator, text[stable_start..]);
+    return true;
+}
+
 /// Return an allocator-owned string in `form` when `text` must change, or
 /// `null` when it is already normalized. Invalid UTF-8 is rejected before any
 /// allocation.
@@ -67,25 +163,9 @@ pub fn normalizeFormAlloc(
     text: []const u8,
     form: Form,
 ) Error!?[]u8 {
-    const check = checkFormUtf8(text, form);
-    switch (check.state) {
-        .invalid => return error.InvalidUtf8,
-        .normalized => return null,
-        .changed => {},
-    }
-
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    // Everything before `span` is already normalized; copy it verbatim
-    // instead of decoding and re-encoding it.
-    if (check.span > 0) try output.appendSlice(allocator, text[0..check.span]);
-    try normalizeWithEditsInto(
-        allocator,
-        text[check.span..],
-        form,
-        &output,
-    );
-    if (std.mem.eql(u8, output.items, text)) {
+    if (!try normalizeFusedInto(allocator, text, form, &output)) {
         output.deinit(allocator);
         return null;
     }
@@ -103,25 +183,13 @@ pub fn normalizeFormInto(
     form: Form,
     output: *std.ArrayList(u8),
 ) Error!bool {
-    const check = checkFormUtf8(text, form);
-    switch (check.state) {
-        .invalid => return error.InvalidUtf8,
-        .normalized => {
-            try output.appendSlice(allocator, text);
-            return false;
-        },
-        .changed => {},
-    }
-
     const before = output.items.len;
-    if (check.span > 0) try output.appendSlice(allocator, text[0..check.span]);
-    try normalizeWithEditsInto(
-        allocator,
-        text[check.span..],
-        form,
-        output,
-    );
-    return !std.mem.eql(u8, output.items[before..], text);
+    const changed = normalizeFusedInto(allocator, text, form, output) catch |err| {
+        output.shrinkRetainingCapacity(before);
+        return err;
+    };
+    if (!changed) try output.appendSlice(allocator, text);
+    return changed;
 }
 
 /// Normalize a code-point slice. Returns null when the slice is unchanged.
@@ -220,7 +288,7 @@ const Utf8Sink = struct {
         self: *Utf8Sink,
         codepoints: []const u21,
     ) error{OutOfMemory}!void {
-        try self.list.ensureUnusedCapacity(self.allocator, codepoints.len * 3);
+        try self.list.ensureUnusedCapacity(self.allocator, codepoints.len * 4);
         var encoded: [4]u8 = undefined;
         for (codepoints) |codepoint| {
             const length = std.unicode.utf8Encode(codepoint, &encoded) catch
@@ -559,22 +627,10 @@ pub const Normalizer = struct {
     }
 };
 
-fn normalizeChangedFormInto(
-    allocator: std.mem.Allocator,
+fn normalizeSegmentInto(
+    engine: *SegmentEngine(Utf8Sink),
     text: []const u8,
-    form: Form,
-    output: *std.ArrayList(u8),
 ) Error!void {
-    // Reserve the input size once; decomposition may grow the output but
-    // rarely reallocates more than once.
-    try output.ensureUnusedCapacity(allocator, text.len + 16);
-    var engine = SegmentEngine(Utf8Sink){
-        .allocator = allocator,
-        .sink = .{ .list = output, .allocator = allocator },
-        .compatibility = form == .nfkc or form == .nfkd,
-        .compose = form == .nfc or form == .nfkc,
-    };
-    defer engine.deinit();
     var index: usize = 0;
     while (index < text.len) {
         // Bulk-copy ASCII runs; the final byte stays pending in case a
@@ -600,6 +656,78 @@ fn normalizeChangedFormInto(
         try engine.feed(codepoint);
     }
     try engine.flush();
+}
+
+/// Normalize one starter segment using stack storage. Returns false when the
+/// decomposed segment exceeds the stack buffer, so the caller can fall back to
+/// the incremental engine.
+fn normalizeSegmentFastInto(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    form: Form,
+    output: *std.ArrayList(u8),
+) Error!bool {
+    const compatibility = form == .nfkc or form == .nfkd;
+    const compose = form == .nfc or form == .nfkc;
+    var storage: [64]u21 = undefined;
+    var length: usize = 0;
+    var index: usize = 0;
+    while (index < text.len) {
+        if (text[index] < 0x80) {
+            if (length == storage.len) return false;
+            storage[length] = text[index];
+            length += 1;
+            index += 1;
+            continue;
+        }
+        const sequence_len = std.unicode.utf8ByteSequenceLength(text[index]) catch
+            return error.InvalidUtf8;
+        if (index + sequence_len > text.len) return error.InvalidUtf8;
+        const codepoint = std.unicode.utf8Decode(
+            text[index..][0..sequence_len],
+        ) catch return error.InvalidUtf8;
+        index += sequence_len;
+        if (data.isSimplePage(codepoint, compatibility)) {
+            if (length == storage.len) return false;
+            storage[length] = codepoint;
+            length += 1;
+            continue;
+        }
+        var parts: [64]u21 = undefined;
+        const count = decomposeInto(&parts, codepoint, compatibility);
+        if (length + count > storage.len) return false;
+        @memcpy(storage[length..][0..count], parts[0..count]);
+        length += count;
+    }
+    canonicalOrder(storage[0..length]);
+    const final_len = if (compose) composeSlice(storage[0..length]) else length;
+    try output.ensureUnusedCapacity(allocator, final_len * 4);
+    var encoded: [4]u8 = undefined;
+    for (storage[0..final_len]) |codepoint| {
+        const encoded_len = std.unicode.utf8Encode(codepoint, &encoded) catch
+            unreachable;
+        output.appendSliceAssumeCapacity(encoded[0..encoded_len]);
+    }
+    return true;
+}
+
+fn normalizeChangedFormInto(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    form: Form,
+    output: *std.ArrayList(u8),
+) Error!void {
+    // Reserve the input size once; decomposition may grow the output but
+    // rarely reallocates more than once.
+    try output.ensureUnusedCapacity(allocator, text.len + 16);
+    var engine = SegmentEngine(Utf8Sink){
+        .allocator = allocator,
+        .sink = .{ .list = output, .allocator = allocator },
+        .compatibility = form == .nfkc or form == .nfkd,
+        .compose = form == .nfc or form == .nfkc,
+    };
+    defer engine.deinit();
+    try normalizeSegmentInto(&engine, text);
 }
 
 /// Normalize `text`, copying stable spans verbatim and running the segment
@@ -657,79 +785,6 @@ pub fn isNormalizedAssumeValid(text: []const u8) bool {
 pub fn isNormalizedFormAssumeValid(text: []const u8, form: Form) bool {
     std.debug.assert(std.unicode.utf8ValidateSlice(text));
     return isNormalizedFormUnchecked(text, form);
-}
-
-const FormState = enum { invalid, normalized, changed };
-
-/// Result of the fused validation and quick check. `span` is the byte offset
-/// from which normalization must restart: everything before it is already in
-/// the requested form and can be copied verbatim.
-const FormCheck = struct { state: FormState, span: usize };
-
-/// Validate UTF-8 and run the normalization quick check in one pass.
-fn checkFormUtf8(text: []const u8, form: Form) FormCheck {
-    const ascii_end = asciiPrefixLen(text);
-    if (ascii_end == text.len) {
-        return .{ .state = .normalized, .span = text.len };
-    }
-
-    const compatibility = form == .nfkc or form == .nfkd;
-    var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
-    var starter_offset: usize = if (ascii_end > 0) ascii_end - 1 else 0;
-    var previous_input_class: u8 = 0;
-    var index: usize = ascii_end;
-    while (index < text.len) {
-        if (text[index] < 0x80) {
-            // ASCII is Quick_Check=Yes with ccc 0 in every form; the last
-            // character of a run becomes the starter for a following mark.
-            var end = index;
-            while (end < text.len and text[end] < 0x80) end += 1;
-            starter = text[end - 1];
-            starter_offset = end - 1;
-            previous_input_class = 0;
-            index = end;
-            continue;
-        }
-        const start = index;
-        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
-            return .{ .state = .invalid, .span = 0 };
-        if (index + length > text.len) {
-            return .{ .state = .invalid, .span = 0 };
-        }
-        const codepoint = std.unicode.utf8Decode(
-            text[index..][0..length],
-        ) catch return .{ .state = .invalid, .span = 0 };
-        index += length;
-        if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
-            starter = codepoint;
-            starter_offset = start;
-            previous_input_class = 0;
-            continue;
-        }
-        const quick_check = data.quickCheck(codepoint, form);
-        if (quick_check == .no) {
-            return .{ .state = .changed, .span = starter_offset };
-        }
-        const current_class = combining_class.forCodepoint(codepoint);
-        if (current_class != 0 and
-            previous_input_class > current_class)
-        {
-            return .{ .state = .changed, .span = starter_offset };
-        }
-        if (quick_check == .maybe and starter != null and
-            (previous_input_class == 0 or
-                previous_input_class < current_class) and
-            pairChangesUnderForm(starter.?, codepoint, form))
-        {
-            return .{ .state = .changed, .span = starter_offset };
-        }
-        if (current_class == 0) {
-            starter = codepoint;
-            starter_offset = start;
-        }
-        previous_input_class = current_class;
-    }
-    return .{ .state = .normalized, .span = text.len };
 }
 
 fn isNormalizedFormUnchecked(text: []const u8, form: Form) bool {
@@ -801,6 +856,7 @@ fn spanQuickCheckYesUnchecked(text: []const u8, form: Form) usize {
     const ascii_end = asciiPrefixLen(text);
     if (ascii_end == text.len) return text.len;
 
+    const compatibility = form == .nfkc or form == .nfkd;
     var starter_offset: usize = if (ascii_end > 0) ascii_end - 1 else 0;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
@@ -823,6 +879,12 @@ fn spanQuickCheckYesUnchecked(text: []const u8, form: Form) usize {
             text[index..][0..length],
         ) catch return text.len;
         index += length;
+        if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
+            starter = codepoint;
+            starter_offset = start;
+            previous_input_class = 0;
+            continue;
+        }
         const quick_check = data.quickCheck(codepoint, form);
         if (quick_check == .no) return starter_offset;
         const current_class = combining_class.forCodepoint(codepoint);
@@ -963,6 +1025,10 @@ fn composeSlice(items: []u21) usize {
 }
 
 fn pairChangesUnderForm(starter: u21, current: u21, form: Form) bool {
+    // A direct composition always changes the pair; this avoids the general
+    // decompose-order-compose path for the common composing-mark case.
+    if ((form == .nfc or form == .nfkc) and
+        composePair(starter, current) != null) return true;
     // Unicode 17's longest recursive compatibility decomposition has 18
     // components; 64 leaves room for both the starter and the current scalar.
     // A Maybe scalar only needs the current starter: any intervening input

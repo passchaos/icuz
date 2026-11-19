@@ -1128,6 +1128,24 @@ pub fn main() !void {
     benchNormalization("isNormalized Chinese", chinese_runtime, allocator, true);
     benchNormalization("NFC Chinese", chinese_runtime, allocator, false);
     benchNormalization("NFC mixed", mixed_runtime, allocator, false);
+    benchNormalization(
+        "NFC precomposed",
+        "\u{00e9} \u{00ef} \u{00df} \u{4e16}\u{754c} " ** 8,
+        allocator,
+        false,
+    );
+    benchNormalization(
+        "NFC e+marks",
+        "e\u{0301}\u{0323} " ** 16,
+        allocator,
+        false,
+    );
+    benchNormalization(
+        "NFC jamo",
+        "\u{1100}\u{1161}\u{11a8} " ** 12,
+        allocator,
+        false,
+    );
     {
         var decoded: [256]u21 = undefined;
         var count: usize = 0;
