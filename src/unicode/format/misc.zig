@@ -3,7 +3,7 @@
 const std = @import("std");
 const plural = @import("plurals.zig");
 
-pub fn findLocale(locales: anytype, name: []const u8) ?@TypeOf(locales[0]) {
+pub fn findLocale(locales: anytype, name: []const u8) ?*const @TypeOf(locales[0]) {
     if (lookup(locales, name)) |entry| return entry;
 
     var buffer: [64]u8 = undefined;
@@ -21,7 +21,7 @@ pub fn findLocale(locales: anytype, name: []const u8) ?@TypeOf(locales[0]) {
     return null;
 }
 
-fn lookup(locales: anytype, name: []const u8) ?@TypeOf(locales[0]) {
+fn lookup(locales: anytype, name: []const u8) ?*const @TypeOf(locales[0]) {
     var low: usize = 0;
     var high = locales.len;
     while (low < high) {
@@ -30,7 +30,7 @@ fn lookup(locales: anytype, name: []const u8) ?@TypeOf(locales[0]) {
         switch (std.mem.order(u8, entry.id, name)) {
             .lt => low = middle + 1,
             .gt => high = middle,
-            .eq => return entry,
+            .eq => return &locales[middle],
         }
     }
     return null;

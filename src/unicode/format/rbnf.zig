@@ -1024,7 +1024,7 @@ fn emitFractionRule(
     );
 }
 
-fn numberLocale(locale_index: usize) number_data.Locale {
+fn numberLocale(locale_index: usize) *const number_data.Locale {
     const id = localeAt(locale_index).id;
     return misc.findLocale(number_data.locales, id) orelse
         misc.findLocale(number_data.locales, "en").?;
@@ -1205,7 +1205,7 @@ fn appendDigit(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
     digit: u8,
-    locale: number_data.Locale,
+    locale: *const number_data.Locale,
 ) Error!void {
     const codepoint = locale.digits[@as(usize, @min(digit, 9))];
     var buffer: [4]u8 = undefined;

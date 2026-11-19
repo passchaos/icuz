@@ -63,7 +63,9 @@ pub fn formatDateAlloc(
     locale_name: []const u8,
     style: Style,
 ) Error![]u8 {
-    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
     const pattern = switch (style) {
         .full => locale.date_full,
         .long => locale.date_long,
@@ -105,7 +107,9 @@ pub fn formatTimeWithZoneAlloc(
     style: Style,
     zone_name: []const u8,
 ) Error![]u8 {
-    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
     const pattern = switch (style) {
         .full => locale.time_full,
         .long => locale.time_long,
@@ -130,7 +134,9 @@ pub fn formatDateTimeAlloc(
     style: Style,
     zone_name: []const u8,
 ) Error![]u8 {
-    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
     const date_pattern = switch (style) {
         .full => locale.date_full,
         .long => locale.date_long,
@@ -187,7 +193,9 @@ pub fn formatPatternAlloc(
     locale_name: []const u8,
     zone_name: []const u8,
 ) Error![]u8 {
-    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
     return formatPatternWithLocale(
         allocator,
         pattern,
@@ -252,7 +260,9 @@ pub fn formatDateInCalendarAlloc(
     calendar: calendar_mod.Calendar,
     style: Style,
 ) Error![]u8 {
-    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
     const index: u8 = @intFromEnum(calendar);
     const calendar_style: calendars.Style = switch (style) {
         .full => .full,
@@ -287,7 +297,9 @@ pub fn formatDateTimeInCalendarAlloc(
     style: Style,
     zone_name: []const u8,
 ) Error![]u8 {
-    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
     const date_text = try formatDateInCalendarAlloc(
         allocator,
         date_time,
@@ -334,7 +346,9 @@ pub fn formatPatternInCalendarAlloc(
     locale_name: []const u8,
     calendar: calendar_mod.Calendar,
 ) Error![]u8 {
-    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
     return formatPatternWithLocale(
         allocator,
         pattern,
@@ -374,7 +388,9 @@ pub fn formatUnixTimeInZoneAlloc(
             zone_name,
         );
     const offset = timezone.offsetAt(zone, unix_seconds);
-    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
     const pattern = switch (style) {
         .full => locale.time_full,
         .long => locale.time_long,
@@ -417,7 +433,9 @@ pub fn formatTimeInZoneAlloc(
         );
     const unix_seconds = unixSeconds(date_time);
     const offset = timezone.offsetAt(zone, unix_seconds);
-    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
     const pattern = switch (style) {
         .full => locale.time_full,
         .long => locale.time_long,
@@ -449,7 +467,9 @@ pub fn formatPatternInZoneAlloc(
     locale_name: []const u8,
     zone_name: []const u8,
 ) Error![]u8 {
-    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
     const zone = timezone.find(zone_name) orelse return formatPatternWithLocale(
         allocator,
         pattern,
@@ -504,20 +524,25 @@ pub fn fromUnixSeconds(seconds: i64, offset_seconds: i32) DateTime {
     };
 }
 
-fn resolveLocale(name: []const u8) ?data.Locale {
+fn resolveLocale(
+    name: []const u8,
+    storage: *data.Locale,
+) ?*const data.Locale {
     const split = misc.splitNumberingSystem(name);
-    var locale = findLocale(split.locale) orelse return null;
-    const system_name = split.system orelse return locale;
-    const system = numbering_systems.find(system_name) orelse return locale;
-    locale.digits = system.digits;
-    return locale;
+    const base = findLocale(split.locale) orelse return null;
+    const system_name = split.system orelse return base;
+    const system = numbering_systems.find(system_name) orelse return base;
+    if (std.mem.eql(u21, &system.digits, &base.digits)) return base;
+    storage.* = base.*;
+    storage.digits = system.digits;
+    return storage;
 }
 
 fn formatPatternWithLocale(
     allocator: std.mem.Allocator,
     pattern: []const u8,
     date_time: DateTime,
-    locale: data.Locale,
+    locale: *const data.Locale,
     locale_name: []const u8,
     zone: ZoneInfo,
     overrides: FieldOverrides,
@@ -610,7 +635,7 @@ fn appendField(
     field: u8,
     length: usize,
     date_time: DateTime,
-    locale: data.Locale,
+    locale: *const data.Locale,
     locale_name: []const u8,
     zone: ZoneInfo,
     overrides: FieldOverrides,
@@ -695,13 +720,12 @@ fn appendField(
                         months.wide[0..]
                     else
                         months.narrow[0..]
+                else if (length == 3)
+                    locale.months_abbreviated[0..]
+                else if (length == 4)
+                    locale.months_wide[0..]
                 else
-                    if (length == 3)
-                        locale.months_abbreviated[0..]
-                    else if (length == 4)
-                        locale.months_wide[0..]
-                    else
-                        locale.months_narrow[0..];
+                    locale.months_narrow[0..];
                 const index = @min(month - 1, names.len - 1);
                 const name = names[index];
                 const leap_pattern = if (length == 3)
@@ -742,8 +766,7 @@ fn appendField(
                 if (is_pm) locale.pm_narrow else locale.am_narrow
             else if (length == 4)
                 if (is_pm) locale.pm_wide else locale.am_wide
-            else
-                if (is_pm) locale.pm_abbreviated else locale.am_abbreviated;
+            else if (is_pm) locale.pm_abbreviated else locale.am_abbreviated;
             try output.appendSlice(allocator, value);
         },
         'H' => try appendPaddedNumber(
@@ -935,7 +958,7 @@ fn appendPaddedNumber(
     output: *std.ArrayList(u8),
     value: u64,
     min_digits: usize,
-    locale: data.Locale,
+    locale: *const data.Locale,
 ) Error!void {
     var buffer: [32]u8 = undefined;
     const text = std.fmt.bufPrint(&buffer, "{d}", .{value}) catch
@@ -953,7 +976,7 @@ fn appendDigit(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
     digit: u8,
-    locale: data.Locale,
+    locale: *const data.Locale,
 ) Error!void {
     const codepoint = locale.digits[@as(usize, digit)];
     var buffer: [4]u8 = undefined;
@@ -967,7 +990,7 @@ fn appendOffset(
     output: *std.ArrayList(u8),
     offset_seconds: i32,
     length: usize,
-    locale: data.Locale,
+    locale: *const data.Locale,
 ) Error!void {
     const negative = offset_seconds < 0;
     const total: u32 = @intCast(if (negative) -offset_seconds else offset_seconds);
@@ -995,7 +1018,7 @@ fn appendIsoOffset(
     offset_seconds: i32,
     length: usize,
     use_z: bool,
-    locale: data.Locale,
+    locale: *const data.Locale,
 ) Error!void {
     if (offset_seconds == 0 and use_z) {
         try output.append(allocator, 'Z');
@@ -1140,7 +1163,7 @@ fn civilFromDays(days: i64) CivilDate {
     };
 }
 
-fn findLocale(locale: []const u8) ?data.Locale {
+fn findLocale(locale: []const u8) ?*const data.Locale {
     if (lookup(locale)) |result| return result;
 
     var buffer: [64]u8 = undefined;
@@ -1157,7 +1180,7 @@ fn findLocale(locale: []const u8) ?data.Locale {
     return null;
 }
 
-fn lookup(locale: []const u8) ?data.Locale {
+fn lookup(locale: []const u8) ?*const data.Locale {
     var low: usize = 0;
     var high = data.locales.len;
     while (low < high) {
@@ -1166,7 +1189,7 @@ fn lookup(locale: []const u8) ?data.Locale {
         switch (std.mem.order(u8, entry.id, locale)) {
             .lt => low = mid + 1,
             .gt => high = mid,
-            .eq => return entry,
+            .eq => return &data.locales[mid],
         }
     }
     return null;
@@ -1321,7 +1344,6 @@ test "custom patterns and Unix timestamps" {
     defer allocator.free(date_time);
     try testing.expectEqualStrings("Nov 18, 2026, 3:04:05\u{202f}PM", date_time);
 }
-
 
 test "time zone name conformance" {
     const testing = @import("std").testing;

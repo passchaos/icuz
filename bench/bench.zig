@@ -475,6 +475,36 @@ fn benchRelative(allocator: std.mem.Allocator) void {
     reportOps("relative time", rounds, best);
 }
 
+fn benchDate(allocator: std.mem.Allocator) void {
+    const date_time = icuz.date.DateTime{
+        .year = 2026,
+        .month = 11,
+        .day = 19,
+        .hour = 13,
+        .minute = 45,
+        .second = 30,
+    };
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 20000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const result = icuz.date.formatDateAlloc(
+                allocator,
+                date_time,
+                "en",
+                .full,
+            ) catch unreachable;
+            sink +%= result.len;
+            allocator.free(result);
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps("date full format", rounds, best);
+}
+
 fn benchUnits(allocator: std.mem.Allocator) void {
     var best: u64 = std.math.maxInt(u64);
     const trials = 5;
@@ -772,6 +802,7 @@ pub fn main() !void {
     benchList(allocator);
     benchRelative(allocator);
     benchUnits(allocator);
+    benchDate(allocator);
 
     std.debug.print("\n-- segmentation --\n", .{});
     benchGraphemes("grapheme ASCII", ascii_runtime);
