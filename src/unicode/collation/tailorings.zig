@@ -17,7 +17,7 @@ const codepoint_count = std.mem.readInt(u32, blob[22..26], .little);
 
 const locale_offset = header_len;
 const rule_offset = locale_offset + @as(usize, locale_count) * 16;
-const names_offset = rule_offset + @as(usize, rule_count) * 12;
+const names_offset = rule_offset + @as(usize, rule_count) * 16;
 const codepoints_offset = names_offset + @as(usize, names_length);
 const ces_offset = codepoints_offset + @as(usize, codepoint_count) * 4;
 const reorder_offset = ces_offset + @as(usize, ce_count) * 16;
@@ -32,7 +32,7 @@ const reorder_map_len = 4 + @as(usize, reorder_group_count) * 4;
 
 comptime {
     if (blob.len < header_len or !std.mem.eql(u8, blob[0..4], "CJTL") or
-        blob[4] != 4 or blob[5] != 48 or blob[6] != 0 or blob[7] != 0)
+        blob[4] != 5 or blob[5] != 48 or blob[6] != 0 or blob[7] != 0)
     {
         @compileError("invalid collation tailoring data");
     }
@@ -101,6 +101,9 @@ pub const Rule = struct {
     sequence_len: u8,
     ce_offset: u32,
     ce_count: u8,
+    /// First code point of the sequence, stored inline so binary-search
+    /// probes touch one cache line instead of two dependent loads.
+    first: u21,
 };
 
 pub const Tailoring = struct {
@@ -152,12 +155,13 @@ fn localeAt(index: usize) LocaleRecord {
 }
 
 fn ruleAt(index: usize) Rule {
-    const base = rule_offset + index * 12;
+    const base = rule_offset + index * 16;
     return .{
         .sequence_offset = readU32(base),
         .sequence_len = blob[base + 4],
         .ce_offset = readU32(base + 5),
         .ce_count = blob[base + 9],
+        .first = @intCast(readU32(base + 12)),
     };
 }
 
@@ -282,10 +286,7 @@ fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
     for (0..0x1100) |page| {
         const page_start: u32 = @intCast(page << 8);
         while (rule_index < end and
-            sequenceCodepoint(
-                ruleAt(tailoring.rule_start + rule_index),
-                0,
-            ) < page_start)
+            ruleAt(tailoring.rule_start + rule_index).first < page_start)
         {
             rule_index += 1;
         }
@@ -322,7 +323,7 @@ fn lowerBound(start: usize, end: usize, first: u21) usize {
     while (low < high) {
         const middle = low + (high - low) / 2;
         const rule = ruleAt(middle);
-        if (sequenceCodepoint(rule, 0) < first) low = middle + 1 else high = middle;
+        if (rule.first < first) low = middle + 1 else high = middle;
     }
     return low;
 }
@@ -351,7 +352,7 @@ pub fn match(
     var rule_index = start;
     while (rule_index < end) : (rule_index += 1) {
         const rule = ruleAt(rule_index);
-        if (sequenceCodepoint(rule, 0) != first) break;
+        if (rule.first != first) break;
         const length = @as(usize, rule.sequence_len);
         if (length > codepoints.len - index) continue;
         var matched = true;
@@ -393,7 +394,7 @@ test "tailoring rules are sorted by first code point" {
     var index: usize = tailoring.rule_start;
     const end = tailoring.rule_start + tailoring.rule_count;
     while (index < end) : (index += 1) {
-        const first = sequenceCodepoint(ruleAt(index), 0);
+        const first = ruleAt(index).first;
         try testing.expect(first >= previous);
         previous = first;
     }

@@ -1053,7 +1053,7 @@ def render_blob(compiled: dict[tuple[str, str], State], groups) -> bytes:
 
     codepoints = bytearray()
     ce_pool = bytearray()
-    rule_records: list[tuple[int, int, int, int]] = []
+    rule_records: list[tuple[int, int, int, int, int]] = []
     for key, sequence, ces in rules:
         sequence_offset = len(codepoints) // 4
         for codepoint in sequence:
@@ -1065,7 +1065,9 @@ def render_blob(compiled: dict[tuple[str, str], State], groups) -> bytes:
             if plan is not None:
                 p = plan.primary_map.get((sequence, ce_index), p)
             ce_pool.extend(struct.pack("<IIIB3x", p, s, t, 1 if variable else 0))
-        rule_records.append((sequence_offset, len(sequence), ce_offset, len(ces)))
+        rule_records.append(
+            (sequence_offset, len(sequence), ce_offset, len(ces), sequence[0])
+        )
 
     locale_records = []
     rule_index = 0
@@ -1093,7 +1095,7 @@ def render_blob(compiled: dict[tuple[str, str], State], groups) -> bytes:
     header = bytearray(b"CJTL")
     header += struct.pack(
         "<B3BHIIIIH",
-        4,
+        5,
         CLDR_VERSION,
         0,
         0,
@@ -1125,8 +1127,22 @@ def render_blob(compiled: dict[tuple[str, str], State], groups) -> bytes:
             flags,
             reorder_map,
         )
-    for sequence_offset, sequence_length, ce_offset, ce_count in rule_records:
-        header += struct.pack("<IBIBH", sequence_offset, sequence_length, ce_offset, ce_count, 0)
+    for (
+        sequence_offset,
+        sequence_length,
+        ce_offset,
+        ce_count,
+        first_codepoint,
+    ) in rule_records:
+        header += struct.pack(
+            "<IBIBHI",
+            sequence_offset,
+            sequence_length,
+            ce_offset,
+            ce_count,
+            0,
+            first_codepoint,
+        )
 
     reorder = bytearray()
     hani_group = next(
