@@ -2739,6 +2739,84 @@ test "calendar arithmetic" {
     );
 }
 
+test "date parsing conformance" {
+    const testing = @import("std").testing;
+    const fixture = @embedFile("date_parse_conformance.bin");
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJXD", fixture[0..4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var index: usize = 0;
+    while (index < case_count) : (index += 1) {
+        const year = std.mem.readInt(i32, fixture[cursor..][0..4], .little);
+        const month = fixture[cursor + 4];
+        const day = fixture[cursor + 5];
+        const hour = fixture[cursor + 6];
+        const minute = fixture[cursor + 7];
+        const second = fixture[cursor + 8];
+        const locale_len = fixture[cursor + 9];
+        const pattern_len = fixture[cursor + 10];
+        const text_len = std.mem.readInt(
+            u16,
+            fixture[cursor + 11 ..][0..2],
+            .little,
+        );
+        cursor += 13;
+        const locale = fixture[cursor..][0..locale_len];
+        cursor += locale_len;
+        const pattern = fixture[cursor..][0..pattern_len];
+        cursor += pattern_len;
+        const text = fixture[cursor..][0..text_len];
+        cursor += text_len;
+
+        const defaults = ParseDefaults{
+            .year = year,
+            .month = month,
+            .day = day,
+            .hour = hour,
+            .minute = minute,
+            .second = second,
+        };
+        const parsed = parsePattern(text, pattern, locale, defaults);
+        if (parsed) |value| {
+            if (value.year != year or value.month != month or
+                value.day != day or value.hour != hour or
+                value.minute != minute or value.second != second)
+            {
+                failures += 1;
+                if (failures <= 10) {
+                    std.debug.print(
+                        "date parse mismatch {s} '{s}' '{s}': " ++
+                            "{d}-{d}-{d} {d}:{d}:{d}\n",
+                        .{
+                            locale,
+                            pattern,
+                            text,
+                            value.year,
+                            value.month,
+                            value.day,
+                            value.hour,
+                            value.minute,
+                            value.second,
+                        },
+                    );
+                }
+            }
+        } else {
+            failures += 1;
+            if (failures <= 10) {
+                std.debug.print(
+                    "date parse failed {s} '{s}' '{s}'\n",
+                    .{ locale, pattern, text },
+                );
+            }
+        }
+    }
+    try testing.expectEqual(fixture.len, cursor);
+    try testing.expectEqual(@as(usize, 0), failures);
+}
+
 test "date and time formatting" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;

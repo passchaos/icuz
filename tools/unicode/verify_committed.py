@@ -417,6 +417,7 @@ BLOBS = (
     Blob("src/unicode/spoof/confusables_data.bin", b"CJXC", 1, "7b28b8f511ace1c81f95faf4985aa304e80b6a7f1d5997b06375163605f9e33c"),
     Blob("src/unicode/spoof/conformance.bin", b"CJXS", 1, "3e4610a024b4a5e4d4e1608391978bd2b6d2df52d92266553ac6dc071ce9346e", version=(0, 0, 0)),
     Blob("src/unicode/format/parse_conformance.bin", b"CJXN", 1, "b0e146b50957aa4f34a916cb7cfa919eb83b7e719f8c92aa5b7c885e6a384629", version=(0, 0, 0)),
+    Blob("src/unicode/format/date_parse_conformance.bin", b"CJXD", 1, "882b2ba49d502d56232c3e5fbcfa14c5173c45be8515e9ef7945519ac5584031", version=(0, 0, 0)),
 )
 
 GENERATORS = {
@@ -424,6 +425,7 @@ GENERATORS = {
     "tools/unicode/spoof/generate_confusables.py": "40d49eef65d71552cefc4bc90f2c9ba6e1313ce95dd2af9598213dff29f972fc",
     "tools/unicode/spoof/generate_conformance.py": "b1bd9eaced6f6b97e9ecd669f5037938b21c4268a1a5dd72db1909cf779761b5",
     "tools/unicode/format/generate_parse_conformance.py": "3f3e74b9be26b36ba8f5c544801c791ccbc2e72de761bbc15ee57a8e4cc80192",
+    "tools/unicode/format/generate_date_parse_conformance.py": "d32464d9c825652c04a0d8beae32f1fb32f5868c07c0a5cd29cdf51f598bfc41",
     "tools/generate_canonical_decomposition.py": "450c932dbd278208bccd3ab8bb26f04f1b18a96051fc03944393f5d73e3ad6d8",
     "tools/generate_nonspacing_marks.py": "12d45f34ce2891ccf1b342bc8f44c6fe32e15e019d7a41489d8036dee9f8555c",
     "tools/unicode/normalization/generate_conformance.py": "c3e9f80b8fb410a2d142cfbb228941d01322672b28261c1e0c0de53eb662ee43",
@@ -846,6 +848,15 @@ def check_layout(blob: Blob, data: bytes) -> None:
             locale_len = data[offset + 9]
             text_len = struct.unpack_from("<H", data, offset + 10)[0]
             offset += 12 + locale_len + text_len
+        assert offset == len(data)
+    elif magic == b"CJXD":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            locale_len = data[offset + 9]
+            pattern_len = data[offset + 10]
+            text_len = struct.unpack_from("<H", data, offset + 11)[0]
+            offset += 13 + locale_len + pattern_len + text_len
         assert offset == len(data)
     elif magic == b"CJCL":
         index_count, page_count, entry_count, ce_count = struct.unpack_from(
