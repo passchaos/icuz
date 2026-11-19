@@ -262,7 +262,18 @@ fn stripExtensions(locale: []const u8) []const u8 {
 }
 
 /// Find the longest tailored rule matching contiguously at `index`.
-pub const PageIndex = [0x1100]u16;
+///
+/// `rules` maps each 256-code-point page to its first rule. `direct` maps
+/// code points below `direct_limit` straight to the offset of their first
+/// rule within the page (0xFFFF when the tailoring has no rule for it), so
+/// Latin and other early scripts skip the binary search entirely.
+pub const PageIndex = struct {
+    rules: [0x1100]u16,
+    direct: [direct_limit]u16,
+};
+
+const direct_limit: usize = 0x1000;
+const direct_absent: u16 = 0xFFFF;
 
 const IndexSlot = struct {
     /// 0 = empty, 1 = building, 2 = published.
@@ -280,7 +291,8 @@ var index_slots = [_]IndexSlot{.{}} ** 4;
 var index_slot_next = std.atomic.Value(usize).init(0);
 
 fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
-    @memset(pages, 0);
+    @memset(&pages.rules, 0);
+    @memset(&pages.direct, direct_absent);
     var rule_index: usize = 0;
     const end: usize = tailoring.rule_count;
     for (0..0x1100) |page| {
@@ -290,7 +302,17 @@ fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
         {
             rule_index += 1;
         }
-        pages[page] = @intCast(rule_index);
+        pages.rules[page] = @intCast(rule_index);
+    }
+    for (0..end) |index| {
+        const first = ruleAt(tailoring.rule_start + index).first;
+        if (first >= direct_limit) break;
+        if (pages.direct[first] == direct_absent) {
+            const page = @as(usize, first) >> 8;
+            pages.direct[first] = @intCast(
+                index - pages.rules[page],
+            );
+        }
     }
 }
 
@@ -335,20 +357,25 @@ pub fn match(
     index: usize,
 ) ?Match {
     const first = codepoints[index];
+    const end = tailoring.rule_start + tailoring.rule_count;
     const start = if (pages) |page_index| blk: {
         const page: usize = @as(usize, first) >> 8;
-        const low = tailoring.rule_start + page_index[page];
+        const low = tailoring.rule_start + page_index.rules[page];
+        if (first < direct_limit) {
+            const offset = page_index.direct[first];
+            if (offset == direct_absent) return null;
+            break :blk low + offset;
+        }
         const high = if (page + 1 < 0x1100)
-            tailoring.rule_start + page_index[page + 1]
+            tailoring.rule_start + page_index.rules[page + 1]
         else
-            tailoring.rule_start + tailoring.rule_count;
+            end;
         break :blk lowerBound(low, high, first);
     } else lowerBound(
         tailoring.rule_start,
-        tailoring.rule_start + tailoring.rule_count,
+        end,
         first,
     );
-    const end = tailoring.rule_start + tailoring.rule_count;
     var rule_index = start;
     while (rule_index < end) : (rule_index += 1) {
         const rule = ruleAt(rule_index);
