@@ -186,11 +186,15 @@ pub fn sortKeyCodepointsInto(
         (if (locale_tailoring) |tailoring| tailoring.case_first else .off);
     const backwards = options.backwards_secondary orelse
         (if (locale_tailoring) |tailoring| tailoring.backwards else false);
+    const tailoring_pages = if (locale_tailoring) |tailoring|
+        tailorings.pageIndex(tailoring)
+    else
+        null;
 
     if (locale_tailoring == null and !shifted and case_first == .off and
         !backwards and !options.numeric and !options.case_level)
     {
-        if (try appendAsciiSortKey(allocator, output, codepoints, options.strength)) {
+        if (try appendLatinSortKey(allocator, output, codepoints, options.strength)) {
             return;
         }
     }
@@ -222,7 +226,7 @@ pub fn sortKeyCodepointsInto(
             }
         }
         if (locale_tailoring) |tailoring| {
-            if (tailorings.match(tailoring, source, index)) |matched| {
+            if (tailorings.match(tailoring, tailoring_pages, source, index)) |matched| {
                 try appendTailored(allocator, &ces, matched.rule);
                 index += matched.length;
                 continue;
@@ -426,10 +430,10 @@ fn appendImplicit(
     reorder: ?tailorings.Reorder,
 ) error{OutOfMemory}!void {
     const weights = implicitWeights(codepoint);
-    var first = weights[0];
-    var second = weights[1];
+    var first = weights.first;
+    var second = weights.second;
     if (reorder) |map| {
-        const group = if (properties.isUnifiedIdeograph(codepoint))
+        const group = if (weights.unified)
             map.haniGroup()
         else
             map.othersGroup();
@@ -542,30 +546,34 @@ fn appendElements(
     return cursor - index;
 }
 
-const AsciiElement = struct {
+const LatinElement = struct {
     primary: u32,
     secondary: u32,
     tertiary: u32,
 };
 
-const AsciiEntry = struct {
+const LatinEntry = struct {
     count: u8,
-    elements: [2]AsciiElement,
+    elements: [4]LatinElement,
 };
 
-const ascii_elements = blk: {
+/// Latin-1 Supplement and Latin Extended-A/B, which cover the precomposed
+/// letters and combining marks of Latin-script text after NFD.
+const latin_limit: usize = 0x370;
+
+const latin_elements = blk: {
     @setEvalBranchQuota(2_000_000);
-    var table: [128]AsciiEntry = undefined;
+    var table: [latin_limit]LatinEntry = undefined;
     var usable = true;
-    for (0..128) |codepoint| {
+    for (0..latin_limit) |codepoint| {
         const sequence = [_]u21{@intCast(codepoint)};
         if (findEntryExact(&sequence)) |entry| {
-            if (entry.len != 1 or entry.ce_count > 2) {
+            if (entry.len != 1 or entry.ce_count > 4) {
                 usable = false;
                 table[codepoint] = .{ .count = 0, .elements = undefined };
                 continue;
             }
-            var stored = AsciiEntry{
+            var stored = LatinEntry{
                 .count = entry.ce_count,
                 .elements = undefined,
             };
@@ -586,14 +594,16 @@ const ascii_elements = blk: {
             table[codepoint] = .{ .count = 0, .elements = undefined };
         }
     }
-    // A contraction whose continuation is also ASCII could match inside a
-    // pure-ASCII string, so the one-character table would be incomplete.
+    // Contractions that start and continue inside the table would make the
+    // one-character entries incomplete. The root table only has `L`/`l`
+    // followed by U+00B7; the fast path falls back for that pair.
     var entry_index = pageStart(0);
     while (entry_index < entry_count) : (entry_index += 1) {
         const entry = entryAt(entry_index);
-        if (entry.first >= 128) break;
-        if (entry.len > 1 and (entry.second < 128 or
-            (entry.len > 2 and entry.third < 128)))
+        if (entry.first >= latin_limit) break;
+        if (entry.len > 1 and entry.second < latin_limit and
+            !((entry.first == 'L' or entry.first == 'l') and
+                entry.second == 0xb7))
         {
             usable = false;
         }
@@ -601,29 +611,108 @@ const ascii_elements = blk: {
     break :blk .{ .usable = usable, .table = table };
 };
 
-/// Emit a root-order sort key for pure-ASCII text from a compact table,
-/// bypassing normalization, page lookups, and the collation-element list.
-fn appendAsciiSortKey(
+/// Emit a root-order sort key for Latin-script text from a compact table,
+/// bypassing page lookups and the collation-element list. Text with
+/// precomposed letters is decomposed into a stack buffer first.
+fn appendLatinSortKey(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u32),
     codepoints: []const u21,
     strength: Strength,
 ) error{OutOfMemory}!bool {
-    if (!ascii_elements.usable) return false;
+    if (!latin_elements.usable) return false;
+    var all_ascii = true;
     for (codepoints) |codepoint| {
-        if (codepoint >= 128) return false;
+        if (codepoint >= latin_limit) return false;
+        if (codepoint >= 0x80) all_ascii = false;
     }
-    try output.ensureTotalCapacity(allocator, codepoints.len * 6 + 4);
-    try appendAsciiLevel(allocator, output, codepoints, .primary);
+
+    var buffer: [1024]u21 = undefined;
+    const source = if (all_ascii)
+        codepoints
+    else
+        normalizeNfdLatinInto(&buffer, codepoints) orelse return false;
+
+    // `L`/`l` + U+00B7 is a root contraction; use the general path for it.
+    for (source, 0..) |codepoint, index| {
+        if ((codepoint == 'L' or codepoint == 'l') and
+            index + 1 < source.len and source[index + 1] == 0xb7)
+        {
+            return false;
+        }
+    }
+
+    try output.ensureTotalCapacity(allocator, source.len * 9 + 8);
+    try appendLatinLevel(allocator, output, source, .primary);
     if (strength == .primary) return true;
-    try appendAsciiLevel(allocator, output, codepoints, .secondary);
+    try appendLatinLevel(allocator, output, source, .secondary);
     if (strength == .secondary) return true;
-    try appendAsciiLevel(allocator, output, codepoints, .tertiary);
+    try appendLatinLevel(allocator, output, source, .tertiary);
     if (strength == .tertiary) return true;
     try output.append(allocator, 0);
     if (strength == .quaternary) return true;
     try appendIdenticalLevel(allocator, output, codepoints);
     return true;
+}
+
+/// NFD for Latin-script code points into a fixed buffer, without allocating.
+/// Returns null when the buffer is too small.
+fn normalizeNfdLatinInto(
+    buffer: []u21,
+    codepoints: []const u21,
+) ?[]const u21 {
+    var length: usize = 0;
+    var segment: [64]u21 = undefined;
+    var segment_len: usize = 0;
+    var pending: ?u21 = null;
+
+    for (codepoints) |codepoint| {
+        var parts: [64]u21 = undefined;
+        const count = normalization.decomposeInto(&parts, codepoint, false);
+        for (parts[0..count]) |part| {
+            const starter = part < 0x80 or
+                combining_class.forCodepoint(part) == 0;
+            if (starter) {
+                if (segment_len > 0) {
+                    normalization.canonicalOrder(segment[0..segment_len]);
+                    if (length + segment_len > buffer.len) return null;
+                    @memcpy(
+                        buffer[length..][0..segment_len],
+                        segment[0..segment_len],
+                    );
+                    length += segment_len;
+                    segment_len = 0;
+                }
+                if (pending) |previous| {
+                    if (length == buffer.len) return null;
+                    buffer[length] = previous;
+                    length += 1;
+                }
+                pending = part;
+            } else {
+                if (pending) |previous| {
+                    segment[0] = previous;
+                    segment_len = 1;
+                    pending = null;
+                }
+                if (segment_len == segment.len) return null;
+                segment[segment_len] = part;
+                segment_len += 1;
+            }
+        }
+    }
+    if (segment_len > 0) {
+        normalization.canonicalOrder(segment[0..segment_len]);
+        if (length + segment_len > buffer.len) return null;
+        @memcpy(buffer[length..][0..segment_len], segment[0..segment_len]);
+        length += segment_len;
+    }
+    if (pending) |previous| {
+        if (length == buffer.len) return null;
+        buffer[length] = previous;
+        length += 1;
+    }
+    return buffer[0..length];
 }
 
 /// Identical level: the per-code-point canonical decomposition of the input,
@@ -651,14 +740,14 @@ fn appendIdenticalLevel(
     try output.append(allocator, 0);
 }
 
-fn appendAsciiLevel(
+fn appendLatinLevel(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u32),
     codepoints: []const u21,
     level: Level,
 ) error{OutOfMemory}!void {
     for (codepoints) |codepoint| {
-        const entry = ascii_elements.table[codepoint];
+        const entry = latin_elements.table[codepoint];
         for (entry.elements[0..entry.count]) |element| {
             const weight = switch (level) {
                 .primary => element.primary,
@@ -746,31 +835,42 @@ fn appendNumeric(
     }
 }
 
-fn implicitWeights(codepoint: u21) [2]u32 {
-    if (properties.category(codepoint) != .Cn) {
-        for (implicit.ranges) |range| {
-            if (codepoint < range.first or codepoint > range.last) continue;
-            const bbbb: u32 = @as(u32, codepoint) - @as(u32, range.origin);
-            return .{
-                range.base,
-                ((bbbb | 0x8000) << 12),
-            };
-        }
-    }
+const ImplicitWeights = struct {
+    first: u32,
+    second: u32,
+    unified: bool,
+};
 
+fn implicitWeights(codepoint: u21) ImplicitWeights {
+    // Han text is the common implicit case; test it before the rare-range
+    // and category lookups.
     if (properties.isUnifiedIdeograph(codepoint)) {
         const core = (codepoint >= 0x4e00 and codepoint <= 0x9fff) or
             (codepoint >= 0xf900 and codepoint <= 0xfaff);
         const base: u32 = if (core) 0xFB40 else 0xFB80;
         return .{
-            (base + @as(u32, codepoint >> 15)) << 12,
-            ((@as(u32, codepoint) & 0x7fff) | 0x8000) << 12,
+            .first = (base + @as(u32, codepoint >> 15)) << 12,
+            .second = ((@as(u32, codepoint) & 0x7fff) | 0x8000) << 12,
+            .unified = true,
         };
     }
 
+    if (properties.category(codepoint) != .Cn) {
+        for (implicit.ranges) |range| {
+            if (codepoint < range.first or codepoint > range.last) continue;
+            const bbbb: u32 = @as(u32, codepoint) - @as(u32, range.origin);
+            return .{
+                .first = range.base,
+                .second = (bbbb | 0x8000) << 12,
+                .unified = false,
+            };
+        }
+    }
+
     return .{
-        (0xFBC0 + @as(u32, codepoint >> 15)) << 12,
-        ((@as(u32, codepoint) & 0x7fff) | 0x8000) << 12,
+        .first = (0xFBC0 + @as(u32, codepoint >> 15)) << 12,
+        .second = ((@as(u32, codepoint) & 0x7fff) | 0x8000) << 12,
+        .unified = false,
     };
 }
 

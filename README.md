@@ -294,7 +294,16 @@ generated-data cache footprint.
 Normalization and case mapping also have direct ASCII paths. Pure-ASCII text is
 already normalized in every form and can be checked with a word-at-a-time scan;
 ASCII case conversion is a single byte loop instead of a generated record
-search.
+search. Normalization runs per starter segment: one-code-point segments skip
+canonical ordering and composition entirely, and a composition-second page
+table keeps ordinary starters out of the composition binary search.
+
+Collation keeps three fast paths: a compile-time table for Latin-1 and Latin
+Extended-A/B (decomposed on the stack) that bypasses the page tables for
+un-tailored Latin text, per-tailoring first-code-point page indexes built on
+first use and published lock-free, and the general collation-element path for
+everything else. Charset reverse indexes likewise carry compile-time page
+indexes, so DBCS encoders binary-search only one 256-code-point page.
 
 ## Data provenance
 

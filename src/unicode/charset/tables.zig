@@ -99,6 +99,58 @@ pub fn forwardLookup(section: Section, pointer: usize) ?u21 {
     return @intCast(value);
 }
 
+/// Build a per-page start offset into a reverse index at compile time so
+/// lookups only binary-search the records of one 256-code-point page.
+fn buildPageIndex(comptime section: Section) [0x1100]u16 {
+    @setEvalBranchQuota(8_000_000);
+    const count = std.mem.readInt(u32, blob[section.offset..][0..4], .little);
+    var pages = [_]u16{0} ** 0x1100;
+    var record: u32 = 0;
+    for (0..0x1100) |page| {
+        const page_start: u32 = @intCast(page << 8);
+        while (record < count and
+            std.mem.readInt(
+                u32,
+                blob[section.offset + 4 + @as(usize, record) * 8 ..][0..4],
+                .little,
+            ) < page_start)
+        {
+            record += 1;
+        }
+        pages[page] = @intCast(record);
+    }
+    return pages;
+}
+
+pub const gb18030_reverse_pages = buildPageIndex(gb18030_reverse);
+pub const big5_reverse_pages = buildPageIndex(big5_reverse);
+pub const euc_kr_reverse_pages = buildPageIndex(euc_kr_reverse);
+pub const jis0208_reverse_pages = buildPageIndex(jis0208_reverse);
+pub const jis0212_reverse_pages = buildPageIndex(jis0212_reverse);
+pub const shift_jis_reverse_pages = buildPageIndex(shift_jis_reverse);
+pub const iso2022jp_katakana_reverse_pages =
+    buildPageIndex(iso2022jp_katakana_reverse);
+
+/// Paged reverse lookup: `pages` narrows the binary search to one page.
+pub fn reverseLookupPaged(
+    section: Section,
+    pages: *const [0x1100]u16,
+    codepoint: u21,
+) ?u32 {
+    const count = readU32(section.offset);
+    const page: usize = @as(usize, codepoint) >> 8;
+    var low: usize = pages[page];
+    var high: usize = if (page + 1 < 0x1100) pages[page + 1] else count;
+    while (low < high) {
+        const mid = low + (high - low) / 2;
+        const record = section.offset + 4 + mid * 8;
+        const value = readU32(record);
+        if (value == codepoint) return readU32(record + 4);
+        if (value < codepoint) low = mid + 1 else high = mid;
+    }
+    return null;
+}
+
 /// Look up a code point in a reverse index (records sorted by code point).
 pub fn reverseLookup(section: Section, codepoint: u21) ?u32 {
     const count = readU32(section.offset);

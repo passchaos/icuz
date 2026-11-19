@@ -1061,6 +1061,21 @@ fn buildCompositionIndex(records: []const Composition) [0x1100]u16 {
 
 const composition_index = buildCompositionIndex(&compositions);
 
+/// Pages that contain at least one second element of a canonical
+/// composition pair. Checking this page first keeps ordinary starters
+/// (ASCII prose, CJK, and so on) out of the binary search.
+const composition_second_pages = blk: {
+    var pages = [_]bool{false} ** 0x1100;
+    for (compositions) |item| {
+        pages[item.combining >> 8] = true;
+    }
+    break :blk pages;
+};
+
+pub inline fn isCompositionSecond(codepoint: u21) bool {
+    return composition_second_pages[codepoint >> 8];
+}
+
 pub fn composePair(starter: u21, combining: u21) ?u21 {
     const page = starter >> 8;
     var low: usize = composition_index[page];

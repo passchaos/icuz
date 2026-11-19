@@ -258,9 +258,95 @@ fn stripExtensions(locale: []const u8) []const u8 {
 }
 
 /// Find the longest tailored rule matching contiguously at `index`.
-pub fn match(tailoring: Tailoring, codepoints: []const u21, index: usize) ?Match {
+pub const PageIndex = [0x1100]u16;
+
+const IndexSlot = struct {
+    /// 0 = empty, 1 = building, 2 = published.
+    state: std.atomic.Value(u8) = std.atomic.Value(u8).init(0),
+    rule_start: u32 = 0,
+    rule_count: u32 = 0,
+    pages: PageIndex = undefined,
+};
+
+/// Cache of per-tailoring page indexes. Slots are never evicted so published
+/// pointers stay valid; when all slots are taken, callers fall back to the
+/// plain binary search. Claiming a slot uses one atomic counter instead of a
+/// lock so the collation path stays wait-free.
+var index_slots = [_]IndexSlot{.{}} ** 4;
+var index_slot_next = std.atomic.Value(usize).init(0);
+
+fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
+    @memset(pages, 0);
+    var rule_index: usize = 0;
+    const end: usize = tailoring.rule_count;
+    for (0..0x1100) |page| {
+        const page_start: u32 = @intCast(page << 8);
+        while (rule_index < end and
+            sequenceCodepoint(
+                ruleAt(tailoring.rule_start + rule_index),
+                0,
+            ) < page_start)
+        {
+            rule_index += 1;
+        }
+        pages[page] = @intCast(rule_index);
+    }
+}
+
+/// Return (building on first use) the page index for this tailoring.
+pub fn pageIndex(tailoring: Tailoring) ?*const PageIndex {
+    for (&index_slots) |*slot| {
+        if (slot.state.load(.acquire) == 2 and
+            slot.rule_start == tailoring.rule_start and
+            slot.rule_count == tailoring.rule_count)
+        {
+            return &slot.pages;
+        }
+    }
+    const claimed = index_slot_next.fetchAdd(1, .monotonic);
+    if (claimed >= index_slots.len) return null;
+    const slot = &index_slots[claimed];
+    if (slot.state.cmpxchgStrong(0, 1, .acquire, .monotonic) != null) {
+        return null;
+    }
+    buildPageIndex(tailoring, &slot.pages);
+    slot.rule_start = tailoring.rule_start;
+    slot.rule_count = tailoring.rule_count;
+    slot.state.store(2, .release);
+    return &slot.pages;
+}
+
+fn lowerBound(start: usize, end: usize, first: u21) usize {
+    var low = start;
+    var high = end;
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        const rule = ruleAt(middle);
+        if (sequenceCodepoint(rule, 0) < first) low = middle + 1 else high = middle;
+    }
+    return low;
+}
+
+pub fn match(
+    tailoring: Tailoring,
+    pages: ?*const PageIndex,
+    codepoints: []const u21,
+    index: usize,
+) ?Match {
     const first = codepoints[index];
-    const start = ruleStart(tailoring, first);
+    const start = if (pages) |page_index| blk: {
+        const page: usize = @as(usize, first) >> 8;
+        const low = tailoring.rule_start + page_index[page];
+        const high = if (page + 1 < 0x1100)
+            tailoring.rule_start + page_index[page + 1]
+        else
+            tailoring.rule_start + tailoring.rule_count;
+        break :blk lowerBound(low, high, first);
+    } else lowerBound(
+        tailoring.rule_start,
+        tailoring.rule_start + tailoring.rule_count,
+        first,
+    );
     const end = tailoring.rule_start + tailoring.rule_count;
     var rule_index = start;
     while (rule_index < end) : (rule_index += 1) {
@@ -279,17 +365,6 @@ pub fn match(tailoring: Tailoring, codepoints: []const u21, index: usize) ?Match
         if (matched) return .{ .rule = rule, .length = length };
     }
     return null;
-}
-
-fn ruleStart(tailoring: Tailoring, first: u21) usize {
-    var low = tailoring.rule_start;
-    var high = tailoring.rule_start + tailoring.rule_count;
-    while (low < high) {
-        const middle = low + (high - low) / 2;
-        const rule = ruleAt(middle);
-        if (sequenceCodepoint(rule, 0) < first) low = middle + 1 else high = middle;
-    }
-    return low;
 }
 
 test "tailoring locale lookup" {

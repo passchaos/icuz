@@ -421,7 +421,7 @@ GENERATORS = {
     "tools/generate_canonical_decomposition.py": "450c932dbd278208bccd3ab8bb26f04f1b18a96051fc03944393f5d73e3ad6d8",
     "tools/generate_nonspacing_marks.py": "12d45f34ce2891ccf1b342bc8f44c6fe32e15e019d7a41489d8036dee9f8555c",
     "tools/unicode/normalization/generate_conformance.py": "c3e9f80b8fb410a2d142cfbb228941d01322672b28261c1e0c0de53eb662ee43",
-    "tools/unicode/normalization/generate_data.py": "d86a7ecfe3f6d79ab89180d16011f859aec1ae1c11992f31e7c8db26fc9b6d25",
+    "tools/unicode/normalization/generate_data.py": "ca5047af930955f22c8ef6420186abf9d06ad48609cf8261ca64ce247f434c0f",
     "tools/unicode/case/generate_data.py": "c4b275209f5fa8695b35c22ddd5cb95d2e08f40f35868b901dc22b39726a4dc9",
     "tools/unicode/case/generate_full_data.py": "ac0b2ce2938d19da1c8b80289fcfbbcb0e7176a95736ca3cf0d6b0b9631a9ed8",
     "tools/unicode/collation/generate_data.py": "3e789930a4ee07357d7e89a26d9bf93fe598ce7555efdbd16c524e860f0e4c96",
@@ -507,7 +507,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/normalization/data.zig",
         "tools/unicode/normalization/generate_data.py",
-        "e9d3cc7b17119c477171f12ca86ce86dbdc82b3b43215212878311d897fde59a",
+        "4b34e5494fc0b8358005de621191b1e08cd07a9f422afa8b4d5574f8c10ff696",
     ),
     GeneratedText(
         "src/unicode/name/ranges.zig",

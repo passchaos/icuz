@@ -251,6 +251,35 @@ fn benchNormalization(
     reportBytes(name, rounds * text.len, best);
 }
 
+fn benchNormalizationCodepoints(
+    name: []const u8,
+    codepoints: []const u21,
+    allocator: std.mem.Allocator,
+) void {
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 4000;
+    var bytes: usize = 0;
+    for (codepoints) |cp| bytes += std.unicode.utf8CodepointSequenceLength(cp) catch 1;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const output = icuz.normalization.normalizeCodepointsAlloc(
+                allocator,
+                codepoints,
+                .nfc,
+            ) catch unreachable;
+            if (output) |owned| {
+                sink +%= owned.len;
+                allocator.free(owned);
+            }
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * bytes, best);
+}
+
 fn benchCase(name: []const u8, text: []const u8, allocator: std.mem.Allocator) void {
     var best: u64 = std.math.maxInt(u64);
     const trials = 5;
@@ -660,6 +689,12 @@ pub fn main() !void {
     benchCollation("UCA sort key ASCII", ascii_runtime, .{}, allocator);
     benchCollation("UCA sort key mixed", mixed_runtime, .{}, allocator);
     benchCollation(
+        "UCA sort key Swedish root",
+        swedish_runtime,
+        .{},
+        allocator,
+    );
+    benchCollation(
         "UCA sort key Swedish",
         swedish_runtime,
         .{ .locale = "sv" },
@@ -669,6 +704,12 @@ pub fn main() !void {
         "UCA sort key German phonebook",
         german_runtime,
         .{ .locale = "de", .collation = "phonebook" },
+        allocator,
+    );
+    benchCollation(
+        "UCA sort key Chinese root",
+        chinese_collation_runtime,
+        .{},
         allocator,
     );
     benchCollation(
@@ -821,6 +862,17 @@ pub fn main() !void {
     benchNormalization("isNormalized mixed", mixed_runtime, allocator, true);
     benchNormalization("NFC ASCII", ascii_runtime, allocator, false);
     benchNormalization("NFC mixed", mixed_runtime, allocator, false);
+    {
+        var decoded: [256]u21 = undefined;
+        var count: usize = 0;
+        var view = std.unicode.Utf8View.initUnchecked(mixed_runtime).iterator();
+        while (view.nextCodepoint()) |cp| {
+            if (count == decoded.len) break;
+            decoded[count] = cp;
+            count += 1;
+        }
+        benchNormalizationCodepoints("NFC mixed codepoints", decoded[0..count], allocator);
+    }
     benchCase("lower ASCII", ascii_runtime, allocator);
     benchFold("case fold ASCII", ascii_runtime, allocator);
 

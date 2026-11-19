@@ -95,7 +95,11 @@ fn gbEncode(codepoint: u21, out: []u8, comptime full: bool) EncodeResult {
         out[0] = 0x80;
         return .{ .written = 1 };
     }
-    if (tables.reverseLookup(tables.gb18030_reverse, codepoint)) |pointer| {
+    if (tables.reverseLookupPaged(
+        tables.gb18030_reverse,
+        &tables.gb18030_reverse_pages,
+        codepoint,
+    )) |pointer| {
         const lead: u8 = @intCast(pointer / 190 + 0x81);
         var trail: u8 = @intCast(pointer % 190);
         trail += if (trail < 0x3F) 0x40 else 0x41;
@@ -154,7 +158,11 @@ pub fn big5Encode(codepoint: u21, out: []u8) EncodeResult {
         else => null,
     };
     const pointer = special orelse
-        tables.reverseLookup(tables.big5_reverse, codepoint) orelse
+        tables.reverseLookupPaged(
+        tables.big5_reverse,
+        &tables.big5_reverse_pages,
+        codepoint,
+    ) orelse
         return .unmappable;
     const lead: u8 = @intCast(pointer / 157 + 0x81);
     var trail: u8 = @intCast(pointer % 157);
@@ -184,7 +192,11 @@ pub fn eucKrEncode(codepoint: u21, out: []u8) EncodeResult {
         out[0] = @intCast(codepoint);
         return .{ .written = 1 };
     }
-    const pointer = tables.reverseLookup(tables.euc_kr_reverse, codepoint) orelse
+    const pointer = tables.reverseLookupPaged(
+        tables.euc_kr_reverse,
+        &tables.euc_kr_reverse_pages,
+        codepoint,
+    ) orelse
         return .unmappable;
     out[0] = @intCast(pointer / 190 + 0x81);
     out[1] = @intCast(pointer % 190 + 0x41);
@@ -246,8 +258,9 @@ pub fn shiftJisEncode(codepoint: u21, out: []u8) EncodeResult {
         return .{ .written = 1 };
     }
     const target: u21 = if (codepoint == 0x2212) 0xFF0D else codepoint;
-    const pointer = tables.reverseLookup(
+    const pointer = tables.reverseLookupPaged(
         tables.shift_jis_reverse,
+        &tables.shift_jis_reverse_pages,
         target,
     ) orelse return .unmappable;
     var lead: u8 = @intCast(pointer / 188);
@@ -310,12 +323,20 @@ pub fn eucJpEncode(codepoint: u21, out: []u8) EncodeResult {
         return .{ .written = 2 };
     }
     const target: u21 = if (codepoint == 0x2212) 0xFF0D else codepoint;
-    if (tables.reverseLookup(tables.jis0208_reverse, target)) |pointer| {
+    if (tables.reverseLookupPaged(
+        tables.jis0208_reverse,
+        &tables.jis0208_reverse_pages,
+        target,
+    )) |pointer| {
         out[0] = @intCast(pointer / 94 + 0xA1);
         out[1] = @intCast(pointer % 94 + 0xA1);
         return .{ .written = 2 };
     }
-    if (tables.reverseLookup(tables.jis0212_reverse, target)) |pointer| {
+    if (tables.reverseLookupPaged(
+        tables.jis0212_reverse,
+        &tables.jis0212_reverse_pages,
+        target,
+    )) |pointer| {
         out[0] = 0x8F;
         out[1] = @intCast(pointer / 94 + 0xA1);
         out[2] = @intCast(pointer % 94 + 0xA1);

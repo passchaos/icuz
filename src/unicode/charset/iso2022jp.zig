@@ -143,7 +143,11 @@ pub fn encode(state: *State, codepoint: u21, out: []u8) EncodeResult {
         ) orelse return .unmappable;
     }
 
-    const pointer = tables.reverseLookup(tables.jis0208_reverse, target) orelse
+    const pointer = tables.reverseLookupPaged(
+        tables.jis0208_reverse,
+        &tables.jis0208_reverse_pages,
+        target,
+    ) orelse
         return .unmappable;
     const lead: u8 = @intCast(pointer / 94 + 0x21);
     const trail: u8 = @intCast(pointer % 94 + 0x21);

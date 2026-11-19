@@ -132,6 +132,100 @@ pub fn appendCanonicalDecompositionInto(
     try appendDecomposition(allocator, output, codepoint, false);
 }
 
+/// Decompose one code point into `buffer` and return the component count.
+pub fn decomposeInto(
+    buffer: *[64]u21,
+    codepoint: u21,
+    compatibility: bool,
+) usize {
+    if (codepoint < 0x80) {
+        buffer[0] = codepoint;
+        return 1;
+    }
+    if (decomposeHangul(codepoint)) |parts| {
+        const slice = parts.slice();
+        @memcpy(buffer[0..slice.len], slice);
+        return slice.len;
+    }
+    const mapping = if (compatibility)
+        decomposition.compatibilityForCodepoint(codepoint)
+    else
+        decomposition.forCodepoint(codepoint);
+    if (mapping) |components| {
+        @memcpy(buffer[0..components.len], components);
+        return components.len;
+    }
+    buffer[0] = codepoint;
+    return 1;
+}
+
+/// Incremental starter-segment normalizer. Canonical ordering and
+/// composition run per starter segment instead of over the whole string, and
+/// one-code-point segments (ASCII prose, CJK, and so on) skip both passes.
+const SegmentEngine = struct {
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u21),
+    segment: std.ArrayList(u21) = .empty,
+    /// Starter that may still receive combining marks; written to the output
+    /// only once the next starter proves that it has none.
+    pending: ?u21 = null,
+    compatibility: bool,
+    compose: bool,
+
+    fn deinit(self: *SegmentEngine) void {
+        self.segment.deinit(self.allocator);
+    }
+
+    fn feed(self: *SegmentEngine, codepoint: u21) error{OutOfMemory}!void {
+        // Unicode 17's longest recursive compatibility decomposition has
+        // 18 components; 64 leaves generous headroom.
+        var parts: [64]u21 = undefined;
+        const count = decomposeInto(&parts, codepoint, self.compatibility);
+        for (parts[0..count]) |part| {
+            // A segment ends at a starter that cannot compose with the
+            // previous character. Spacing marks such as U+0DCF have
+            // combining class 0 but are composition seconds, so they stay
+            // inside the segment.
+            const starter = if (part < 0x80)
+                true
+            else
+                combining_class.forCodepoint(part) == 0 and
+                    !data.isCompositionSecond(part) and
+                    !isHangulVOrT(part);
+            if (starter) {
+                try self.settle();
+                self.pending = part;
+            } else {
+                if (self.pending) |pending| {
+                    try self.segment.append(self.allocator, pending);
+                    self.pending = null;
+                }
+                try self.segment.append(self.allocator, part);
+            }
+        }
+    }
+
+    /// Emit the pending starter or the accumulated mark segment.
+    fn settle(self: *SegmentEngine) error{OutOfMemory}!void {
+        const items = self.segment.items;
+        if (items.len > 0) {
+            canonicalOrder(items);
+            const len = if (self.compose) composeSlice(items) else items.len;
+            try self.output.appendSlice(self.allocator, items[0..len]);
+            self.segment.clearRetainingCapacity();
+            return;
+        }
+        if (self.pending) |pending| {
+            try self.output.append(self.allocator, pending);
+            self.pending = null;
+        }
+    }
+
+    fn flush(self: *SegmentEngine) error{OutOfMemory}!void {
+        try self.settle();
+    }
+};
+
 /// Append the normalized form of a code-point slice to `output`.
 pub fn normalizeCodepointsInto(
     allocator: std.mem.Allocator,
@@ -139,21 +233,20 @@ pub fn normalizeCodepointsInto(
     form: Form,
     output: *std.ArrayList(u21),
 ) error{OutOfMemory}!void {
-    const start = output.items.len;
     // Decomposition rarely grows text beyond the input; reserve once so the
     // per-code-point append does not trigger repeated reallocation.
     try output.ensureUnusedCapacity(allocator, codepoints.len);
-    const compatibility = form == .nfkc or form == .nfkd;
+    var engine = SegmentEngine{
+        .allocator = allocator,
+        .output = output,
+        .compatibility = form == .nfkc or form == .nfkd,
+        .compose = form == .nfc or form == .nfkc,
+    };
+    defer engine.deinit();
     for (codepoints) |codepoint| {
-        try appendDecomposition(allocator, output, codepoint, compatibility);
+        try engine.feed(codepoint);
     }
-
-    const slice = output.items[start..];
-    canonicalOrder(slice);
-    if (form == .nfc or form == .nfkc) {
-        const len = composeSlice(slice);
-        output.shrinkRetainingCapacity(start + len);
-    }
+    try engine.flush();
 }
 
 /// Report whether a code-point slice is in `form` without allocating.
@@ -351,27 +444,24 @@ fn normalizeChangedFormInto(
     var codepoints = std.ArrayList(u21).empty;
     defer codepoints.deinit(allocator);
     try codepoints.ensureTotalCapacity(allocator, text.len);
+    {
+        var engine = SegmentEngine{
+            .allocator = allocator,
+            .output = &codepoints,
+            .compatibility = form == .nfkc or form == .nfkd,
+            .compose = form == .nfc or form == .nfkc,
+        };
+        defer engine.deinit();
+        var iterator = std.unicode.Utf8Iterator{ .bytes = text, .i = 0 };
+        while (iterator.nextCodepoint()) |codepoint| {
+            try engine.feed(codepoint);
+        }
+        try engine.flush();
+    }
 
-    const compatibility = form == .nfkc or form == .nfkd;
-    var iterator = std.unicode.Utf8Iterator{ .bytes = text, .i = 0 };
-    while (iterator.nextCodepoint()) |codepoint| {
-        try appendDecomposition(allocator, &codepoints, codepoint, compatibility);
-    }
-    canonicalOrder(codepoints.items);
-    if (form == .nfc or form == .nfkc) {
-        codepoints.shrinkRetainingCapacity(composeSlice(codepoints.items));
-    }
-
-    var utf8_len: usize = 0;
-    for (codepoints.items) |codepoint| {
-        utf8_len = std.math.add(
-            usize,
-            utf8_len,
-            std.unicode.utf8CodepointSequenceLength(codepoint) catch
-                unreachable,
-        ) catch return error.OutOfMemory;
-    }
-    try output.ensureUnusedCapacity(allocator, utf8_len);
+    // Most normalized code points take three UTF-8 bytes or fewer; a
+    // four-byte scalar may grow the list once.
+    try output.ensureUnusedCapacity(allocator, codepoints.items.len * 3);
     var encoded: [4]u8 = undefined;
     for (codepoints.items) |codepoint| {
         const len = std.unicode.utf8Encode(codepoint, &encoded) catch
@@ -491,6 +581,10 @@ fn appendDecomposition(
     codepoint: u21,
     compatibility: bool,
 ) error{OutOfMemory}!void {
+    if (codepoint < 0x80) {
+        try output.append(allocator, codepoint);
+        return;
+    }
     if (decomposeHangul(codepoint)) |parts| {
         try output.appendSlice(allocator, parts.slice());
         return;
@@ -506,7 +600,8 @@ fn appendDecomposition(
     try output.append(allocator, codepoint);
 }
 
-fn canonicalOrder(codepoints: []u21) void {
+/// Sort the marks of every starter segment into canonical order.
+pub fn canonicalOrder(codepoints: []u21) void {
     var sequence_start: usize = 0;
     for (codepoints, 0..) |codepoint, index| {
         if (combining_class.forCodepoint(codepoint) == 0) {
@@ -535,8 +630,12 @@ fn composeSlice(items: []u21) usize {
 
     for (items[1..]) |codepoint| {
         const current_class = combining_class.forCodepoint(codepoint);
-        const composite = if (previous_class == 0 or
-            previous_class < current_class)
+        // A starter only composes with a following non-starter mark or a
+        // Hangul V/T jamo. Skipping the table lookup for ordinary starters
+        // keeps ASCII prose on a linear scan.
+        const composite = if ((data.isCompositionSecond(codepoint) or
+            isHangulVOrT(codepoint)) and
+            (previous_class == 0 or previous_class < current_class))
             composePair(starter, codepoint)
         else
             null;
@@ -604,6 +703,11 @@ fn appendDecompositionFixed(
     }
     output[len.*] = codepoint;
     len.* += 1;
+}
+
+fn isHangulVOrT(codepoint: u21) bool {
+    return (codepoint >= 0x1161 and codepoint <= 0x1175) or
+        (codepoint >= 0x11a8 and codepoint <= 0x11c2);
 }
 
 fn composePair(starter: u21, combining: u21) ?u21 {
