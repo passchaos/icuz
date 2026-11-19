@@ -225,6 +225,7 @@ pub const spoofIdentifierAllowed = spoof_mod.identifierAllowed;
 pub const SpoofRestrictionLevel = spoof_mod.RestrictionLevel;
 pub const spoofRestrictionLevel = spoof_mod.restrictionLevel;
 pub const spoofIsMixedScript = spoof_mod.isMixedScript;
+pub const spoofHasMixedNumbers = spoof_mod.hasMixedNumbers;
 pub const spoofIsAllowedIdentifier = spoof_mod.isAllowedIdentifier;
 pub const collation_uca_version = collation_mod.uca_version;
 pub const collation_cldr_version = collation_mod.cldr_version;

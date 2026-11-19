@@ -270,6 +270,37 @@ pub fn restrictionLevel(text: []const u8) Error!RestrictionLevel {
     return .minimally_restrictive;
 }
 
+fn decimalDigitValue(codepoint: u21) ?u8 {
+    if (properties.category(codepoint) != .Nd) return null;
+    var zero = codepoint;
+    while (zero > 0 and properties.category(zero - 1) == .Nd) zero -= 1;
+    return @intCast((@as(u32, codepoint) - @as(u32, zero)) % 10);
+}
+
+/// True when the string mixes decimal number systems or contains
+/// non-decimal numbers (UTS #39 mixed-number detection).
+pub fn hasMixedNumbers(text: []const u8) Error!bool {
+    var zero: ?u21 = null;
+    var cursor: usize = 0;
+    while (cursor < text.len) {
+        const codepoint = try decodeCodepoint(text, &cursor);
+        switch (properties.category(codepoint)) {
+            .Nd => {
+                const value = decimalDigitValue(codepoint) orelse continue;
+                const zero_codepoint: u21 = @intCast(codepoint - value);
+                if (zero) |existing| {
+                    if (existing != zero_codepoint) return true;
+                } else {
+                    zero = zero_codepoint;
+                }
+            },
+            .Nl, .No => return true,
+            else => {},
+        }
+    }
+    return false;
+}
+
 /// True when the string's resolved script set is empty, i.e. its scripts
 /// have no common member (UTS #39 mixed-script detection).
 pub fn isMixedScript(text: []const u8) Error!bool {
@@ -523,6 +554,18 @@ test "restriction levels" {
     try testing.expect(!(try isMixedScript("abc")));
     try testing.expect(!(try isMixedScript("\u{65e5}\u{672c}\u{8a9e}")));
     try testing.expect(!(try isMixedScript("123")));
+}
+
+test "mixed number detection" {
+    const testing = @import("std").testing;
+
+    try testing.expect(!(try hasMixedNumbers("abc123")));
+    try testing.expect(!(try hasMixedNumbers("")));
+    try testing.expect(!(try hasMixedNumbers("\u{0661}\u{0662}\u{0663}")));
+    try testing.expect(try hasMixedNumbers("1\u{0662}"));
+    try testing.expect(try hasMixedNumbers("\u{2460}"));
+    try testing.expect(try hasMixedNumbers("\u{2167}"));
+    try testing.expectError(error.InvalidUtf8, hasMixedNumbers("\xff"));
 }
 
 test "UTS 39 skeleton conformance" {
