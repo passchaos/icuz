@@ -89,9 +89,11 @@ need without pulling in a font or layout engine.
   CLDR availableFormats with canonical field ordering, width adjustment,
   and date/time split fallbacks, and Unix timestamp conversion. Skeleton
   output is validated against an 80-case PyICU fixture. Date/time parsing
-  (`parsePattern`) consumes the same pattern syntax, including localized
-  month, weekday, era, day-period, and quarter names, native digits, and
-  caller-supplied defaults for absent fields.
+  (`parsePattern`, `parseSkeleton`) consumes the same pattern syntax,
+  including localized month, weekday, era, day-period, and quarter names,
+  native digits, numeric zone offsets, and caller-supplied defaults for
+  absent fields. Calendar arithmetic (`addDays`, `addMonths`, `addYears`,
+  `fieldDifference`) matches ICU's clamping and whole-field semantics.
 - Non-Gregorian calendar conversion and formatting for Buddhist, Japanese,
   ROC, Islamic civil/tbla/umalqura, Hebrew, Chinese, Persian, Indian,
   Coptic, Ethiopic, Ethiopic Amete Alem, and ISO-8601 calendars, following
@@ -103,8 +105,8 @@ need without pulling in a font or layout engine.
   formatting fixture.
 - CLDR 48 locale display names for 87 locales: language, script, region,
   and variant names, locale display composition, and likely-subtags
-  maximization, validated by 329 display-name and 48 likely-subtag PyICU
-  conformance cases.
+  maximization and minimization, validated by 329 display-name and 48
+  likely-subtag PyICU conformance cases.
 - Numbering system selection for number and date formatting across 78 CLDR
   numeric systems (latn, arab, arabext, thai, deva, beng, hanidec,
   fullwide, and others) through `@numbers=`/`-u-nu-` locale keywords or an
