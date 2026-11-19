@@ -62,6 +62,10 @@ need without pulling in a font or layout engine.
   tailorings are skipped.
 - UTS #46 IDNA 16.0.0: ToASCII/ToUnicode, NFC mapping, punycode, RFC 5893
   bidi checks, ContextJ/ContextO, and official conformance fixtures.
+- UTS #39 confusable detection from the Unicode 17.0.0 security data:
+  skeletons (NFD, prototype mapping, NFD, default-ignorable removal) and
+  `areConfusable` with optional case folding, validated by a 6,603-case
+  ICU 78 skeleton fixture.
 - CLDR 48 cardinal plural rules for 224 locales and ordinal plural rules for
   110 locales, including both CLDR sample conformance fixtures.
 - CLDR 48 decimal, percent, currency, scientific, and compact number
