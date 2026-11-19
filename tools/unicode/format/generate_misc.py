@@ -17,15 +17,31 @@ CLDR_SHA256 = "06c7c698d6fd8d67cefac15a0206b0109b00e0ef1636f86f84449fa959561f74"
 CLDR_VERSION = 48
 
 LOCALES = (
-    "ar", "cs", "da", "de", "el", "en", "en-GB", "es", "fi", "fr",
-    "he", "hi", "id", "it", "ja", "ko", "nb", "nl", "pl", "pt",
-    "pt-PT", "ro", "ru", "sv", "th", "tr", "uk", "vi", "zh", "zh-Hant",
+    "af", "am", "ar", "az", "be", "bg", "bn", "bs", "ca", "cs",
+    "cy", "da", "de", "de-AT", "de-CH", "el", "en", "en-AU", "en-CA",
+    "en-GB", "en-IN", "es", "es-419", "es-MX", "et", "eu", "fa", "fi",
+    "fil", "fr", "fr-CA", "ga", "gl", "gu", "he", "hi", "hr", "hu",
+    "hy", "id", "is", "it", "ja", "ka", "kk", "km", "kn", "ko", "lo",
+    "lt", "lv", "mk", "ml", "mn", "mr", "ms", "mt", "my", "nb", "ne",
+    "nl", "nl-BE", "pa", "pl", "ps", "pt", "pt-PT", "ro", "ru", "si",
+    "sk", "sl", "sq", "sr", "sv", "sw", "ta", "te", "th", "tr", "uk",
+    "ur", "uz", "vi", "zh", "zh-Hant", "zu",
 )
 
 PARENT = {
+    "de-AT": "de",
+    "de-CH": "de",
+    "en-AU": "en",
+    "en-CA": "en",
     "en-GB": "en",
+    "en-IN": "en",
+    "es-419": "es",
+    "es-MX": "es",
+    "fr-CA": "fr",
+    "nl-BE": "nl",
     "pt-PT": "pt",
     "zh-Hant": "zh",
+    "nb": "no",
     "nb": "no",
 }
 

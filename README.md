@@ -61,11 +61,11 @@ need without pulling in a font or layout engine.
 - CLDR 48 Gregorian date/time formatting for 30 locales, including localized
   month/day names, date/time styles, custom patterns, and Unix timestamp
   conversion.
-- CLDR 48 list formatting for 30 locales, including and/or and unit list
+- CLDR 48 list formatting for 87 locales, including and/or and unit list
   styles with narrow/short variants.
-- CLDR 48 relative time for 30 locales, including yesterday/today/tomorrow
+- CLDR 48 relative time for 87 locales, including yesterday/today/tomorrow
   text and future/past plural patterns.
-- CLDR 48 unit formatting for 30 locales and 60 units across length, mass,
+- CLDR 48 unit formatting for 87 locales and 60 units across length, mass,
   temperature, speed, area, volume, duration, digital, energy, power,
   pressure, frequency, angle, and concentration, with long and short forms.
 - ICU-style message formatting with positional/named arguments, plural,

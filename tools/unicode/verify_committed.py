@@ -402,7 +402,7 @@ GENERATORS = {
     "tools/unicode/format/generate_ordinals.py": "c67e49523dcfd86f641949774e2dae40ce8381828ca263fb61d5e487e406a91b",
     "tools/unicode/format/generate_numbers.py": "993871689fe126a56b60cfd98d7d3f1cff2879bc59afad5bc8becebfd3f7c8a8",
     "tools/unicode/format/generate_dates.py": "de6d58352b8793fee777752b980d27561e6ca400cb4710b95c9fda9b54999e45",
-    "tools/unicode/format/generate_misc.py": "35d08acef5a6b7c23bbbe3b13977a2085f02df3985185068a68fe59e0625b0e1",
+    "tools/unicode/format/generate_misc.py": "b126eb131c01bfdd7541ca78496df0b2e0a49e3a0524a666b4b9fd1d55c17086",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
     "tools/unicode/transliterate/generate_data.py": "059f2264e4ca5aa9aa8376d14f65e281528d2c43e1ad7e42d18a4b1da7808749",
     "tools/unicode/break/generate_dictionaries.py": "bdbd4c4e9c999b4cea6a8924b08c72a49719c857e26dea82fc50940ee145e264",
@@ -484,22 +484,22 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/format/list_data.zig",
         "tools/unicode/format/generate_misc.py",
-        "0aa642a85cd89aeabee5916a49dc9c3895ee7f23729bdb9201cef26e87e6e9c8",
+        "616fa3f3ab2c00ec530b1eb630c4588179668d72187a9b706bff6ddb17510110",
     ),
     GeneratedText(
         "src/unicode/format/relative_data.zig",
         "tools/unicode/format/generate_misc.py",
-        "08b6d522b1f8c56e82734b0b02ea076a85ba711c33c2de8a8019d524fc8eccd6",
+        "31e356d25c99bbfba0097b0e2026983cb25acf1e44de3128c00f3be1fbb4e91d",
     ),
     GeneratedText(
         "src/unicode/format/units_data.zig",
         "tools/unicode/format/generate_misc.py",
-        "5a08f64bf5eca2ef85cf494904b61116f4a9a71e1a165e7b5739e43eb60ed0b2",
+        "87e3328076bc8005c0afd15342636094a383c102a06485cd39aff145ccf1891e",
     ),
     GeneratedText(
         "src/unicode/format/currencies_data.zig",
         "tools/unicode/format/generate_misc.py",
-        "9db9bb3298bea10b6978b3ca5684cbbd1daa0024c1004b11370a20f93e9f42de",
+        "8a0bb04bacb398c819dcbb6b5377b8705f51cc8383a8a342345a6aefd7a26329",
     ),
     GeneratedText(
         "src/unicode/properties/general_category.zig",

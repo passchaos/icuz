@@ -155,3 +155,28 @@ test "list formatting" {
     defer allocator.free(fallback);
     try testing.expectEqualStrings("a, b, and c", fallback);
 }
+
+test "list formatting covers additional locales" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const items = [_][]const u8{ "a", "b", "c" };
+    const cases = [_]struct { locale: []const u8, expected: []const u8 }{
+        .{ .locale = "de", .expected = "a, b und c" },
+        .{ .locale = "es", .expected = "a, b y c" },
+        .{ .locale = "it", .expected = "a, b e c" },
+        .{ .locale = "nl", .expected = "a, b en c" },
+        .{ .locale = "pl", .expected = "a, b i c" },
+        .{ .locale = "tr", .expected = "a, b ve c" },
+        .{ .locale = "ko", .expected = "a, b \u{BC0F} c" },
+        .{ .locale = "sv", .expected = "a, b och c" },
+        .{ .locale = "da", .expected = "a, b og c" },
+        .{ .locale = "fi", .expected = "a, b ja c" },
+        .{ .locale = "cs", .expected = "a, b a\u{00A0}c" },
+    };
+    for (cases) |case| {
+        const result = try formatAlloc(allocator, &items, case.locale, .{});
+        defer allocator.free(result);
+        try testing.expectEqualStrings(case.expected, result);
+    }
+}

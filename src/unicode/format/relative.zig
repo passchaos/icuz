@@ -132,3 +132,40 @@ test "relative time formatting" {
     defer allocator.free(fallback);
     try testing.expectEqualStrings("in 3 days", fallback);
 }
+
+test "relative time covers additional locales" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const cases = [_]struct {
+        value: f64,
+        unit: Unit,
+        locale: []const u8,
+        expected: []const u8,
+    }{
+        .{ .value = 3, .unit = .day, .locale = "de", .expected = "in 3 Tagen" },
+        .{ .value = -5, .unit = .day, .locale = "de", .expected = "vor 5 Tagen" },
+        .{ .value = -1, .unit = .day, .locale = "de", .expected = "gestern" },
+        .{ .value = 3, .unit = .day, .locale = "es", .expected = "dentro de 3 d\u{00ED}as" },
+        .{ .value = -5, .unit = .day, .locale = "es", .expected = "hace 5 d\u{00ED}as" },
+        .{ .value = 3, .unit = .day, .locale = "pl", .expected = "za 3 dni" },
+        .{ .value = -5, .unit = .day, .locale = "pl", .expected = "5 dni temu" },
+        .{ .value = 3, .unit = .day, .locale = "tr", .expected = "3 g\u{00FC}n sonra" },
+        .{ .value = -5, .unit = .day, .locale = "tr", .expected = "5 g\u{00FC}n \u{00F6}nce" },
+        .{ .value = 3, .unit = .day, .locale = "ko", .expected = "3\u{C77C} \u{D6C4}" },
+        .{ .value = -5, .unit = .day, .locale = "ko", .expected = "5\u{C77C} \u{C804}" },
+        .{ .value = 3, .unit = .day, .locale = "it", .expected = "tra 3 giorni" },
+        .{ .value = 3, .unit = .day, .locale = "nl", .expected = "over 3 dagen" },
+    };
+    for (cases) |case| {
+        const result = try formatAlloc(
+            allocator,
+            case.value,
+            case.unit,
+            case.locale,
+            .{},
+        );
+        defer allocator.free(result);
+        try testing.expectEqualStrings(case.expected, result);
+    }
+}

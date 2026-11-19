@@ -141,3 +141,38 @@ test "unit formatting" {
         try testing.expectEqualStrings(case.expected, result);
     }
 }
+
+test "unit formatting covers additional locales" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const cases = [_]struct {
+        value: f64,
+        unit: Unit,
+        locale: []const u8,
+        expected: []const u8,
+    }{
+        .{ .value = 5, .unit = .meter, .locale = "de", .expected = "5 Meter" },
+        .{ .value = 1, .unit = .meter, .locale = "es", .expected = "1 metro" },
+        .{ .value = 5, .unit = .meter, .locale = "es", .expected = "5 metros" },
+        .{ .value = 5, .unit = .meter, .locale = "it", .expected = "5 metri" },
+        .{ .value = 5, .unit = .meter, .locale = "nl", .expected = "5 meter" },
+        .{ .value = 2, .unit = .meter, .locale = "pl", .expected = "2 metry" },
+        .{ .value = 5, .unit = .meter, .locale = "pl", .expected = "5 metr\u{00F3}w" },
+        .{ .value = 5, .unit = .meter, .locale = "tr", .expected = "5 metre" },
+        .{ .value = 5, .unit = .meter, .locale = "ko", .expected = "5\u{BBF8}\u{D130}" },
+        .{ .value = 5, .unit = .meter, .locale = "fi", .expected = "5 metri\u{00E4}" },
+        .{ .value = 5, .unit = .meter, .locale = "cs", .expected = "5 metr\u{016F}" },
+    };
+    for (cases) |case| {
+        const result = try formatAlloc(
+            allocator,
+            case.value,
+            case.unit,
+            case.locale,
+            .{ .style = .long },
+        );
+        defer allocator.free(result);
+        try testing.expectEqualStrings(case.expected, result);
+    }
+}
