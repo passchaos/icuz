@@ -55,9 +55,10 @@ need without pulling in a font or layout engine.
   110 locales, including both CLDR sample conformance fixtures.
 - CLDR 48 decimal, percent, currency, scientific, and compact number
   formatting for 111 locales, with locale symbols, grouping, fraction-digit
-  options, 25 currencies with locale-specific symbols/names/codes and
-  currency-specific fraction digits, accounting parentheses, short/long
-  compact notation, and ICU-style number skeletons.
+  options, all 307 CLDR currencies with locale-specific symbols/names/codes
+  and currency-specific fraction digits, accounting parentheses, short/long
+  compact notation, and ICU-style number skeletons. Currency output is
+  validated against a 1,080-case PyICU conformance fixture.
 - CLDR 48 Gregorian date/time formatting for 87 locales, including localized
   month/day names, date/time styles, custom patterns, and Unix timestamp
   conversion.

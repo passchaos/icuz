@@ -2,10 +2,11 @@
 
 const std = @import("std");
 const data = @import("numbers_data.zig");
-const currencies = @import("currencies_data.zig");
+const currencies = @import("currencies.zig");
 const plural = @import("plurals.zig");
 const misc = @import("misc.zig");
 const numbering_systems = @import("numbering_systems.zig");
+const properties = @import("../properties.zig");
 
 pub const cldr_version = "48";
 
@@ -171,7 +172,11 @@ fn formatStandardAlloc(
         @as(f64, @floatFromInt(pattern.multiplier));
 
     var number_buffer: [64]u8 = undefined;
-    const formatted = formatFloat(&number_buffer, magnitude, max_fraction);
+    const formatted = formatFloat(
+        &number_buffer,
+        roundHalfEven(magnitude, max_fraction),
+        max_fraction,
+    );
 
     var integer_part = formatted;
     var fraction_part: []const u8 = "";
@@ -381,12 +386,7 @@ fn formatScientificAlloc(
     if (power == 0) return decimalFallback(allocator, value, locale_name, options);
     var mantissa = if (value == 0) 0.0 else value / power;
     const max_fraction = options.max_fraction_digits orelse 6;
-    const rounding_scale = std.math.pow(
-        f64,
-        10.0,
-        @floatFromInt(max_fraction),
-    );
-    if (@abs(@round(mantissa * rounding_scale) / rounding_scale) >= 10.0) {
+    if (roundHalfEven(@abs(mantissa), max_fraction) >= 10.0) {
         exponent += 1;
         mantissa /= 10.0;
     }
@@ -497,7 +497,7 @@ fn compactCategory(
 ) plural.Category {
     const magnitude = @abs(value);
     const scale = std.math.pow(f64, 10.0, @floatFromInt(fraction_digits));
-    const rounded = @round(magnitude * scale) / scale;
+    const rounded = roundHalfEven(magnitude, fraction_digits);
     if (fraction_digits == 0) {
         return plural.categoryForInteger(locale_name, @intFromFloat(rounded));
     }
@@ -652,41 +652,11 @@ fn appendCodepoint(
 }
 
 fn currencyDigits(code: []const u8) u8 {
-    for (currencies.codes, 0..) |candidate, index| {
-        if (std.mem.eql(u8, candidate, code)) {
-            return currencies.fraction_digits[index];
-        }
-    }
-    return 2;
+    return currencies.fractionDigits(code);
 }
 
-fn currencyEntry(locale: data.Locale, code: []const u8) ?currencies.Currency {
-    var code_index: ?usize = null;
-    for (currencies.codes, 0..) |candidate, index| {
-        if (std.mem.eql(u8, candidate, code)) {
-            code_index = index;
-            break;
-        }
-    }
-    const selected = code_index orelse return null;
-
-    var low: usize = 0;
-    var high = currencies.locales.len;
-    while (low < high) {
-        const middle = low + (high - low) / 2;
-        const entry = currencies.locales[middle];
-        switch (std.mem.order(u8, entry.id, locale.id)) {
-            .lt => low = middle + 1,
-            .gt => high = middle,
-            .eq => return entry.currencies[selected],
-        }
-    }
-    for (currencies.locales) |entry| {
-        if (std.mem.eql(u8, entry.id, "en")) {
-            return entry.currencies[selected];
-        }
-    }
-    return null;
+fn currencyEntry(locale: data.Locale, code: []const u8) ?currencies.Entry {
+    return currencies.find(locale.id, code);
 }
 
 fn currencyDisplayText(
@@ -697,6 +667,10 @@ fn currencyDisplayText(
     if (display == .code) return code;
     if (currencyEntry(locale, code)) |entry| {
         if (entry.symbol.len != 0) return entry.symbol;
+        // The locale resolves the currency but defines no standard symbol,
+        // so ICU falls back to the ISO code instead of borrowing another
+        // locale's symbol.
+        return code;
     }
     const fallback = currencySymbol(code);
     return if (fallback.len != 0) fallback else code;
@@ -715,24 +689,43 @@ fn currencyPatternText(
         locale.currency_accounting_alpha_pattern
     else
         locale.currency_alpha_pattern;
-    if (alpha.len != 0 and isAlphaCurrency(display_text)) return alpha;
+    if (alpha.len != 0 and isAlphaNextToNumber(base, display_text)) {
+        return alpha;
+    }
     return base;
 }
 
-fn isAlphaCurrency(text: []const u8) bool {
-    if (text.len == 0) return false;
-    var has_letter = false;
-    for (text) |byte| {
-        if ((byte >= 'A' and byte <= 'Z') or (byte >= 'a' and byte <= 'z')) {
-            has_letter = true;
-            break;
+/// True when the currency symbol adjacent to the number in `pattern` is a
+/// Unicode letter, which selects CLDR's alphaNextToNumber variant.
+fn isAlphaNextToNumber(pattern: []const u8, symbol: []const u8) bool {
+    if (symbol.len == 0) return false;
+    const symbol_start = std.mem.indexOf(u8, pattern, "\xc2\xa4");
+    const number_start = std.mem.indexOfScalar(u8, pattern, '0');
+    const prefix = symbol_start != null and
+        (number_start == null or symbol_start.? < number_start.?);
+    const codepoint = if (prefix)
+        lastCodepoint(symbol)
+    else
+        firstCodepoint(symbol);
+    return if (codepoint) |cp| properties.isLetter(cp) else false;
+}
+
+fn firstCodepoint(text: []const u8) ?u21 {
+    if (text.len == 0) return null;
+    const length = std.unicode.utf8ByteSequenceLength(text[0]) catch return null;
+    if (length > text.len) return null;
+    return std.unicode.utf8Decode(text[0..length]) catch null;
+}
+
+fn lastCodepoint(text: []const u8) ?u21 {
+    var index = text.len;
+    while (index > 0) {
+        index -= 1;
+        if (text[index] & 0xc0 != 0x80) {
+            return std.unicode.utf8Decode(text[index..]) catch null;
         }
     }
-    if (!has_letter) return false;
-    const last = text[text.len - 1];
-    return (last >= 'A' and last <= 'Z') or
-        (last >= 'a' and last <= 'z') or
-        (last >= '0' and last <= '9');
+    return null;
 }
 
 fn formatCurrencyNameAlloc(
@@ -1070,6 +1063,23 @@ fn scanMultiplier(text: []const u8) u16 {
     return 1;
 }
 
+/// Round `value` at `digits` fraction digits with ties going to the even
+/// digit, matching the HALF_EVEN mode ICU's DecimalFormat applies by default.
+fn roundHalfEven(value: f64, digits: u8) f64 {
+    const scale = std.math.pow(f64, 10.0, @floatFromInt(digits));
+    const scaled = value * scale;
+    if (!std.math.isFinite(scaled)) return value;
+    const lower = @floor(scaled);
+    const fraction = scaled - lower;
+    var rounded = lower;
+    if (fraction > 0.5) {
+        rounded = lower + 1.0;
+    } else if (fraction == 0.5) {
+        if (@mod(lower, 2.0) != 0.0) rounded = lower + 1.0;
+    }
+    return rounded / scale;
+}
+
 fn formatFloat(buffer: []u8, value: f64, digits: u8) []const u8 {
     return switch (digits) {
         0 => std.fmt.bufPrint(buffer, "{d:.0}", .{value}) catch unreachable,
@@ -1093,9 +1103,10 @@ fn appendGroupedDigits(
     const length = digits.len;
     const primary = @as(usize, pattern.group_primary);
     const secondary = @as(usize, pattern.group_secondary);
-    if (!use_grouping or primary == 0 or
-        length <= primary + @as(usize, locale.min_grouping) - 1)
-    {
+    // ICU's default number format groups as soon as the integer part exceeds
+    // the primary grouping size; CLDR's minimumGroupingDigits is opt-in via
+    // the API and is not applied by default.
+    if (!use_grouping or primary == 0 or length <= primary) {
         for (digits) |byte| {
             try appendDigit(allocator, output, byte - '0', locale);
         }
@@ -1159,7 +1170,6 @@ fn appendAffix(
     locale: data.Locale,
     currency_display: []const u8,
 ) Error!void {
-    _ = locale;
     var in_quote = false;
     var index: usize = 0;
     while (index < affix.len) : (index += 1) {
@@ -1184,6 +1194,16 @@ fn appendAffix(
             } else {
                 index += 1;
             }
+            continue;
+        }
+        // ICU substitutes the localized symbols for pattern characters in
+        // affixes; the localized minus sign carries RTL bidi marks.
+        if (!in_quote and byte == '-') {
+            try output.appendSlice(allocator, locale.minus);
+            continue;
+        }
+        if (!in_quote and byte == '%') {
+            try output.appendSlice(allocator, locale.percent);
             continue;
         }
         try output.append(allocator, byte);
@@ -1482,7 +1502,7 @@ test "currency display and accounting" {
         .currency = "JPY",
     });
     defer allocator.free(japanese_symbol);
-    try testing.expectEqualStrings("\u{ffe5}1,235", japanese_symbol);
+    try testing.expectEqualStrings("\u{ffe5}1,234", japanese_symbol);
 
     const japanese_name = try formatAlloc(allocator, 1234.5, "ja", .{
         .style = .currency,
@@ -1490,7 +1510,7 @@ test "currency display and accounting" {
         .currency_display = .name,
     });
     defer allocator.free(japanese_name);
-    try testing.expectEqualStrings("1,235\u{5186}", japanese_name);
+    try testing.expectEqualStrings("1,234\u{5186}", japanese_name);
 
     const chinese_name = try formatAlloc(allocator, 1234.5, "zh", .{
         .style = .currency,
@@ -1516,14 +1536,14 @@ test "currency display and accounting" {
         .currency = "JPY",
     });
     defer allocator.free(yen);
-    try testing.expectEqualStrings("\u{00a5}1,235", yen);
+    try testing.expectEqualStrings("\u{00a5}1,234", yen);
 
     const won = try formatAlloc(allocator, 1234.5, "en", .{
         .style = .currency,
         .currency = "KRW",
     });
     defer allocator.free(won);
-    try testing.expectEqualStrings("\u{20a9}1,235", won);
+    try testing.expectEqualStrings("\u{20a9}1,234", won);
 }
 
 test "number formatting covers additional locales" {
@@ -1572,7 +1592,7 @@ test "number skeletons" {
     }{
         .{ .skeleton = "percent", .value = 0.25, .expected = "25%" },
         .{ .skeleton = "currency/USD", .value = 1234.5, .expected = "$1,234.50" },
-        .{ .skeleton = "currency/JPY", .value = 1234.5, .expected = "\u{00a5}1,235" },
+        .{ .skeleton = "currency/JPY", .value = 1234.5, .expected = "\u{00a5}1,234" },
         .{ .skeleton = "compact-short", .value = 1234567, .expected = "1M" },
         .{ .skeleton = "compact-long", .value = 1234, .expected = "1 thousand" },
         .{ .skeleton = "scientific", .value = 1234, .expected = "1.234E3" },
@@ -1623,9 +1643,60 @@ test "integer and fraction options" {
 
     const polish_small = try formatAlloc(allocator, 1234, "pl", .{});
     defer allocator.free(polish_small);
-    try testing.expectEqualStrings("1234", polish_small);
+    try testing.expectEqualStrings("1\u{00a0}234", polish_small);
 
     const polish_large = try formatAlloc(allocator, 12345, "pl", .{});
     defer allocator.free(polish_large);
     try testing.expectEqualStrings("12\u{00a0}345", polish_large);
+}
+
+test "currency conformance" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("currency_conformance.bin");
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJR1", fixture[0..4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var total: usize = 0;
+    var printed: usize = 0;
+    for (0..case_count) |_| {
+        const locale_length = fixture[cursor];
+        const code_length = fixture[cursor + 1];
+        const value: f64 = @bitCast(std.mem.readInt(u64, fixture[cursor + 4 ..][0..8], .little));
+        const expected_length = std.mem.readInt(u16, fixture[cursor + 12 ..][0..2], .little);
+        cursor += 16;
+        const locale_name = fixture[cursor .. cursor + locale_length];
+        cursor += locale_length;
+        const code = fixture[cursor .. cursor + code_length];
+        cursor += code_length;
+        const expected = fixture[cursor .. cursor + expected_length];
+        cursor += expected_length;
+        total += 1;
+        const actual = formatAlloc(allocator, value, locale_name, .{
+            .style = .currency,
+            .currency = code,
+        }) catch |err| {
+            failures += 1;
+            if (printed < 30) {
+                printed += 1;
+                std.debug.print("currency mismatch {s} {s}: {s}\n", .{ locale_name, code, @errorName(err) });
+            }
+            continue;
+        };
+        defer allocator.free(actual);
+        if (!std.mem.eql(u8, actual, expected)) {
+            failures += 1;
+            if (printed < 30) {
+                printed += 1;
+                std.debug.print(
+                    "currency mismatch {s} {s} {d}: got '{s}' expected '{s}'\n",
+                    .{ locale_name, code, value, actual, expected },
+                );
+            }
+        }
+    }
+    std.debug.print("currency conformance: {d}/{d} passed\n", .{ total - failures, total });
+    try testing.expect(failures == 0);
 }

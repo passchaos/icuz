@@ -58,6 +58,8 @@ BLOBS = (
     Blob("src/unicode/format/display_names_conformance.bin", b"CJLE", 1, "de5ec4eb4cb5e5ff37d612d77b49247775e742e58e9d8cf91d149fb35e2ef809", version=(0, 0, 0)),
     Blob("src/unicode/format/likely_subtags_data.bin", b"CJL1", 1, "fb4541669bfad8afef1ebe5824c5e457aa226dd74545d4918a1e455afef6fdb6", version=(0, 0, 0)),
     Blob("src/unicode/format/likely_subtags_conformance.bin", b"CJLV", 1, "6f8b716f5a81967d1130c1b976179fdcd439db384120f807c8e6ba2ff8e078c1", version=(0, 0, 0)),
+    Blob("src/unicode/format/currencies_data.bin", b"CJGD", 1, "0746ebe3092989b136df865428957b825faea53be4f9947bd1c975d3404047c0", version=(0, 0, 0)),
+    Blob("src/unicode/format/currency_conformance.bin", b"CJR1", 1, "31e364eabe12297fa855bf125994ccd0a97d78f3d9daec3465436a99c5ef97cd", version=(0, 0, 0)),
     Blob("src/unicode/format/calendar_format_conformance.bin", b"CJKF", 1, "ffa627f64f42870b6d2ba203ff8abb707c7124360d910bab7f93cd41808d305f", version=(0, 0, 0)),
     Blob("src/unicode/transliterate/data.bin", b"CJTR", 19, "1190245efaa8c9a54fb02dbfa5cc19cbbe5d36576b49efc060cbf65801cf07c1", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/und_fonipa_ar_conformance.bin", b"CJQ8", 1, "df5e3c2037f7d6f8b2bcab29859548555aafc5d70be90454461275858c533d88", version=(48, 0, 0)),
@@ -441,7 +443,8 @@ GENERATORS = {
     "tools/unicode/format/generate_likely_subtags.py": "aab79fd344e8397809fc1b1960c63ad6f80bca9b826d25366d20282a6729c268",
     "tools/unicode/format/generate_likely_subtags_conformance.py": "a7285f908b8c3f3bb60153ba1cb62c7aaa9fa5248734f04530864c8b48024ae6",
     "tools/unicode/format/generate_dates.py": "cb9ae3350d32eb4d2289205872f53ffe07cef3a1c4d8549c3a7b2ba5fd94b0d5",
-    "tools/unicode/format/generate_misc.py": "b126eb131c01bfdd7541ca78496df0b2e0a49e3a0524a666b4b9fd1d55c17086",
+    "tools/unicode/format/generate_misc.py": "041813276f40ca391162f6fb8a4ef1a9832c7b666d8b31a52568c82384e2f10b",
+    "tools/unicode/format/generate_currency_conformance.py": "d84c2f318fc73ea144d594c5ab4d53063497d2e2d6c739973bc9decef2f3d812",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
     "tools/unicode/transliterate/generate_data.py": "059f2264e4ca5aa9aa8376d14f65e281528d2c43e1ad7e42d18a4b1da7808749",
     "tools/unicode/break/generate_dictionaries.py": "bdbd4c4e9c999b4cea6a8924b08c72a49719c857e26dea82fc50940ee145e264",
@@ -539,11 +542,6 @@ GENERATED_TEXT = (
         "src/unicode/format/units_data.zig",
         "tools/unicode/format/generate_misc.py",
         "87e3328076bc8005c0afd15342636094a383c102a06485cd39aff145ccf1891e",
-    ),
-    GeneratedText(
-        "src/unicode/format/currencies_data.zig",
-        "tools/unicode/format/generate_misc.py",
-        "8a0bb04bacb398c819dcbb6b5377b8705f51cc8383a8a342345a6aefd7a26329",
     ),
     GeneratedText(
         "src/unicode/properties/general_category.zig",
@@ -918,6 +916,26 @@ def check_layout(blob: Blob, data: bytes) -> None:
             value_len = data[offset]
             expected_len = data[offset + 1]
             offset += 4 + value_len + expected_len
+        assert offset == len(data)
+    elif magic == b"CJGD":
+        locale_count, currency_count = struct.unpack_from("<HH", data, 8)
+        entry_count, string_len = struct.unpack_from("<II", data, 12)
+        assert (
+            24
+            + currency_count * 8
+            + locale_count * 12
+            + entry_count * 32
+            + string_len
+            == len(data)
+        )
+    elif magic == b"CJR1":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            locale_len = data[offset]
+            code_len = data[offset + 1]
+            expected_len = struct.unpack_from("<H", data, offset + 12)[0]
+            offset += 16 + locale_len + code_len + expected_len
         assert offset == len(data)
     elif magic == b"CJKF":
         case_count = struct.unpack_from("<I", data, 8)[0]
