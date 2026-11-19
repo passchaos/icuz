@@ -2605,6 +2605,30 @@ test "script reordering" {
     try testing.expectEqual(lt, try compare(allocator, "1", "a", .{}));
 }
 
+test "Chinese default collation" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    // zh defaults to pinyin; a before b, b before bo.
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "\u{963f}", "\u{516b}", .{ .locale = "zh" }),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "\u{516b}", "\u{6ce2}", .{ .locale = "zh" }),
+    );
+    // zh-Hant defaults to stroke order: one stroke before two.
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "\u{4e00}", "\u{516b}", .{ .locale = "zh-Hant" }),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "\u{4e00}", "\u{4eba}", .{ .locale = "zh-TW" }),
+    );
+}
+
 test "collation types" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;

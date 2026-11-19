@@ -201,7 +201,7 @@ BLOBS = (
     Blob("src/unicode/transliterate/telugu_interindic_conformance.bin", b"CJEI", 1, "eb10f3bc5c277568ba486db71f318528a20bb6381d447486c531c10fe6b59360", version=(48, 0, 0)),
     Blob("src/unicode/collation/data.bin", b"CJCL", 2, "3db525f5696955768d63797c465d31285efe0d4cd4db243bd944c178a13f135d"),
     Blob("src/unicode/collation/options_conformance.bin", b"CJNC", 2, "80520a794d241f2874b93dbb67dca7fa3401296e395491a3c4d208d3c4cfbcf2", version=(0, 0, 0)),
-    Blob("src/unicode/collation/tailorings.bin", b"CJTL", 5, "e973976c47bfe3dd32255020ed467eed043c63b44506919ec2359a4f9543c16d", version=(48, 0, 0)),
+    Blob("src/unicode/collation/tailorings.bin", b"CJTL", 6, "56164cb4e253aede2e232de4fdd816362131191b8a8159bc7ae6f1b3cd044725", version=(48, 0, 0)),
     Blob("src/unicode/collation/conformance_non_ignorable.bin", b"CJCT", 1, "46c35a76dc144f13fbd96723a2e676a5561b2739e7bb15d58f193f538ab3841a"),
     Blob("src/unicode/collation/conformance_shifted.bin", b"CJCT", 1, "7ded2b9ed0d456fa69a77b6206d3b64228e5c97e91e5b49d4c61992959e653a5"),
     Blob("src/unicode/grapheme/conformance.bin", b"CJGT", 1, "07053949345b67792108362e7b5146ae2d5467fef9de7fa5e7aa1dd3ddffbd56"),
@@ -447,7 +447,7 @@ GENERATORS = {
     "tools/unicode/case/generate_full_data.py": "ac0b2ce2938d19da1c8b80289fcfbbcb0e7176a95736ca3cf0d6b0b9631a9ed8",
     "tools/unicode/collation/generate_data.py": "3e789930a4ee07357d7e89a26d9bf93fe598ce7555efdbd16c524e860f0e4c96",
     "tools/unicode/collation/generate_collation_options_conformance.py": "a75918f1082f562d53c1296eb1fb8916e14c7e946c2201539a967a7bc4444a12",
-    "tools/unicode/collation/generate_tailorings.py": "9cc69b49b27aeae815d77be8f6fbeb53a675ba16372d7838e33e4fbb5e956cc7",
+    "tools/unicode/collation/generate_tailorings.py": "5643f8a612263d31f4da50c73e9720c3739191d6d1d321489a04e8f2f99b2713",
     "tools/unicode/collation/generate_conformance.py": "70766ae8612ebcbe1299897ae24c928f1e39ffbe2c5f10ab5f6cff96c28480e3",
     "tools/unicode/properties/generate_data.py": "2e55cb0f2aeae0367602e87ece0b8f8093fee1a18dacf38028ac732247874cb7",
     "tools/unicode/bidi/generate_conformance.py": "1ca3d3fd9fe5962f37192eb77d9aadfab6e5f9c670540a7ae691213682bb0425",
@@ -832,9 +832,12 @@ def check_layout(blob: Blob, data: bytes) -> None:
         locale_count, rule_count, ce_count, names_length, codepoint_count = (
             struct.unpack_from("<HIIII", data, 8)
         )
+        default_count = struct.unpack_from("<H", data, 28 + locale_count * 16)[0]
         reorder_offset = (
             28
             + locale_count * 16
+            + 2
+            + default_count * 6
             + rule_count * 16
             + names_length
             + codepoint_count * 4

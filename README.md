@@ -55,7 +55,9 @@ need without pulling in a font or layout engine.
 - CLDR 48 locale collation tailorings for 147 locale/type entries, including
   standard, search, phonebook, traditional, eor, pinyin, stroke, zhuyin, and
   unihan variants. Applied through `Options.locale` and `Options.collation`
-  with automatic language and standard-type fallback. Locale `caseFirst`
+  with automatic language and standard-type fallback, and CLDR
+  `defaultCollation` resolution (`zh` and `zh-Hans` use pinyin; `zh-Hant`,
+  `zh-TW`, `zh-HK`, and `zh-MO` use stroke). Locale `caseFirst`
   settings (for example Danish and Maltese uppercase-first), backwards
   secondary accent ordering (Canadian French), and parametric script
   reordering (Russian, Greek, Hebrew, Arabic, Indic, Thai, Korean, Chinese

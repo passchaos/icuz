@@ -973,6 +973,14 @@ def extract_collation(xml: str, collation_type: str) -> str | None:
     return extract_collations(xml).get(collation_type)
 
 
+def extract_default_collation(xml: str) -> str:
+    match = re.search(r"<defaultCollation>(.*?)</defaultCollation>", xml, re.S)
+    if match is None:
+        return "standard"
+    value = match.group(1).strip()
+    return value or "standard"
+
+
 def do_import(state: State, target: str, stack: list[tuple[str, str]], locale: str):
     match = re.match(
         r"^([A-Za-z0-9_]+)(?:-u-co-([a-z0-9]+))?$",
@@ -1012,7 +1020,11 @@ def compile_locale(locale: str, collation_type: str, entries, implicit, groups):
     return state
 
 
-def render_blob(compiled: dict[tuple[str, str], State], groups) -> bytes:
+def render_blob(
+    compiled: dict[tuple[str, str], State],
+    groups,
+    defaults: dict[str, str],
+) -> bytes:
     keys = sorted(compiled)
     plans: dict[tuple[str, str], ReorderPlan] = {}
     map_indices: dict[tuple[str, str], int] = {}
@@ -1046,6 +1058,12 @@ def render_blob(compiled: dict[tuple[str, str], State], groups) -> bytes:
     string_offsets: dict[str, int] = {}
     for key in keys:
         for value in key:
+            if value in string_offsets:
+                continue
+            string_offsets[value] = len(names)
+            names.extend(value.encode("utf-8"))
+    for locale, default_type in defaults.items():
+        for value in (locale, default_type):
             if value in string_offsets:
                 continue
             string_offsets[value] = len(names)
@@ -1095,7 +1113,7 @@ def render_blob(compiled: dict[tuple[str, str], State], groups) -> bytes:
     header = bytearray(b"CJTL")
     header += struct.pack(
         "<B3BHIIIIH",
-        5,
+        6,
         CLDR_VERSION,
         0,
         0,
@@ -1126,6 +1144,16 @@ def render_blob(compiled: dict[tuple[str, str], State], groups) -> bytes:
             rule_count,
             flags,
             reorder_map,
+        )
+    default_items = sorted(defaults.items())
+    header += struct.pack("<H", len(default_items))
+    for locale, default_type in default_items:
+        header += struct.pack(
+            "<HBHB",
+            string_offsets[locale],
+            len(locale.encode("utf-8")),
+            string_offsets[default_type],
+            len(default_type.encode("utf-8")),
         )
     for (
         sequence_offset,
@@ -1202,6 +1230,7 @@ def main() -> int:
         groups = parse_reorder_groups(archive)
 
     compiled: dict[tuple[str, str], State] = {}
+    defaults: dict[str, str] = {}
     skipped: list[tuple[str, str]] = []
     with zipfile.ZipFile(CLDR_ZIP) as archive:
         for locale in locales:
@@ -1209,6 +1238,7 @@ def main() -> int:
                 xml = load_xml(archive, locale)
             except KeyError:
                 continue
+            defaults[locale] = extract_default_collation(xml)
             for collation_type, rules in extract_collations(xml).items():
                 try:
                     state = State(entries, implicit, groups)
@@ -1223,7 +1253,9 @@ def main() -> int:
                     continue
                 compiled[(locale, collation_type)] = state
 
-    (out_dir / "tailorings.bin").write_bytes(render_blob(compiled, groups))
+    (out_dir / "tailorings.bin").write_bytes(
+        render_blob(compiled, groups, defaults)
+    )
     print(
         f"compiled {len(compiled)} locale/type entries, skipped {len(skipped)} "
         f"({sum(len(state.tailored) for state in compiled.values())} rules)",

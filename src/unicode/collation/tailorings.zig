@@ -17,7 +17,13 @@ const names_length = std.mem.readInt(u32, blob[18..22], .little);
 const codepoint_count = std.mem.readInt(u32, blob[22..26], .little);
 
 const locale_offset = header_len;
-const rule_offset = locale_offset + @as(usize, locale_count) * 16;
+const locale_record_len = 16;
+const defaults_offset = locale_offset +
+    @as(usize, locale_count) * locale_record_len;
+const default_count = readU16(defaults_offset);
+const default_record_len = 6;
+const rule_offset = defaults_offset + 2 +
+    @as(usize, default_count) * default_record_len;
 const names_offset = rule_offset + @as(usize, rule_count) * 16;
 const codepoints_offset = names_offset + @as(usize, names_length);
 const ces_offset = codepoints_offset + @as(usize, codepoint_count) * 4;
@@ -33,7 +39,7 @@ const reorder_map_len = 4 + @as(usize, reorder_group_count) * 4;
 
 comptime {
     if (blob.len < header_len or !std.mem.eql(u8, blob[0..4], "CJTL") or
-        blob[4] != 5 or blob[5] != 48 or blob[6] != 0 or blob[7] != 0)
+        blob[4] != 6 or blob[5] != 48 or blob[6] != 0 or blob[7] != 0)
     {
         @compileError("invalid collation tailoring data");
     }
@@ -142,7 +148,7 @@ fn readU32(offset: usize) u32 {
 }
 
 fn localeAt(index: usize) LocaleRecord {
-    const base = locale_offset + index * 16;
+    const base = locale_offset + index * locale_record_len;
     return .{
         .name_offset = readU16(base),
         .name_len = blob[base + 2],
@@ -234,8 +240,6 @@ pub fn lookup(locale: []const u8, collation_type: []const u8) ?Tailoring {
 /// trying the exact tag, an underscore-normalized tag, and the language
 /// subtag. Unknown types fall back to the locale's standard tailoring.
 pub fn find(locale: []const u8, collation_type: []const u8) ?Tailoring {
-    if (lookup(locale, collation_type)) |tailoring| return tailoring;
-
     const base = stripExtensions(locale);
     var buffer: [64]u8 = undefined;
     var length: usize = 0;
@@ -245,21 +249,75 @@ pub fn find(locale: []const u8, collation_type: []const u8) ?Tailoring {
         length += 1;
     }
     const normalized = buffer[0..length];
-    if (lookup(normalized, collation_type)) |tailoring| return tailoring;
+    const language = if (std.mem.indexOfAny(u8, normalized, "_")) |position|
+        normalized[0..position]
+    else
+        normalized;
 
-    if (std.mem.indexOfAny(u8, normalized, "_")) |position| {
-        if (lookup(normalized[0..position], collation_type)) |tailoring| {
-            return tailoring;
+    // Prefer the requested type on the most specific tag, then on the
+    // normalized tag and the language.
+    if (lookup(locale, collation_type)) |tailoring| return tailoring;
+    if (lookup(normalized, collation_type)) |tailoring| return tailoring;
+    if (lookup(language, collation_type)) |tailoring| return tailoring;
+
+    // The requested type is unavailable. CLDR locales such as zh and
+    // zh_Hant define their own default collation (pinyin, stroke). Taiwan,
+    // Hong Kong, and Macau default to the Traditional script.
+    var traditional_zh = false;
+    if (std.mem.eql(u8, language, "zh")) {
+        if (regionOf(normalized)) |region| {
+            traditional_zh = std.mem.eql(u8, region, "TW") or
+                std.mem.eql(u8, region, "HK") or
+                std.mem.eql(u8, region, "MO");
         }
     }
+    const default_type = defaultTypeFor(normalized) orelse
+        defaultTypeFor(locale) orelse
+        (if (traditional_zh) defaultTypeFor("zh_Hant") else null) orelse
+        defaultTypeFor(language) orelse "standard";
+    if (std.mem.eql(u8, default_type, collation_type)) return null;
+    if (lookup(locale, default_type)) |tailoring| return tailoring;
+    if (lookup(normalized, default_type)) |tailoring| return tailoring;
+    if (lookup(language, default_type)) |tailoring| return tailoring;
+    return null;
+}
 
-    if (!std.mem.eql(u8, collation_type, "standard")) {
-        if (lookup(locale, "standard")) |tailoring| return tailoring;
-        if (lookup(normalized, "standard")) |tailoring| return tailoring;
-        if (std.mem.indexOfAny(u8, normalized, "_")) |position| {
-            if (lookup(normalized[0..position], "standard")) |tailoring| {
-                return tailoring;
-            }
+fn regionOf(tag: []const u8) ?[]const u8 {
+    const position = std.mem.lastIndexOfScalar(u8, tag, '_') orelse return null;
+    const region = tag[position + 1 ..];
+    if (region.len == 2) {
+        for (region) |byte| {
+            if (!std.ascii.isAlphabetic(byte)) return null;
+        }
+        return region;
+    }
+    if (region.len == 3) {
+        for (region) |byte| {
+            if (!std.ascii.isDigit(byte)) return null;
+        }
+        return region;
+    }
+    return null;
+}
+
+/// CLDR's default collation type for a locale tag, if it is not `standard`.
+fn defaultTypeFor(locale: []const u8) ?[]const u8 {
+    var low: usize = 0;
+    var high: usize = default_count;
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        const base = defaults_offset + 2 + middle * default_record_len;
+        const name_offset = readU16(base);
+        const name_len = blob[base + 2];
+        const name = blob[names_offset + name_offset ..][0..name_len];
+        switch (std.mem.order(u8, name, locale)) {
+            .lt => low = middle + 1,
+            .gt => high = middle,
+            .eq => {
+                const type_offset = readU16(base + 3);
+                const type_len = blob[base + 5];
+                return blob[names_offset + type_offset ..][0..type_len];
+            },
         }
     }
     return null;
@@ -287,7 +345,7 @@ fn stripExtensions(locale: []const u8) []const u8 {
 /// remembers the first rule of recently matched code points; it is written
 /// atomically and only ever holds entries for this tailoring.
 pub const PageIndex = struct {
-    rules: [0x1100]u16,
+    rules: [0x1100]u32,
     direct: [direct_limit]u16,
     cache: [256]std.atomic.Value(u64),
 };
@@ -339,7 +397,7 @@ fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
         if (pages.direct[first] == direct_absent) {
             const page = @as(usize, first) >> 8;
             pages.direct[first] = @intCast(
-                index - pages.rules[page],
+                index - @as(usize, pages.rules[page]),
             );
         }
     }
@@ -521,6 +579,40 @@ test "tailoring locale lookup" {
     try testing.expect(find("de-AT", "phonebook") != null);
     try testing.expect(find("sv-SE", "no-such-type") != null);
     try testing.expect(find("de-AT", "standard") == null);
+}
+
+test "locale default collation types" {
+    const testing = @import("std").testing;
+
+    try testing.expectEqualStrings(
+        "pinyin",
+        find("zh", "standard").?.collation_type,
+    );
+    try testing.expectEqualStrings(
+        "pinyin",
+        find("zh-Hans", "standard").?.collation_type,
+    );
+    try testing.expectEqualStrings(
+        "stroke",
+        find("zh-Hant", "standard").?.collation_type,
+    );
+    try testing.expectEqualStrings(
+        "stroke",
+        find("zh-TW", "standard").?.collation_type,
+    );
+    try testing.expectEqualStrings(
+        "pinyin",
+        find("zh-CN", "standard").?.collation_type,
+    );
+    // An explicit collation type still wins over the default.
+    try testing.expectEqualStrings(
+        "zhuyin",
+        find("zh", "zhuyin").?.collation_type,
+    );
+    try testing.expectEqualStrings(
+        "stroke",
+        find("zh", "stroke").?.collation_type,
+    );
 }
 
 test "tailoring rules are sorted by first code point" {
