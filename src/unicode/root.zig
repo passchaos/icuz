@@ -239,6 +239,7 @@ pub const number_cldr_version = number_mod.cldr_version;
 
 const rbnf_mod = @import("./format/rbnf.zig");
 const timezone_mod = @import("./timezone/root.zig");
+const calendar_mod = @import("./format/calendar.zig");
 pub const RbnfTag = rbnf_mod.Tag;
 pub const formatRbnfAlloc = rbnf_mod.formatAlloc;
 pub const rbnf_cldr_version = rbnf_mod.cldr_version;
@@ -274,6 +275,10 @@ pub const formatTimeInZoneAlloc = dates_mod.formatTimeInZoneAlloc;
 pub const formatPatternInZoneAlloc = dates_mod.formatPatternInZoneAlloc;
 pub const unixSecondsFromDateTime = dates_mod.unixSeconds;
 pub const ZoneInfo = dates_mod.ZoneInfo;
+pub const CalendarSystem = calendar_mod.Calendar;
+pub const CalendarDate = calendar_mod.Date;
+pub const calendarDateFromDays = calendar_mod.fromDays;
+pub const calendarDaysFromGregorian = calendar_mod.daysFromGregorian;
 pub const date_cldr_version = dates_mod.cldr_version;
 
 pub const MessageArgument = message_mod.Argument;
@@ -544,6 +549,7 @@ test {
     _ = dates_mod;
     _ = rbnf_mod;
     _ = timezone_mod;
+    _ = calendar_mod;
     _ = message_mod;
     _ = charset_mod;
     _ = transliterate_mod;
