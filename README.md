@@ -307,14 +307,16 @@ for Latin-1 and Latin Extended-A/B (decomposed on the stack) that bypasses the
 page tables for un-tailored Latin text, a tailored Latin path that matches the
 locale's rules through the page index and fills the rest from the root table,
 and per-tailoring first-code-point page indexes built on first use and
-published lock-free. Rule records carry their first code point inline, so
-tailoring binary-search probes are a single load. Collation elements start in
+published lock-free. Each page index also carries a direct table for code
+points below U+1000, so Latin and other early-script rules resolve without a
+search; above that, rule records carry their first code point inline so
+binary-search probes are a single load. Collation elements start in
 a stack buffer, so typical sort keys allocate only the returned key. Charset
-reverse indexes carry
-compile-time page indexes and a split layout (sorted `u32` code points, then
-parallel `u16` pointers), so DBCS encoders binary-search only one
-256-code-point page; hot stateless conversion pairs run comptime-specialized
-loops with no per-character encoding dispatch.
+reverse indexes carry compile-time page indexes and a split layout (sorted
+`u32` code points, then parallel `u16` pointers), so DBCS encoders
+binary-search only one 256-code-point page; hot stateless conversion pairs
+run comptime-specialized loops that append into reserved capacity with no
+per-character dispatch or capacity checks.
 
 ## Data provenance
 
