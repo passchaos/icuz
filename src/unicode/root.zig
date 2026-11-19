@@ -241,6 +241,7 @@ const rbnf_mod = @import("./format/rbnf.zig");
 const timezone_mod = @import("./timezone/root.zig");
 const calendar_mod = @import("./format/calendar.zig");
 const intervals_mod = @import("./format/intervals.zig");
+const durations_mod = @import("./format/durations.zig");
 const chinese_calendar_mod = @import("./format/chinese_calendar.zig");
 pub const RbnfTag = rbnf_mod.Tag;
 pub const formatRbnfAlloc = rbnf_mod.formatAlloc;
@@ -286,6 +287,8 @@ pub const formatDateTimeInCalendarAlloc = dates_mod.formatDateTimeInCalendarAllo
 pub const formatPatternInCalendarAlloc = dates_mod.formatPatternInCalendarAlloc;
 pub const formatDateIntervalAlloc = intervals_mod.formatDateIntervalAlloc;
 pub const formatTimeIntervalAlloc = intervals_mod.formatTimeIntervalAlloc;
+pub const DurationStyle = durations_mod.Style;
+pub const formatDurationAlloc = durations_mod.formatDurationAlloc;
 pub const date_cldr_version = dates_mod.cldr_version;
 
 pub const MessageArgument = message_mod.Argument;
@@ -558,6 +561,7 @@ test {
     _ = timezone_mod;
     _ = calendar_mod;
     _ = intervals_mod;
+    _ = durations_mod;
     _ = chinese_calendar_mod;
     _ = message_mod;
     _ = charset_mod;

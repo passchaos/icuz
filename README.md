@@ -70,6 +70,10 @@ need without pulling in a font or layout engine.
   covers 1850-2150 with cycle era, leap month, and month-length data.
   Validated by a 24,645-case conversion fixture and a 12,888-case PyICU
   formatting fixture.
+- CLDR 48 duration formatting for 87 locales with long, short, narrow, and
+  numeric styles: locale-specific numeric patterns (h:mm:ss, m:ss, and
+  overrides) plus unit and unit-list composition for hours, minutes, and
+  seconds with plural selection. Validated by a 312-case PyICU fixture.
 - CLDR 48 date and time interval formatting for 87 locales, using ICU's
   repeated-field pattern splitting, greatest-difference selection,
   single-date collapse, hour-cycle-aware time skeletons, and locale
