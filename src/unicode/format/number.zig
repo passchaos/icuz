@@ -14,7 +14,17 @@ pub const Style = enum { decimal, percent, currency, scientific, compact };
 
 pub const CompactStyle = enum { short, long };
 
-pub const CurrencyDisplay = enum { symbol, code, name };
+pub const CurrencyDisplay = enum { symbol, code, name, hidden };
+
+pub const SignMode = enum {
+    auto,
+    always,
+    except_zero,
+    accounting,
+    accounting_always,
+};
+
+pub const GroupingMode = enum { auto, off, min2, on_aligned, thousands };
 
 pub const Options = struct {
     style: Style = .decimal,
@@ -24,6 +34,21 @@ pub const Options = struct {
     min_fraction_digits: ?u8 = null,
     max_fraction_digits: ?u8 = null,
     use_grouping: bool = true,
+    grouping: GroupingMode = .auto,
+    sign: SignMode = .auto,
+    integer_min_digits: u8 = 0,
+    scale: u32 = 1,
+    /// When false, percent/permille styles do not multiply the value by 100.
+    /// ICU number skeletons apply the percent unit without scaling.
+    percent_scale: bool = true,
+    /// Render the percent pattern with the per-mille sign.
+    permille: bool = false,
+    /// True when the options came from an ICU number skeleton. Skeletons use
+    /// ICU's default precision rather than the locale pattern precision.
+    skeleton: bool = false,
+    /// Maximum integer digits; 0 means unlimited. ICU skeletons without a
+    /// `+` in `integer-width` truncate leading digits.
+    integer_max_digits: u8 = 0,
     compact_style: CompactStyle = .short,
     numbering_system: ?[]const u8 = null,
 };
@@ -41,12 +66,13 @@ pub fn formatAlloc(
     locale_name: []const u8,
     options: Options,
 ) Error![]u8 {
+    const scaled = value * @as(f64, @floatFromInt(options.scale));
     return switch (options.style) {
-        .scientific => formatScientificAlloc(allocator, value, locale_name, options),
-        .compact => formatCompactAlloc(allocator, value, locale_name, options),
+        .scientific => formatScientificAlloc(allocator, scaled, locale_name, options),
+        .compact => formatCompactAlloc(allocator, scaled, locale_name, options),
         .decimal, .percent, .currency => formatStandardAlloc(
             allocator,
-            value,
+            scaled,
             locale_name,
             options,
         ),
@@ -145,8 +171,11 @@ fn formatStandardAlloc(
         .currency => currencyPatternText(locale, options, currency_display_text),
         .scientific, .compact => unreachable,
     };
-    const pattern = parsePattern(pattern_text) orelse
+    var pattern = parsePattern(pattern_text) orelse
         return error.InvalidPattern;
+    if (options.style == .percent and !options.percent_scale) {
+        pattern.multiplier = 1;
+    }
 
     if (std.math.isNan(value)) {
         return allocator.dupe(u8, locale.nan);
@@ -163,6 +192,11 @@ fn formatStandardAlloc(
         pattern.fraction_min;
     var max_fraction = options.max_fraction_digits orelse
         pattern.fraction_max;
+    if (options.skeleton) {
+        // ICU number skeletons default to at most six fraction digits.
+        if (options.min_fraction_digits == null) min_fraction = 0;
+        if (options.max_fraction_digits == null) max_fraction = 6;
+    }
     if (options.style == .currency) {
         const code = options.currency orelse return error.MissingCurrency;
         const digits = currencyDigits(code);
@@ -170,10 +204,15 @@ fn formatStandardAlloc(
         if (options.max_fraction_digits == null) max_fraction = digits;
     }
     if (min_fraction > max_fraction) max_fraction = min_fraction;
-    if (max_fraction > 6) max_fraction = 6;
+    if (max_fraction > 9) max_fraction = 9;
     if (min_fraction > max_fraction) min_fraction = max_fraction;
 
     const negative = value < 0;
+    const show_plus = !negative and switch (options.sign) {
+        .always, .accounting_always => true,
+        .except_zero => value != 0,
+        else => false,
+    };
     const magnitude = @abs(value) *
         @as(f64, @floatFromInt(pattern.multiplier));
 
@@ -197,10 +236,15 @@ fn formatStandardAlloc(
         fraction_part,
         min_fraction,
         negative,
+        show_plus,
         pattern,
         locale,
         currency_display_text,
         options.use_grouping,
+        options.grouping,
+        options.integer_min_digits,
+        options.integer_max_digits,
+        if (options.permille) "\u{2030}" else locale.percent,
     );
 }
 
@@ -212,7 +256,10 @@ pub fn formatIntegerAlloc(
     options: Options,
 ) Error![]u8 {
     if (options.style == .scientific or options.style == .compact or
-        (options.style == .currency and options.currency_display == .name))
+        options.scale != 1 or
+        (options.style == .currency and
+            (options.currency_display == .name or
+                options.currency_display == .hidden)))
     {
         return formatAlloc(allocator, @floatFromInt(value), locale_name, options);
     }
@@ -240,6 +287,11 @@ pub fn formatIntegerAlloc(
         pattern.fraction_min;
     var max_fraction = options.max_fraction_digits orelse
         pattern.fraction_max;
+    if (options.skeleton) {
+        // ICU number skeletons default to at most six fraction digits.
+        if (options.min_fraction_digits == null) min_fraction = 0;
+        if (options.max_fraction_digits == null) max_fraction = 6;
+    }
     if (options.style == .currency) {
         const code = options.currency orelse return error.MissingCurrency;
         const digits = currencyDigits(code);
@@ -268,10 +320,19 @@ pub fn formatIntegerAlloc(
         fraction_buffer[0..fraction_len],
         min_fraction,
         value < 0,
+        value >= 0 and switch (options.sign) {
+            .always, .accounting_always => true,
+            .except_zero => value != 0,
+            else => false,
+        },
         pattern,
         locale,
         currency_display_text,
         options.use_grouping,
+        options.grouping,
+        options.integer_min_digits,
+        options.integer_max_digits,
+        if (options.permille) "\u{2030}" else locale.percent,
     );
 }
 
@@ -298,34 +359,58 @@ pub fn formatSkeletonIntegerAlloc(
 }
 
 fn parseSkeleton(skeleton: []const u8) Error!Options {
-    var options = Options{};
+    var options = Options{ .skeleton = true };
     var tokens = std.mem.tokenizeAny(u8, skeleton, " \t\r\n");
     while (tokens.next()) |token| {
         if (std.mem.eql(u8, token, "percent")) {
+            // ICU's percent unit does not scale the value in skeletons.
             options.style = .percent;
-        } else if (std.mem.eql(u8, token, "decimal")) {
+            options.percent_scale = false;
+        } else if (std.mem.eql(u8, token, "permille")) {
+            options.style = .percent;
+            options.percent_scale = false;
+            options.permille = true;
+        } else if (std.mem.eql(u8, token, "decimal") or
+            std.mem.eql(u8, token, "notation-simple"))
+        {
             options.style = .decimal;
-        } else if (std.mem.eql(u8, token, "scientific")) {
+        } else if (std.mem.eql(u8, token, "scientific") or
+            std.mem.eql(u8, token, "notation-scientific"))
+        {
             options.style = .scientific;
         } else if (std.mem.eql(u8, token, "integer")) {
             options.style = .decimal;
             options.min_fraction_digits = 0;
             options.max_fraction_digits = 0;
-        } else if (std.mem.eql(u8, token, "compact-short")) {
+        } else if (std.mem.eql(u8, token, "compact-short") or
+            std.mem.eql(u8, token, "notation-compact-short"))
+        {
             options.style = .compact;
             options.compact_style = .short;
-        } else if (std.mem.eql(u8, token, "compact-long")) {
+        } else if (std.mem.eql(u8, token, "compact-long") or
+            std.mem.eql(u8, token, "notation-compact-long"))
+        {
             options.style = .compact;
             options.compact_style = .long;
         } else if (std.mem.eql(u8, token, "group-off")) {
             options.use_grouping = false;
+            options.grouping = .off;
         } else if (std.mem.eql(u8, token, "group-on") or
-            std.mem.eql(u8, token, "group-auto"))
+            std.mem.eql(u8, token, "group-auto") or
+            std.mem.eql(u8, token, "group-on-aligned"))
         {
             options.use_grouping = true;
+            options.grouping = .on_aligned;
+        } else if (std.mem.eql(u8, token, "group-min2")) {
+            options.grouping = .min2;
+        } else if (std.mem.eql(u8, token, "group-thousands")) {
+            options.grouping = .thousands;
         } else if (std.mem.eql(u8, token, "precision-integer")) {
             options.min_fraction_digits = 0;
             options.max_fraction_digits = 0;
+        } else if (std.mem.eql(u8, token, "precision-unlimited")) {
+            options.min_fraction_digits = 0;
+            options.max_fraction_digits = 9;
         } else if (std.mem.eql(u8, token, "precision-currency-standard")) {
             options.min_fraction_digits = null;
             options.max_fraction_digits = null;
@@ -334,6 +419,60 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
             if (code.len == 0) return error.InvalidPattern;
             options.style = .currency;
             options.currency = code;
+        } else if (std.mem.startsWith(u8, token, "unit-width-")) {
+            const width = token["unit-width-".len..];
+            if (std.mem.eql(u8, width, "iso-code")) {
+                options.currency_display = .code;
+            } else if (std.mem.eql(u8, width, "full-name")) {
+                options.currency_display = .name;
+            } else if (std.mem.eql(u8, width, "hidden")) {
+                options.currency_display = .hidden;
+            } else if (std.mem.eql(u8, width, "short") or
+                std.mem.eql(u8, width, "narrow"))
+            {
+                options.currency_display = .symbol;
+            } else {
+                return error.InvalidPattern;
+            }
+        } else if (std.mem.startsWith(u8, token, "sign-")) {
+            const mode = token["sign-".len..];
+            if (std.mem.eql(u8, mode, "always")) {
+                options.sign = .always;
+            } else if (std.mem.eql(u8, mode, "except-zero")) {
+                options.sign = .except_zero;
+            } else if (std.mem.eql(u8, mode, "accounting")) {
+                options.sign = .accounting;
+                options.accounting = true;
+            } else if (std.mem.eql(u8, mode, "accounting-always")) {
+                options.sign = .accounting_always;
+                options.accounting = true;
+            } else if (std.mem.eql(u8, mode, "auto") or
+                std.mem.eql(u8, mode, "negative"))
+            {
+                options.sign = .auto;
+            } else {
+                return error.InvalidPattern;
+            }
+        } else if (std.mem.startsWith(u8, token, "integer-width/")) {
+            var digits: u8 = 0;
+            var unlimited = false;
+            for (token["integer-width/".len..]) |byte| {
+                if (byte == '0') {
+                    digits += 1;
+                } else if (byte == '+') {
+                    unlimited = true;
+                } else if (byte != '*') {
+                    return error.InvalidPattern;
+                }
+            }
+            options.integer_min_digits = digits;
+            options.integer_max_digits = if (unlimited) 0 else digits;
+        } else if (std.mem.startsWith(u8, token, "scale/")) {
+            options.scale = std.fmt.parseInt(
+                u32,
+                token["scale/".len..],
+                10,
+            ) catch return error.InvalidPattern;
         } else if (token.len >= 2 and token[0] == '.') {
             var minimum: u8 = 0;
             var maximum: u8 = 0;
@@ -350,11 +489,8 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
             if (maximum == 0) return error.InvalidPattern;
             options.min_fraction_digits = minimum;
             options.max_fraction_digits = maximum;
-        } else if (std.mem.startsWith(u8, token, "unit-width-") or
-            std.mem.startsWith(u8, token, "rounding-mode-") or
-            std.mem.startsWith(u8, token, "sign-"))
-        {
-            // Accepted for compatibility but not applied.
+        } else if (std.mem.startsWith(u8, token, "rounding-mode-")) {
+            // Accepted for compatibility; HALF_EVEN is the only mode.
         } else {
             return error.InvalidPattern;
         }
@@ -584,11 +720,13 @@ fn formatCompactAlloc(
         return allocator.dupe(u8, entry.exact_one);
     }
 
-    const category = compactCategory(
-        locale_name,
-        scaled,
-        format_info.fraction_digits,
-    );
+    var fraction_digits = format_info.fraction_digits;
+    if (options.skeleton and options.min_fraction_digits == null and
+        options.max_fraction_digits == null)
+    {
+        fraction_digits = compactSkeletonDigits(scaled);
+    }
+    const category = compactCategory(locale_name, scaled, fraction_digits);
     var pattern = entry.patterns[@intFromEnum(category)];
     if (pattern.len == 0) pattern = entry.patterns[@intFromEnum(plural.Category.other)];
     const info = parseCompactFormat(pattern) orelse {
@@ -606,8 +744,8 @@ fn formatCompactAlloc(
         locale_name,
         .{
             .style = .decimal,
-            .min_fraction_digits = info.fraction_digits,
-            .max_fraction_digits = info.fraction_digits,
+            .min_fraction_digits = if (options.skeleton) 0 else info.fraction_digits,
+            .max_fraction_digits = fraction_digits,
             .use_grouping = false,
         },
     );
@@ -621,18 +759,37 @@ fn formatCompactAlloc(
     return output.toOwnedSlice(allocator);
 }
 
+/// ICU compact skeletons keep at most two significant digits of the
+/// scaled mantissa: one fraction digit below 10, none at 10 and above.
+fn compactSkeletonDigits(value: f64) u8 {
+    const magnitude = @abs(value);
+    if (magnitude < 1) return 2;
+    var count: u8 = 0;
+    var threshold: f64 = 1;
+    while (count < 10 and magnitude >= threshold) : ({
+        count += 1;
+        threshold *= 10;
+    }) {}
+    if (count >= 2) return 0;
+    return 2 - count;
+}
+
 fn compactFallback(
     allocator: std.mem.Allocator,
     value: f64,
     locale_name: []const u8,
     options: Options,
 ) Error![]u8 {
-    return formatStandardAlloc(allocator, value, locale_name, .{
-        .style = .decimal,
-        .min_fraction_digits = options.min_fraction_digits,
-        .max_fraction_digits = options.max_fraction_digits,
-        .use_grouping = false,
-    });
+    var fallback_options = options;
+    fallback_options.style = .decimal;
+    fallback_options.use_grouping = false;
+    if (options.skeleton and options.min_fraction_digits == null and
+        options.max_fraction_digits == null)
+    {
+        fallback_options.min_fraction_digits = 0;
+        fallback_options.max_fraction_digits = compactSkeletonDigits(value);
+    }
+    return formatStandardAlloc(allocator, value, locale_name, fallback_options);
 }
 
 fn decimalFallback(
@@ -641,12 +798,9 @@ fn decimalFallback(
     locale_name: []const u8,
     options: Options,
 ) Error![]u8 {
-    return formatStandardAlloc(allocator, value, locale_name, .{
-        .style = .decimal,
-        .min_fraction_digits = options.min_fraction_digits,
-        .max_fraction_digits = options.max_fraction_digits,
-        .use_grouping = options.use_grouping,
-    });
+    var fallback_options = options;
+    fallback_options.style = .decimal;
+    return formatStandardAlloc(allocator, value, locale_name, fallback_options);
 }
 
 fn appendCodepoint(
@@ -674,6 +828,7 @@ fn currencyDisplayText(
     display: CurrencyDisplay,
 ) []const u8 {
     if (display == .code) return code;
+    if (display == .hidden) return "";
     if (currencyEntry(locale, code)) |entry| {
         if (entry.symbol.len != 0) return entry.symbol;
         // The locale resolves the currency but defines no standard symbol,
@@ -839,16 +994,35 @@ fn formatParts(
     fraction_digits: []const u8,
     min_fraction: u8,
     negative: bool,
+    show_plus: bool,
     pattern: Pattern,
     locale: *const data.Locale,
     currency_display: []const u8,
     use_grouping: bool,
+    grouping: GroupingMode,
+    min_integer_digits: u8,
+    max_integer_digits: u8,
+    percent_symbol: []const u8,
 ) Error![]u8 {
     var fraction_len = fraction_digits.len;
     while (fraction_len > min_fraction and
         fraction_digits[fraction_len - 1] == '0')
     {
         fraction_len -= 1;
+    }
+
+    var padded: [64]u8 = undefined;
+    var digits = integer_digits;
+    if (max_integer_digits != 0 and digits.len > max_integer_digits) {
+        digits = digits[digits.len - max_integer_digits ..];
+    }
+    if (digits.len < min_integer_digits and
+        min_integer_digits <= padded.len)
+    {
+        const pad = min_integer_digits - digits.len;
+        @memset(padded[0..pad], '0');
+        @memcpy(padded[pad..][0..digits.len], digits);
+        digits = padded[0 .. pad + digits.len];
     }
 
     var output = std.ArrayList(u8).empty;
@@ -862,25 +1036,29 @@ fn formatParts(
             pattern.negative_prefix,
             locale,
             currency_display,
+            percent_symbol,
         );
     } else {
         if (negative) try output.appendSlice(allocator, locale.minus);
+        if (show_plus) try output.appendSlice(allocator, locale.plus);
         try appendAffix(
             allocator,
             &output,
             pattern.positive_prefix,
             locale,
             currency_display,
+            percent_symbol,
         );
     }
 
     try appendGroupedDigits(
         allocator,
         &output,
-        integer_digits,
+        digits,
         pattern,
         locale,
         use_grouping,
+        grouping,
     );
 
     if (fraction_len > 0) {
@@ -897,6 +1075,7 @@ fn formatParts(
             pattern.negative_suffix,
             locale,
             currency_display,
+            percent_symbol,
         );
     } else {
         try appendAffix(
@@ -905,6 +1084,7 @@ fn formatParts(
             pattern.positive_suffix,
             locale,
             currency_display,
+            percent_symbol,
         );
     }
     return output.toOwnedSlice(allocator);
@@ -1074,8 +1254,12 @@ fn scanMultiplier(text: []const u8) u16 {
 
 /// Round `value` at `digits` fraction digits with ties going to the even
 /// digit, matching the HALF_EVEN mode ICU's DecimalFormat applies by default.
-const pow10_float = [_]f64{ 1, 10, 100, 1000, 10000, 100000, 1000000 };
-const pow10_int = [_]u64{ 1, 10, 100, 1000, 10000, 100000, 1000000 };
+const pow10_float = [_]f64{
+    1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000,
+};
+const pow10_int = [_]u64{
+    1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000,
+};
 
 fn pow10(digits: u8) f64 {
     return if (digits < pow10_float.len)
@@ -1148,7 +1332,10 @@ fn formatFloat(buffer: []u8, value: f64, digits: u8) []const u8 {
         3 => std.fmt.bufPrint(buffer, "{d:.3}", .{value}) catch unreachable,
         4 => std.fmt.bufPrint(buffer, "{d:.4}", .{value}) catch unreachable,
         5 => std.fmt.bufPrint(buffer, "{d:.5}", .{value}) catch unreachable,
-        else => std.fmt.bufPrint(buffer, "{d:.6}", .{value}) catch unreachable,
+        6 => std.fmt.bufPrint(buffer, "{d:.6}", .{value}) catch unreachable,
+        7 => std.fmt.bufPrint(buffer, "{d:.7}", .{value}) catch unreachable,
+        8 => std.fmt.bufPrint(buffer, "{d:.8}", .{value}) catch unreachable,
+        else => std.fmt.bufPrint(buffer, "{d:.9}", .{value}) catch unreachable,
     };
 }
 
@@ -1159,14 +1346,24 @@ fn appendGroupedDigits(
     pattern: Pattern,
     locale: *const data.Locale,
     use_grouping: bool,
+    grouping: GroupingMode,
 ) Error!void {
     const length = digits.len;
-    const primary = @as(usize, pattern.group_primary);
-    const secondary = @as(usize, pattern.group_secondary);
+    var primary = @as(usize, pattern.group_primary);
+    var secondary = @as(usize, pattern.group_secondary);
+    if (grouping == .thousands) {
+        primary = 3;
+        secondary = 3;
+    }
     // ICU's default number format groups as soon as the integer part exceeds
     // the primary grouping size; CLDR's minimumGroupingDigits is opt-in via
     // the API and is not applied by default.
-    if (!use_grouping or primary == 0 or length <= primary) {
+    const enabled = use_grouping and switch (grouping) {
+        .off => false,
+        .auto, .on_aligned, .thousands => true,
+        .min2 => length > primary + 1,
+    };
+    if (!enabled or primary == 0 or length <= primary) {
         for (digits) |byte| {
             try appendDigit(allocator, output, byte - '0', locale);
         }
@@ -1229,6 +1426,7 @@ fn appendAffix(
     affix: []const u8,
     locale: *const data.Locale,
     currency_display: []const u8,
+    percent_symbol: []const u8,
 ) Error!void {
     var in_quote = false;
     var index: usize = 0;
@@ -1263,7 +1461,7 @@ fn appendAffix(
             continue;
         }
         if (!in_quote and byte == '%') {
-            try output.appendSlice(allocator, locale.percent);
+            try output.appendSlice(allocator, percent_symbol);
             continue;
         }
         try output.append(allocator, byte);
@@ -1650,11 +1848,11 @@ test "number skeletons" {
         value: f64,
         expected: []const u8,
     }{
-        .{ .skeleton = "percent", .value = 0.25, .expected = "25%" },
+        .{ .skeleton = "percent", .value = 0.25, .expected = "0.25%" },
         .{ .skeleton = "currency/USD", .value = 1234.5, .expected = "$1,234.50" },
         .{ .skeleton = "currency/JPY", .value = 1234.5, .expected = "\u{00a5}1,234" },
-        .{ .skeleton = "compact-short", .value = 1234567, .expected = "1M" },
-        .{ .skeleton = "compact-long", .value = 1234, .expected = "1 thousand" },
+        .{ .skeleton = "compact-short", .value = 1234567, .expected = "1.2M" },
+        .{ .skeleton = "compact-long", .value = 1234, .expected = "1.2 thousand" },
         .{ .skeleton = "scientific", .value = 1234, .expected = "1.234E3" },
         .{ .skeleton = "precision-integer", .value = 1.6, .expected = "2" },
         .{ .skeleton = ".00", .value = 1.2, .expected = "1.20" },
@@ -1758,5 +1956,71 @@ test "currency conformance" {
         }
     }
     std.debug.print("currency conformance: {d}/{d} passed\n", .{ total - failures, total });
+    try testing.expect(failures == 0);
+}
+
+test "number skeleton conformance" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("skeleton_conformance.bin");
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJKS", fixture[0..4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var printed: usize = 0;
+    for (0..case_count) |_| {
+        const locale_length = fixture[cursor];
+        const skeleton_length = fixture[cursor + 1];
+        const expected_length = std.mem.readInt(
+            u16,
+            fixture[cursor + 2 ..][0..2],
+            .little,
+        );
+        const value: f64 = @bitCast(std.mem.readInt(
+            u64,
+            fixture[cursor + 4 ..][0..8],
+            .little,
+        ));
+        cursor += 16;
+        const locale = fixture[cursor .. cursor + locale_length];
+        cursor += locale_length;
+        const skeleton = fixture[cursor .. cursor + skeleton_length];
+        cursor += skeleton_length;
+        const expected = fixture[cursor .. cursor + expected_length];
+        cursor += expected_length;
+
+        const actual = formatSkeletonAlloc(
+            allocator,
+            value,
+            locale,
+            skeleton,
+        ) catch |err| {
+            failures += 1;
+            if (printed < 30) {
+                printed += 1;
+                std.debug.print(
+                    "skeleton error {s} {s} {d}: {s}\n",
+                    .{ locale, skeleton, value, @errorName(err) },
+                );
+            }
+            continue;
+        };
+        defer allocator.free(actual);
+        if (!std.mem.eql(u8, actual, expected)) {
+            failures += 1;
+            if (printed < 30) {
+                printed += 1;
+                std.debug.print(
+                    "skeleton mismatch {s} {s} {d}: got '{s}' expected '{s}'\n",
+                    .{ locale, skeleton, value, actual, expected },
+                );
+            }
+        }
+    }
+    std.debug.print("skeleton conformance: {d}/{d} passed\n", .{
+        case_count - failures,
+        case_count,
+    });
     try testing.expect(failures == 0);
 }

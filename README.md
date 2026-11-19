@@ -67,8 +67,11 @@ need without pulling in a font or layout engine.
   formatting for 111 locales, with locale symbols, grouping, fraction-digit
   options, all 307 CLDR currencies with locale-specific symbols/names/codes
   and currency-specific fraction digits, accounting parentheses, short/long
-  compact notation, and ICU-style number skeletons. Currency output is
-  validated against a 1,080-case PyICU conformance fixture.
+  compact notation, and ICU number skeletons (precision tokens, sign modes,
+  integer width with truncation, grouping modes, scale, percent/permille
+  units, currency unit widths, compact significant-digit precision).
+  Currency output is validated against a 1,080-case PyICU fixture and
+  skeleton output against a 1,232-case ICU C API fixture.
 - CLDR 48 Gregorian date/time formatting for 87 locales, including localized
   month/day names, date/time styles, custom patterns, and Unix timestamp
   conversion.
