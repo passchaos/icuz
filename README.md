@@ -80,7 +80,9 @@ need without pulling in a font or layout engine.
   and affix-collapse heuristics for 87 locales. Currency output is
   validated against a 1,080-case PyICU fixture, skeleton output against a
   2,520-case ICU C API fixture, and ranges against a 460-case ICU C API
-  fixture.
+  fixture. Localized number parsing (`parseFloat`, `parseFloatPrefix`,
+  `parseInt`) accepts locale symbols, native digits, percent/permille
+  scaling, currency affixes, accounting parentheses, and NaN/infinity.
 - CLDR 48 Gregorian date/time formatting for 87 locales, including localized
   month/day names, date/time styles, custom patterns, ICU date/time
   skeletons (`yMMMd`, `Hm`, combined date+time skeletons) resolved from
