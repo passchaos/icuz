@@ -186,6 +186,7 @@ def parse_locale(path: Path) -> tuple[str, dict]:
         )
     return locale, {
         "digits": digits,
+        "numbering_system": numbering_system,
         "decimal": symbols.get("decimal", "."),
         "group": symbols.get("group", ","),
         "percent": symbols.get("percentSign", "%"),
@@ -221,6 +222,7 @@ def render(entries: list[tuple[str, dict]]) -> str:
         "pub const Locale = struct {",
         "    id: []const u8,",
         "    digits: [10]u21,",
+        "    numbering_system: []const u8,",
         "    decimal: []const u8,",
         "    group: []const u8,",
         "    percent: []const u8,",
@@ -257,6 +259,7 @@ def render(entries: list[tuple[str, dict]]) -> str:
             "    .{ "
             f".id = {zig_string(locale)}, "
             f".digits = .{{ {digit_values} }}, "
+            f".numbering_system = {zig_string(values['numbering_system'])}, "
             f".decimal = {zig_string(values['decimal'])}, "
             f".group = {zig_string(values['group'])}, "
             f".percent = {zig_string(values['percent'])}, "
@@ -499,6 +502,7 @@ def parse_locale_xml(
     digits = DIGITS.get(numbering_system, DIGITS["latn"])
     return locale, {
         "digits": digits,
+        "numbering_system": numbering_system,
         "decimal": symbols.get("decimal", "."),
         "group": symbols.get("group", ","),
         "percent": symbols.get("percentSign", "%"),

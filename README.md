@@ -70,6 +70,11 @@ need without pulling in a font or layout engine.
   covers 1850-2150 with cycle era, leap month, and month-length data.
   Validated by a 24,645-case conversion fixture and a 12,888-case PyICU
   formatting fixture.
+- Numbering system selection for number and date formatting across 78 CLDR
+  numeric systems (latn, arab, arabext, thai, deva, beng, hanidec,
+  fullwide, and others) through `@numbers=`/`-u-nu-` locale keywords or an
+  explicit option, with per-system digits and ICU-compatible symbol
+  fallback. Validated by a 618-case PyICU fixture.
 - CLDR 48 duration formatting for 87 locales with long, short, narrow, and
   numeric styles: locale-specific numeric patterns (h:mm:ss, m:ss, and
   overrides) plus unit and unit-list composition for hours, minutes, and

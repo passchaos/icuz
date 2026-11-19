@@ -36,6 +36,52 @@ fn lookup(locales: anytype, name: []const u8) ?@TypeOf(locales[0]) {
     return null;
 }
 
+pub const LocaleSplit = struct {
+    locale: []const u8,
+    system: ?[]const u8,
+};
+
+/// Split a locale name with a numbering-system keyword such as
+/// `en@numbers=arab` or `en-u-nu-arab`.
+pub fn splitNumberingSystem(name: []const u8) LocaleSplit {
+    if (std.mem.indexOfScalar(u8, name, '@')) |at| {
+        return .{
+            .locale = name[0..at],
+            .system = findKeyword(name[at + 1 ..], "numbers"),
+        };
+    }
+    if (std.mem.indexOfScalar(u8, name, ';')) |semi| {
+        return .{
+            .locale = name[0..semi],
+            .system = findKeyword(name[semi + 1 ..], "numbers"),
+        };
+    }
+    if (std.mem.indexOf(u8, name, "-u-")) |position| {
+        var iterator = std.mem.splitScalar(u8, name[position + 3 ..], '-');
+        while (iterator.next()) |key| {
+            if (std.mem.eql(u8, key, "nu")) {
+                if (iterator.next()) |value| {
+                    return .{ .locale = name[0..position], .system = value };
+                }
+                break;
+            }
+        }
+    }
+    return .{ .locale = name, .system = null };
+}
+
+fn findKeyword(params: []const u8, keyword: []const u8) ?[]const u8 {
+    var iterator = std.mem.splitScalar(u8, params, ';');
+    while (iterator.next()) |part| {
+        if (std.mem.indexOfScalar(u8, part, '=')) |equals| {
+            if (std.mem.eql(u8, part[0..equals], keyword)) {
+                return part[equals + 1 ..];
+            }
+        }
+    }
+    return null;
+}
+
 pub fn pluralCategory(locale: []const u8, value: f64) plural.Category {
     const magnitude = @abs(value);
     if (magnitude == @floor(magnitude) and

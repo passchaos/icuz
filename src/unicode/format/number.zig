@@ -4,6 +4,8 @@ const std = @import("std");
 const data = @import("numbers_data.zig");
 const currencies = @import("currencies_data.zig");
 const plural = @import("plurals.zig");
+const misc = @import("misc.zig");
+const numbering_systems = @import("numbering_systems.zig");
 
 pub const cldr_version = "48";
 
@@ -22,6 +24,7 @@ pub const Options = struct {
     max_fraction_digits: ?u8 = null,
     use_grouping: bool = true,
     compact_style: CompactStyle = .short,
+    numbering_system: ?[]const u8 = null,
 };
 
 pub const Error = error{
@@ -49,13 +52,67 @@ pub fn formatAlloc(
     };
 }
 
+fn resolveLocale(locale_name: []const u8, options: Options) data.Locale {
+    const split = misc.splitNumberingSystem(locale_name);
+    var locale = findLocale(split.locale) orelse findLocale("en").?;
+    const name = options.numbering_system orelse split.system orelse return locale;
+    const system = numbering_systems.find(name) orelse return locale;
+    locale.digits = system.digits;
+    if (std.mem.eql(u8, name, locale.numbering_system)) return locale;
+    const latn = numbering_systems.find("latn") orelse return locale;
+    var request_decimal: []const u8 = "";
+    var request_group: []const u8 = "";
+    var request_minus: []const u8 = "";
+    var request_plus: []const u8 = "";
+    if (numbering_systems.findOverride(split.locale, name)) |entry| {
+        request_decimal = entry.decimal;
+        request_group = entry.group;
+        request_minus = entry.minus;
+        request_plus = entry.plus;
+    }
+    var default_decimal: []const u8 = "";
+    var default_group: []const u8 = "";
+    var default_minus: []const u8 = "";
+    var default_plus: []const u8 = "";
+    if (numbering_systems.findOverride(split.locale, locale.numbering_system)) |entry| {
+        default_decimal = entry.decimal;
+        default_group = entry.group;
+        default_minus = entry.minus;
+        default_plus = entry.plus;
+    }
+    locale.decimal = pickSymbol(
+        &.{ request_decimal, system.decimal, default_decimal, latn.decimal },
+        ".",
+    );
+    locale.group = pickSymbol(
+        &.{ request_group, system.group, default_group, latn.group },
+        ",",
+    );
+    locale.minus = pickSymbol(
+        &.{ request_minus, system.minus, default_minus, locale.minus },
+        "-",
+    );
+    locale.plus = pickSymbol(
+        &.{ request_plus, system.plus, default_plus, locale.plus },
+        "+",
+    );
+    return locale;
+}
+
+fn pickSymbol(values: []const []const u8, fallback: []const u8) []const u8 {
+    for (values) |value| {
+        if (value.len != 0) return value;
+    }
+    return fallback;
+}
+
 fn formatStandardAlloc(
     allocator: std.mem.Allocator,
     value: f64,
     locale_name: []const u8,
     options: Options,
 ) Error![]u8 {
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name, options);
     var currency_display_text: []const u8 = "";
     if (options.style == .currency) {
         const code = options.currency orelse return error.MissingCurrency;
@@ -148,7 +205,7 @@ pub fn formatIntegerAlloc(
     {
         return formatAlloc(allocator, @floatFromInt(value), locale_name, options);
     }
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name, options);
     var currency_display_text: []const u8 = "";
     if (options.style == .currency) {
         const code = options.currency orelse return error.MissingCurrency;
@@ -299,7 +356,7 @@ fn formatScientificAlloc(
     locale_name: []const u8,
     options: Options,
 ) Error![]u8 {
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name, options);
     if (std.math.isNan(value)) return allocator.dupe(u8, locale.nan);
     if (std.math.isInf(value)) {
         var output = std.ArrayList(u8).empty;
@@ -475,7 +532,7 @@ fn formatCompactAlloc(
     if (!std.math.isFinite(value) or magnitude < 1000) {
         return compactFallback(allocator, value, locale_name, options);
     }
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name, options);
     const table = switch (options.compact_style) {
         .short => locale.compact_short,
         .long => locale.compact_long,

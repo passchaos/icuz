@@ -6,6 +6,8 @@ const timezone = @import("../timezone/root.zig");
 const timezone_names = @import("../timezone/names.zig");
 const calendar_mod = @import("calendar.zig");
 const calendars = @import("calendars.zig");
+const misc = @import("misc.zig");
+const numbering_systems = @import("numbering_systems.zig");
 
 pub const cldr_version = "48";
 
@@ -61,7 +63,7 @@ pub fn formatDateAlloc(
     locale_name: []const u8,
     style: Style,
 ) Error![]u8 {
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
     const pattern = switch (style) {
         .full => locale.date_full,
         .long => locale.date_long,
@@ -103,7 +105,7 @@ pub fn formatTimeWithZoneAlloc(
     style: Style,
     zone_name: []const u8,
 ) Error![]u8 {
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
     const pattern = switch (style) {
         .full => locale.time_full,
         .long => locale.time_long,
@@ -128,7 +130,7 @@ pub fn formatDateTimeAlloc(
     style: Style,
     zone_name: []const u8,
 ) Error![]u8 {
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
     const date_pattern = switch (style) {
         .full => locale.date_full,
         .long => locale.date_long,
@@ -185,7 +187,7 @@ pub fn formatPatternAlloc(
     locale_name: []const u8,
     zone_name: []const u8,
 ) Error![]u8 {
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
     return formatPatternWithLocale(
         allocator,
         pattern,
@@ -250,7 +252,7 @@ pub fn formatDateInCalendarAlloc(
     calendar: calendar_mod.Calendar,
     style: Style,
 ) Error![]u8 {
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
     const index: u8 = @intFromEnum(calendar);
     const calendar_style: calendars.Style = switch (style) {
         .full => .full,
@@ -285,7 +287,7 @@ pub fn formatDateTimeInCalendarAlloc(
     style: Style,
     zone_name: []const u8,
 ) Error![]u8 {
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
     const date_text = try formatDateInCalendarAlloc(
         allocator,
         date_time,
@@ -332,7 +334,7 @@ pub fn formatPatternInCalendarAlloc(
     locale_name: []const u8,
     calendar: calendar_mod.Calendar,
 ) Error![]u8 {
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
     return formatPatternWithLocale(
         allocator,
         pattern,
@@ -372,7 +374,7 @@ pub fn formatUnixTimeInZoneAlloc(
             zone_name,
         );
     const offset = timezone.offsetAt(zone, unix_seconds);
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
     const pattern = switch (style) {
         .full => locale.time_full,
         .long => locale.time_long,
@@ -415,7 +417,7 @@ pub fn formatTimeInZoneAlloc(
         );
     const unix_seconds = unixSeconds(date_time);
     const offset = timezone.offsetAt(zone, unix_seconds);
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
     const pattern = switch (style) {
         .full => locale.time_full,
         .long => locale.time_long,
@@ -447,7 +449,7 @@ pub fn formatPatternInZoneAlloc(
     locale_name: []const u8,
     zone_name: []const u8,
 ) Error![]u8 {
-    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const locale = resolveLocale(locale_name) orelse findLocale("en").?;
     const zone = timezone.find(zone_name) orelse return formatPatternWithLocale(
         allocator,
         pattern,
@@ -500,6 +502,15 @@ pub fn fromUnixSeconds(seconds: i64, offset_seconds: i32) DateTime {
         .second = @intCast(@mod(seconds_of_day, 60)),
         .offset_seconds = offset_seconds,
     };
+}
+
+fn resolveLocale(name: []const u8) ?data.Locale {
+    const split = misc.splitNumberingSystem(name);
+    var locale = findLocale(split.locale) orelse return null;
+    const system_name = split.system orelse return locale;
+    const system = numbering_systems.find(system_name) orelse return locale;
+    locale.digits = system.digits;
+    return locale;
 }
 
 fn formatPatternWithLocale(
@@ -1457,5 +1468,78 @@ test "calendar formatting conformance" {
         "calendar format conformance: {d}/{d} passed\n",
         .{ total - failures, total },
     );
+    try testing.expect(failures == 0);
+}
+
+test "numbering system conformance" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const number = @import("number.zig");
+    const fixture = @embedFile("numbering_conformance.bin");
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJNS", fixture[0..4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var total: usize = 0;
+    var printed: usize = 0;
+    for (0..case_count) |_| {
+        const kind = fixture[cursor];
+        const locale_length = fixture[cursor + 1];
+        const system_length = fixture[cursor + 2];
+        const bits = std.mem.readInt(u64, fixture[cursor + 4 ..][0..8], .little);
+        const expected_length = std.mem.readInt(u16, fixture[cursor + 12 ..][0..2], .little);
+        cursor += 16;
+        const locale_name = fixture[cursor .. cursor + locale_length];
+        cursor += locale_length;
+        const system = fixture[cursor .. cursor + system_length];
+        cursor += system_length;
+        const expected = fixture[cursor .. cursor + expected_length];
+        cursor += expected_length;
+        var tag_buffer: [96]u8 = undefined;
+        const tag = std.fmt.bufPrint(
+            &tag_buffer,
+            "{s}@numbers={s}",
+            .{ locale_name, system },
+        ) catch continue;
+        const value: f64 = @bitCast(bits);
+        total += 1;
+        const actual = if (kind == 0)
+            number.formatAlloc(allocator, value, tag, .{}) catch |err| {
+                failures += 1;
+                if (printed < 30) {
+                    printed += 1;
+                    std.debug.print("numbering mismatch {s} {s}: {s}\n", .{ locale_name, system, @errorName(err) });
+                }
+                continue;
+            }
+        else
+            formatPatternAlloc(
+                allocator,
+                "y-MM-dd",
+                fromUnixSeconds(@intFromFloat(value), 0),
+                tag,
+                "UTC",
+            ) catch |err| {
+                failures += 1;
+                if (printed < 30) {
+                    printed += 1;
+                    std.debug.print("numbering mismatch {s} {s}: {s}\n", .{ locale_name, system, @errorName(err) });
+                }
+                continue;
+            };
+        defer allocator.free(actual);
+        if (!std.mem.eql(u8, actual, expected)) {
+            failures += 1;
+            if (printed < 30) {
+                printed += 1;
+                std.debug.print(
+                    "numbering mismatch {s} {s} kind {d}: got '{s}' expected '{s}'\n",
+                    .{ locale_name, system, kind, actual, expected },
+                );
+            }
+        }
+    }
+    std.debug.print("numbering conformance: {d}/{d} passed\n", .{ total - failures, total });
     try testing.expect(failures == 0);
 }

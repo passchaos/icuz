@@ -53,6 +53,7 @@ BLOBS = (
     Blob("src/unicode/format/interval_conformance.bin", b"CJI1", 1, "6c403ae90092aa49d33a3fd3dbb2ad4c17d199f7d27253bb25ef6e811211db45", version=(0, 0, 0)),
     Blob("src/unicode/format/durations_data.bin", b"CJQ0", 1, "f41a08233a4a439a956d6ba4562d87c96ac66413117c44e94429c688184b3590", version=(0, 0, 0)),
     Blob("src/unicode/format/duration_conformance.bin", b"CJQK", 1, "bbcecde310b0bbc976aad662692ee4e76205a6235d3cecbaae4c827d2182b6e3", version=(0, 0, 0)),
+    Blob("src/unicode/format/numbering_conformance.bin", b"CJNS", 1, "c3de214ed4b258a56061dd27ff23f5247ac68ba49ab09eb7b890e3ce3382cb85", version=(0, 0, 0)),
     Blob("src/unicode/format/calendar_format_conformance.bin", b"CJKF", 1, "ffa627f64f42870b6d2ba203ff8abb707c7124360d910bab7f93cd41808d305f", version=(0, 0, 0)),
     Blob("src/unicode/transliterate/data.bin", b"CJTR", 19, "1190245efaa8c9a54fb02dbfa5cc19cbbe5d36576b49efc060cbf65801cf07c1", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/und_fonipa_ar_conformance.bin", b"CJQ8", 1, "df5e3c2037f7d6f8b2bcab29859548555aafc5d70be90454461275858c533d88", version=(48, 0, 0)),
@@ -414,7 +415,7 @@ GENERATORS = {
     "tools/unicode/idna/generate_data.py": "1bb79a63d0b5e7845c362e39a51b5a763b6afaa921fdf5e054c20f3920cdc34f",
     "tools/unicode/format/generate_plurals.py": "b1fd98acc793d8264d7cf8bb5a44335d8513ab1ba4321cac86fac7864ab5714b",
     "tools/unicode/format/generate_ordinals.py": "c67e49523dcfd86f641949774e2dae40ce8381828ca263fb61d5e487e406a91b",
-    "tools/unicode/format/generate_numbers.py": "1f953808095cb99896384a80f597620af8e982629d4c40729b9b882cd636d5b8",
+    "tools/unicode/format/generate_numbers.py": "b38b19f1099b8b8b23946992594d14201ccd04d20cdedb7a9c7e16d1f06ba40d",
     "tools/unicode/format/generate_rbnf.py": "cd753dffa9ddb38c91108522bb7cfe652cbcd7f7ad2f11eecf4836d417a6ea1e",
     "tools/unicode/format/generate_rbnf_conformance.py": "6daafcf47dffc85a56f00e49a6b07bfb9b8d62e332bd8aa8c8a5bb7b3b729c6b",
     "tools/unicode/timezone/generate_data.py": "a944faa2995e1452a0ab5a998cf45a8e6962f12218a789b9dc9def8b9e465a01",
@@ -429,6 +430,8 @@ GENERATORS = {
     "tools/unicode/format/generate_interval_conformance.py": "1cb95944c746a5f8276b9ba27212c8871da0c361e424af9385655731398f46cc",
     "tools/unicode/format/generate_durations.py": "2f6b8a42e37bee0cdae945746ce6a91f2de2029781e128774005c49f66967504",
     "tools/unicode/format/generate_duration_conformance.py": "2e883fa048074e09ee2bd62bc131b0de07a1d0fc36c3a480b4ff3e2ff886bd65",
+    "tools/unicode/format/generate_numbering_systems.py": "60eebb96082479abd4f772a925a863bb201644f3d1e81952ea7d2d29ddb99e1e",
+    "tools/unicode/format/generate_numbering_conformance.py": "fbf566c26b4945a2fee4576882034eb3239f58839889cbfcacd1764129d2fbee",
     "tools/unicode/format/generate_dates.py": "cb9ae3350d32eb4d2289205872f53ffe07cef3a1c4d8549c3a7b2ba5fd94b0d5",
     "tools/unicode/format/generate_misc.py": "b126eb131c01bfdd7541ca78496df0b2e0a49e3a0524a666b4b9fd1d55c17086",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
@@ -502,7 +505,12 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/format/numbers_data.zig",
         "tools/unicode/format/generate_numbers.py",
-        "eafbde09ccbb3d924a7ef59db58766007cf8dec7b5b3c1f44a1fde1068f5519b",
+        "82a48f8b6b3b1c0807279f55c8714010e409458fa34fbd9cb37a6e0256627ca0",
+    ),
+    GeneratedText(
+        "src/unicode/format/numbering_systems.zig",
+        "tools/unicode/format/generate_numbering_systems.py",
+        "15a19f598cb7c03299e2c4d579ce4774a20872e77844886f4c1a3791934bca4c",
     ),
     GeneratedText(
         "src/unicode/format/dates_data.zig",
@@ -868,6 +876,15 @@ def check_layout(blob: Blob, data: bytes) -> None:
             locale_len = data[offset]
             expected_len = struct.unpack_from("<H", data, offset + 12)[0]
             offset += 16 + locale_len + expected_len
+        assert offset == len(data)
+    elif magic == b"CJNS":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            locale_len = data[offset + 1]
+            system_len = data[offset + 2]
+            expected_len = struct.unpack_from("<H", data, offset + 12)[0]
+            offset += 16 + locale_len + system_len + expected_len
         assert offset == len(data)
     elif magic == b"CJKF":
         case_count = struct.unpack_from("<I", data, 8)[0]
