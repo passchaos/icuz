@@ -41,6 +41,7 @@ BLOBS = (
     Blob("src/unicode/canonical/combining_class.bin", b"CJC1", 1, "336130546fc300108806f5ae23144cda93da13488a810946357304b5a12f5fcc"),
     Blob("src/unicode/charset/data.bin", b"CJCS", 1, "965bd7d7e6084e49d6a5a04f350807c0c2cdeececeacfa78103d928f45f71575"),
     Blob("src/unicode/set/conformance.bin", b"CJSU", 1, "ddb89617e85cdf3e162d5f59561aa53e40b0c7380e44b6a828e142b69caf472f", version=(0, 0, 0)),
+    Blob("src/unicode/break/conformance.bin", b"CJGF", 1, "421b8d340e2a4ba656169802dd8b507ff16d1093e0a1dd2ef71d628de6b97f04", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_data.bin", b"CJRB", 1, "9a88f134d56db6e730bc7ef2fcc69ad271923321b22bdcaf041a74e0266db4f2", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_conformance.bin", b"CJRN", 1, "d78e610b755b158f8ebc761255cd8da9ac5ce1ee210e6cfcae3e7678b079cb7c", version=(48, 0, 0)),
     Blob("src/unicode/timezone/data.bin", b"CJTZ", 1, "4c81cc79c040fab030e585bf0b1e3a518e96f8a99052f5a7579cb55ce289539f", version=(0, 0, 0)),
@@ -454,6 +455,7 @@ GENERATORS = {
     "tools/unicode/set/generate_conformance.py": "2aa1d6db18bcb6d0cb0f77c5ed449643089f158f33bc431bf89fcda932c42592",
     "tools/unicode/transliterate/generate_data.py": "059f2264e4ca5aa9aa8376d14f65e281528d2c43e1ad7e42d18a4b1da7808749",
     "tools/unicode/break/generate_dictionaries.py": "bdbd4c4e9c999b4cea6a8924b08c72a49719c857e26dea82fc50940ee145e264",
+    "tools/unicode/break/generate_conformance.py": "68fd8ad7bb37e1020cf79cb26f8f3e2de9b12df5c8aa128b6cec5e9d53155387",
     "tools/unicode/break/generate_word_conformance.py": "3c2467ffc38b2467cbbc0d895e76b8862774c48567aa3ad26b9681605df3a5ff",
     "tools/unicode/transliterate/generate_icu_conformance.py": "c1f2435db3039a3f569de277eccf5901a7c2ba34d396026be0815f39cd6dc997",
     "tools/unicode/transliterate/generate_rules_conformance.py": "b9344ecf083110f4564b1b65bfd7e1faefb9b6a792dbc1f60605bcd1a20fa42c",
@@ -629,6 +631,15 @@ def check_layout(blob: Blob, data: bytes) -> None:
                 "<HHH", data, offset
             )
             offset += 8 + rules_len + input_len + expected_len
+        assert offset == len(data)
+    elif magic == b"CJGF":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            rules_len, text_len, boundary_count = struct.unpack_from(
+                "<HHH", data, offset
+            )
+            offset += 8 + rules_len + text_len + boundary_count * 8
         assert offset == len(data)
     elif magic == b"CJSU":
         case_count = struct.unpack_from("<I", data, 8)[0]

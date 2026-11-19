@@ -29,6 +29,11 @@ need without pulling in a font or layout engine.
   `wordSegmentsWithDictionaries`; the default `wordSegments` remains the
   UAX #29 rule-based iterator. A 313-case fixture generated with ICU's
   `Intl.Segmenter` covers all five dictionaries.
+- Runtime ICU break rules (`break_rules.compileAlloc`): `$set` variables,
+  UnicodeSets, `.`, grouping with `|` alternation, `?`/`*`/`+`
+  quantifiers, `{status}` tags, longest-match boundaries, and ICU's
+  single-code-point fallback, validated by a 19-case PyICU
+  `RuleBasedBreakIterator` fixture.
 - UAX #50 vertical orientation.
 - Unicode 17 Arabic joining properties and the joining state machine.
 - Character names and aliases, including algorithmic CJK/Tangut/Egyptian/

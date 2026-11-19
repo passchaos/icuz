@@ -20,6 +20,7 @@ const normalization = @import("./normalization/root.zig");
 const case_mod = @import("./case/root.zig");
 const name_mod = @import("./name.zig");
 const set_mod = @import("./set.zig");
+const break_rules_mod = @import("./break_rules.zig");
 const utf16_mod = @import("./utf16.zig");
 const collation_mod = @import("./collation/root.zig");
 const idna_mod = @import("./idna.zig");
@@ -582,4 +583,5 @@ test {
     _ = scalar_cursor;
     _ = word_cursor;
     _ = sentence_cursor;
+    _ = break_rules_mod;
 }
