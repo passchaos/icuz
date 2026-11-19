@@ -354,8 +354,9 @@ reverse indexes carry compile-time page indexes and a split layout (sorted
 binary-search only one 256-code-point page; hot stateless conversion pairs
 run comptime-specialized loops that append into reserved capacity with no
 per-character dispatch or capacity checks, each DBCS encoder keeps a small
-atomic cache of recent reverse lookups, and UTF-8 to DBCS pairs use a fused
-decode/encode loop that falls back to the generic converter on any error.
+atomic cache of recent reverse lookups, UTF-8 to DBCS pairs use a fused
+decode/encode loop, and DBCS to UTF-8 pairs write UTF-8 bytes directly;
+both fall back to the generic converter on any error.
 
 ## Data provenance
 

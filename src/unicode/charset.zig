@@ -925,6 +925,74 @@ fn convertUtf8ToDbcsFast(
     return try output.toOwnedSlice(allocator);
 }
 
+/// Fast path for well-formed DBCS input, writing UTF-8 bytes directly
+/// into the reserved output. Returns null when the input needs the generic
+/// error handling.
+fn convertDbcsToUtf8Fast(
+    comptime decode: fn ([]const u8, *usize) DecodeResult,
+    allocator: std.mem.Allocator,
+    input: []const u8,
+) error{OutOfMemory}!?[]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try output.ensureTotalCapacity(allocator, input.len * 2 + 8);
+    const spare = output.unusedCapacitySlice();
+    var index: usize = 0;
+    var written: usize = 0;
+    while (index < input.len) {
+        switch (decode(input, &index)) {
+            .end => break,
+            .codepoint => |codepoint| {
+                if (codepoint < 0x80) {
+                    spare[written] = @intCast(codepoint);
+                    written += 1;
+                    continue;
+                }
+                if (codepoint >= 0xD800 and codepoint <= 0xDFFF) {
+                    output.deinit(allocator);
+                    return null;
+                }
+                if (codepoint < 0x800) {
+                    spare[written] = @intCast(0xC0 | (codepoint >> 6));
+                    spare[written + 1] = @intCast(
+                        0x80 | (codepoint & 0x3F),
+                    );
+                    written += 2;
+                    continue;
+                }
+                if (codepoint < 0x10000) {
+                    spare[written] = @intCast(0xE0 | (codepoint >> 12));
+                    spare[written + 1] = @intCast(
+                        0x80 | ((codepoint >> 6) & 0x3F),
+                    );
+                    spare[written + 2] = @intCast(
+                        0x80 | (codepoint & 0x3F),
+                    );
+                    written += 3;
+                    continue;
+                }
+                spare[written] = @intCast(0xF0 | (codepoint >> 18));
+                spare[written + 1] = @intCast(
+                    0x80 | ((codepoint >> 12) & 0x3F),
+                );
+                spare[written + 2] = @intCast(
+                    0x80 | ((codepoint >> 6) & 0x3F),
+                );
+                spare[written + 3] = @intCast(
+                    0x80 | (codepoint & 0x3F),
+                );
+                written += 4;
+            },
+            .malformed, .incomplete => {
+                output.deinit(allocator);
+                return null;
+            },
+        }
+    }
+    output.items.len = written;
+    return try output.toOwnedSlice(allocator);
+}
+
 fn convertAllocStateless(
     comptime from: Encoding,
     comptime to: Encoding,
@@ -932,6 +1000,57 @@ fn convertAllocStateless(
     input: []const u8,
     options: Options,
 ) Error![]u8 {
+    if (comptime to == .utf8) {
+        if (comptime from == .gbk) {
+            if (try convertDbcsToUtf8Fast(
+                cjk.gbkNext,
+                allocator,
+                input,
+            )) |result| {
+                return result;
+            }
+        } else if (comptime from == .gb18030) {
+            if (try convertDbcsToUtf8Fast(
+                cjk.gb18030Next,
+                allocator,
+                input,
+            )) |result| {
+                return result;
+            }
+        } else if (comptime from == .big5) {
+            if (try convertDbcsToUtf8Fast(
+                cjk.big5Next,
+                allocator,
+                input,
+            )) |result| {
+                return result;
+            }
+        } else if (comptime from == .shift_jis) {
+            if (try convertDbcsToUtf8Fast(
+                cjk.shiftJisNext,
+                allocator,
+                input,
+            )) |result| {
+                return result;
+            }
+        } else if (comptime from == .euc_kr) {
+            if (try convertDbcsToUtf8Fast(
+                cjk.eucKrNext,
+                allocator,
+                input,
+            )) |result| {
+                return result;
+            }
+        } else if (comptime from == .euc_jp) {
+            if (try convertDbcsToUtf8Fast(
+                cjk.eucJpNext,
+                allocator,
+                input,
+            )) |result| {
+                return result;
+            }
+        }
+    }
     if (comptime from == .utf8) {
         if (comptime to == .gbk or to == .gb18030) {
             if (try convertUtf8ToDbcsFast(
