@@ -1020,7 +1020,7 @@ const LatinEntry = struct {
 
 /// Latin-1 Supplement and Latin Extended-A/B, which cover the precomposed
 /// letters and combining marks of Latin-script text after NFD.
-const latin_limit: usize = 0x370;
+pub const latin_limit: usize = 0x370;
 
 const latin_elements = blk: {
     @setEvalBranchQuota(2_000_000);

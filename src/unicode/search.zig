@@ -9,7 +9,9 @@
 
 const std = @import("std");
 const collation = @import("collation/root.zig");
+const tailorings = @import("collation/tailorings.zig");
 const combining_class = @import("canonical/combining_class.zig");
+const decomposition = @import("canonical/decomposition.zig");
 
 pub const Options = collation.Options;
 pub const Error = error{ InvalidUtf8, OutOfMemory };
@@ -19,6 +21,18 @@ const max_levels = 8;
 const max_contraction_span = 32;
 
 /// Reusable searcher for one pattern and collation configuration.
+const LatinPrimary = struct {
+    count: u8 = 0,
+    values: [4]u32 = .{ 0, 0, 0, 0 },
+};
+
+const LatinPrimaryCacheEntry = struct {
+    codepoint: u21 = 0x110000,
+    primary: LatinPrimary = .{},
+};
+
+const Decoded = struct { codepoint: u21, next: usize };
+
 pub const Search = struct {
     allocator: std.mem.Allocator,
     collator: collation.Collator,
@@ -32,6 +46,9 @@ pub const Search = struct {
     primary_cache: [64]u64,
     needle_empty: bool,
     fast_ascii_primary: bool,
+    latin_fast: bool,
+    latin_primary_cache: [128]LatinPrimaryCacheEntry =
+        [_]LatinPrimaryCacheEntry{.{}} ** 128,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -50,6 +67,7 @@ pub const Search = struct {
             .primary_cache = @splat(0),
             .needle_empty = needle.len == 0,
             .fast_ascii_primary = false,
+            .latin_fast = false,
         };
         errdefer search.deinit();
         if (!search.needle_empty) {
@@ -73,6 +91,15 @@ pub const Search = struct {
                 options.case_first == null and
                 options.backwards_secondary == null and
                 search.collator.asciiFastPathUsable();
+            search.latin_fast = search.needle_primary.items.len > 0 and
+                options.strength == .primary and
+                options.variable_weighting == .non_ignorable and
+                !options.numeric and
+                !options.case_level and
+                options.case_first == null and
+                options.backwards_secondary == null and
+                search.latinFastNeedle(needle) and
+                search.latinFastTailoring();
         }
         return search;
     }
@@ -90,6 +117,11 @@ pub const Search = struct {
         if (self.needle_empty) return if (start <= text.len) start else null;
         if (self.fast_ascii_primary and isAscii(text)) {
             return self.findAsciiPrimary(text, start);
+        }
+        if (self.latin_fast) {
+            var fallback = false;
+            const result = self.findLatinPrimary(text, start, &fallback);
+            if (!fallback) return result;
         }
         try self.decodeText(text);
 
@@ -221,6 +253,128 @@ pub const Search = struct {
             }
             if (matched and needle_index == needle.len) return position;
             position += 1;
+        }
+        return null;
+    }
+
+    fn latinFastNeedle(self: *Search, needle: []const u8) bool {
+        _ = self;
+        var cursor: usize = 0;
+        while (cursor < needle.len) {
+            const decoded = decodeAt(needle, cursor) orelse return false;
+            if (!latinFastCodepoint(decoded.codepoint)) return false;
+            cursor = decoded.next;
+        }
+        return true;
+    }
+
+    fn latinFastTailoring(self: *Search) bool {
+        const tailoring = self.collator.tailoring orelse return true;
+        return tailoring.reorder == null and
+            tailoring.case_first == .off and
+            !tailoring.backwards and
+            !tailorings.hasNonMarkContraction(tailoring);
+    }
+
+    fn latinPrimaryFor(self: *Search, codepoint: u21) ?LatinPrimary {
+        const hash: usize = (@as(u32, codepoint) *% 0x9E3779B1) >> 25;
+        const entry = &self.latin_primary_cache[hash];
+        if (entry.codepoint == codepoint) return entry.primary;
+        const single = [_]u21{codepoint};
+        self.collator.sortKeyCodepointsInto(
+            self.allocator,
+            &single,
+            &self.candidate_key,
+        ) catch return null;
+        const length = primaryLength(self.candidate_key.items);
+        if (length > 4) return null;
+        var primary = LatinPrimary{ .count = @intCast(length) };
+        for (self.candidate_key.items[0..length], 0..) |weight, index| {
+            primary.values[index] = weight;
+        }
+        entry.* = .{ .codepoint = codepoint, .primary = primary };
+        return primary;
+    }
+
+    /// Primary search for precomposed Latin text. Per-code-point keys are
+    /// valid here because the text has no combining marks and the tailoring
+    /// has no non-mark contractions. Falls back to the general search when a
+    /// code point cannot be handled this way.
+    fn findLatinPrimary(
+        self: *Search,
+        text: []const u8,
+        start: usize,
+        fallback: *bool,
+    ) ?usize {
+        fallback.* = false;
+        if (start > text.len) return null;
+        const needle = self.needle_primary.items;
+        const first = needle[0];
+        var position = start;
+        while (position < text.len) {
+            const decoded = decodeAt(text, position) orelse {
+                fallback.* = true;
+                return null;
+            };
+            if (!latinFastCodepoint(decoded.codepoint)) {
+                fallback.* = true;
+                return null;
+            }
+            const weights = self.latinPrimaryFor(decoded.codepoint) orelse {
+                fallback.* = true;
+                return null;
+            };
+            if (weights.count != 0 and weights.values[0] != first) {
+                position = decoded.next;
+                continue;
+            }
+            var needle_index: usize = 0;
+            var cursor = position;
+            var matched = true;
+            while (needle_index < needle.len and cursor < text.len) {
+                const current = decodeAt(text, cursor) orelse {
+                    fallback.* = true;
+                    return null;
+                };
+                if (!latinFastCodepoint(current.codepoint)) {
+                    fallback.* = true;
+                    return null;
+                }
+                const current_primary = self.latinPrimaryFor(
+                    current.codepoint,
+                ) orelse {
+                    fallback.* = true;
+                    return null;
+                };
+                var element_index: usize = 0;
+                while (element_index < current_primary.count) : (element_index += 1) {
+                    if (needle_index == needle.len or
+                        current_primary.values[element_index] !=
+                            needle[needle_index])
+                    {
+                        matched = false;
+                        break;
+                    }
+                    needle_index += 1;
+                }
+                if (!matched) break;
+                cursor = current.next;
+            }
+            if (matched and needle_index == needle.len) {
+                // A contraction could extend the last matched code point.
+                if (cursor < text.len) {
+                    const next = decodeAt(text, cursor) orelse {
+                        fallback.* = true;
+                        return null;
+                    };
+                    if (!latinFastCodepoint(next.codepoint)) {
+                        fallback.* = true;
+                        return null;
+                    }
+                }
+                return position;
+            }
+            position = decoded.next;
         }
         return null;
     }
@@ -432,6 +586,24 @@ test "locale-aware search" {
     );
 }
 
+fn decodeAt(text: []const u8, offset: usize) ?Decoded {
+    if (offset >= text.len) return null;
+    const length = std.unicode.utf8ByteSequenceLength(text[offset]) catch
+        return null;
+    if (offset + length > text.len) return null;
+    const codepoint = std.unicode.utf8Decode(
+        text[offset..][0..length],
+    ) catch return null;
+    return .{ .codepoint = codepoint, .next = offset + length };
+}
+
+fn latinFastCodepoint(codepoint: u21) bool {
+    return codepoint < collation.latin_limit and
+        codepoint != 0xb7 and
+        combining_class.forCodepoint(codepoint) == 0 and
+        decomposition.markLeadingForCodepoint(codepoint) == null;
+}
+
 fn isAscii(text: []const u8) bool {
     const high_bits: u64 = 0x8080_8080_8080_8080;
     var index: usize = 0;
@@ -488,6 +660,70 @@ test "ASCII primary fast path matches the general search" {
                     fast.find(text, start),
                 );
             }
+        }
+    }
+}
+
+test "Latin primary fast path matches the general search" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const cases = [_]struct {
+        text: []const u8,
+        needle: []const u8,
+        options: Options,
+    }{
+        .{
+            .text = "Ångström älskar blåbär och öar.",
+            .needle = "älskar",
+            .options = .{ .strength = .primary, .locale = "sv" },
+        },
+        .{
+            .text = "Böttger Mühsam Überlingen ÄÖÜ äöü",
+            .needle = "mühsam",
+            .options = .{
+                .strength = .primary,
+                .locale = "de",
+                .collation = "phonebook",
+            },
+        },
+        .{
+            .text = "café naïve Straße",
+            .needle = "CAFÉ",
+            .options = .{ .strength = .primary },
+        },
+        .{
+            .text = "cafe\u{0301} naïve",
+            .needle = "café",
+            .options = .{ .strength = .primary },
+        },
+        .{
+            .text = "L·L test",
+            .needle = "l·l",
+            .options = .{ .strength = .primary },
+        },
+        .{
+            .text = "hola chico",
+            .needle = "ch",
+            .options = .{
+                .strength = .primary,
+                .locale = "es",
+                .collation = "traditional",
+            },
+        },
+    };
+    for (cases) |case| {
+        var fast = try Search.init(allocator, case.needle, case.options);
+        defer fast.deinit();
+        var general = try Search.init(allocator, case.needle, case.options);
+        defer general.deinit();
+        general.fast_ascii_primary = false;
+        general.latin_fast = false;
+        var start: usize = 0;
+        while (start <= case.text.len) : (start += 1) {
+            try testing.expectEqual(
+                general.find(case.text, start),
+                fast.find(case.text, start),
+            );
         }
     }
 }

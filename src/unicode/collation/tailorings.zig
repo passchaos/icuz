@@ -5,6 +5,7 @@
 //! allocated in the low bits of the root collation weight space.
 
 const std = @import("std");
+const combining_class = @import("../canonical/combining_class.zig");
 
 pub const blob = @embedFile("tailorings.bin");
 
@@ -169,6 +170,22 @@ pub fn sequenceCodepoint(rule: Rule, index: usize) u21 {
     const offset = codepoints_offset +
         (@as(usize, rule.sequence_offset) + index) * 4;
     return @intCast(readU32(offset));
+}
+
+/// True when a multi-codepoint rule continues with a non-combining-mark
+/// scalar, so a per-code-point primary search cannot ignore contractions.
+pub fn hasNonMarkContraction(tailoring: Tailoring) bool {
+    var index: usize = tailoring.rule_start;
+    const end = tailoring.rule_start + tailoring.rule_count;
+    while (index < end) : (index += 1) {
+        const rule = ruleAt(index);
+        if (rule.sequence_len > 1 and
+            combining_class.forCodepoint(sequenceCodepoint(rule, 1)) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 pub fn elementAt(rule: Rule, index: usize) Element {
