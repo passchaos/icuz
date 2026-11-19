@@ -35,6 +35,7 @@ const list_mod = @import("./format/list.zig");
 const relative_mod = @import("./format/relative.zig");
 const units_mod = @import("./format/units.zig");
 const charset_mod = @import("./charset.zig");
+const locale_mod = @import("./locale.zig");
 const transliterate_mod = @import("./transliterate.zig");
 const properties = @import("./properties.zig");
 const scalar_value = @import("./scalar/root.zig");
@@ -330,6 +331,7 @@ pub const displayName = display_names_mod.name;
 pub const formatLocaleDisplayNameAlloc = display_names_mod.localeDisplayNameAlloc;
 pub const maximizeLocaleAlloc = likely_subtags_mod.maximizeAlloc;
 pub const minimizeLocaleAlloc = likely_subtags_mod.minimizeAlloc;
+pub const canonicalizeLocaleAlloc = locale_mod.canonicalizeAlloc;
 pub const date_cldr_version = dates_mod.cldr_version;
 
 pub const MessageArgument = message_mod.Argument;
@@ -620,6 +622,7 @@ test {
     _ = message_mod;
     _ = message2_mod;
     _ = charset_mod;
+    _ = locale_mod;
     _ = transliterate_mod;
     _ = list_mod;
     _ = relative_mod;

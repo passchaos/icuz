@@ -123,6 +123,12 @@ need without pulling in a font or layout engine.
   and variant names, locale display composition, and likely-subtags
   maximization and minimization, validated by 329 display-name and 48
   likely-subtag PyICU conformance cases.
+- BCP 47 locale tag canonicalization (`canonicalizeLocaleAlloc`): case and
+  separator normalization, CLDR 48 language, script, territory, and variant
+  alias rules with multi-field replacements, wildcard and chained aliases,
+  and variant ordering, validated by the official 1,773-case CLDR
+  canonicalization fixture. Extension and private-use subtags are preserved;
+  key/type aliases inside extensions are not applied.
 - Numbering system selection for number and date formatting across 78 CLDR
   numeric systems (latn, arab, arabext, thai, deva, beng, hanidec,
   fullwide, and others) through `@numbers=`/`-u-nu-` locale keywords or an

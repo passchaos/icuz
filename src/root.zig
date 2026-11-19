@@ -18,6 +18,7 @@ pub const set = @import("unicode/set.zig");
 pub const utf16 = @import("unicode/utf16.zig");
 pub const collation = @import("unicode/collation/root.zig");
 pub const search = @import("unicode/search.zig");
+pub const locale = @import("unicode/locale.zig");
 pub const spoof = @import("unicode/spoof.zig");
 pub const idna = @import("unicode/idna.zig");
 pub const plural = @import("unicode/format/plurals.zig");
@@ -55,6 +56,7 @@ test {
     _ = unicode;
     _ = spoof;
     _ = search;
+    _ = locale;
     _ = message2;
     _ = @import("unicode/tests/cursor_segmentation_tests.zig");
 }

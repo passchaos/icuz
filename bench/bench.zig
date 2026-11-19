@@ -774,6 +774,30 @@ fn benchSkeleton(allocator: std.mem.Allocator) void {
     reportOps("number skeleton", rounds, best);
 }
 
+fn benchLocaleCanonicalize(
+    name: []const u8,
+    tag: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 20000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const result = icuz.locale.canonicalizeAlloc(
+                allocator,
+                tag,
+            ) catch unreachable;
+            sink +%= result.len;
+            allocator.free(result);
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps(name, rounds, best);
+}
+
 pub fn main() !void {
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_state.deinit();
@@ -1072,6 +1096,12 @@ pub fn main() !void {
         allocator,
     );
     benchSkeleton(allocator);
+
+    std.debug.print("\n-- locale tags --\n", .{});
+    benchLocaleCanonicalize("canonicalize en-US", "en-US", allocator);
+    benchLocaleCanonicalize("canonicalize zh-hant-tw", "zh-hant-tw", allocator);
+    benchLocaleCanonicalize("canonicalize sh-RS", "sh-RS", allocator);
+    benchLocaleCanonicalize("canonicalize sr-Latn-RS", "sr-Latn-RS", allocator);
 
     std.debug.print("\n-- locale formatting --\n", .{});
     benchList(allocator);

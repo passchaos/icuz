@@ -40,6 +40,8 @@ BLOBS = (
     Blob("src/unicode/bidi/data.bin", b"CJB1", 1, "9e9f9937100d6019f7308743916c3606bdb31c9cc4f142eb605becf45a210c3f"),
     Blob("src/unicode/canonical/combining_class.bin", b"CJC1", 1, "336130546fc300108806f5ae23144cda93da13488a810946357304b5a12f5fcc"),
     Blob("src/unicode/charset/data.bin", b"CJCS", 2, "2f683ea3541100baa40ec047bf13e9af98e7a8337a6b981f97ea97208bfbc705"),
+    Blob("src/unicode/locale/aliases.bin", b"CJLX", 2, "21a2feec8619f2697a8359992932b061890e9a68702e4d365756554b14ab4edd", version=(48, 0, 0)),
+    Blob("src/unicode/locale/canonicalization_conformance.bin", b"CJLY", 1, "8e3d48a4a16588dbccba978589282c08e04dbaa65cd57617ea0643ddd14eef3d", version=(48, 0, 0)),
     Blob("src/unicode/set/conformance.bin", b"CJSU", 1, "ddb89617e85cdf3e162d5f59561aa53e40b0c7380e44b6a828e142b69caf472f", version=(0, 0, 0)),
     Blob("src/unicode/break/conformance.bin", b"CJGF", 1, "5e7119dc378412e1c6b0bf58b1cc826e38aebb39773c361141737a3709c60077", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_data.bin", b"CJRB", 1, "9a88f134d56db6e730bc7ef2fcc69ad271923321b22bdcaf041a74e0266db4f2", version=(0, 0, 0)),
@@ -426,6 +428,7 @@ GENERATORS = {
     "tools/unicode/spoof/generate_confusables.py": "40d49eef65d71552cefc4bc90f2c9ba6e1313ce95dd2af9598213dff29f972fc",
     "tools/unicode/spoof/generate_conformance.py": "b1bd9eaced6f6b97e9ecd669f5037938b21c4268a1a5dd72db1909cf779761b5",
     "tools/unicode/spoof/generate_identifier_status.py": "d19db85b91e1933c0841ff7846b2d2e644fd78621eaccf6e5f81f8f07134b4f9",
+    "tools/unicode/locale/generate_aliases.py": "455b791991d1b9a81a44ba7d84ff893ca26fb344c9816ffc5ca1085dda9ff625",
     "tools/unicode/format/generate_parse_conformance.py": "3f3e74b9be26b36ba8f5c544801c791ccbc2e72de761bbc15ee57a8e4cc80192",
     "tools/unicode/format/generate_date_parse_conformance.py": "d32464d9c825652c04a0d8beae32f1fb32f5868c07c0a5cd29cdf51f598bfc41",
     "tools/generate_canonical_decomposition.py": "450c932dbd278208bccd3ab8bb26f04f1b18a96051fc03944393f5d73e3ad6d8",
@@ -1109,6 +1112,42 @@ def check_layout(blob: Blob, data: bytes) -> None:
             locale_len = data[offset]
             expected_len = struct.unpack_from("<H", data, offset + 12)[0]
             offset += 16 + locale_len + expected_len
+        assert offset == len(data)
+    elif magic == b"CJLX":
+        rule_count = struct.unpack_from("<H", data, 8)[0]
+        (
+            language_offset,
+            script_offset,
+            region_offset,
+            variant_offset,
+            rules_offset,
+            pool_offset,
+        ) = struct.unpack_from("<IIIIII", data, 12)
+        assert language_offset == 36
+        offset = language_offset
+        for next_offset in (script_offset, region_offset, variant_offset):
+            entry_count, ordinal_count = struct.unpack_from("<HH", data, offset)
+            assert offset + 4 + entry_count * 8 + ordinal_count * 2 == next_offset
+            total = 0
+            for index in range(entry_count):
+                key_offset, key_len, _, start, count = struct.unpack_from(
+                    "<HBBHH", data, offset + 4 + index * 8
+                )
+                assert key_offset + key_len <= len(data) - pool_offset
+                assert start == total
+                total += count
+            assert total == ordinal_count
+            offset = next_offset
+        entry_count, ordinal_count = struct.unpack_from("<HH", data, offset)
+        assert offset + 4 + entry_count * 8 + ordinal_count * 2 == rules_offset
+        assert rules_offset + rule_count * 31 == pool_offset
+        assert pool_offset <= len(data)
+    elif magic == b"CJLY":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            source_len, expected_len = struct.unpack_from("<BB", data, offset)
+            offset += 2 + source_len + expected_len
         assert offset == len(data)
     else:
         assert len(data) >= (20 if magic == b"CJBT" else 12)
