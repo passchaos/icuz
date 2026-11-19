@@ -129,6 +129,14 @@ need without pulling in a font or layout engine.
   and variant ordering, validated by the official 1,773-case CLDR
   canonicalization fixture. Extension and private-use subtags are preserved;
   key/type aliases inside extensions are not applied.
+- CLDR 48 person name formatting (`formatPersonNameAlloc`): title, given,
+  given2, surname, surname2, generation, and credentials fields with
+  informal, prefix, and core variants; length, usage, formality, and order
+  selection; per-locale patterns, initials, monograms, all-caps and
+  initial-cap modifiers, empty-field punctuation cleanup, and native/foreign
+  space replacement, validated by the official 36,960-case CLDR
+  personNameTest fixture (22 Khmer and Myanmar initials follow the library's
+  Intl.Segmenter-style dictionaries rather than ICU's legacy word iterator).
 - Numbering system selection for number and date formatting across 78 CLDR
   numeric systems (latn, arab, arabext, thai, deva, beng, hanidec,
   fullwide, and others) through `@numbers=`/`-u-nu-` locale keywords or an
