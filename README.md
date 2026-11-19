@@ -61,10 +61,12 @@ need without pulling in a font or layout engine.
 - CLDR 48 Gregorian date/time formatting for 87 locales, including localized
   month/day names, date/time styles, custom patterns, and Unix timestamp
   conversion.
-- Non-Gregorian calendar conversion for Buddhist, Japanese, ROC, Islamic
-  civil/tbla, Persian, Indian, Coptic, Ethiopic, Ethiopic Amete Alem, and
-  ISO-8601 calendars, following ICU's arithmetic and validated by a
-  19,716-case PyICU differential fixture over 1900-2100.
+- Non-Gregorian calendar conversion and formatting for Buddhist, Japanese,
+  ROC, Islamic civil/tbla, Persian, Indian, Coptic, Ethiopic, Ethiopic
+  Amete Alem, and ISO-8601 calendars, following ICU's arithmetic with CLDR
+  48 month names, era names, and date patterns (including Japanese gannen).
+  Validated by a 19,716-case conversion fixture and an 8,760-case PyICU
+  formatting fixture.
 - IANA tzdata 2026e time zones for 597 IDs, including backward link names,
   with transition-based UTC offset and daylight resolution from 1970 through
   2100, local/UTC conversion, and zone-aware Unix timestamp formatting.

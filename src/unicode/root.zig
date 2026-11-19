@@ -279,6 +279,9 @@ pub const CalendarSystem = calendar_mod.Calendar;
 pub const CalendarDate = calendar_mod.Date;
 pub const calendarDateFromDays = calendar_mod.fromDays;
 pub const calendarDaysFromGregorian = calendar_mod.daysFromGregorian;
+pub const formatDateInCalendarAlloc = dates_mod.formatDateInCalendarAlloc;
+pub const formatDateTimeInCalendarAlloc = dates_mod.formatDateTimeInCalendarAlloc;
+pub const formatPatternInCalendarAlloc = dates_mod.formatPatternInCalendarAlloc;
 pub const date_cldr_version = dates_mod.cldr_version;
 
 pub const MessageArgument = message_mod.Argument;

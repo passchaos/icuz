@@ -91,7 +91,12 @@ def parse_locale(path: Path) -> tuple[str, dict]:
     time_formats = gregorian["timeFormats"]
     date_time_formats = gregorian["dateTimeFormats"]
 
+    systems = load_numbering_systems(archive)
+    system = default_numbering_system(archive, locale, cache)
+    digits = systems.get(system, "0123456789")
+
     return locale, {
+        "digits": digits,
         "months_wide": names(months.get("wide", {}), MONTH_KEYS),
         "months_abbreviated": names(
             months.get("abbreviated", {}),
@@ -207,8 +212,8 @@ def render(entries: list[tuple[str, dict]]) -> str:
         "",
         "pub const locales = [_]Locale{",
     ]
-    digits = ", ".join(f"0x{ord(c):x}" for c in "0123456789")
     for locale, values in sorted(entries):
+        digits = ", ".join(f"0x{ord(c):x}" for c in values["digits"])
         def string_array(key: str) -> str:
             return ".{ " + ", ".join(zig_string(v) for v in values[key]) + " }"
 
@@ -468,6 +473,50 @@ def parent_chain(locale: str) -> list[str]:
     return chain
 
 
+def load_numbering_systems(archive: zipfile.ZipFile) -> dict:
+    try:
+        text = archive.read("common/supplemental/numberingSystems.xml")
+    except KeyError:
+        return {}
+    document = ET.fromstring(text)
+    systems = {}
+    for system in document.findall(".//numberingSystem"):
+        if system.get("type") != "numeric":
+            continue
+        digits = system.get("digits")
+        identifier = system.get("id")
+        if identifier and digits and len(digits) == 10:
+            systems[identifier] = digits
+    return systems
+
+
+def default_numbering_system(
+    archive: zipfile.ZipFile,
+    locale: str,
+    cache: dict,
+) -> str:
+    if "numbering" in cache:
+        numbering = cache["numbering"]
+    else:
+        numbering = {}
+        cache["numbering"] = numbering
+    if locale in numbering:
+        return numbering[locale]
+    for name in parent_chain(locale):
+        filename = name.replace("-", "_")
+        try:
+            xml = archive.read(f"common/main/{filename}.xml").decode("utf-8")
+        except KeyError:
+            continue
+        root = ET.fromstring(xml)
+        value = root.findtext(".//numbers/defaultNumberingSystem")
+        if value:
+            numbering[locale] = value.strip()
+            return numbering[locale]
+    numbering[locale] = "latn"
+    return "latn"
+
+
 def load_calendar(archive: zipfile.ZipFile, locale: str, cache: dict) -> dict:
     if locale in cache:
         return cache[locale]
@@ -547,7 +596,12 @@ def parse_locale_xml(
     time_formats = gregorian.get("timeFormats", {})
     date_time_formats = gregorian.get("dateTimeFormats", {})
 
+    systems = load_numbering_systems(archive)
+    system = default_numbering_system(archive, locale, cache)
+    digits = systems.get(system, "0123456789")
+
     return locale, {
+        "digits": digits,
         "months_wide": names(months.get("wide", {}), MONTH_KEYS),
         "months_abbreviated": names(
             months.get("abbreviated", {}),

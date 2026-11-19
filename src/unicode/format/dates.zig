@@ -4,6 +4,8 @@ const std = @import("std");
 const data = @import("dates_data.zig");
 const timezone = @import("../timezone/root.zig");
 const timezone_names = @import("../timezone/names.zig");
+const calendar_mod = @import("calendar.zig");
+const calendars = @import("calendars.zig");
 
 pub const cldr_version = "48";
 
@@ -33,6 +35,19 @@ pub const ZoneInfo = struct {
     unix_seconds: i64 = 0,
 };
 
+/// Calendar field overrides used when formatting a non-Gregorian date.
+const FieldOverrides = struct {
+    year: ?i32 = null,
+    month: ?u8 = null,
+    day: ?u8 = null,
+    gannen: bool = false,
+    era: ?u16 = null,
+    months: ?calendars.MonthTable = null,
+    era_wide: ?[]const u8 = null,
+    era_abbreviated: ?[]const u8 = null,
+    era_narrow: ?[]const u8 = null,
+};
+
 /// Format a date using the locale's full/long/medium/short date pattern.
 pub fn formatDateAlloc(
     allocator: std.mem.Allocator,
@@ -54,6 +69,7 @@ pub fn formatDateAlloc(
         locale,
         locale_name,
         .{ .label = "UTC" },
+        .{},
     );
 }
 
@@ -95,6 +111,7 @@ pub fn formatTimeWithZoneAlloc(
         locale,
         locale_name,
         .{ .label = zone_name },
+        .{},
     );
 }
 
@@ -132,6 +149,7 @@ pub fn formatDateTimeAlloc(
         locale,
         locale_name,
         .{ .label = zone_name },
+        .{},
     );
     defer allocator.free(date_text);
     const time_text = try formatPatternWithLocale(
@@ -141,6 +159,7 @@ pub fn formatDateTimeAlloc(
         locale,
         locale_name,
         .{ .label = zone_name },
+        .{},
     );
     defer allocator.free(time_text);
 
@@ -168,6 +187,136 @@ pub fn formatPatternAlloc(
         locale,
         locale_name,
         .{ .label = zone_name },
+        .{},
+    );
+}
+
+fn isJapaneseLocale(name: []const u8) bool {
+    return name.len >= 2 and name[0] == 'j' and name[1] == 'a' and
+        (name.len == 2 or name[2] == '-' or name[2] == '_');
+}
+
+fn calendarOverrides(
+    locale_name: []const u8,
+    calendar: calendar_mod.Calendar,
+    date_time: DateTime,
+) FieldOverrides {
+    const days = daysFromCivil(date_time.year, date_time.month, date_time.day);
+    const value = calendar_mod.fromDays(calendar, days);
+    const index: u8 = @intFromEnum(calendar);
+    return .{
+        .year = value.year,
+        .month = value.month,
+        .day = value.day,
+        .era = value.era,
+        .gannen = calendar == .japanese and value.year == 1 and
+            isJapaneseLocale(locale_name),
+        .months = calendars.monthTable(locale_name, index),
+        .era_wide = calendars.eraName(locale_name, index, value.era, .wide),
+        .era_abbreviated = calendars.eraName(locale_name, index, value.era, .abbreviated),
+        .era_narrow = calendars.eraName(locale_name, index, value.era, .narrow),
+    };
+}
+
+/// Format a civil date using a non-Gregorian calendar's localized pattern.
+pub fn formatDateInCalendarAlloc(
+    allocator: std.mem.Allocator,
+    date_time: DateTime,
+    locale_name: []const u8,
+    calendar: calendar_mod.Calendar,
+    style: Style,
+) Error![]u8 {
+    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const index: u8 = @intFromEnum(calendar);
+    const calendar_style: calendars.Style = switch (style) {
+        .full => .full,
+        .long => .long,
+        .medium => .medium,
+        .short => .short,
+    };
+    const pattern = calendars.pattern(locale_name, index, calendar_style) orelse
+        switch (style) {
+            .full => locale.date_full,
+            .long => locale.date_long,
+            .medium => locale.date_medium,
+            .short => locale.date_short,
+        };
+    return formatPatternWithLocale(
+        allocator,
+        pattern,
+        date_time,
+        locale,
+        locale_name,
+        .{ .label = "UTC" },
+        calendarOverrides(locale_name, calendar, date_time),
+    );
+}
+
+/// Format a civil date and time using a non-Gregorian calendar.
+pub fn formatDateTimeInCalendarAlloc(
+    allocator: std.mem.Allocator,
+    date_time: DateTime,
+    locale_name: []const u8,
+    calendar: calendar_mod.Calendar,
+    style: Style,
+    zone_name: []const u8,
+) Error![]u8 {
+    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const date_text = try formatDateInCalendarAlloc(
+        allocator,
+        date_time,
+        locale_name,
+        calendar,
+        style,
+    );
+    defer allocator.free(date_text);
+    const time_pattern = switch (style) {
+        .full => locale.time_full,
+        .long => locale.time_long,
+        .medium => locale.time_medium,
+        .short => locale.time_short,
+    };
+    const time_text = try formatPatternWithLocale(
+        allocator,
+        time_pattern,
+        date_time,
+        locale,
+        locale_name,
+        .{ .label = zone_name },
+        .{},
+    );
+    defer allocator.free(time_text);
+    const date_time_pattern = switch (style) {
+        .full => locale.date_time_full,
+        .long => locale.date_time_long,
+        .medium => locale.date_time_medium,
+        .short => locale.date_time_short,
+    };
+    return substituteDateTimePattern(
+        allocator,
+        date_time_pattern,
+        date_text,
+        time_text,
+    );
+}
+
+/// Format a custom pattern using a non-Gregorian calendar's fields.
+pub fn formatPatternInCalendarAlloc(
+    allocator: std.mem.Allocator,
+    pattern: []const u8,
+    date_time: DateTime,
+    locale_name: []const u8,
+    calendar: calendar_mod.Calendar,
+) Error![]u8 {
+    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    return formatPatternWithLocale(
+        allocator,
+        pattern,
+        date_time,
+        locale,
+        locale_name,
+        .{ .label = "UTC" },
+        calendarOverrides(locale_name, calendar, date_time),
     );
 }
 
@@ -219,6 +368,7 @@ pub fn formatUnixTimeInZoneAlloc(
             .uses_daylight = timezone.usesDaylight(zone, unix_seconds),
             .unix_seconds = unix_seconds,
         },
+        .{},
     );
 }
 
@@ -261,6 +411,7 @@ pub fn formatTimeInZoneAlloc(
             .uses_daylight = timezone.usesDaylight(zone, unix_seconds),
             .unix_seconds = unix_seconds,
         },
+        .{},
     );
 }
 
@@ -280,6 +431,7 @@ pub fn formatPatternInZoneAlloc(
         locale,
         locale_name,
         .{ .label = zone_name },
+        .{},
     );
     const offset = timezone.offsetAt(zone, unix_seconds);
     return formatPatternWithLocale(
@@ -295,6 +447,7 @@ pub fn formatPatternInZoneAlloc(
             .uses_daylight = timezone.usesDaylight(zone, unix_seconds),
             .unix_seconds = unix_seconds,
         },
+        .{},
     );
 }
 
@@ -332,6 +485,7 @@ fn formatPatternWithLocale(
     locale: data.Locale,
     locale_name: []const u8,
     zone: ZoneInfo,
+    overrides: FieldOverrides,
 ) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
@@ -367,6 +521,13 @@ fn formatPatternWithLocale(
         if (isAsciiLetter(byte)) {
             var end = index;
             while (end < pattern.len and pattern[end] == byte) end += 1;
+            if (byte == 'y' and overrides.gannen and
+                std.mem.startsWith(u8, pattern[end..], "\xe5\xb9\xb4"))
+            {
+                try output.appendSlice(allocator, "\xe5\x85\x83");
+                index = end;
+                continue;
+            }
             try appendField(
                 allocator,
                 &output,
@@ -376,6 +537,7 @@ fn formatPatternWithLocale(
                 locale,
                 locale_name,
                 zone,
+                overrides,
             );
             index = end;
             continue;
@@ -396,23 +558,36 @@ fn appendField(
     locale: data.Locale,
     locale_name: []const u8,
     zone: ZoneInfo,
+    overrides: FieldOverrides,
 ) Error!void {
     switch (field) {
         'G' => {
-            const era: usize = if (date_time.year <= 0) 0 else 1;
-            const value = if (length >= 5)
-                locale.era_narrow[era]
-            else if (length == 4)
-                locale.era_wide[era]
-            else
-                locale.era_abbreviated[era];
+            const value = if (overrides.era != null)
+                if (length >= 5)
+                    overrides.era_narrow orelse ""
+                else if (length == 4)
+                    overrides.era_wide orelse ""
+                else
+                    overrides.era_abbreviated orelse ""
+            else blk: {
+                const era: usize = if (date_time.year <= 0) 0 else 1;
+                break :blk if (length >= 5)
+                    locale.era_narrow[era]
+                else if (length == 4)
+                    locale.era_wide[era]
+                else
+                    locale.era_abbreviated[era];
+            };
             try output.appendSlice(allocator, value);
         },
         'y' => {
-            const year: u64 = if (date_time.year <= 0)
-                @intCast(1 - @as(i64, date_time.year))
+            const year_value: i64 = if (overrides.year) |value|
+                value
+            else if (date_time.year <= 0)
+                1 - @as(i64, date_time.year)
             else
-                @intCast(date_time.year);
+                date_time.year;
+            const year: u64 = @intCast(@max(year_value, 0));
             if (length == 2) {
                 try appendPaddedNumber(allocator, output, year % 100, 2, locale);
             } else {
@@ -426,7 +601,7 @@ fn appendField(
             }
         },
         'M', 'L' => {
-            const month = @min(@max(date_time.month, 1), 12);
+            const month = @min(@max(overrides.month orelse date_time.month, 1), 13);
             if (length <= 2) {
                 try appendPaddedNumber(
                     allocator,
@@ -436,19 +611,28 @@ fn appendField(
                     locale,
                 );
             } else {
-                const value = if (length == 3)
-                    locale.months_abbreviated[month - 1]
-                else if (length == 4)
-                    locale.months_wide[month - 1]
+                const names: []const []const u8 = if (overrides.months) |months|
+                    if (length == 3)
+                        months.abbreviated[0..]
+                    else if (length == 4)
+                        months.wide[0..]
+                    else
+                        months.narrow[0..]
                 else
-                    locale.months_narrow[month - 1];
-                try output.appendSlice(allocator, value);
+                    if (length == 3)
+                        locale.months_abbreviated[0..]
+                    else if (length == 4)
+                        locale.months_wide[0..]
+                    else
+                        locale.months_narrow[0..];
+                const index = @min(month - 1, names.len - 1);
+                try output.appendSlice(allocator, names[index]);
             }
         },
         'd' => try appendPaddedNumber(
             allocator,
             output,
-            date_time.day,
+            overrides.day orelse date_time.day,
             if (length >= 2) 2 else 1,
             locale,
         ),
@@ -640,7 +824,7 @@ fn appendField(
             locale,
         ),
         'Q', 'q' => {
-            const quarter = (date_time.month - 1) / 3 + 1;
+            const quarter = ((overrides.month orelse date_time.month) - 1) / 3 + 1;
             if (length <= 2) {
                 try appendPaddedNumber(
                     allocator,
@@ -1112,5 +1296,89 @@ test "time zone name conformance" {
         }
     }
     std.debug.print("zone name conformance: {d}/{d} passed\n", .{ total - failures, total });
+    try testing.expect(failures == 0);
+}
+
+test "calendar formatting conformance" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("calendar_format_conformance.bin");
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJKF", fixture[0..4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+    const patterns = [_][]const u8{
+        "G y-MM-dd",
+        "MMMM d, y",
+        "EEEE, MMMM d, y",
+        "MMM d, y",
+    };
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var total: usize = 0;
+    var printed: usize = 0;
+    for (0..case_count) |_| {
+        const locale_length = fixture[cursor];
+        const calendar_index = fixture[cursor + 1];
+        const kind = fixture[cursor + 2];
+        const unix_seconds = std.mem.readInt(i64, fixture[cursor + 4 ..][0..8], .little);
+        const expected_length = std.mem.readInt(u16, fixture[cursor + 12 ..][0..2], .little);
+        cursor += 16;
+        const locale_name = fixture[cursor .. cursor + locale_length];
+        cursor += locale_length;
+        const expected = fixture[cursor .. cursor + expected_length];
+        cursor += expected_length;
+        const calendar: calendar_mod.Calendar = @enumFromInt(calendar_index);
+        const date_time = fromUnixSeconds(unix_seconds, 0);
+        total += 1;
+        const result = if (kind < 0x80)
+            formatPatternInCalendarAlloc(
+                allocator,
+                patterns[kind],
+                date_time,
+                locale_name,
+                calendar,
+            )
+        else blk: {
+            const style: Style = switch (kind & 0x7F) {
+                0 => .full,
+                1 => .long,
+                2 => .medium,
+                else => .short,
+            };
+            break :blk formatDateInCalendarAlloc(
+                allocator,
+                date_time,
+                locale_name,
+                calendar,
+                style,
+            );
+        };
+        const actual = result catch |err| {
+            failures += 1;
+            if (printed < 40) {
+                printed += 1;
+                std.debug.print(
+                    "calendar format mismatch {s} {s} kind {d}: {s}\n",
+                    .{ locale_name, @tagName(calendar), kind, @errorName(err) },
+                );
+            }
+            continue;
+        };
+        defer allocator.free(actual);
+        if (!std.mem.eql(u8, actual, expected)) {
+            failures += 1;
+            if (printed < 40) {
+                printed += 1;
+                std.debug.print(
+                    "calendar format mismatch {s} {s} kind {d}: got '{s}' expected '{s}'\n",
+                    .{ locale_name, @tagName(calendar), kind, actual, expected },
+                );
+            }
+        }
+    }
+    std.debug.print(
+        "calendar format conformance: {d}/{d} passed\n",
+        .{ total - failures, total },
+    );
     try testing.expect(failures == 0);
 }
