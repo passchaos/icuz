@@ -70,9 +70,10 @@ need without pulling in a font or layout engine.
   compact notation, and ICU number skeletons (precision tokens including
   significant digits, sign modes, integer width with truncation, grouping
   modes, scale, percent/permille units, currency unit widths, compact
-  significant-digit precision, scientific exponent widths, and engineering
-  notation). Currency output is validated against a 1,080-case PyICU
-  fixture and skeleton output against a 1,512-case ICU C API fixture.
+  significant-digit precision, scientific exponent widths, engineering
+  notation, and compact currency with ICU's short-pattern and sign
+  placement). Currency output is validated against a 1,080-case PyICU
+  fixture and skeleton output against a 1,624-case ICU C API fixture.
 - CLDR 48 Gregorian date/time formatting for 87 locales, including localized
   month/day names, date/time styles, custom patterns, and Unix timestamp
   conversion.

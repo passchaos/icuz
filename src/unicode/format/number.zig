@@ -480,7 +480,8 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
         } else if (std.mem.startsWith(u8, token, "currency/")) {
             const code = token["currency/".len..];
             if (code.len == 0) return error.InvalidPattern;
-            options.style = .currency;
+            // Currency is a unit; keep an explicit notation style.
+            if (options.style == .decimal) options.style = .currency;
             options.currency = code;
         } else if (std.mem.startsWith(u8, token, "unit-width-")) {
             const width = token["unit-width-".len..];
@@ -757,6 +758,32 @@ fn formatCompactAlloc(
     locale_name: []const u8,
     options: Options,
 ) Error![]u8 {
+    if (options.currency != null) {
+        // Compact notation formats the magnitude, then the currency affixes
+        // wrap the whole compact string ("$1.2K", "1,2 k $US").
+        var inner_options = options;
+        inner_options.currency = null;
+        inner_options.sign = .auto;
+        // CLDR defines compact currency patterns only for the short style.
+        inner_options.compact_style = .short;
+        const body = try formatCompactAlloc(
+            allocator,
+            @abs(value),
+            locale_name,
+            inner_options,
+        );
+        defer allocator.free(body);
+        var locale_storage: data.Locale = undefined;
+        const locale = resolveLocale(locale_name, options, &locale_storage);
+        return wrapCurrencyAlloc(
+            allocator,
+            body,
+            locale,
+            options,
+            value < 0,
+            @abs(value),
+        );
+    }
     const magnitude = @abs(value);
     if (!std.math.isFinite(value) or magnitude < 1000) {
         return compactFallback(allocator, value, locale_name, options);
@@ -904,6 +931,81 @@ fn compactSkeletonDigits(value: f64) u8 {
     }) {}
     if (count >= 2) return 0;
     return 2 - count;
+}
+
+/// Wrap an already formatted number in the locale's currency affixes.
+fn wrapCurrencyAlloc(
+    allocator: std.mem.Allocator,
+    number_text: []const u8,
+    locale: *const data.Locale,
+    options: Options,
+    negative: bool,
+    magnitude: f64,
+) Error![]u8 {
+    const code = options.currency orelse return error.MissingCurrency;
+    const display = if (options.currency_display == .name)
+        CurrencyDisplay.symbol
+    else
+        options.currency_display;
+    const display_text = currencyDisplayText(locale, code, display);
+    const pattern_text = currencyPatternText(locale, options, display_text);
+    const pattern = parsePattern(pattern_text) orelse
+        return error.InvalidPattern;
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    // Compact currency notation applies the sign outside the currency
+    // affixes, except for the plain fallback below 1000, where ICU uses the
+    // locale's negative currency subpattern.
+    const negative_pattern = negative and pattern.has_negative and
+        magnitude < 1000;
+    if (negative_pattern) {
+        try appendAffix(
+            allocator,
+            &output,
+            pattern.negative_prefix,
+            locale,
+            display_text,
+            locale.percent,
+        );
+    } else {
+        if (negative) {
+            try output.appendSlice(allocator, locale.minus);
+        } else if (options.sign != .auto and options.sign != .accounting and
+            (options.sign != .except_zero or
+                !std.mem.eql(u8, number_text, "0")))
+        {
+            try output.appendSlice(allocator, locale.plus);
+        }
+        try appendAffix(
+            allocator,
+            &output,
+            pattern.positive_prefix,
+            locale,
+            display_text,
+            locale.percent,
+        );
+    }
+    try output.appendSlice(allocator, number_text);
+    if (negative_pattern) {
+        try appendAffix(
+            allocator,
+            &output,
+            pattern.negative_suffix,
+            locale,
+            display_text,
+            locale.percent,
+        );
+    } else {
+        try appendAffix(
+            allocator,
+            &output,
+            pattern.positive_suffix,
+            locale,
+            display_text,
+            locale.percent,
+        );
+    }
+    return output.toOwnedSlice(allocator);
 }
 
 fn compactFallback(

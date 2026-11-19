@@ -48,6 +48,8 @@ SKELETONS = (
     "currency/USD unit-width-full-name",
     "currency/USD unit-width-hidden",
     "currency/JPY",
+    "compact-short currency/USD",
+    "compact-long currency/EUR",
 )
 
 VALUES = (0.0, 0.25, 5.0, -5.0, 1234.5, -1234.5, 1234567.0, 0.1234)
