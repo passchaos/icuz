@@ -83,6 +83,336 @@ pub fn formatDateAlloc(
     );
 }
 
+const skeleton_order = "GyMdkHmsSEDFwWahKzZ";
+
+/// Canonicalize an ICU date skeleton (fields sorted by ICU's canonical
+/// order) into `buffer`.
+pub fn canonicalSkeleton(
+    skeleton: []const u8,
+    buffer: []u8,
+) ?[]const u8 {
+    const Field = struct {
+        letter: u8,
+        count: u8,
+        order: u8,
+        index: u8,
+    };
+    var fields: [32]Field = undefined;
+    var count: usize = 0;
+    var index: usize = 0;
+    while (index < skeleton.len) {
+        const letter = skeleton[index];
+        if (!std.ascii.isAlphabetic(letter)) return null;
+        var end = index;
+        while (end < skeleton.len and skeleton[end] == letter) end += 1;
+        if (count == fields.len) return null;
+        const position = std.mem.indexOfScalar(u8, skeleton_order, letter);
+        fields[count] = .{
+            .letter = letter,
+            .count = @intCast(end - index),
+            .order = if (position) |value|
+                @intCast(value)
+            else
+                @intCast(skeleton_order.len),
+            .index = @intCast(count),
+        };
+        count += 1;
+        index = end;
+    }
+    if (count == 0) return null;
+
+    var sorted: usize = 1;
+    while (sorted < count) : (sorted += 1) {
+        const current = fields[sorted];
+        var position = sorted;
+        while (position > 0 and
+            (fields[position - 1].order > current.order or
+                (fields[position - 1].order == current.order and
+                    fields[position - 1].index > current.index)))
+        {
+            fields[position] = fields[position - 1];
+            position -= 1;
+        }
+        fields[position] = current;
+    }
+
+    var length: usize = 0;
+    for (fields[0..count]) |field| {
+        var repetition: u8 = 0;
+        while (repetition < field.count) : (repetition += 1) {
+            if (length == buffer.len) return null;
+            buffer[length] = field.letter;
+            length += 1;
+        }
+    }
+    return buffer[0..length];
+}
+
+fn skeletonFieldSet(canonical: []const u8, buffer: []u8) ?[]const u8 {
+    var length: usize = 0;
+    var index: usize = 0;
+    while (index < canonical.len) {
+        const letter = canonical[index];
+        if (length == buffer.len) return null;
+        buffer[length] = letter;
+        length += 1;
+        while (index < canonical.len and canonical[index] == letter) index += 1;
+    }
+    return buffer[0..length];
+}
+
+/// Resolve the locale pattern for an ICU date skeleton. Patterns that need
+/// their field widths adjusted for the request are built into `buffer`.
+pub fn skeletonPattern(
+    locale_name: []const u8,
+    skeleton: []const u8,
+    buffer: []u8,
+) ?[]const u8 {
+    var canonical_buffer: [64]u8 = undefined;
+    const canonical = canonicalSkeleton(skeleton, &canonical_buffer) orelse
+        return null;
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
+    for (locale.skeletons) |item| {
+        if (std.mem.eql(u8, item.id, canonical)) return item.pattern;
+    }
+    var request_buffer: [64]u8 = undefined;
+    const request_set = skeletonFieldSet(canonical, &request_buffer) orelse
+        return null;
+    for (locale.skeletons) |item| {
+        var item_buffer: [64]u8 = undefined;
+        const item_set = skeletonFieldSet(item.id, &item_buffer) orelse
+            continue;
+        if (std.mem.eql(u8, item_set, request_set)) {
+            return adjustSkeletonWidths(item.pattern, canonical, buffer) orelse
+                item.pattern;
+        }
+    }
+    return null;
+}
+
+fn requestedWidth(canonical: []const u8, letter: u8) ?u8 {
+    var index: usize = 0;
+    while (index < canonical.len) {
+        if (canonical[index] != letter) {
+            index += 1;
+            continue;
+        }
+        var end = index;
+        while (end < canonical.len and canonical[end] == letter) end += 1;
+        return @intCast(end - index);
+    }
+    return null;
+}
+
+/// Widen textual fields (three or more pattern letters) to the widths in the
+/// requested skeleton; numeric fields keep the locale pattern's width.
+fn adjustSkeletonWidths(
+    pattern: []const u8,
+    canonical: []const u8,
+    buffer: []u8,
+) ?[]const u8 {
+    var length: usize = 0;
+    var index: usize = 0;
+    var quoted = false;
+    while (index < pattern.len) {
+        const byte = pattern[index];
+        if (byte == '\'') {
+            quoted = !quoted;
+            if (length == buffer.len) return null;
+            buffer[length] = byte;
+            length += 1;
+            index += 1;
+            continue;
+        }
+        if (quoted or !std.ascii.isAlphabetic(byte)) {
+            if (length == buffer.len) return null;
+            buffer[length] = byte;
+            length += 1;
+            index += 1;
+            continue;
+        }
+        var end = index;
+        while (end < pattern.len and pattern[end] == byte) end += 1;
+        const matched_width = end - index;
+        var width = matched_width;
+        if (matched_width >= 3) {
+            if (requestedWidth(canonical, byte)) |requested| {
+                width = requested;
+            }
+        }
+        if (length + width > buffer.len) return null;
+        var repetition: usize = 0;
+        while (repetition < width) : (repetition += 1) {
+            buffer[length] = byte;
+            length += 1;
+        }
+        index = end;
+    }
+    return buffer[0..length];
+}
+
+const SplitSkeleton = struct {
+    date: []const u8,
+    time: []const u8,
+};
+
+fn splitSkeleton(
+    locale: *const data.Locale,
+    skeleton: []const u8,
+    date_buffer: []u8,
+    time_buffer: []u8,
+) SplitSkeleton {
+    const date_letters = "GyQqMLwWEdDFec";
+    const time_letters = "abBhHKkmsSzZOVvXx";
+    const preferred_hour: u8 = if (std.mem.indexOfAny(
+        u8,
+        locale.time_short,
+        "hK",
+    ) != null) 'h' else 'H';
+    var date_length: usize = 0;
+    var time_length: usize = 0;
+    for (skeleton) |letter| {
+        if (std.mem.indexOfScalar(u8, date_letters, letter) != null) {
+            if (date_length < date_buffer.len) {
+                date_buffer[date_length] = letter;
+                date_length += 1;
+            }
+        } else if (letter == 'j') {
+            if (time_length < time_buffer.len) {
+                time_buffer[time_length] = preferred_hour;
+                time_length += 1;
+            }
+        } else if (std.mem.indexOfScalar(u8, time_letters, letter) != null) {
+            if (time_length < time_buffer.len) {
+                time_buffer[time_length] = letter;
+                time_length += 1;
+            }
+        }
+    }
+    return .{
+        .date = date_buffer[0..date_length],
+        .time = time_buffer[0..time_length],
+    };
+}
+
+fn skeletonHasAny(skeleton: []const u8, letters: []const u8) bool {
+    for (skeleton) |byte| {
+        if (std.mem.indexOfScalar(u8, letters, byte) != null) return true;
+    }
+    return false;
+}
+
+/// Format a date/time value using an ICU date skeleton.
+pub fn formatSkeletonAlloc(
+    allocator: std.mem.Allocator,
+    date_time: DateTime,
+    locale_name: []const u8,
+    skeleton: []const u8,
+) Error![]u8 {
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
+    var pattern_buffer: [128]u8 = undefined;
+    if (skeletonPattern(locale_name, skeleton, &pattern_buffer)) |pattern| {
+        return formatPatternWithLocale(
+            allocator,
+            pattern,
+            date_time,
+            locale,
+            locale_name,
+            .{ .label = "UTC" },
+            .{},
+        );
+    }
+    // Split date and time skeletons and combine their resolved patterns
+    // with the locale's date-time glue pattern.
+    var date_part_buffer: [32]u8 = undefined;
+    var time_part_buffer: [32]u8 = undefined;
+    const split = splitSkeleton(
+        locale,
+        skeleton,
+        &date_part_buffer,
+        &time_part_buffer,
+    );
+    if (split.date.len > 0 and split.time.len > 0) {
+        var date_pattern_buffer: [128]u8 = undefined;
+        var time_pattern_buffer: [128]u8 = undefined;
+        const date_pattern = skeletonPattern(
+            locale_name,
+            split.date,
+            &date_pattern_buffer,
+        ) orelse locale.date_medium;
+        const time_pattern = skeletonPattern(
+            locale_name,
+            split.time,
+            &time_pattern_buffer,
+        ) orelse locale.time_medium;
+        const date_text = try formatPatternWithLocale(
+            allocator,
+            date_pattern,
+            date_time,
+            locale,
+            locale_name,
+            .{ .label = "UTC" },
+            .{},
+        );
+        defer allocator.free(date_text);
+        const time_text = try formatPatternWithLocale(
+            allocator,
+            time_pattern,
+            date_time,
+            locale,
+            locale_name,
+            .{ .label = "UTC" },
+            .{},
+        );
+        defer allocator.free(time_text);
+        return substituteDateTimePattern(
+            allocator,
+            locale.date_time_medium,
+            date_text,
+            time_text,
+        );
+    }
+    if (split.time.len > 0) {
+        var time_pattern_buffer: [128]u8 = undefined;
+        const pattern = skeletonPattern(
+            locale_name,
+            split.time,
+            &time_pattern_buffer,
+        ) orelse locale.time_medium;
+        return formatPatternWithLocale(
+            allocator,
+            pattern,
+            date_time,
+            locale,
+            locale_name,
+            .{ .label = "UTC" },
+            .{},
+        );
+    }
+    if (split.date.len > 0) {
+        var date_only_buffer: [128]u8 = undefined;
+        const pattern = skeletonPattern(
+            locale_name,
+            split.date,
+            &date_only_buffer,
+        ) orelse locale.date_medium;
+        return formatPatternWithLocale(
+            allocator,
+            pattern,
+            date_time,
+            locale,
+            locale_name,
+            .{ .label = "UTC" },
+            .{},
+        );
+    }
+    return formatDateAlloc(allocator, date_time, locale_name, .medium);
+}
+
 /// Format a time using the locale's time pattern. The zone name defaults to
 /// `UTC`; use `formatTimeWithZoneAlloc` to supply another label.
 pub fn formatTimeAlloc(
@@ -789,6 +1119,20 @@ fn appendField(
                 locale,
             );
         },
+        'K' => try appendPaddedNumber(
+            allocator,
+            output,
+            date_time.hour % 12,
+            if (length >= 2) 2 else 1,
+            locale,
+        ),
+        'k' => try appendPaddedNumber(
+            allocator,
+            output,
+            if (date_time.hour == 0) 24 else date_time.hour,
+            if (length >= 2) 2 else 1,
+            locale,
+        ),
         'm' => try appendPaddedNumber(
             allocator,
             output,
@@ -1563,5 +1907,137 @@ test "numbering system conformance" {
         }
     }
     std.debug.print("numbering conformance: {d}/{d} passed\n", .{ total - failures, total });
+    try testing.expect(failures == 0);
+}
+
+test "date skeleton patterns" {
+    const testing = @import("std").testing;
+    var buffer: [128]u8 = undefined;
+    try testing.expectEqualStrings(
+        "MMM d, y",
+        skeletonPattern("en", "yMMMd", &buffer).?,
+    );
+    try testing.expectEqualStrings(
+        "M/d/y",
+        skeletonPattern("en", "yMd", &buffer).?,
+    );
+    try testing.expectEqualStrings(
+        "d. MMM y",
+        skeletonPattern("de", "yMMMd", &buffer).?,
+    );
+    try testing.expectEqualStrings(
+        "y\u{5e74}M\u{6708}d\u{65e5}",
+        skeletonPattern("ja", "yMMMd", &buffer).?,
+    );
+    // Canonical field order resolves the same pattern.
+    try testing.expectEqualStrings(
+        "MMM d, y",
+        skeletonPattern("en", "dMMMy", &buffer).?,
+    );
+    // Field-set fallback widens textual fields to the requested skeleton.
+    try testing.expectEqualStrings(
+        "MMMM d, y",
+        skeletonPattern("en", "yMMMMd", &buffer).?,
+    );
+    // Weekday widths below three pattern letters keep the locale width.
+    try testing.expectEqualStrings(
+        "E, MMMM d, y",
+        skeletonPattern("en", "yMMMMEEEEd", &buffer).?,
+    );
+}
+
+test "date skeleton formatting" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const date_time = DateTime{
+        .year = 2026,
+        .month = 11,
+        .day = 19,
+        .hour = 13,
+        .minute = 45,
+        .second = 30,
+    };
+    const en = try formatSkeletonAlloc(allocator, date_time, "en", "yMMMd");
+    defer allocator.free(en);
+    try testing.expectEqualStrings("Nov 19, 2026", en);
+    const wide = try formatSkeletonAlloc(allocator, date_time, "en", "yMMMMd");
+    defer allocator.free(wide);
+    try testing.expectEqualStrings("November 19, 2026", wide);
+    const de = try formatSkeletonAlloc(allocator, date_time, "de", "yMMMd");
+    defer allocator.free(de);
+    try testing.expectEqualStrings("19. Nov. 2026", de);
+    const time = try formatSkeletonAlloc(allocator, date_time, "en", "Hm");
+    defer allocator.free(time);
+    try testing.expectEqualStrings("13:45", time);
+    const ja = try formatSkeletonAlloc(allocator, date_time, "ja", "yMMMd");
+    defer allocator.free(ja);
+    try testing.expectEqualStrings("2026\u{5e74}11\u{6708}19\u{65e5}", ja);
+}
+
+test "date skeleton conformance" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("date_skeleton_conformance.bin");
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJGJ", fixture[0..4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+    const date_time = DateTime{
+        .year = 2026,
+        .month = 11,
+        .day = 19,
+        .hour = 13,
+        .minute = 45,
+        .second = 30,
+    };
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var printed: usize = 0;
+    for (0..case_count) |_| {
+        const locale_length = fixture[cursor];
+        const skeleton_length = fixture[cursor + 1];
+        const expected_length = std.mem.readInt(
+            u16,
+            fixture[cursor + 2 ..][0..2],
+            .little,
+        );
+        cursor += 6;
+        const locale = fixture[cursor .. cursor + locale_length];
+        cursor += locale_length;
+        const skeleton = fixture[cursor .. cursor + skeleton_length];
+        cursor += skeleton_length;
+        const expected = fixture[cursor .. cursor + expected_length];
+        cursor += expected_length;
+        const actual = formatSkeletonAlloc(
+            allocator,
+            date_time,
+            locale,
+            skeleton,
+        ) catch |err| {
+            failures += 1;
+            if (printed < 30) {
+                printed += 1;
+                std.debug.print(
+                    "date skeleton error {s} {s}: {s}\n",
+                    .{ locale, skeleton, @errorName(err) },
+                );
+            }
+            continue;
+        };
+        defer allocator.free(actual);
+        if (!std.mem.eql(u8, actual, expected)) {
+            failures += 1;
+            if (printed < 30) {
+                printed += 1;
+                std.debug.print(
+                    "date skeleton mismatch {s} {s}: got '{s}' expected '{s}'\n",
+                    .{ locale, skeleton, actual, expected },
+                );
+            }
+        }
+    }
+    std.debug.print("date skeleton conformance: {d}/{d} passed\n", .{
+        case_count - failures,
+        case_count,
+    });
     try testing.expect(failures == 0);
 }

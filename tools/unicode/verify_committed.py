@@ -65,6 +65,7 @@ BLOBS = (
     Blob("src/unicode/format/skeleton_conformance.bin", b"CJKS", 1, "a5bd3fb5f24ff958c65ebb93596ffa27ebd75d29ee9c5398ac5dbb5c56655a01", version=(0, 0, 0)),
     Blob("src/unicode/format/range_data.bin", b"CJRG", 1, "a5e9485b2b8200d3258293607be56daa70fd5c10075b15f5c6438c6b2515860b", version=(0, 0, 0)),
     Blob("src/unicode/format/range_conformance.bin", b"CJRF", 1, "6d64ac9237c6affd6b89b6fa8c6c02fcdc004c021d40a698a03ad514f02a4f00", version=(0, 0, 0)),
+    Blob("src/unicode/format/date_skeleton_conformance.bin", b"CJGJ", 1, "9a6cb48a94cf098650f61c027aceaf19a03b901b8d3114266ac29743012caeef", version=(0, 0, 0)),
     Blob("src/unicode/format/units_data.bin", b"CJUN", 1, "8c27bc9b2594d77e74a6c40221b4f2a7b8448a65f1a1d946fa2c7a5d37f01f88", version=(0, 0, 0)),
     Blob("src/unicode/format/unit_conformance.bin", b"CJU1", 1, "f260532a091a6fd0990f664f8afcd6a5fb3785e46bb0b52dd6a8f2fc12c265fa", version=(0, 0, 0)),
     Blob("src/unicode/format/calendar_format_conformance.bin", b"CJKF", 1, "ffa627f64f42870b6d2ba203ff8abb707c7124360d910bab7f93cd41808d305f", version=(0, 0, 0)),
@@ -452,7 +453,8 @@ GENERATORS = {
     "tools/unicode/format/generate_display_names_conformance.py": "d87750b780f7809ea1031149faba1e929cec7c532246adfad1a4e953ba49d844",
     "tools/unicode/format/generate_likely_subtags.py": "aab79fd344e8397809fc1b1960c63ad6f80bca9b826d25366d20282a6729c268",
     "tools/unicode/format/generate_likely_subtags_conformance.py": "a7285f908b8c3f3bb60153ba1cb62c7aaa9fa5248734f04530864c8b48024ae6",
-    "tools/unicode/format/generate_dates.py": "cb9ae3350d32eb4d2289205872f53ffe07cef3a1c4d8549c3a7b2ba5fd94b0d5",
+    "tools/unicode/format/generate_dates.py": "71849fc4812dcaed83e227ed0122fb3a41a6c8e4444d9676bb45f258ba84738b",
+    "tools/unicode/format/generate_date_skeleton_conformance.py": "0180072157ba234dea9af11cd401695cace6e6d399792743a76ace27c24b8246",
     "tools/unicode/format/generate_misc.py": "6f811f84eb654ea301ead14d178f9ef74b5f31d75c00e4a958ee887b60380af5",
     "tools/unicode/format/generate_currency_conformance.py": "d84c2f318fc73ea144d594c5ab4d53063497d2e2d6c739973bc9decef2f3d812",
     "tools/unicode/format/generate_skeleton_conformance.py": "b500bf19600591ab747520fc4bd4b0307b71d657c77958ee0914b891c2113901",
@@ -543,7 +545,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/format/dates_data.zig",
         "tools/unicode/format/generate_dates.py",
-        "523f68d4a936be22b818ccc3214672106d360bec2a45e0c9b9003b462e5fcda3",
+        "79f9199529bd989991c0c52c616f2cccdd5b7d2a33bf3ad3b0e220b50676ad9e",
     ),
     GeneratedText(
         "src/unicode/format/list_data.zig",
@@ -690,6 +692,15 @@ def check_layout(blob: Blob, data: bytes) -> None:
             skeleton_len = data[offset + 1]
             expected_len = struct.unpack_from("<H", data, offset + 20)[0]
             offset += 24 + locale_len + skeleton_len + expected_len
+        assert offset == len(data)
+    elif magic == b"CJGJ":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            locale_len = data[offset]
+            skeleton_len = data[offset + 1]
+            expected_len = struct.unpack_from("<H", data, offset + 2)[0]
+            offset += 6 + locale_len + skeleton_len + expected_len
         assert offset == len(data)
     elif magic == b"CJTR":
         (

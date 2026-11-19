@@ -80,8 +80,11 @@ need without pulling in a font or layout engine.
   2,072-case ICU C API fixture, and ranges against a 460-case ICU C API
   fixture.
 - CLDR 48 Gregorian date/time formatting for 87 locales, including localized
-  month/day names, date/time styles, custom patterns, and Unix timestamp
-  conversion.
+  month/day names, date/time styles, custom patterns, ICU date/time
+  skeletons (`yMMMd`, `Hm`, combined date+time skeletons) resolved from
+  CLDR availableFormats with canonical field ordering, width adjustment,
+  and date/time split fallbacks, and Unix timestamp conversion. Skeleton
+  output is validated against an 80-case PyICU fixture.
 - Non-Gregorian calendar conversion and formatting for Buddhist, Japanese,
   ROC, Islamic civil/tbla/umalqura, Hebrew, Chinese, Persian, Indian,
   Coptic, Ethiopic, Ethiopic Amete Alem, and ISO-8601 calendars, following
