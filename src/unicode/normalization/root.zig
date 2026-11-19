@@ -610,6 +610,9 @@ fn normalizeWithEditsInto(
     form: Form,
     output: *std.ArrayList(u8),
 ) Error!void {
+    // Reserve once for the common case so the per-segment reservations do
+    // not each grow the list.
+    try output.ensureUnusedCapacity(allocator, text.len + 16);
     var position: usize = 0;
     while (position < text.len) {
         const span = spanQuickCheckYesUnchecked(text[position..], form);
