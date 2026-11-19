@@ -94,9 +94,12 @@ pub const Search = struct {
                 codepoints[index..end],
                 &self.candidate_key,
             );
+            const starts_contraction = self.collator.startsContraction(
+                codepoints[index],
+            );
             // When no contraction can start here, the first character's
             // primary weights must prefix the pattern's primary weights.
-            if (!self.collator.startsContraction(codepoints[index])) {
+            if (!starts_contraction) {
                 const length = primaryLength(self.candidate_key.items);
                 if (length > self.needle_primary.items.len or
                     !std.mem.eql(
@@ -109,6 +112,10 @@ pub const Search = struct {
                     continue;
                 }
             }
+            // Extending a contraction can merge weights, so the "too many
+            // weights" cut-off is only safe when no contraction can start
+            // anywhere inside the candidate.
+            var breakable = !starts_contraction;
             while (true) {
                 if (std.mem.eql(
                     u32,
@@ -117,12 +124,9 @@ pub const Search = struct {
                 )) {
                     return offsets[index];
                 }
-                const counts = countLevels(self.candidate_key.items);
-                if (exceeds(counts, self.needle_counts)) break;
-                if (std.meta.eql(counts, self.needle_counts)) {
-                    // Same weight counts but a different key: any further
-                    // code point either adds a weight or changes nothing.
-                    break;
+                if (breakable) {
+                    const counts = countLevels(self.candidate_key.items);
+                    if (exceeds(counts, self.needle_counts)) break;
                 }
                 if (end == codepoints.len) break;
                 end += 1;
@@ -131,6 +135,11 @@ pub const Search = struct {
                     codepoints[index..end],
                     &self.candidate_key,
                 );
+                if (breakable and
+                    self.collator.startsContraction(codepoints[end - 1]))
+                {
+                    breakable = false;
+                }
             }
             index += 1;
         }
@@ -272,6 +281,35 @@ test "locale-aware search" {
     try testing.expectEqual(
         @as(?usize, null),
         try indexOf(allocator, cafe, "cafe", .{ .strength = .secondary }),
+    );
+
+    // A tailored contraction must still match when the first character
+    // alone has the same weight count as the whole pattern.
+    try testing.expectEqual(
+        @as(?usize, 0),
+        try indexOf(
+            allocator,
+            "a\u{0308}",
+            "a\u{0308}",
+            .{ .strength = .primary, .locale = "sv" },
+        ),
+    );
+
+    // A three-code-point tailoring contraction must survive its two-code-
+    // point prefix, which holds more weights than the whole pattern.
+    const bengali = "\u{0995}\u{09c7}\u{09be}";
+    try testing.expectEqual(
+        @as(?usize, 0),
+        try indexOf(
+            allocator,
+            bengali,
+            bengali,
+            .{
+                .strength = .primary,
+                .locale = "bn",
+                .collation = "traditional",
+            },
+        ),
     );
 
     // Matches do not start inside a combining sequence.
