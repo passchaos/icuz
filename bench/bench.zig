@@ -377,6 +377,42 @@ fn benchCollation(
     reportBytes(name, rounds * text.len, best);
 }
 
+fn benchCollationCodepoints(
+    name: []const u8,
+    text: []const u8,
+    options: icuz.collation.Options,
+    allocator: std.mem.Allocator,
+) void {
+    var codepoints: [512]u21 = undefined;
+    var count: usize = 0;
+    var view = std.unicode.Utf8View.initUnchecked(text).iterator();
+    while (view.nextCodepoint()) |codepoint| {
+        if (count == codepoints.len) break;
+        codepoints[count] = codepoint;
+        count += 1;
+    }
+    var key = std.ArrayList(u32).empty;
+    defer key.deinit(allocator);
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 2000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            icuz.collation.sortKeyCodepointsInto(
+                allocator,
+                codepoints[0..count],
+                options,
+                &key,
+            ) catch unreachable;
+            sink +%= key.items.len;
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * text.len, best);
+}
+
 fn benchCharset(
     name: []const u8,
     text: []const u8,
@@ -716,6 +752,24 @@ pub fn main() !void {
         "UCA sort key Chinese pinyin",
         chinese_collation_runtime,
         .{ .locale = "zh", .collation = "pinyin" },
+        allocator,
+    );
+    benchCollationCodepoints(
+        "UCA sort key Chinese root (cp)",
+        chinese_collation_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationCodepoints(
+        "UCA sort key Chinese pinyin (cp)",
+        chinese_collation_runtime,
+        .{ .locale = "zh", .collation = "pinyin" },
+        allocator,
+    );
+    benchCollationCodepoints(
+        "UCA sort key Swedish (cp)",
+        swedish_runtime,
+        .{ .locale = "sv" },
         allocator,
     );
 

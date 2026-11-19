@@ -847,9 +847,17 @@ fn convertAllocStateless(
     input: []const u8,
     options: Options,
 ) Error![]u8 {
+    // Valid input never grows past this bound: a 3-byte UTF-8 sequence maps
+    // to at most 2 DBCS bytes (4 for GB18030 supplementary), and a 2-byte
+    // DBCS sequence maps to 3 UTF-8 bytes. Error replacements use the
+    // checked path below.
+    const growth: usize = comptime switch (from) {
+        .utf8 => if (to == .gb18030) 2 else 1,
+        else => 2,
+    };
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, input.len + 8);
+    try output.ensureTotalCapacity(allocator, input.len * growth + 8);
     const decode = comptime decoderFor(from);
     const encode = comptime encoderFor(to);
     var index: usize = 0;
@@ -860,29 +868,41 @@ fn convertAllocStateless(
                 var buffer: [8]u8 = undefined;
                 switch (encode(codepoint, &buffer)) {
                     .written => |length| {
-                        try output.appendSlice(allocator, buffer[0..length]);
+                        output.appendSliceAssumeCapacity(buffer[0..length]);
                     },
                     .unmappable => switch (options.on_error) {
                         .strict => return error.UnmappableCharacter,
                         .ignore => {},
-                        .replace => try writeReplacementFor(
-                            to,
-                            allocator,
-                            &output,
-                            options,
-                        ),
+                        .replace => {
+                            try writeReplacementFor(
+                                to,
+                                allocator,
+                                &output,
+                                options,
+                            );
+                            try output.ensureUnusedCapacity(
+                                allocator,
+                                (input.len - index) * growth + 8,
+                            );
+                        },
                     },
                 }
             },
             .malformed => switch (options.on_error) {
                 .strict => return error.InvalidSequence,
                 .ignore => {},
-                .replace => try writeReplacementFor(
-                    to,
-                    allocator,
-                    &output,
-                    options,
-                ),
+                .replace => {
+                    try writeReplacementFor(
+                        to,
+                        allocator,
+                        &output,
+                        options,
+                    );
+                    try output.ensureUnusedCapacity(
+                        allocator,
+                        (input.len - index) * growth + 8,
+                    );
+                },
             },
             .incomplete => {
                 switch (options.on_error) {
