@@ -306,9 +306,10 @@ search. Normalization runs per starter segment: one-code-point segments skip
 canonical ordering and composition entirely, a composition-second page table
 keeps ordinary starters out of the composition binary search, and simple-page
 bitmaps let CJK and other non-decomposing scripts skip all three per-scalar
-lookups. UTF-8 validation is fused into the quick check, the stable prefix
-before the first change is copied verbatim, and the segment engine
-streams UTF-8 straight to the output sink with ASCII runs bulk-copied.
+lookups. UTF-8 validation is fused into the quick check, the quick check
+bulk-skips interior ASCII runs, stable spans before and between changes are
+copied verbatim, and the segment engine streams UTF-8 straight to the output
+sink with ASCII runs bulk-copied.
 
 Collation keeps five fast paths: a 128-entry ASCII table, a compile-time table
 for Latin-1 and Latin Extended-A/B (decomposed on the stack) that bypasses the
