@@ -167,6 +167,11 @@ need without pulling in a font or layout engine.
 - ICU-style message formatting with positional/named arguments, plural,
   selectordinal, and select branches, `#` substitution, number/date arguments,
   and quoting.
+- Unicode MessageFormat 2 core subset: `.input`/`.local` declarations, quoted
+  patterns, `.match` matchers with multiple selectors, expressions with
+  literal/variable/function operands and options, and `:string`,
+  `:number`, `:integer` formatting with exact-value and plural/ordinal
+  selection. Markup and date/time functions are rejected as unsupported.
 - UTF-16 validation, iteration, and UTF-8/UTF-16 conversion helpers.
 - Charset conversion for UTF-8/16/32, ASCII, Latin-1, 28 legacy single-byte
   encodings, GBK/GB18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, and EUC-KR,
