@@ -88,7 +88,10 @@ need without pulling in a font or layout engine.
   skeletons (`yMMMd`, `Hm`, combined date+time skeletons) resolved from
   CLDR availableFormats with canonical field ordering, width adjustment,
   and date/time split fallbacks, and Unix timestamp conversion. Skeleton
-  output is validated against an 80-case PyICU fixture.
+  output is validated against an 80-case PyICU fixture. Date/time parsing
+  (`parsePattern`) consumes the same pattern syntax, including localized
+  month, weekday, era, day-period, and quarter names, native digits, and
+  caller-supplied defaults for absent fields.
 - Non-Gregorian calendar conversion and formatting for Buddhist, Japanese,
   ROC, Islamic civil/tbla/umalqura, Hebrew, Chinese, Persian, Indian,
   Coptic, Ethiopic, Ethiopic Amete Alem, and ISO-8601 calendars, following
