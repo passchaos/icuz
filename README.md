@@ -172,6 +172,10 @@ need without pulling in a font or layout engine.
 - Differential fixtures validate 15,883 time zone offset/daylight cases
   against an independent TZif reader and 1,792 localized name cases against
   PyICU.
+- CLDR 48 Windows time zone ID mapping (`windowsIdForTimeZone`,
+  `timeZoneIdForWindowsId`): 139 Windows IDs over 445 IANA zones, with
+  region-specific lookups and the ICU `001` fallback semantics of
+  `ucal_getWindowsTimeZoneID` and `ucal_getTimeZoneIDForWindowsID`.
 - CLDR 48 list formatting for 87 locales, including and/or and unit list
   styles with narrow/short variants.
 - CLDR 48 relative time for 87 locales, including yesterday/today/tomorrow

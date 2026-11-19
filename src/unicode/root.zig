@@ -292,6 +292,8 @@ pub const TimeZoneNameKind = timezone_mod.names.Kind;
 pub const timeZoneNameAlloc = timezone_mod.names.zoneNameAlloc;
 pub const timeZoneGmtOffsetAlloc = timezone_mod.names.gmtOffsetAlloc;
 pub const timeZoneExemplarCityAlloc = timezone_mod.names.exemplarCityAlloc;
+pub const windowsIdForTimeZone = timezone_mod.windows.windowsIdForZone;
+pub const timeZoneIdForWindowsId = timezone_mod.windows.zoneForWindowsId;
 
 pub const DateTime = dates_mod.DateTime;
 pub const DateStyle = dates_mod.Style;
@@ -624,6 +626,7 @@ test {
     _ = dates_mod;
     _ = rbnf_mod;
     _ = timezone_mod;
+    _ = timezone_mod.windows;
     _ = calendar_mod;
     _ = intervals_mod;
     _ = durations_mod;
