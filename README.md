@@ -299,7 +299,8 @@ search. Normalization runs per starter segment: one-code-point segments skip
 canonical ordering and composition entirely, a composition-second page table
 keeps ordinary starters out of the composition binary search, and simple-page
 bitmaps let CJK and other non-decomposing scripts skip all three per-scalar
-lookups. UTF-8 validation is fused into the quick check, and the segment engine
+lookups. UTF-8 validation is fused into the quick check, the stable prefix
+before the first change is copied verbatim, and the segment engine
 streams UTF-8 straight to the output sink with ASCII runs bulk-copied.
 
 Collation keeps five fast paths: a 128-entry ASCII table, a compile-time table
@@ -318,7 +319,8 @@ reverse indexes carry compile-time page indexes and a split layout (sorted
 `u32` code points, then parallel `u16` pointers), so DBCS encoders
 binary-search only one 256-code-point page; hot stateless conversion pairs
 run comptime-specialized loops that append into reserved capacity with no
-per-character dispatch or capacity checks.
+per-character dispatch or capacity checks, and each DBCS encoder keeps a
+small atomic cache of recent reverse lookups.
 
 ## Data provenance
 
