@@ -840,6 +840,73 @@ fn writeReplacementFor(
     return error.UnmappableCharacter;
 }
 
+/// Fast path for well-formed UTF-8 text that the GBK encoder can map.
+/// Returns null when the input needs the generic error handling.
+fn convertUtf8ToGbkFast(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+) error{OutOfMemory}!?[]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try output.ensureTotalCapacity(allocator, input.len + 8);
+    const spare = output.unusedCapacitySlice();
+    var index: usize = 0;
+    var written: usize = 0;
+    const complete = blk: {
+        while (index < input.len) {
+            const first = input[index];
+            if (first < 0x80) {
+                spare[written] = first;
+                written += 1;
+                index += 1;
+                continue;
+            }
+            var codepoint: u21 = undefined;
+            if (first >= 0xC2 and first <= 0xDF) {
+                if (index + 2 > input.len) break :blk false;
+                const second = input[index + 1];
+                if (second < 0x80 or second > 0xBF) break :blk false;
+                codepoint = (@as(u21, first & 0x1F) << 6) |
+                    (second & 0x3F);
+                index += 2;
+            } else if (first >= 0xE0 and first <= 0xEF) {
+                if (index + 3 > input.len) break :blk false;
+                const second = input[index + 1];
+                const third = input[index + 2];
+                if (second < 0x80 or second > 0xBF or
+                    third < 0x80 or third > 0xBF)
+                {
+                    break :blk false;
+                }
+                codepoint = (@as(u21, first & 0x0F) << 12) |
+                    (@as(u21, second & 0x3F) << 6) |
+                    (third & 0x3F);
+                if (codepoint < 0x800 or
+                    (codepoint >= 0xD800 and codepoint <= 0xDFFF))
+                {
+                    break :blk false;
+                }
+                index += 3;
+            } else {
+                break :blk false;
+            }
+            var buffer: [2]u8 = undefined;
+            const length = cjk.gbkEncodeFast(codepoint, &buffer) orelse
+                break :blk false;
+            spare[written] = buffer[0];
+            if (length == 2) spare[written + 1] = buffer[1];
+            written += length;
+        }
+        output.items.len = written;
+        break :blk true;
+    };
+    if (!complete) {
+        output.deinit(allocator);
+        return null;
+    }
+    return try output.toOwnedSlice(allocator);
+}
+
 fn convertAllocStateless(
     comptime from: Encoding,
     comptime to: Encoding,
@@ -847,6 +914,11 @@ fn convertAllocStateless(
     input: []const u8,
     options: Options,
 ) Error![]u8 {
+    if (comptime from == .utf8 and to == .gbk) {
+        if (try convertUtf8ToGbkFast(allocator, input)) |result| {
+            return result;
+        }
+    }
     // Valid input never grows past this bound: a 3-byte UTF-8 sequence maps
     // to at most 2 DBCS bytes (4 for GB18030 supplementary), and a 2-byte
     // DBCS sequence maps to 3 UTF-8 bytes. Error replacements use the

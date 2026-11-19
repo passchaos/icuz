@@ -86,6 +86,33 @@ fn gbNext(input: []const u8, index: *usize, comptime gbk: bool) DecodeResult {
     return .{ .codepoint = codepoint };
 }
 
+/// Encode one scalar for the GBK fast path. Returns the byte count (1 or
+/// 2), or null when the scalar needs the generic encoder (unmappable or
+/// the E5E5 special case).
+pub fn gbkEncodeFast(codepoint: u21, out: *[2]u8) ?u8 {
+    if (codepoint < 0x80) {
+        out[0] = @intCast(codepoint);
+        return 1;
+    }
+    if (codepoint == 0xE5E5) return null;
+    if (codepoint == 0x20AC) {
+        out[0] = 0x80;
+        return 1;
+    }
+    const pointer = tables.reverseLookupCached(
+        &gb_reverse_cache,
+        tables.gb18030_reverse,
+        &tables.gb18030_reverse_pages,
+        codepoint,
+    ) orelse return null;
+    const lead: u8 = @intCast(pointer / 190 + 0x81);
+    var trail: u8 = @intCast(pointer % 190);
+    trail += if (trail < 0x3F) 0x40 else 0x41;
+    out[0] = lead;
+    out[1] = trail;
+    return 2;
+}
+
 pub fn gbkEncode(codepoint: u21, out: []u8) EncodeResult {
     return gbEncode(codepoint, out, false);
 }
