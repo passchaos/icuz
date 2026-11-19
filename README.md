@@ -73,9 +73,12 @@ need without pulling in a font or layout engine.
   significant-digit precision, scientific exponent widths, engineering
   notation, compact currency with ICU's short-pattern and sign placement,
   and measure-unit skeletons including compact units and ICU's compact
-  plural-operand rounding). Currency output is validated against a
-  1,080-case PyICU fixture and skeleton output against a 2,072-case ICU C
-  API fixture.
+  plural-operand rounding). Number range formatting (`formatRangeAlloc`)
+  follows ICU's range infixes, identity fallbacks, approximately markers,
+  and affix-collapse heuristics for 87 locales. Currency output is
+  validated against a 1,080-case PyICU fixture, skeleton output against a
+  2,072-case ICU C API fixture, and ranges against a 460-case ICU C API
+  fixture.
 - CLDR 48 Gregorian date/time formatting for 87 locales, including localized
   month/day names, date/time styles, custom patterns, and Unix timestamp
   conversion.

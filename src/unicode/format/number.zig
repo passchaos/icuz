@@ -75,6 +75,421 @@ pub const Error = error{
     OutOfMemory,
 };
 
+const range_blob = @embedFile("range_data.bin");
+const range_header_len = 20;
+const range_locale_count = std.mem.readInt(u16, range_blob[8..10], .little);
+const range_string_len = std.mem.readInt(u32, range_blob[12..16], .little);
+const range_records_offset = range_header_len;
+const range_strings_offset = range_records_offset +
+    @as(usize, range_locale_count) * 16;
+
+comptime {
+    if (range_blob.len < range_header_len or
+        !std.mem.eql(u8, range_blob[0..4], "CJRG") or range_blob[4] != 1)
+    {
+        @compileError("invalid number range data");
+    }
+    if (range_strings_offset + @as(usize, range_string_len) != range_blob.len) {
+        @compileError("invalid number range data lengths");
+    }
+}
+
+const RangeData = struct {
+    infix: []const u8,
+    approximately: []const u8,
+};
+
+fn rangeStrAt(offset: u32) []const u8 {
+    if (offset == 0) return "";
+    return std.mem.sliceTo(range_blob[range_strings_offset + offset ..], 0);
+}
+
+fn rangeLocaleAt(index: usize) []const u8 {
+    const base = range_records_offset + index * 16;
+    const id_offset = std.mem.readInt(u32, range_blob[base..][0..4], .little);
+    const id_length = range_blob[base + 4];
+    return range_blob[range_strings_offset + id_offset ..][0..id_length];
+}
+
+fn findRangeLocale(locale_name: []const u8) ?usize {
+    var low: usize = 0;
+    var high: usize = range_locale_count;
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        switch (std.mem.order(u8, rangeLocaleAt(middle), locale_name)) {
+            .lt => low = middle + 1,
+            .gt => high = middle,
+            .eq => return middle,
+        }
+    }
+    return null;
+}
+
+fn rangeDataFor(locale_name: []const u8) RangeData {
+    var index = findRangeLocale(locale_name);
+    if (index == null) {
+        if (std.mem.indexOfAny(u8, locale_name, "-_")) |position| {
+            index = findRangeLocale(locale_name[0..position]);
+        }
+    }
+    const record = index orelse findRangeLocale("en") orelse
+        return .{ .infix = "\u{2013}", .approximately = "~" };
+    const base = range_records_offset + record * 16;
+    return .{
+        .infix = rangeStrAt(std.mem.readInt(
+            u32,
+            range_blob[base + 8 ..][0..4],
+            .little,
+        )),
+        .approximately = rangeStrAt(std.mem.readInt(
+            u32,
+            range_blob[base + 12 ..][0..4],
+            .little,
+        )),
+    };
+}
+
+pub const RangeIdentity = enum {
+    single_value,
+    approximately_or_single_value,
+    approximately,
+    range,
+};
+
+pub const RangeCollapse = enum { auto, none, unit, all };
+
+pub const RangeOptions = struct {
+    number: Options = .{},
+    identity: RangeIdentity = .approximately_or_single_value,
+    collapse: RangeCollapse = .auto,
+};
+
+const RangeAffix = struct {
+    prefix: []const u8,
+    suffix: []const u8,
+    auto_collapse: bool,
+    owned: bool = false,
+};
+
+fn codepointCount(text: []const u8) usize {
+    var count: usize = 0;
+    var index: usize = 0;
+    while (index < text.len) {
+        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+            return count;
+        index += length;
+        count += 1;
+    }
+    return count;
+}
+
+fn buildAffixTextAlloc(
+    allocator: std.mem.Allocator,
+    part: []const u8,
+    locale: *const data.Locale,
+    currency_display: []const u8,
+    percent_symbol: []const u8,
+) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try appendAffix(
+        allocator,
+        &output,
+        part,
+        locale,
+        currency_display,
+        percent_symbol,
+    );
+    return output.toOwnedSlice(allocator);
+}
+
+fn rangeAffix(
+    allocator: std.mem.Allocator,
+    locale: *const data.Locale,
+    options: *const Options,
+    first: []const u8,
+    second: []const u8,
+) Error!?RangeAffix {
+    if (options.style == .currency) {
+        const code = options.currency orelse return null;
+        if (options.currency_display == .name or
+            options.currency_display == .hidden)
+        {
+            return null;
+        }
+        const display = currencyDisplayText(
+            locale,
+            code,
+            options.currency_display,
+        );
+        if (display.len == 0) return null;
+        const pattern_text = currencyPatternText(locale, options, display);
+        const pattern = parsePattern(pattern_text) orelse return null;
+        const prefix = try buildAffixTextAlloc(
+            allocator,
+            pattern.positive_prefix,
+            locale,
+            display,
+            locale.percent,
+        );
+        const suffix = try buildAffixTextAlloc(
+            allocator,
+            pattern.positive_suffix,
+            locale,
+            display,
+            locale.percent,
+        );
+        if (!rangeAffixMatches(prefix, suffix, first, second)) {
+            allocator.free(prefix);
+            allocator.free(suffix);
+            return null;
+        }
+        return .{
+            .prefix = prefix,
+            .suffix = suffix,
+            .auto_collapse = codepointCount(prefix) + codepointCount(suffix) > 1,
+            .owned = true,
+        };
+    }
+    if (options.style == .percent) {
+        const symbol = if (options.permille) "\u{2030}" else locale.percent;
+        const pattern = parsePattern(locale.percent_pattern) orelse return null;
+        const prefix = try buildAffixTextAlloc(
+            allocator,
+            pattern.positive_prefix,
+            locale,
+            "",
+            symbol,
+        );
+        const suffix = try buildAffixTextAlloc(
+            allocator,
+            pattern.positive_suffix,
+            locale,
+            "",
+            symbol,
+        );
+        if (!rangeAffixMatches(prefix, suffix, first, second)) {
+            allocator.free(prefix);
+            allocator.free(suffix);
+            return null;
+        }
+        return .{
+            .prefix = prefix,
+            .suffix = suffix,
+            .auto_collapse = codepointCount(prefix) + codepointCount(suffix) > 1,
+            .owned = true,
+        };
+    }
+    if (options.style == .compact) {
+        // Compact notation appends a unit suffix; share it when both
+        // endpoints end with the same non-numeric suffix.
+        var length: usize = 0;
+        while (length < first.len and length < second.len and
+            first[first.len - 1 - length] == second[second.len - 1 - length])
+        {
+            length += 1;
+        }
+        if (length == 0) return null;
+        const suffix = first[first.len - length ..];
+        var has_letter = false;
+        for (suffix) |byte| {
+            if (byte >= 0x80 or std.ascii.isAlphabetic(byte) or byte == '%') {
+                has_letter = true;
+            }
+        }
+        if (!has_letter) return null;
+        return .{
+            .prefix = "",
+            .suffix = suffix,
+            .auto_collapse = codepointCount(suffix) > 1,
+        };
+    }
+    return null;
+}
+
+fn rangeAffixMatches(
+    prefix: []const u8,
+    suffix: []const u8,
+    first: []const u8,
+    second: []const u8,
+) bool {
+    if (prefix.len > 0 and
+        (!std.mem.startsWith(u8, first, prefix) or
+            !std.mem.startsWith(u8, second, prefix)))
+    {
+        return false;
+    }
+    if (suffix.len > 0 and
+        (!std.mem.endsWith(u8, first, suffix) or
+            !std.mem.endsWith(u8, second, suffix)))
+    {
+        return false;
+    }
+    return true;
+}
+
+fn hasCompactSuffix(text: []const u8) bool {
+    if (text.len == 0) return false;
+    var index = text.len;
+    while (index > 0) {
+        index -= 1;
+        if (text[index] & 0xc0 != 0x80) {
+            const codepoint = std.unicode.utf8Decode(text[index..]) catch
+                return false;
+            return std.ascii.isAlphabetic(@intCast(codepoint & 0xff)) or
+                codepoint >= 0x80;
+        }
+    }
+    return false;
+}
+
+fn appendSpacedInfix(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    infix: []const u8,
+) Error!void {
+    if (infix.len > 0 and !std.ascii.isWhitespace(infix[0])) {
+        try output.append(allocator, ' ');
+    }
+    try output.appendSlice(allocator, infix);
+    if (infix.len > 0 and !std.ascii.isWhitespace(infix[infix.len - 1])) {
+        try output.append(allocator, ' ');
+    }
+}
+
+/// Format a numeric range with ICU's range infix, identity fallback, and
+/// affix-collapse heuristics.
+pub fn formatRangeAlloc(
+    allocator: std.mem.Allocator,
+    first: f64,
+    second: f64,
+    locale_name: []const u8,
+    options: RangeOptions,
+) Error![]u8 {
+    const range = rangeDataFor(locale_name);
+    const number_options = options.number;
+
+    if (first == second) {
+        switch (options.identity) {
+            .single_value, .approximately_or_single_value => {
+                return formatAlloc(
+                    allocator,
+                    first,
+                    locale_name,
+                    number_options,
+                );
+            },
+            .approximately => {
+                const formatted = try formatAlloc(
+                    allocator,
+                    first,
+                    locale_name,
+                    number_options,
+                );
+                defer allocator.free(formatted);
+                return std.mem.concat(allocator, u8, &.{
+                    range.approximately,
+                    formatted,
+                });
+            },
+            .range => {},
+        }
+    }
+
+    const first_text = try formatAlloc(
+        allocator,
+        first,
+        locale_name,
+        number_options,
+    );
+    defer allocator.free(first_text);
+    const second_text = try formatAlloc(
+        allocator,
+        second,
+        locale_name,
+        number_options,
+    );
+    defer allocator.free(second_text);
+
+    if (std.mem.eql(u8, first_text, second_text) and
+        options.identity != .range)
+    {
+        if (options.identity == .single_value) {
+            return allocator.dupe(u8, first_text);
+        }
+        return std.mem.concat(allocator, u8, &.{
+            range.approximately,
+            first_text,
+        });
+    }
+
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &number_options, &locale_storage);
+    const affix = try rangeAffix(
+        allocator,
+        locale,
+        &number_options,
+        first_text,
+        second_text,
+    );
+    defer if (affix) |candidate| {
+        if (candidate.owned) {
+            allocator.free(candidate.prefix);
+            allocator.free(candidate.suffix);
+        }
+    };
+
+    const sign_differs = (first < 0) != (second < 0);
+    var left = first_text;
+    var right = second_text;
+    var outer_prefix: []const u8 = "";
+    var outer_suffix: []const u8 = "";
+    var collapsed = false;
+    if (affix) |candidate| {
+        var should_collapse = switch (options.collapse) {
+            .none => false,
+            .auto => candidate.auto_collapse,
+            .unit, .all => true,
+        };
+        // Mixed signs make the sign modifiers differ, so ICU does not
+        // collapse the shared affixes.
+        if (sign_differs) should_collapse = false;
+        if (should_collapse) {
+            collapsed = true;
+            outer_prefix = candidate.prefix;
+            outer_suffix = candidate.suffix;
+            if (candidate.prefix.len > 0) {
+                left = left[candidate.prefix.len..];
+                right = right[candidate.prefix.len..];
+            }
+            if (candidate.suffix.len > 0) {
+                left = left[0 .. left.len - candidate.suffix.len];
+                right = right[0 .. right.len - candidate.suffix.len];
+            }
+        }
+    }
+
+    const repeat_modifier = !collapsed and
+        ((affix != null and
+            (affix.?.prefix.len > 0 or affix.?.suffix.len > 0)) or
+            first < 0 or second < 0) or
+        (!collapsed and options.number.style == .compact and
+            (hasCompactSuffix(first_text) or hasCompactSuffix(second_text)));
+
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    if (collapsed) try output.appendSlice(allocator, outer_prefix);
+    try output.appendSlice(allocator, left);
+    if (repeat_modifier) {
+        try appendSpacedInfix(allocator, &output, range.infix);
+    } else {
+        try output.appendSlice(allocator, range.infix);
+    }
+    try output.appendSlice(allocator, right);
+    if (collapsed) try output.appendSlice(allocator, outer_suffix);
+    return output.toOwnedSlice(allocator);
+}
+
 /// Format a floating-point value for one locale.
 pub fn formatAlloc(
     allocator: std.mem.Allocator,
@@ -2297,6 +2712,105 @@ test "number skeleton conformance" {
         }
     }
     std.debug.print("skeleton conformance: {d}/{d} passed\n", .{
+        case_count - failures,
+        case_count,
+    });
+    try testing.expect(failures == 0);
+}
+
+test "number range conformance" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("range_conformance.bin");
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJRF", fixture[0..4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var printed: usize = 0;
+    for (0..case_count) |_| {
+        const locale_length = fixture[cursor];
+        const skeleton_length = fixture[cursor + 1];
+        const collapse_byte = fixture[cursor + 2];
+        const identity_byte = fixture[cursor + 3];
+        const first: f64 = @bitCast(std.mem.readInt(
+            u64,
+            fixture[cursor + 4 ..][0..8],
+            .little,
+        ));
+        const second: f64 = @bitCast(std.mem.readInt(
+            u64,
+            fixture[cursor + 12 ..][0..8],
+            .little,
+        ));
+        const expected_length = std.mem.readInt(
+            u16,
+            fixture[cursor + 20 ..][0..2],
+            .little,
+        );
+        cursor += 24;
+        const locale = fixture[cursor .. cursor + locale_length];
+        cursor += locale_length;
+        const skeleton = fixture[cursor .. cursor + skeleton_length];
+        cursor += skeleton_length;
+        const expected = fixture[cursor .. cursor + expected_length];
+        cursor += expected_length;
+
+        const number_options = parseSkeleton(skeleton) catch |err| {
+            failures += 1;
+            if (printed < 30) {
+                printed += 1;
+                std.debug.print(
+                    "range skeleton error {s} {s}: {s}\n",
+                    .{ locale, skeleton, @errorName(err) },
+                );
+            }
+            continue;
+        };
+        const actual = formatRangeAlloc(
+            allocator,
+            first,
+            second,
+            locale,
+            .{
+                .number = number_options,
+                .collapse = switch (collapse_byte) {
+                    1 => .none,
+                    2 => .unit,
+                    3 => .all,
+                    else => .auto,
+                },
+                .identity = switch (identity_byte) {
+                    0 => .single_value,
+                    2 => .approximately,
+                    3 => .range,
+                    else => .approximately_or_single_value,
+                },
+            },
+        ) catch |err| {
+            failures += 1;
+            if (printed < 30) {
+                printed += 1;
+                std.debug.print(
+                    "range error {s} {s}: {s}\n",
+                    .{ locale, skeleton, @errorName(err) },
+                );
+            }
+            continue;
+        };
+        defer allocator.free(actual);
+        if (!std.mem.eql(u8, actual, expected)) {
+            failures += 1;
+            if (printed < 30) {
+                printed += 1;
+                std.debug.print(
+                    "range mismatch {s} {s} {d}-{d}: got '{s}' expected '{s}'\n",
+                    .{ locale, skeleton, first, second, actual, expected },
+                );
+            }
+        }
+    }
+    std.debug.print("range conformance: {d}/{d} passed\n", .{
         case_count - failures,
         case_count,
     });
