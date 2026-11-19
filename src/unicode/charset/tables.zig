@@ -165,6 +165,37 @@ pub fn reverseLookupPaged(
     return null;
 }
 
+/// A direct-mapped cache of recent reverse lookups. Entries pack the code
+/// point in the high half and `pointer + 1` in the low half; zero means
+/// empty. Stores are atomic so encoders stay safe when called concurrently.
+pub const ReverseCache = [256]std.atomic.Value(u64);
+
+pub const empty_reverse_cache: ReverseCache =
+    @splat(std.atomic.Value(u64).init(0));
+
+/// Reverse lookup with a small cache in front of the paged index. Repeated
+/// characters, the common case in real text, cost one load.
+pub fn reverseLookupCached(
+    cache: *ReverseCache,
+    section: Section,
+    pages: *const [0x1100]u16,
+    codepoint: u21,
+) ?u32 {
+    const hash: usize = (@as(u32, codepoint) *% 0x9E3779B1) >> 24;
+    const cached = cache[hash].load(.monotonic);
+    if (@as(u32, @truncate(cached >> 32)) == codepoint) {
+        const stored: u32 = @truncate(cached);
+        if (stored != 0) return stored - 1;
+    }
+    const pointer = reverseLookupPaged(section, pages, codepoint) orelse
+        return null;
+    cache[hash].store(
+        (@as(u64, codepoint) << 32) | (@as(u64, pointer) + 1),
+        .monotonic,
+    );
+    return pointer;
+}
+
 /// Look up a code point in a reverse index (records sorted by code point).
 pub fn reverseLookup(section: Section, codepoint: u21) ?u32 {
     const count = readU32(section.offset);

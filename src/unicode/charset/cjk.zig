@@ -10,6 +10,15 @@ const types = @import("types.zig");
 pub const DecodeResult = types.DecodeResult;
 pub const EncodeResult = types.EncodeResult;
 
+// Reverse-lookup caches shared by the encoders. The mappings are immutable,
+// so entries never need invalidation.
+var gb_reverse_cache: tables.ReverseCache = tables.empty_reverse_cache;
+var big5_reverse_cache: tables.ReverseCache = tables.empty_reverse_cache;
+var euc_kr_reverse_cache: tables.ReverseCache = tables.empty_reverse_cache;
+var shift_jis_reverse_cache: tables.ReverseCache = tables.empty_reverse_cache;
+var jis0208_reverse_cache: tables.ReverseCache = tables.empty_reverse_cache;
+var jis0212_reverse_cache: tables.ReverseCache = tables.empty_reverse_cache;
+
 fn malformed(index: *usize, start: usize) DecodeResult {
     index.* = start + 1;
     return .{ .malformed = 1 };
@@ -95,7 +104,8 @@ fn gbEncode(codepoint: u21, out: []u8, comptime full: bool) EncodeResult {
         out[0] = 0x80;
         return .{ .written = 1 };
     }
-    if (tables.reverseLookupPaged(
+    if (tables.reverseLookupCached(
+        &gb_reverse_cache,
         tables.gb18030_reverse,
         &tables.gb18030_reverse_pages,
         codepoint,
@@ -158,7 +168,8 @@ pub fn big5Encode(codepoint: u21, out: []u8) EncodeResult {
         else => null,
     };
     const pointer = special orelse
-        tables.reverseLookupPaged(
+        tables.reverseLookupCached(
+        &big5_reverse_cache,
         tables.big5_reverse,
         &tables.big5_reverse_pages,
         codepoint,
@@ -192,7 +203,8 @@ pub fn eucKrEncode(codepoint: u21, out: []u8) EncodeResult {
         out[0] = @intCast(codepoint);
         return .{ .written = 1 };
     }
-    const pointer = tables.reverseLookupPaged(
+    const pointer = tables.reverseLookupCached(
+        &euc_kr_reverse_cache,
         tables.euc_kr_reverse,
         &tables.euc_kr_reverse_pages,
         codepoint,
@@ -258,7 +270,8 @@ pub fn shiftJisEncode(codepoint: u21, out: []u8) EncodeResult {
         return .{ .written = 1 };
     }
     const target: u21 = if (codepoint == 0x2212) 0xFF0D else codepoint;
-    const pointer = tables.reverseLookupPaged(
+    const pointer = tables.reverseLookupCached(
+        &shift_jis_reverse_cache,
         tables.shift_jis_reverse,
         &tables.shift_jis_reverse_pages,
         target,
@@ -323,7 +336,8 @@ pub fn eucJpEncode(codepoint: u21, out: []u8) EncodeResult {
         return .{ .written = 2 };
     }
     const target: u21 = if (codepoint == 0x2212) 0xFF0D else codepoint;
-    if (tables.reverseLookupPaged(
+    if (tables.reverseLookupCached(
+        &jis0208_reverse_cache,
         tables.jis0208_reverse,
         &tables.jis0208_reverse_pages,
         target,
@@ -332,7 +346,8 @@ pub fn eucJpEncode(codepoint: u21, out: []u8) EncodeResult {
         out[1] = @intCast(pointer % 94 + 0xA1);
         return .{ .written = 2 };
     }
-    if (tables.reverseLookupPaged(
+    if (tables.reverseLookupCached(
+        &jis0212_reverse_cache,
         tables.jis0212_reverse,
         &tables.jis0212_reverse_pages,
         target,

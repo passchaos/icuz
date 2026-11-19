@@ -13,6 +13,8 @@ pub const EncodeResult = types.EncodeResult;
 
 pub const Mode = enum { ascii, roman, katakana, jis0208 };
 
+var jis0208_reverse_cache: tables.ReverseCache = tables.empty_reverse_cache;
+
 pub const State = struct {
     mode: Mode = .ascii,
 };
@@ -143,7 +145,8 @@ pub fn encode(state: *State, codepoint: u21, out: []u8) EncodeResult {
         ) orelse return .unmappable;
     }
 
-    const pointer = tables.reverseLookupPaged(
+    const pointer = tables.reverseLookupCached(
+        &jis0208_reverse_cache,
         tables.jis0208_reverse,
         &tables.jis0208_reverse_pages,
         target,
