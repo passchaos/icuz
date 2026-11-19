@@ -3971,6 +3971,26 @@ const conformance_fixtures = [_]struct {
         .magic = "CJDQ".*,
         .name = "Telugu-Tamil",
     },
+    .{
+        .bytes = @embedFile("transliterate/cs_ja_conformance.bin"),
+        .magic = "CJJA".*,
+        .name = "cs-ja",
+    },
+    .{
+        .bytes = @embedFile("transliterate/es_ja_conformance.bin"),
+        .magic = "CJJB".*,
+        .name = "es-ja",
+    },
+    .{
+        .bytes = @embedFile("transliterate/es_419_am_conformance.bin"),
+        .magic = "CJJC".*,
+        .name = "es_419-am",
+    },
+    .{
+        .bytes = @embedFile("transliterate/es_419_ja_conformance.bin"),
+        .magic = "CJJD".*,
+        .name = "es_419-ja",
+    },
 };
 
 test "transliterate by CLDR name" {
@@ -4409,4 +4429,32 @@ test "transform aliases execute" {
 
 test "rule engine module" {
     _ = rule_engine;
+}
+
+test "debug new pipelines" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const samples = [_][]const u8{
+        "Dvo\u{159}\u{e1}k",
+        "Praha 2,5",
+        "\u{160}koda Octavia",
+        "\u{e8}. 42",
+        "Espa\u{f1}a",
+        "\u{bf}Qu\u{e9} tal?",
+        "ni\u{f1}o",
+        "Bogot\u{e1} 1.234,5",
+        "a\u{f1}o",
+    };
+    const names = [_][]const u8{ "cs-ja", "es-ja", "es_419-am", "es_419-ja" };
+    for (names) |name| {
+        for (samples) |sample| {
+            const result = transliterateByNameAlloc(allocator, sample, name) catch |err| {
+                std.debug.print("{s}: ERROR {s}\n", .{ name, @errorName(err) });
+                break;
+            };
+            defer allocator.free(result);
+            std.debug.print("{s} '{s}' -> '{s}'\n", .{ name, sample, result });
+        }
+    }
+    try testing.expect(true);
 }

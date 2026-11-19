@@ -862,7 +862,7 @@ def compile_step_program(
 # Components whose rule sets need engine features that are not compiled yet
 # (for example InterIndic-Arabic's `($alif) $alif+ > $1` collapse rule).
 PIPELINE_EXCLUDE_COMPONENTS: set[str] = set()
-PIPELINE_EXCLUDE_NAMES = {"cs-ja", "es-ja", "es_419-am", "es_419-ja", "ug-Latin"}
+PIPELINE_EXCLUDE_NAMES = {"ug-Latin"}
 
 PIPELINE_COMPONENTS = {
     "Amharic-Amharic/Geminate": "am-Ethi-t-am-ethi-m0-geminate",
@@ -1825,12 +1825,23 @@ def parse_class_expression(
         if character.isspace():
             index += 1
             continue
-        if character in "-&|":
-            operator = (
-                "diff" if character == "-"
-                else "intersect" if character == "&"
-                else "union"
-            )
+        if character == "-":
+            # ICU's set-difference operator sits between two set operands,
+            # as in `[a-z-[aeiou]]` or `[[:Uppercase:]-$vowels]`. A leading,
+            # trailing, or lone `-` is a literal hyphen (`[-\ ]`, `[a-]`).
+            lookahead = index + 1
+            while lookahead < len(content) and content[lookahead].isspace():
+                lookahead += 1
+            if (
+                current is not None
+                and lookahead < len(content)
+                and content[lookahead] in "[$"
+            ):
+                operator = "diff"
+                index += 1
+                continue
+        elif character in "&|":
+            operator = "intersect" if character == "&" else "union"
             index += 1
             continue
         parsed = parse_class_term(content, index, variables, depth + 1)

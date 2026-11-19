@@ -176,11 +176,12 @@ need without pulling in a font or layout engine.
   Katakana-Hiragana, Pashto-Latin-BGN, Simplified-Traditional,
   Traditional-Simplified, Hans-Hant, Hant-Hans, the Ethiopic geminate
   pipelines, the `kk-am`, `my-am`, `ro-am`, `si-am`, `xh-am`, and `zu-am`
-  FONIPA-to-Amharic pipelines, and
+  FONIPA-to-Amharic pipelines, the `cs-ja`, `es-ja`, `es_419-am`, and
+  `es_419-ja` composed pipelines, and
   NFC/NFD/NFKC/NFKD transforms, plus the `Hex-Any` / `Any-Hex` escape
   transforms and the `Name-Any` / `Any-Name` character-name transforms.
-  Three hundred seven
-  transforms are compiled (including 138 auto-discovered CLDR pipelines);
+  Three hundred forty-eight
+  transforms are compiled (including 142 auto-discovered CLDR pipelines);
   thirty ship official CLDR conformance
   fixtures, and two hundred eighty-two (Cyrillic-Latin, Arabic-Latin, InterIndic-Arabic,
   the ten InterIndic script transforms, the nine script-to-InterIndic

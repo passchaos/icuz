@@ -681,11 +681,21 @@ const Parser = struct {
                     self.index += 1;
                     return .{ .literal = '\r' };
                 },
-                '\\', ']', '-', '^' => {
-                    self.index += 1;
-                    return .{ .literal = escape };
+                else => {
+                    // ICU UnicodeSet escapes any other character, so
+                    // patterns such as `[-\ ]` match a literal space.
+                    const escaped_length = std.unicode.utf8ByteSequenceLength(
+                        escape,
+                    ) catch return error.InvalidPattern;
+                    if (self.index + escaped_length > self.pattern.len) {
+                        return error.InvalidPattern;
+                    }
+                    const literal = std.unicode.utf8Decode(
+                        self.pattern[self.index..][0..escaped_length],
+                    ) catch return error.InvalidPattern;
+                    self.index += escaped_length;
+                    return .{ .literal = literal };
                 },
-                else => return error.InvalidPattern,
             }
         }
 
