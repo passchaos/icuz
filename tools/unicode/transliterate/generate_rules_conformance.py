@@ -49,6 +49,15 @@ CASES = (
     ("(a)(b)(c)(d)(e)(f)(g)(h)(i)(j) > $10;", ("abcdefghij",)),
     ("(a)(b)(c)(d)(e)(f)(g)(h)(i)(j) > $9$10;", ("abcdefghij",)),
     ("(a)? b > x$1;", ("ab", "b")),
+    ("(A)(B) > &Any-Lower($1)&Any-Upper($2);", ("AB",)),
+    ("(é)(b) > &Latin-ASCII($1)$2;", ("éb",)),
+    ("(a)(b) > &Any-Upper($2)$1;", ("ab",)),
+    ("([ab])+ > &Any-Upper($1);", ("ab",)),
+    ("(a)(b) > &NFD($1)$2;", ("ab",)),
+    ("(a)(b) > &Any-Upper($1)$1;", ("ab",)),
+    ("(a)? b > &Any-Upper($1);", ("ab b",)),
+    ("(a)(é) > &Latin-ASCII($2)$1;", ("aé",)),
+    ("(ａ)(b) > &Fullwidth-Halfwidth($1)$2;", ("ａb",)),
 )
 
 REVERSE_CASES = (

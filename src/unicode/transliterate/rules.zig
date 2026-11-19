@@ -11,6 +11,7 @@
 
 const std = @import("std");
 const set = @import("../set.zig");
+const transliterate = @import("../transliterate.zig");
 
 pub const Error = error{
     InvalidRule,
@@ -50,10 +51,16 @@ const Element = union(enum) {
     group: Group,
 };
 
+const Function = struct {
+    name: []const u8,
+    capture: u16,
+};
+
 const OutputElement = union(enum) {
     literal: []const u21,
     variable_string: []const u21,
     capture: u16,
+    function: Function,
     cursor: void,
 };
 
@@ -166,6 +173,16 @@ pub fn applyRulesAlloc(
                             );
                         }
                     },
+                    .function => |function| {
+                        if (captures[function.capture - 1]) |span| {
+                            try applyFunction(
+                                allocator,
+                                &replacement,
+                                function,
+                                buffer.items[span.start..span.end],
+                            );
+                        }
+                    },
                     .cursor => {
                         new_cursor = cursor + replacement.items.len;
                         saw_cursor = true;
@@ -189,6 +206,35 @@ pub fn applyRulesAlloc(
         if (!matched) cursor += 1;
     }
     return encodeUtf8Alloc(allocator, buffer.items);
+}
+
+fn applyFunction(
+    allocator: std.mem.Allocator,
+    replacement: *std.ArrayList(u21),
+    function: Function,
+    captured: []const u21,
+) Error!void {
+    var utf8 = std.ArrayList(u8).empty;
+    defer utf8.deinit(allocator);
+    var buffer: [4]u8 = undefined;
+    for (captured) |codepoint| {
+        const length = std.unicode.utf8Encode(codepoint, &buffer) catch
+            return error.InvalidUtf8;
+        try utf8.appendSlice(allocator, buffer[0..length]);
+    }
+    const transformed = transliterate.transliterateByNameAlloc(
+        allocator,
+        utf8.items,
+        function.name,
+    ) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.InvalidUtf8 => return error.InvalidUtf8,
+        error.UnknownTransform => return error.InvalidRule,
+    };
+    defer allocator.free(transformed);
+    const decoded = try decodeUtf8Alloc(allocator, transformed);
+    defer allocator.free(decoded);
+    try replacement.appendSlice(allocator, decoded);
 }
 
 fn matchRule(
@@ -871,6 +917,68 @@ const Parser = struct {
                 '|' => {
                     index += 1;
                     try elements.append(self.arena, .cursor);
+                },
+                '&' => {
+                    index += 1;
+                    const name_start = index;
+                    while (index < text.len and
+                        (std.ascii.isAlphanumeric(text[index]) or
+                            text[index] == '-' or text[index] == '_' or
+                            text[index] == '/'))
+                    {
+                        index += 1;
+                    }
+                    if (index == name_start) return error.InvalidRule;
+                    const name = text[name_start..index];
+                    while (index < text.len and
+                        std.ascii.isWhitespace(text[index]))
+                    {
+                        index += 1;
+                    }
+                    if (index >= text.len or text[index] != '(') {
+                        return error.InvalidRule;
+                    }
+                    index += 1;
+                    while (index < text.len and
+                        std.ascii.isWhitespace(text[index]))
+                    {
+                        index += 1;
+                    }
+                    if (index >= text.len or text[index] != '$') {
+                        return error.InvalidRule;
+                    }
+                    index += 1;
+                    const number_start = index;
+                    while (index < text.len and std.ascii.isDigit(text[index])) {
+                        index += 1;
+                    }
+                    if (index == number_start) return error.InvalidRule;
+                    const capture = std.fmt.parseInt(
+                        u16,
+                        text[number_start..index],
+                        10,
+                    ) catch return error.InvalidRule;
+                    while (index < text.len and
+                        std.ascii.isWhitespace(text[index]))
+                    {
+                        index += 1;
+                    }
+                    if (index >= text.len or text[index] != ')') {
+                        return error.InvalidRule;
+                    }
+                    index += 1;
+                    if (capture == 0 or capture > capture_count) {
+                        return error.InvalidRule;
+                    }
+                    if (!transliterate.hasTransform(name)) {
+                        return error.InvalidRule;
+                    }
+                    try elements.append(self.arena, .{
+                        .function = .{
+                            .name = try self.arena.dupe(u8, name),
+                            .capture = capture,
+                        },
+                    });
                 },
                 '[' => return error.InvalidRule,
                 else => {
