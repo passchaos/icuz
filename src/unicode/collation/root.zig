@@ -455,6 +455,8 @@ fn appendElements(
     var cursor = index + length;
     while (cursor < codepoints.len) {
         const candidate = codepoints[cursor];
+        // U+0300 is the first code point with a non-zero combining class.
+        if (candidate < 0x300) break;
         const candidate_class = combining_class.forCodepoint(candidate);
         if (candidate_class == 0) break;
 

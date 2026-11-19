@@ -1639,17 +1639,23 @@ fn removableBase(codepoint: u21) bool {
 }
 
 fn latinAsciiAlloc(allocator: std.mem.Allocator, text: []const u8) Error![]u8 {
-    const nfd_owned = try normalization.normalizeFormAlloc(allocator, text, .nfd);
-    defer if (nfd_owned) |owned| allocator.free(owned);
-    const nfd_text = nfd_owned orelse text;
-
-    var codepoints = try decodeAlloc(allocator, nfd_text);
+    // Decode once and normalize in code-point space; going through the
+    // UTF-8 form would encode the NFD text only to decode it again.
+    var codepoints = try decodeAlloc(allocator, text);
     defer codepoints.deinit(allocator);
+    const nfd_owned = try normalization.normalizeCodepointsAlloc(
+        allocator,
+        codepoints.items,
+        .nfd,
+    );
+    defer if (nfd_owned) |owned| allocator.free(owned);
+    const nfd_codepoints = nfd_owned orelse codepoints.items;
 
     var stripped = std.ArrayList(u21).empty;
     defer stripped.deinit(allocator);
+    try stripped.ensureTotalCapacity(allocator, nfd_codepoints.len);
     var base: ?u21 = null;
-    for (codepoints.items) |codepoint| {
+    for (nfd_codepoints) |codepoint| {
         const mark = properties.category(codepoint) == .Mn;
         if (mark and base != null and removableBase(base.?)) continue;
         if (!mark) base = codepoint;
