@@ -22,9 +22,23 @@ pub const Error = error{
 
 const Quantifier = enum { one, optional, zero_or_more, one_or_more };
 
+const max_capture_groups = 32;
+
+const Span = struct {
+    start: usize,
+    end: usize,
+};
+
+const Captures = [max_capture_groups]?Span;
+
 const InputElement = struct {
     element: Element,
     quantifier: Quantifier = .one,
+};
+
+const Group = struct {
+    capture: u16,
+    elements: []const InputElement,
 };
 
 const Element = union(enum) {
@@ -33,12 +47,13 @@ const Element = union(enum) {
     set: *const set.Set,
     variable_string: []const u21,
     variable_set: *const set.Set,
-    group: []const InputElement,
+    group: Group,
 };
 
 const OutputElement = union(enum) {
     literal: []const u21,
     variable_string: []const u21,
+    capture: u16,
     cursor: void,
 };
 
@@ -47,6 +62,7 @@ const Rule = struct {
     input: []const InputElement,
     post: []const InputElement,
     output: []const OutputElement,
+    capture_count: u16 = 0,
 };
 
 const Variable = union(enum) {
@@ -109,7 +125,14 @@ pub fn applyRulesAlloc(
         if (steps > step_budget) return error.RuleLoop;
         var matched = false;
         for (rules.rules) |rule| {
-            const input_end = matchRule(rule, buffer.items, cursor) orelse continue;
+            var captures: Captures = undefined;
+            for (&captures) |*slot| slot.* = null;
+            const input_end = matchRule(
+                rule,
+                buffer.items,
+                cursor,
+                &captures,
+            ) orelse continue;
             replacement.clearRetainingCapacity();
             var new_cursor = cursor;
             var saw_cursor = false;
@@ -123,6 +146,14 @@ pub fn applyRulesAlloc(
                         allocator,
                         sequence,
                     ),
+                    .capture => |capture| {
+                        if (captures[capture - 1]) |span| {
+                            try replacement.appendSlice(
+                                allocator,
+                                buffer.items[span.start..span.end],
+                            );
+                        }
+                    },
                     .cursor => {
                         new_cursor = cursor + replacement.items.len;
                         saw_cursor = true;
@@ -148,12 +179,21 @@ pub fn applyRulesAlloc(
     return encodeUtf8Alloc(allocator, buffer.items);
 }
 
-fn matchRule(rule: Rule, buffer: []const u21, cursor: usize) ?usize {
-    if (!matchAnte(rule.ante, buffer, cursor)) return null;
+fn matchRule(
+    rule: Rule,
+    buffer: []const u21,
+    cursor: usize,
+    captures: *Captures,
+) ?usize {
+    if (!matchAnte(rule.ante, buffer, cursor, captures)) return null;
     var input_end: usize = undefined;
-    if (!matchSequence(rule.input, buffer, cursor, &input_end)) return null;
+    if (!matchSequence(rule.input, buffer, cursor, &input_end, captures)) {
+        return null;
+    }
     var post_end: usize = undefined;
-    if (!matchSequence(rule.post, buffer, input_end, &post_end)) return null;
+    if (!matchSequence(rule.post, buffer, input_end, &post_end, captures)) {
+        return null;
+    }
     return input_end;
 }
 
@@ -162,8 +202,9 @@ fn matchSequence(
     buffer: []const u21,
     start: usize,
     end: *usize,
+    captures: *Captures,
 ) bool {
-    return matchSequenceFrom(elements, 0, buffer, start, end);
+    return matchSequenceFrom(elements, 0, buffer, start, end, captures);
 }
 
 fn matchSequenceFrom(
@@ -172,6 +213,7 @@ fn matchSequenceFrom(
     buffer: []const u21,
     position: usize,
     end: *usize,
+    captures: *Captures,
 ) bool {
     if (index == elements.len) {
         end.* = position;
@@ -180,16 +222,23 @@ fn matchSequenceFrom(
     const element = elements[index];
     if (element.element == .group) {
         const group = element.element.group;
+        const saved = captures.*;
+        var starts: [64]usize = undefined;
         var ends: [64]usize = undefined;
         var count: usize = 0;
         var current = position;
         while (count < ends.len) {
             var group_end: usize = undefined;
-            if (!matchSequence(group, buffer, current, &group_end) or
-                group_end == current)
-            {
+            if (!matchSequence(
+                group.elements,
+                buffer,
+                current,
+                &group_end,
+                captures,
+            ) or group_end == current) {
                 break;
             }
+            starts[count] = current;
             ends[count] = group_end;
             count += 1;
             current = group_end;
@@ -199,26 +248,65 @@ fn matchSequenceFrom(
             .optional, .zero_or_more => 0,
         };
         const maximum: usize = switch (element.quantifier) {
-            .one, .optional => 1,
+            .one, .optional => @min(count, 1),
             .zero_or_more, .one_or_more => count,
         };
-        if (maximum < minimum) return false;
+        if (maximum < minimum) {
+            captures.* = saved;
+            return false;
+        }
         var repetitions = maximum + 1;
         while (repetitions > minimum) {
             repetitions -= 1;
-            const next_position = if (repetitions == 0)
-                position
-            else
-                ends[repetitions - 1];
-            if (matchSequenceFrom(elements, index + 1, buffer, next_position, end)) {
+            captures.* = saved;
+            var next_position = position;
+            if (repetitions > 0) {
+                next_position = ends[repetitions - 1];
+                // Replay the accepted repetitions so nested captures and the
+                // group's own capture reflect the last repetition.
+                var replay_position = position;
+                for (0..repetitions) |_| {
+                    var group_end: usize = undefined;
+                    _ = matchSequence(
+                        group.elements,
+                        buffer,
+                        replay_position,
+                        &group_end,
+                        captures,
+                    );
+                    replay_position = group_end;
+                }
+                captures[group.capture - 1] = .{
+                    .start = starts[repetitions - 1],
+                    .end = ends[repetitions - 1],
+                };
+            }
+            if (matchSequenceFrom(
+                elements,
+                index + 1,
+                buffer,
+                next_position,
+                end,
+                captures,
+            )) {
                 return true;
             }
         }
+        captures.* = saved;
         return false;
     }
 
     const unit = unitLength(element.element);
-    if (unit == 0) return matchSequenceFrom(elements, index + 1, buffer, position, end);
+    if (unit == 0) {
+        return matchSequenceFrom(
+            elements,
+            index + 1,
+            buffer,
+            position,
+            end,
+            captures,
+        );
+    }
     const available = (buffer.len - position) / unit;
     const minimum: usize = switch (element.quantifier) {
         .one, .one_or_more => 1,
@@ -237,15 +325,27 @@ fn matchSequenceFrom(
             continue;
         }
         const next_position = start + repetitions * unit;
-        if (matchSequenceFrom(elements, index + 1, buffer, next_position, end)) {
+        if (matchSequenceFrom(
+            elements,
+            index + 1,
+            buffer,
+            next_position,
+            end,
+            captures,
+        )) {
             return true;
         }
     }
     return false;
 }
 
-fn matchAnte(elements: []const InputElement, buffer: []const u21, cursor: usize) bool {
-    return matchAnteFrom(elements, elements.len, buffer, cursor);
+fn matchAnte(
+    elements: []const InputElement,
+    buffer: []const u21,
+    cursor: usize,
+    captures: *Captures,
+) bool {
+    return matchAnteFrom(elements, elements.len, buffer, cursor, captures);
 }
 
 fn matchAnteFrom(
@@ -253,31 +353,55 @@ fn matchAnteFrom(
     index: usize,
     buffer: []const u21,
     position: usize,
+    captures: *Captures,
 ) bool {
     if (index == 0) return true;
     const element = elements[index - 1];
     if (element.element == .group) {
         const group = element.element.group;
+        const saved = captures.*;
         const minimum: usize = switch (element.quantifier) {
             .one, .one_or_more => 1,
             .optional, .zero_or_more => 0,
         };
-        if (minimum == 0 and matchAnteFrom(elements, index - 1, buffer, position)) {
+        if (minimum == 0 and
+            matchAnteFrom(elements, index - 1, buffer, position, captures))
+        {
             return true;
         }
         // Greedy: try the longest group match that ends at the cursor.
         var start = position;
         while (start > 0) {
             start -= 1;
+            captures.* = saved;
             var group_end: usize = undefined;
-            if (!matchSequence(group, buffer, start, &group_end)) continue;
+            if (!matchSequence(
+                group.elements,
+                buffer,
+                start,
+                &group_end,
+                captures,
+            )) continue;
             if (group_end != position) continue;
-            if (matchAnteFrom(elements, index - 1, buffer, start)) return true;
+            captures[group.capture - 1] = .{
+                .start = start,
+                .end = position,
+            };
+            if (matchAnteFrom(
+                elements,
+                index - 1,
+                buffer,
+                start,
+                captures,
+            )) return true;
         }
+        captures.* = saved;
         return false;
     }
     const unit = unitLength(element.element);
-    if (unit == 0) return matchAnteFrom(elements, index - 1, buffer, position);
+    if (unit == 0) {
+        return matchAnteFrom(elements, index - 1, buffer, position, captures);
+    }
     const available = position / unit;
     const minimum: usize = switch (element.quantifier) {
         .one, .one_or_more => 1,
@@ -295,7 +419,9 @@ fn matchAnteFrom(
         if (!repetitionsMatch(element.element, buffer, start, repetitions)) {
             continue;
         }
-        if (matchAnteFrom(elements, index - 1, buffer, start)) return true;
+        if (matchAnteFrom(elements, index - 1, buffer, start, captures)) {
+            return true;
+        }
     }
     return false;
 }
@@ -391,6 +517,7 @@ const Parser = struct {
     index: usize,
     variables: std.StringHashMap(Variable),
     rules: std.ArrayList(Rule),
+    group_count: u16 = 0,
 
     fn parseAll(self: *Parser) Error!void {
         while (self.nextStatement()) |statement| {
@@ -522,16 +649,18 @@ const Parser = struct {
             post_text = left[close + 1 ..];
         }
 
+        self.group_count = 0;
         const ante = try self.parseInputElements(ante_text);
         const input = try self.parseInputElements(input_text);
         if (input.len == 0) return error.InvalidRule;
         const post = try self.parseInputElements(post_text);
-        const output = try self.parseOutputElements(right);
+        const output = try self.parseOutputElements(right, self.group_count);
         try self.rules.append(self.arena, .{
             .ante = ante,
             .input = input,
             .post = post,
             .output = output,
+            .capture_count = self.group_count,
         });
     }
 
@@ -592,14 +721,21 @@ const Parser = struct {
                     try elements.append(self.arena, .{ .element = element });
                 },
                 '(' => {
-                    index += 1;
-                    const close_relative = findUnquoted(text[index..], ')') orelse
+                    const close = findMatchingParen(text, index) orelse
                         return error.InvalidRule;
-                    const close = index + close_relative;
+                    index += 1;
+                    self.group_count += 1;
+                    if (self.group_count > max_capture_groups) {
+                        return error.UnsupportedRule;
+                    }
+                    const capture = self.group_count;
                     const group = try self.parseInputElements(text[index..close]);
                     index = close + 1;
                     try elements.append(self.arena, .{
-                        .element = .{ .group = group },
+                        .element = .{ .group = .{
+                            .capture = capture,
+                            .elements = group,
+                        } },
                     });
                 },
                 ')', '|', '&' => return error.UnsupportedRule,
@@ -634,7 +770,11 @@ const Parser = struct {
         return elements.toOwnedSlice(self.arena);
     }
 
-    fn parseOutputElements(self: *Parser, text: []const u8) Error![]const OutputElement {
+    fn parseOutputElements(
+        self: *Parser,
+        text: []const u8,
+        capture_count: u16,
+    ) Error![]const OutputElement {
         var elements = std.ArrayList(OutputElement).empty;
         errdefer elements.deinit(self.arena);
         var index: usize = 0;
@@ -664,7 +804,15 @@ const Parser = struct {
                 '$' => {
                     const name = try readVariableName(text, &index);
                     if (name.len > 0 and std.ascii.isDigit(name[0])) {
-                        return error.UnsupportedRule;
+                        const capture = std.fmt.parseInt(u16, name, 10) catch
+                            return error.InvalidRule;
+                        if (capture == 0 or capture > capture_count) {
+                            return error.InvalidRule;
+                        }
+                        try elements.append(self.arena, .{
+                            .capture = capture,
+                        });
+                        continue;
                     }
                     const variable = self.variables.get(name) orelse
                         return error.InvalidRule;
@@ -938,6 +1086,41 @@ fn findArrow(text: []const u8) ?Arrow {
     return null;
 }
 
+fn findMatchingParen(text: []const u8, open_index: usize) ?usize {
+    var depth: usize = 0;
+    var bracket_depth: usize = 0;
+    var quoted = false;
+    var index = open_index;
+    while (index < text.len) {
+        const byte = text[index];
+        if (byte == '\\' and !quoted) {
+            index += @min(@as(usize, 2), text.len - index);
+            continue;
+        }
+        if (byte == '\'') {
+            quoted = !quoted;
+            index += 1;
+            continue;
+        }
+        if (!quoted) {
+            if (byte == '[') {
+                bracket_depth += 1;
+            } else if (byte == ']' and bracket_depth > 0) {
+                bracket_depth -= 1;
+            } else if (bracket_depth == 0) {
+                if (byte == '(') {
+                    depth += 1;
+                } else if (byte == ')') {
+                    depth -= 1;
+                    if (depth == 0) return index;
+                }
+            }
+        }
+        index += 1;
+    }
+    return null;
+}
+
 fn findUnquoted(text: []const u8, needle: u8) ?usize {
     var index: usize = 0;
     var quoted = false;
@@ -1094,4 +1277,20 @@ test "rule engine conformance" {
     }
     std.debug.print("rule conformance: {d}/{d} passed\n", .{ case_count - failures, case_count });
     try testing.expect(failures == 0);
+}
+
+test "rule engine capture groups" {
+    const testing = @import("std").testing;
+    try expectRules("(a)(b) > $2$1;", "ab", "ba");
+    try expectRules("((a)(b)) > $3$2$1;", "ab", "baab");
+    try expectRules("([ab])+ > $1;", "ab", "b");
+    try expectRules("(a)? b > x$1;", "b", "x");
+    try testing.expectError(
+        error.InvalidRule,
+        compileRulesAlloc(testing.allocator, "(a) > $2;"),
+    );
+    try testing.expectError(
+        error.InvalidRule,
+        compileRulesAlloc(testing.allocator, "(a) > $0;"),
+    );
 }

@@ -208,9 +208,10 @@ need without pulling in a font or layout engine.
   `applyRulesAlloc`): forward `createFromRules` rules with comments,
   string and UnicodeSet `$variables`, `::Null;` and `::[set];` directives,
   `ante { input } post > output;` context, sets, `.` wildcard, grouping,
-  `?`/`*`/`+` quantifiers, output string variables, `|` cursor
-  repositioning, quoted literals and escapes, validated by a 48-case
-  PyICU differential fixture.
+  `?`/`*`/`+` quantifiers, capture groups with `$1`-`$N` output references
+  (last-repetition semantics for quantified groups, context captures
+  included), output string variables, `|` cursor repositioning, quoted
+  literals and escapes, validated by a 62-case PyICU differential fixture.
 - Embedded, version-pinned generated data plus conformance fixtures.
 
 ## Non-goals for 0.1
@@ -218,8 +219,8 @@ need without pulling in a font or layout engine.
 `icuz` is not a drop-in ICU replacement. Its transliteration support is a
 compiled rule-table engine covering the constructs listed above plus a
 runtime ICU-rule interpreter for the forward rule subset: reverse rules,
-captures, alternation, and embedded `::Transform;` calls in user rule text
-are not yet interpreted at runtime. Regular expressions and display/layout
+alternation, and embedded `::Transform;` calls in user rule text are not
+yet interpreted at runtime. Regular expressions and display/layout
 tailoring are also out of scope. Collation supports root ordering plus CLDR
 standard and common
 non-standard tailorings, including locale `caseFirst`, backwards secondary
