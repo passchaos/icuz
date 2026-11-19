@@ -20,6 +20,7 @@ from pathlib import Path
 
 MONTH_KEYS = [str(index) for index in range(1, 13)]
 DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+QUARTER_KEYS = ["1", "2", "3", "4"]
 
 LOCALES = (
     "af", "am", "ar", "az", "be", "bg", "bn", "bs", "ca", "cs",
@@ -166,6 +167,40 @@ def parse_locale(path: Path) -> tuple[str, dict]:
             days_standalone.get("abbreviated", {}),
             days.get("short", {}),
         ),
+        "quarters_wide": names(
+            quarters.get("wide", {}),
+            QUARTER_KEYS,
+            quarters.get("abbreviated", {}),
+        ),
+        "quarters_abbreviated": names(
+            quarters.get("abbreviated", {}),
+            QUARTER_KEYS,
+            quarters.get("wide", {}),
+        ),
+        "quarters_narrow": names(
+            quarters.get("narrow", {}),
+            QUARTER_KEYS,
+            quarters.get("abbreviated", {}),
+        ),
+        "quarters_standalone_wide": names(
+            quarters_standalone.get("wide", {}),
+            QUARTER_KEYS,
+            quarters.get("wide", {}),
+        ),
+        "quarters_standalone_abbreviated": names(
+            quarters_standalone.get("abbreviated", {}),
+            QUARTER_KEYS,
+            quarters_standalone.get("wide", {}),
+            quarters.get("abbreviated", {}),
+        ),
+        "quarters_standalone_narrow": names(
+            quarters_standalone.get("narrow", {}),
+            QUARTER_KEYS,
+            quarters_standalone.get("abbreviated", {}),
+            quarters.get("narrow", {}),
+        ),
+        "first_day_of_week": first_day_of_week,
+        "minimal_days": minimal_days,
         "am_wide": day_period_value(
             (
                 own_wide[0],
@@ -325,6 +360,14 @@ def render(entries: list[tuple[str, dict]]) -> str:
         "    days_standalone_abbreviated: [7][]const u8,",
         "    days_standalone_narrow: [7][]const u8,",
         "    days_standalone_short: [7][]const u8,",
+        "    quarters_wide: [4][]const u8,",
+        "    quarters_abbreviated: [4][]const u8,",
+        "    quarters_narrow: [4][]const u8,",
+        "    quarters_standalone_wide: [4][]const u8,",
+        "    quarters_standalone_abbreviated: [4][]const u8,",
+        "    quarters_standalone_narrow: [4][]const u8,",
+        "    first_day_of_week: u8,",
+        "    minimal_days: u8,",
         "    am_wide: []const u8,",
         "    pm_wide: []const u8,",
         "    am_abbreviated: []const u8,",
@@ -377,6 +420,14 @@ def render(entries: list[tuple[str, dict]]) -> str:
             f".days_standalone_abbreviated = {string_array('days_standalone_abbreviated')}, "
             f".days_standalone_narrow = {string_array('days_standalone_narrow')}, "
             f".days_standalone_short = {string_array('days_standalone_short')}, "
+            f".quarters_wide = {string_array('quarters_wide')}, "
+            f".quarters_abbreviated = {string_array('quarters_abbreviated')}, "
+            f".quarters_narrow = {string_array('quarters_narrow')}, "
+            f".quarters_standalone_wide = {string_array('quarters_standalone_wide')}, "
+            f".quarters_standalone_abbreviated = {string_array('quarters_standalone_abbreviated')}, "
+            f".quarters_standalone_narrow = {string_array('quarters_standalone_narrow')}, "
+            f".first_day_of_week = {values['first_day_of_week']}, "
+            f".minimal_days = {values['minimal_days']}, "
             f".am_wide = {zig_string(values['am_wide'])}, "
             f".pm_wide = {zig_string(values['pm_wide'])}, "
             f".am_abbreviated = {zig_string(values['am_abbreviated'])}, "
@@ -529,6 +580,12 @@ def calendar_dict(document, element) -> dict:
         "dayWidth",
         "day",
     )
+    result["quarters"] = context_widths(
+        element.find("quarters"),
+        "quarterContext",
+        "quarterWidth",
+        "quarter",
+    )
     result["dayPeriods"] = context_widths(
         element.find("dayPeriods"),
         "dayPeriodContext",
@@ -637,6 +694,79 @@ def parent_chain(locale: str) -> list[str]:
     if chain[-1] != "root":
         chain.append("root")
     return chain
+
+
+def load_week_data(archive: zipfile.ZipFile) -> tuple[dict, dict]:
+    """Return (first_day_by_territory, min_days_by_territory).
+
+    First day uses Sunday = 0, matching `dayOfWeek` in the formatter.
+    """
+    days = {"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}
+    first_day: dict[str, int] = {}
+    min_days: dict[str, int] = {}
+    try:
+        text = archive.read("common/supplemental/supplementalData.xml")
+    except KeyError:
+        return first_day, min_days
+    document = ET.fromstring(text)
+    for element in document.iter("firstDay"):
+        if element.get("alt") is not None:
+            continue
+        value = days.get(element.get("day", ""))
+        if value is None:
+            continue
+        for territory in element.get("territories", "").split():
+            first_day[territory] = value
+    for element in document.iter("minDays"):
+        if element.get("alt") is not None:
+            continue
+        try:
+            value = int(element.get("count", ""))
+        except ValueError:
+            continue
+        for territory in element.get("territories", "").split():
+            min_days[territory] = value
+    return first_day, min_days
+
+
+def load_likely_regions(archive: zipfile.ZipFile) -> dict[str, str]:
+    """Map `language[_Script]` to the likely territory from likelySubtags."""
+    result: dict[str, str] = {}
+    try:
+        text = archive.read("common/supplemental/likelySubtags.xml")
+    except KeyError:
+        return result
+    document = ET.fromstring(text)
+    for element in document.iter("likelySubtag"):
+        source = element.get("from", "")
+        target = element.get("to", "")
+        parts = target.split("_")
+        if len(parts) == 3:
+            result[source.replace("_", "-")] = parts[2]
+    return result
+
+
+def locale_week_settings(
+    locale: str,
+    first_day: dict[str, int],
+    min_days: dict[str, int],
+    likely: dict[str, str],
+) -> tuple[int, int]:
+    parts = locale.replace("_", "-").split("-")
+    region = None
+    for part in parts[1:]:
+        if (len(part) == 2 and part.isalpha()) or (
+            len(part) == 3 and part.isdigit()
+        ):
+            region = part.upper()
+            break
+    if region is None:
+        region = likely.get(locale.replace("_", "-"))
+    if region is None:
+        region = likely.get(parts[0])
+    if region is None:
+        region = "001"
+    return first_day.get(region, 1), min_days.get(region, 1)
 
 
 def load_numbering_systems(archive: zipfile.ZipFile) -> dict:
@@ -762,6 +892,7 @@ def parse_locale_xml(
 
     months = format_widths("months")
     days = format_widths("days")
+    quarters = format_widths("quarters")
     day_periods = format_widths("dayPeriods")
 
     def standalone_widths(section: str) -> dict:
@@ -775,6 +906,15 @@ def parse_locale_xml(
 
     months_standalone = standalone_widths("months")
     days_standalone = standalone_widths("days")
+    quarters_standalone = standalone_widths("quarters")
+
+    if "week" not in cache:
+        first_day, min_days = load_week_data(archive)
+        cache["week"] = (first_day, min_days, load_likely_regions(archive))
+    first_day_of_week, minimal_days = locale_week_settings(
+        locale,
+        *cache["week"],
+    )
 
     # Locales whose ICU data fills every am/pm width from the wide form.
     WIDE_FILL_DAY_PERIODS = {"ko", "ps"}
@@ -942,6 +1082,40 @@ def parse_locale_xml(
             days_standalone.get("abbreviated", {}),
             days.get("short", {}),
         ),
+        "quarters_wide": names(
+            quarters.get("wide", {}),
+            QUARTER_KEYS,
+            quarters.get("abbreviated", {}),
+        ),
+        "quarters_abbreviated": names(
+            quarters.get("abbreviated", {}),
+            QUARTER_KEYS,
+            quarters.get("wide", {}),
+        ),
+        "quarters_narrow": names(
+            quarters.get("narrow", {}),
+            QUARTER_KEYS,
+            quarters.get("abbreviated", {}),
+        ),
+        "quarters_standalone_wide": names(
+            quarters_standalone.get("wide", {}),
+            QUARTER_KEYS,
+            quarters.get("wide", {}),
+        ),
+        "quarters_standalone_abbreviated": names(
+            quarters_standalone.get("abbreviated", {}),
+            QUARTER_KEYS,
+            quarters_standalone.get("wide", {}),
+            quarters.get("abbreviated", {}),
+        ),
+        "quarters_standalone_narrow": names(
+            quarters_standalone.get("narrow", {}),
+            QUARTER_KEYS,
+            quarters_standalone.get("abbreviated", {}),
+            quarters.get("narrow", {}),
+        ),
+        "first_day_of_week": first_day_of_week,
+        "minimal_days": minimal_days,
         "am_wide": day_period_value(
             (
                 own_wide[0],

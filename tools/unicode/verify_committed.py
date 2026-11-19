@@ -458,7 +458,7 @@ GENERATORS = {
     "tools/unicode/format/generate_display_names_conformance.py": "d87750b780f7809ea1031149faba1e929cec7c532246adfad1a4e953ba49d844",
     "tools/unicode/format/generate_likely_subtags.py": "aab79fd344e8397809fc1b1960c63ad6f80bca9b826d25366d20282a6729c268",
     "tools/unicode/format/generate_likely_subtags_conformance.py": "a7285f908b8c3f3bb60153ba1cb62c7aaa9fa5248734f04530864c8b48024ae6",
-    "tools/unicode/format/generate_dates.py": "98beac37d9bf3b7d2f1f220953f9c425d943ef5c4ec8cc3a7c6927f1171e0863",
+    "tools/unicode/format/generate_dates.py": "b2dde11d124e83060c4372e431b222f3ae08770694f6d6673f40e0b5f4e58775",
     "tools/unicode/format/generate_interval_skeleton_conformance.py": "3733e4ee24ea0d32bde4a35475b0c65c28d634fff77a89ab20413631b5d5bddc",
     "tools/unicode/format/generate_date_skeleton_conformance.py": "0180072157ba234dea9af11cd401695cace6e6d399792743a76ace27c24b8246",
     "tools/unicode/format/generate_misc.py": "6f811f84eb654ea301ead14d178f9ef74b5f31d75c00e4a958ee887b60380af5",
@@ -552,7 +552,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/format/dates_data.zig",
         "tools/unicode/format/generate_dates.py",
-        "15bb2ff0406a8467f43d727eee39283822e489cd026831bc15175202fdd6861a",
+        "08051fd7151999467ff4d6cbd1f707d1c02c1a4c838ff9709344dce6ae7d3a34",
     ),
     GeneratedText(
         "src/unicode/format/list_data.zig",

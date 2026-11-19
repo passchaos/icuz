@@ -1130,6 +1130,69 @@ fn appendField(
                 );
             }
         },
+        'Y' => {
+            const info = weekOfYear(
+                date_time,
+                locale.first_day_of_week,
+                locale.minimal_days,
+            );
+            const year: u64 = @intCast(@max(info.year, 0));
+            if (length == 2) {
+                try appendPaddedNumber(allocator, output, year % 100, 2, locale);
+            } else {
+                try appendPaddedNumber(
+                    allocator,
+                    output,
+                    year,
+                    @max(length, 1),
+                    locale,
+                );
+            }
+        },
+        'u', 'r', 'U' => {
+            // Proleptic Gregorian year aliases; ICU renders the cyclic year
+            // (U) as the Gregorian year for this calendar.
+            const year: u64 = @intCast(@max(
+                overrides.year orelse date_time.year,
+                0,
+            ));
+            if (length == 2) {
+                try appendPaddedNumber(allocator, output, year % 100, 2, locale);
+            } else {
+                try appendPaddedNumber(
+                    allocator,
+                    output,
+                    year,
+                    @max(length, 1),
+                    locale,
+                );
+            }
+        },
+        'w' => {
+            const info = weekOfYear(
+                date_time,
+                locale.first_day_of_week,
+                locale.minimal_days,
+            );
+            try appendPaddedNumber(
+                allocator,
+                output,
+                info.week,
+                if (length >= 2) 2 else 1,
+                locale,
+            );
+        },
+        'W' => try appendPaddedNumber(
+            allocator,
+            output,
+            weekOfMonth(
+                date_time,
+                locale.first_day_of_week,
+                locale.minimal_days,
+            ),
+            if (length >= 2) 2 else 1,
+            locale,
+        ),
         'M', 'L' => {
             const month = @min(@max(overrides.month orelse date_time.month, 1), 13);
             if (length <= 2) {
@@ -1410,8 +1473,22 @@ fn appendField(
                     locale,
                 );
             } else {
-                try output.append(allocator, 'Q');
-                try appendPaddedNumber(allocator, output, quarter, 1, locale);
+                const standalone = field == 'q';
+                const names: []const []const u8 = if (standalone)
+                    if (length == 3)
+                        locale.quarters_standalone_abbreviated[0..]
+                    else if (length == 4)
+                        locale.quarters_standalone_wide[0..]
+                    else
+                        locale.quarters_standalone_narrow[0..]
+                else if (length == 3)
+                    locale.quarters_abbreviated[0..]
+                else if (length == 4)
+                    locale.quarters_wide[0..]
+                else
+                    locale.quarters_narrow[0..];
+                const index = @min(quarter - 1, names.len - 1);
+                try output.appendSlice(allocator, names[index]);
             }
         },
         else => {},
@@ -1587,6 +1664,62 @@ fn dayOfYear(date_time: DateTime) u64 {
         date_time.day,
     );
     return @intCast(current - start + 1);
+}
+
+/// Start (as a day number) of the week containing `days`, where week days
+/// begin at `first_day` (Sunday = 0).
+fn weekStart(days: i64, first_day: u8) i64 {
+    const offset = @mod(days + 4 - @as(i64, first_day) + 7, 7);
+    return days - offset;
+}
+
+/// First day of week 1 of `year` under the locale's first-day/min-days rules.
+fn weekOneStart(year: i32, first_day: u8, min_days: u8) i64 {
+    const jan1 = daysFromCivil(year, 1, 1);
+    const offset = @mod(jan1 + 4 - @as(i64, first_day) + 7, 7);
+    var start = jan1 - offset;
+    if (7 - offset < min_days) start += 7;
+    return start;
+}
+
+const WeekInfo = struct {
+    year: i32,
+    week: u8,
+};
+
+/// CLDR/ICU week-based year and week-of-year for a date.
+fn weekOfYear(date_time: DateTime, first_day: u8, min_days: u8) WeekInfo {
+    const days = daysFromCivil(date_time.year, date_time.month, date_time.day);
+    const start = weekStart(days, first_day);
+    const current = weekOneStart(date_time.year, first_day, min_days);
+    if (start < current) {
+        const previous = weekOneStart(date_time.year - 1, first_day, min_days);
+        return .{
+            .year = date_time.year - 1,
+            .week = @intCast(@divFloor(start - previous, 7) + 1),
+        };
+    }
+    const next = weekOneStart(date_time.year + 1, first_day, min_days);
+    if (start >= next) {
+        return .{ .year = date_time.year + 1, .week = 1 };
+    }
+    return .{
+        .year = date_time.year,
+        .week = @intCast(@divFloor(start - current, 7) + 1),
+    };
+}
+
+/// Week of month under the locale's first-day/min-days rules; days before the
+/// first full week are week 0.
+fn weekOfMonth(date_time: DateTime, first_day: u8, min_days: u8) u8 {
+    const month_start = daysFromCivil(date_time.year, date_time.month, 1);
+    const offset = @mod(month_start + 4 - @as(i64, first_day) + 7, 7);
+    var week_one = month_start - offset;
+    if (7 - offset < min_days) week_one += 7;
+    const days = daysFromCivil(date_time.year, date_time.month, date_time.day);
+    if (days < week_one) return 0;
+    const start = weekStart(days, first_day);
+    return @intCast(@divFloor(start - week_one, 7) + 1);
 }
 
 fn daysFromCivil(year: i32, month: u8, day: u8) i64 {
@@ -2162,4 +2295,64 @@ test "date skeleton conformance" {
         case_count,
     });
     try testing.expect(failures == 0);
+}
+
+test "quarter and week pattern fields" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const Case = struct {
+        locale: []const u8,
+        year: i32,
+        month: u8,
+        day: u8,
+        pattern: []const u8,
+        expected: []const u8,
+    };
+    // Expected strings verified against ICU 78 SimpleDateFormat.
+    const cases = [_]Case{
+        // Sunday-start, minimal days 1 (en).
+        .{ .locale = "en", .year = 2021, .month = 1, .day = 1, .pattern = "Y-MM-dd", .expected = "2021-01-01" },
+        .{ .locale = "en", .year = 2024, .month = 12, .day = 30, .pattern = "Y-MM-dd", .expected = "2025-12-30" },
+        .{ .locale = "en", .year = 2021, .month = 1, .day = 1, .pattern = "w", .expected = "1" },
+        .{ .locale = "en", .year = 2026, .month = 11, .day = 19, .pattern = "ww", .expected = "47" },
+        .{ .locale = "en", .year = 2024, .month = 12, .day = 30, .pattern = "W", .expected = "5" },
+        // Monday-start, minimal days 4 (de, fr, ru).
+        .{ .locale = "de", .year = 2021, .month = 1, .day = 1, .pattern = "Y-MM-dd", .expected = "2020-01-01" },
+        .{ .locale = "de", .year = 2021, .month = 1, .day = 1, .pattern = "w", .expected = "53" },
+        .{ .locale = "de", .year = 2021, .month = 1, .day = 1, .pattern = "W", .expected = "0" },
+        .{ .locale = "de", .year = 2021, .month = 1, .day = 4, .pattern = "w", .expected = "1" },
+        .{ .locale = "fr", .year = 2024, .month = 12, .day = 30, .pattern = "Y-MM-dd", .expected = "2025-12-30" },
+        .{ .locale = "ru", .year = 2021, .month = 1, .day = 3, .pattern = "w", .expected = "53" },
+        // Monday-start, minimal days 1 (zh).
+        .{ .locale = "zh", .year = 2021, .month = 1, .day = 3, .pattern = "w", .expected = "1" },
+        .{ .locale = "zh", .year = 2026, .month = 11, .day = 19, .pattern = "W", .expected = "4" },
+        // Quarter names.
+        .{ .locale = "en", .year = 2026, .month = 11, .day = 19, .pattern = "QQQ y", .expected = "Q4 2026" },
+        .{ .locale = "en", .year = 2026, .month = 11, .day = 19, .pattern = "QQQQ y", .expected = "4th quarter 2026" },
+        .{ .locale = "de", .year = 2026, .month = 11, .day = 19, .pattern = "QQQQ y", .expected = "4. Quartal 2026" },
+        .{ .locale = "ja", .year = 2026, .month = 11, .day = 19, .pattern = "QQQQ y", .expected = "\u{7b2c}4\u{56db}\u{534a}\u{671f} 2026" },
+        .{ .locale = "fr", .year = 2026, .month = 11, .day = 19, .pattern = "QQQ y", .expected = "T4 2026" },
+        .{ .locale = "zh", .year = 2026, .month = 11, .day = 19, .pattern = "QQQQ y", .expected = "\u{7b2c}\u{56db}\u{5b63}\u{5ea6} 2026" },
+        // Proleptic year aliases.
+        .{ .locale = "en", .year = 2026, .month = 11, .day = 19, .pattern = "u r U", .expected = "2026 2026 2026" },
+    };
+    for (cases) |case| {
+        const date_time = DateTime{
+            .year = case.year,
+            .month = case.month,
+            .day = case.day,
+            .hour = 12,
+            .minute = 0,
+            .second = 0,
+        };
+        const text = try formatPatternAlloc(
+            allocator,
+            case.pattern,
+            date_time,
+            case.locale,
+            "UTC",
+        );
+        defer allocator.free(text);
+        try testing.expectEqualStrings(case.expected, text);
+    }
 }
