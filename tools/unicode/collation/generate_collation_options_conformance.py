@@ -4,8 +4,8 @@
 Usage:
     generate_collation_options_conformance.py out_file
 
-Covers numeric collation, case level, caseFirst, and shifted variable
-weighting. PyICU does not expose these attributes, so the generator loads the
+Covers numeric collation, case level, caseFirst, shifted variable
+weighting, and identical strength. PyICU does not expose these attributes, so the generator loads the
 ICU library directly through ctypes. Set ICU_I18N_LIB when the library is not
 in a standard location.
 """
@@ -23,6 +23,7 @@ OPTION_NUMERIC = 1
 OPTION_CASE_LEVEL = 2
 OPTION_CASE_FIRST_UPPER = 4
 OPTION_SHIFTED = 8
+OPTION_IDENTICAL = 16
 
 CASES = (
     (
@@ -131,6 +132,45 @@ CASES = (
         "de",
         (("a", "A"), ("stra\u00dfe", "Stra\u00dfe")),
     ),
+    (
+        OPTION_IDENTICAL,
+        "en",
+        (
+            ("a", "a"),
+            ("a", "A"),
+            ("a", "a\u00ad"),
+            ("a\u00ad", "a"),
+            ("", "\u00ad"),
+            ("\u00ad", ""),
+            ("\u00e1", "a\u0301"),
+            ("a\u0301", "\u00e1"),
+            ("a\u0301\u0323", "a\u0323\u0301"),
+            ("abc", "abc\u00ad"),
+            ("abc", "abd"),
+            ("a\u00e9", "a\u00e8"),
+            ("file2", "file10"),
+        ),
+    ),
+    (
+        OPTION_IDENTICAL | OPTION_NUMERIC,
+        "en",
+        (("a2", "a02"), ("a02", "a2"), ("a2", "a2")),
+    ),
+    (
+        OPTION_IDENTICAL | OPTION_SHIFTED,
+        "en",
+        (("a b", "a b"), ("a b", "a\u00adb"), ("a-b", "a\u00adb")),
+    ),
+    (
+        OPTION_IDENTICAL,
+        "sv",
+        (("a", "a\u00ad"), ("\u00e5", "a\u030a")),
+    ),
+    (
+        OPTION_IDENTICAL,
+        "de",
+        (("a", "a\u00ad"), ("stra\u00dfe", "strasse")),
+    ),
 )
 
 
@@ -197,12 +237,14 @@ def main() -> int:
     ucol_alternate_handling = 1
     ucol_case_first = 2
     ucol_case_level = 3
+    ucol_strength = 5
     ucol_numeric = 7
     ucol_on = 17
     ucol_shifted = 20
     ucol_non_ignorable = 21
     ucol_lower_first = 24
     ucol_upper_first = 25
+    ucol_identical = 15
 
     cases = []
     for options, locale, pairs in CASES:
@@ -234,6 +276,8 @@ def main() -> int:
             set_attribute(ucol_alternate_handling, ucol_shifted)
         else:
             set_attribute(ucol_alternate_handling, ucol_non_ignorable)
+        if options & OPTION_IDENTICAL:
+            set_attribute(ucol_strength, ucol_identical)
 
         for first, second in pairs:
             status = ctypes.c_int(0)

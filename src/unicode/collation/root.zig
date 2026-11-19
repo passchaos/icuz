@@ -17,7 +17,7 @@ const combining_class = @import("../canonical/combining_class.zig");
 pub const uca_version = [3]u8{ 17, 0, 0 };
 pub const cldr_version = "48";
 
-pub const Strength = enum { primary, secondary, tertiary, quaternary };
+pub const Strength = enum { primary, secondary, tertiary, quaternary, identical };
 pub const VariableWeighting = enum { non_ignorable, shifted };
 pub const CaseFirst = tailorings.CaseFirst;
 
@@ -257,6 +257,8 @@ pub fn sortKeyCodepointsInto(
         try appendLevelElements(allocator, output, ces.items, .tertiary);
         if (options.strength == .tertiary) return;
         try output.append(allocator, 0);
+        if (options.strength == .quaternary) return;
+        try appendIdenticalLevel(allocator, output, codepoints);
         return;
     }
 
@@ -293,6 +295,8 @@ pub fn sortKeyCodepointsInto(
     } else {
         try output.append(allocator, 0);
     }
+    if (options.strength == .quaternary) return;
+    try appendIdenticalLevel(allocator, output, codepoints);
 }
 
 /// Compare two UTF-8 strings under the requested collation options.
@@ -617,7 +621,34 @@ fn appendAsciiSortKey(
     try appendAsciiLevel(allocator, output, codepoints, .tertiary);
     if (strength == .tertiary) return true;
     try output.append(allocator, 0);
+    if (strength == .quaternary) return true;
+    try appendIdenticalLevel(allocator, output, codepoints);
     return true;
+}
+
+/// Identical level: the per-code-point canonical decomposition of the input,
+/// offset by one so the zero level terminator stays below every weight. ICU
+/// decomposes each code point in place, so combining marks keep their input
+/// order (the collation levels above already ignored that difference).
+fn appendIdenticalLevel(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    source: []const u21,
+) error{OutOfMemory}!void {
+    var decomposed = std.ArrayList(u21).empty;
+    defer decomposed.deinit(allocator);
+    for (source) |codepoint| {
+        decomposed.clearRetainingCapacity();
+        try normalization.appendCanonicalDecompositionInto(
+            allocator,
+            codepoint,
+            &decomposed,
+        );
+        for (decomposed.items) |value| {
+            try output.append(allocator, @as(u32, value) + 1);
+        }
+    }
+    try output.append(allocator, 0);
 }
 
 fn appendAsciiLevel(
@@ -1572,6 +1603,10 @@ test "collation options conformance" {
                 .shifted
             else
                 .non_ignorable,
+            .strength = if (options_byte & 16 != 0)
+                .identical
+            else
+                .tertiary,
             .locale = locale,
         }) catch {
             failures += 1;
@@ -1582,13 +1617,53 @@ test "collation options conformance" {
             .eq => 0,
             .gt => 1,
         };
-        if (actual != expected) failures += 1;
+        if (actual != expected) {
+            failures += 1;
+            std.debug.print(
+                "collation option mismatch {s} opts {d}: '{s}' vs '{s}' got {d} expected {d}\n",
+                .{ locale, options_byte, first, second, actual, expected },
+            );
+        }
     }
     std.debug.print("collation options conformance: {d}/{d} cases passed\n", .{
         case_count - failures,
         case_count,
     });
     try testing.expect(failures == 0);
+}
+
+test "identical strength collation" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const level = Options{ .strength = .identical };
+    // Collation-ignorable characters only differ at the identical level.
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "a", "a\u{ad}", level),
+    );
+    try testing.expectEqual(
+        std.math.Order.gt,
+        try compare(allocator, "a\u{ad}", "a", level),
+    );
+    try testing.expectEqual(
+        std.math.Order.eq,
+        try compare(allocator, "a", "a", level),
+    );
+    // Canonical equivalents stay equal: ICU decomposes each code point in
+    // place before comparing.
+    try testing.expectEqual(
+        std.math.Order.eq,
+        try compare(allocator, "\u{e9}", "e\u{301}", level),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "\u{e1}\u{323}", "\u{1ea1}\u{301}", level),
+    );
+    // Tertiary differences still win over the identical level.
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "a", "A", level),
+    );
 }
 
 test "case level collation" {

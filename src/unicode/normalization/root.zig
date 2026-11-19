@@ -121,6 +121,17 @@ pub fn normalizeCodepointsAlloc(
     return result;
 }
 
+/// Append the recursive canonical decomposition of a single code point to
+/// `output` without reordering it against surrounding text. ICU's identical
+/// collation strength compares this per-code-point decomposition.
+pub fn appendCanonicalDecompositionInto(
+    allocator: std.mem.Allocator,
+    codepoint: u21,
+    output: *std.ArrayList(u21),
+) error{OutOfMemory}!void {
+    try appendDecomposition(allocator, output, codepoint, false);
+}
+
 /// Append the normalized form of a code-point slice to `output`.
 pub fn normalizeCodepointsInto(
     allocator: std.mem.Allocator,
