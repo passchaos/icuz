@@ -67,6 +67,11 @@ pub const Options = struct {
     unit_style: UnitStyle = .short,
     compact_style: CompactStyle = .short,
     numbering_system: ?[]const u8 = null,
+    /// ICU `precision-increment/` rounding: round to a multiple of
+    /// `rounding_increment_mantissa * 10^rounding_increment_magnitude`.
+    /// A zero mantissa means the increment precision is not active.
+    rounding_increment_mantissa: u64 = 0,
+    rounding_increment_magnitude: i32 = 0,
 };
 
 pub const Error = error{
@@ -648,7 +653,26 @@ fn formatStandardAlloc(
         @as(f64, @floatFromInt(pattern.multiplier));
 
     var rounded_magnitude = roundHalfEven(magnitude, max_fraction);
-    if (options.max_significant_digits > 0) {
+    if (options.rounding_increment_mantissa != 0) {
+        const increment = @as(f64, @floatFromInt(
+            options.rounding_increment_mantissa,
+        )) * std.math.pow(
+            f64,
+            10.0,
+            @floatFromInt(options.rounding_increment_magnitude),
+        );
+        const steps = roundHalfEven(magnitude / increment, 0);
+        rounded_magnitude = steps * increment;
+        const fraction: u8 = if (options.rounding_increment_magnitude >= 0)
+            0
+        else
+            @intCast(@min(
+                -options.rounding_increment_magnitude,
+                9,
+            ));
+        min_fraction = fraction;
+        max_fraction = fraction;
+    } else if (options.max_significant_digits > 0) {
         const significant = significantDigits(
             magnitude,
             options.min_significant_digits,
@@ -893,6 +917,7 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
             if (minimum == 0) return error.InvalidPattern;
             options.min_significant_digits = minimum;
             options.max_significant_digits = maximum;
+            options.rounding_increment_mantissa = 0;
         } else if (std.mem.eql(u8, token, "integer")) {
             options.style = .decimal;
             options.min_fraction_digits = 0;
@@ -996,6 +1021,16 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
                 token["scale/".len..],
                 10,
             ) catch return error.InvalidPattern;
+        } else if (std.mem.startsWith(u8, token, "precision-increment/")) {
+            const increment = parseIncrement(
+                token["precision-increment/".len..],
+            ) orelse return error.InvalidPattern;
+            options.rounding_increment_mantissa = increment.mantissa;
+            options.rounding_increment_magnitude = increment.magnitude;
+            options.min_fraction_digits = null;
+            options.max_fraction_digits = null;
+            options.min_significant_digits = 0;
+            options.max_significant_digits = 0;
         } else if (token.len >= 2 and token[0] == '.') {
             var minimum: u8 = 0;
             var maximum: u8 = 0;
@@ -1012,6 +1047,7 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
             if (maximum == 0) return error.InvalidPattern;
             options.min_fraction_digits = minimum;
             options.max_fraction_digits = maximum;
+            options.rounding_increment_mantissa = 0;
         } else if (std.mem.startsWith(u8, token, "rounding-mode-")) {
             // Accepted for compatibility; HALF_EVEN is the only mode.
         } else {
@@ -1019,6 +1055,36 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
         }
     }
     return options;
+}
+
+const Increment = struct {
+    mantissa: u64,
+    magnitude: i32,
+};
+
+/// Parse an ICU `precision-increment` value: a positive decimal such as
+/// `0.05`, `.5`, `5`, or `1.5`.
+fn parseIncrement(text: []const u8) ?Increment {
+    if (text.len == 0) return null;
+    var mantissa: u64 = 0;
+    var digits: usize = 0;
+    var fraction_digits: i32 = 0;
+    var seen_dot = false;
+    for (text) |byte| {
+        if (byte == '.') {
+            if (seen_dot) return null;
+            seen_dot = true;
+            continue;
+        }
+        if (byte < '0' or byte > '9') return null;
+        const digit: u64 = byte - '0';
+        if (mantissa > (std.math.maxInt(u64) - digit) / 10) return null;
+        mantissa = mantissa * 10 + digit;
+        digits += 1;
+        if (seen_dot) fraction_digits += 1;
+    }
+    if (digits == 0 or mantissa == 0) return null;
+    return .{ .mantissa = mantissa, .magnitude = -fraction_digits };
 }
 
 fn formatScientificAlloc(

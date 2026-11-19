@@ -58,6 +58,14 @@ SKELETONS = (
     "measure-unit/duration-hour",
     "compact-short measure-unit/duration-hour",
     "measure-unit/temperature-celsius",
+    "precision-increment/0.05",
+    "precision-increment/.05",
+    "precision-increment/0.25",
+    "precision-increment/5",
+    "precision-increment/50",
+    "precision-increment/1.5",
+    "currency/USD precision-increment/0.05",
+    "percent precision-increment/0.5",
 )
 
 VALUES = (0.0, 0.25, 5.0, -5.0, 1234.5, -1234.5, 1234567.0, 0.1234)
