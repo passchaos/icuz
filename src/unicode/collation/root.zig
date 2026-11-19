@@ -331,6 +331,13 @@ pub fn sortKeyCodepointsInto(
             options.strength,
         )) {
             return;
+        } else if (try appendImplicitSortKey(
+            allocator,
+            output,
+            codepoints,
+            options.strength,
+        )) {
+            return;
         }
     }
 
@@ -882,6 +889,47 @@ fn appendLatinSortKey(
     return true;
 }
 
+/// Emit a root sort key directly for text made only of code points that
+/// receive implicit weights: no explicit entries, contractions, or
+/// combining marks. Han, emoji, and unassigned text take this path.
+fn appendImplicitSortKey(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    codepoints: []const u21,
+    strength: Strength,
+) error{OutOfMemory}!bool {
+    if (strength != .primary and strength != .secondary and
+        strength != .tertiary)
+    {
+        return false;
+    }
+    if (!normalization.isNormalizedCodepoints(codepoints, .nfd)) return false;
+    for (codepoints, 0..) |codepoint, index| {
+        if (codepoint >= 0x300 and
+            combining_class.forCodepoint(codepoint) != 0)
+        {
+            return false;
+        }
+        if (findContiguous(codepoints, index) != null) return false;
+    }
+
+    const count = codepoints.len;
+    try output.ensureTotalCapacity(allocator, count * 4 + 8);
+    for (codepoints) |codepoint| {
+        const weights = implicitWeights(codepoint);
+        output.appendAssumeCapacity(weights.first);
+        output.appendAssumeCapacity(weights.second);
+    }
+    output.appendAssumeCapacity(0);
+    if (strength == .primary) return true;
+    for (0..count) |_| output.appendAssumeCapacity(0x20000);
+    output.appendAssumeCapacity(0);
+    if (strength == .secondary) return true;
+    for (0..count) |_| output.appendAssumeCapacity(0x02000);
+    output.appendAssumeCapacity(0);
+    return true;
+}
+
 /// Tailored variant of the Latin fast path: tailored rules are matched with
 /// the page index and every other code point comes from the root table.
 fn appendTailoredLatinSortKey(
@@ -889,7 +937,7 @@ fn appendTailoredLatinSortKey(
     output: *std.ArrayList(u32),
     codepoints: []const u21,
     tailoring: tailorings.Tailoring,
-    pages: ?*const tailorings.PageIndex,
+    pages: ?*tailorings.PageIndex,
     strength: Strength,
 ) error{OutOfMemory}!bool {
     if (!latin_elements.usable) return false;
@@ -1461,6 +1509,39 @@ test "sort key buffer and UTF-16 APIs" {
         error.InvalidUtf8,
         sortKeyAlloc(allocator, "\xff", .{}),
     );
+}
+
+test "implicit-only sort keys match the generic path" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    // Han and an unassigned scalar take implicit weights; emoji such as
+    // U+1F600 have explicit DUCET entries and use the general path.
+    const text = "\u{4f60}\u{597d}\u{4e01}\u{0378}";
+    const codepoints = [_]u21{ 0x4f60, 0x597d, 0x4e01, 0x0378 };
+
+    const fast = try sortKeyAlloc(allocator, text, .{});
+    defer allocator.free(fast);
+
+    // `numeric` forces the general path without changing the key of text
+    // that has no digit runs.
+    const generic = try sortKeyAlloc(allocator, text, .{ .numeric = true });
+    defer allocator.free(generic);
+    try testing.expectEqualSlices(u32, generic, fast);
+
+    var expected = std.ArrayList(u32).empty;
+    defer expected.deinit(allocator);
+    for (codepoints) |codepoint| {
+        const weights = implicitWeights(codepoint);
+        try expected.append(allocator, weights.first);
+        try expected.append(allocator, weights.second);
+    }
+    try expected.append(allocator, 0);
+    for (codepoints) |_| try expected.append(allocator, 0x20000);
+    try expected.append(allocator, 0);
+    for (codepoints) |_| try expected.append(allocator, 0x02000);
+    try expected.append(allocator, 0);
+    try testing.expectEqualSlices(u32, expected.items, fast);
 }
 
 test "locale collation tailorings" {

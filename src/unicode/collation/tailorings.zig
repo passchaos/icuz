@@ -266,10 +266,13 @@ fn stripExtensions(locale: []const u8) []const u8 {
 /// `rules` maps each 256-code-point page to its first rule. `direct` maps
 /// code points below `direct_limit` straight to the offset of their first
 /// rule within the page (0xFFFF when the tailoring has no rule for it), so
-/// Latin and other early scripts skip the binary search entirely.
+/// Latin and other early scripts skip the binary search entirely. `cache`
+/// remembers the first rule of recently matched code points; it is written
+/// atomically and only ever holds entries for this tailoring.
 pub const PageIndex = struct {
     rules: [0x1100]u16,
     direct: [direct_limit]u16,
+    cache: [256]std.atomic.Value(u64),
 };
 
 const direct_limit: usize = 0x1000;
@@ -293,6 +296,7 @@ var index_slot_next = std.atomic.Value(usize).init(0);
 fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
     @memset(&pages.rules, 0);
     @memset(&pages.direct, direct_absent);
+    for (&pages.cache) |*entry| entry.* = std.atomic.Value(u64).init(0);
     var rule_index: usize = 0;
     const end: usize = tailoring.rule_count;
     for (0..0x1100) |page| {
@@ -317,7 +321,7 @@ fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
 }
 
 /// Return (building on first use) the page index for this tailoring.
-pub fn pageIndex(tailoring: Tailoring) ?*const PageIndex {
+pub fn pageIndex(tailoring: Tailoring) ?*PageIndex {
     for (&index_slots) |*slot| {
         if (slot.state.load(.acquire) == 2 and
             slot.rule_start == tailoring.rule_start and
@@ -352,13 +356,19 @@ fn lowerBound(start: usize, end: usize, first: u21) usize {
 
 pub fn match(
     tailoring: Tailoring,
-    pages: ?*const PageIndex,
+    pages: ?*PageIndex,
     codepoints: []const u21,
     index: usize,
 ) ?Match {
     const first = codepoints[index];
     const end = tailoring.rule_start + tailoring.rule_count;
     const start = if (pages) |page_index| blk: {
+        const hash: usize = (@as(u32, first) *% 0x9E3779B1) >> 24;
+        const cached = page_index.cache[hash].load(.monotonic);
+        if (@as(u32, @truncate(cached >> 32)) == first) {
+            const offset: u32 = @truncate(cached);
+            if (offset != 0) break :blk tailoring.rule_start + (offset - 1);
+        }
         const page: usize = @as(usize, first) >> 8;
         const low = tailoring.rule_start + page_index.rules[page];
         if (first < direct_limit) {
@@ -370,7 +380,15 @@ pub fn match(
             tailoring.rule_start + page_index.rules[page + 1]
         else
             end;
-        break :blk lowerBound(low, high, first);
+        const found = lowerBound(low, high, first);
+        if (found < high and ruleAt(found).first == first) {
+            page_index.cache[hash].store(
+                (@as(u64, first) << 32) |
+                    (@as(u64, found - tailoring.rule_start) + 1),
+                .monotonic,
+            );
+        }
+        break :blk found;
     } else lowerBound(
         tailoring.rule_start,
         end,
