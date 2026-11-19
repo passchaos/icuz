@@ -79,7 +79,7 @@ pub fn normalizeFormAlloc(
     // Everything before `span` is already normalized; copy it verbatim
     // instead of decoding and re-encoding it.
     if (check.span > 0) try output.appendSlice(allocator, text[0..check.span]);
-    try normalizeChangedFormInto(
+    try normalizeWithEditsInto(
         allocator,
         text[check.span..],
         form,
@@ -115,7 +115,7 @@ pub fn normalizeFormInto(
 
     const before = output.items.len;
     if (check.span > 0) try output.appendSlice(allocator, text[0..check.span]);
-    try normalizeChangedFormInto(
+    try normalizeWithEditsInto(
         allocator,
         text[check.span..],
         form,
@@ -602,6 +602,36 @@ fn normalizeChangedFormInto(
     try engine.flush();
 }
 
+/// Normalize `text`, copying stable spans verbatim and running the segment
+/// engine only on the spans that can change. `text` must be valid UTF-8.
+fn normalizeWithEditsInto(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    form: Form,
+    output: *std.ArrayList(u8),
+) Error!void {
+    var position: usize = 0;
+    while (position < text.len) {
+        const span = spanQuickCheckYesUnchecked(text[position..], form);
+        if (span > 0) {
+            try output.appendSlice(
+                allocator,
+                text[position..][0..span],
+            );
+            position += span;
+            if (position == text.len) break;
+        }
+        const end = segmentEnd(text, position);
+        try normalizeChangedFormInto(
+            allocator,
+            text[position..end],
+            form,
+            output,
+        );
+        position = end;
+    }
+}
+
 /// Validate UTF-8 and report whether `text` is in NFC without allocating.
 pub fn isNormalized(text: []const u8) error{InvalidUtf8}!bool {
     return isNormalizedForm(text, .nfc);
@@ -646,6 +676,17 @@ fn checkFormUtf8(text: []const u8, form: Form) FormCheck {
     var previous_input_class: u8 = 0;
     var index: usize = ascii_end;
     while (index < text.len) {
+        if (text[index] < 0x80) {
+            // ASCII is Quick_Check=Yes with ccc 0 in every form; the last
+            // character of a run becomes the starter for a following mark.
+            var end = index;
+            while (end < text.len and text[end] < 0x80) end += 1;
+            starter = text[end - 1];
+            starter_offset = end - 1;
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
         const start = index;
         const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
             return .{ .state = .invalid, .span = 0 };
@@ -698,9 +739,24 @@ fn isNormalizedFormUnchecked(text: []const u8, form: Form) bool {
     const compatibility = form == .nfkc or form == .nfkd;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
-    var iterator = std.unicode.Utf8Iterator{ .bytes = text, .i = ascii_end };
-    while (iterator.nextCodepoint()) |codepoint| {
-        if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
+    var index: usize = ascii_end;
+    while (index < text.len) {
+        if (text[index] < 0x80) {
+            var end = index;
+            while (end < text.len and text[end] < 0x80) end += 1;
+            starter = text[end - 1];
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
+        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+            return false;
+        if (index + length > text.len) return false;
+        const codepoint = std.unicode.utf8Decode(
+            text[index..][0..length],
+        ) catch return false;
+        index += length;
+        if (data.isSimplePage(codepoint, compatibility)) {
             starter = codepoint;
             previous_input_class = 0;
             continue;
@@ -735,17 +791,35 @@ pub fn spanQuickCheckYes(
     form: Form,
 ) error{InvalidUtf8}!usize {
     if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    return spanQuickCheckYesUnchecked(text, form);
+}
 
+fn spanQuickCheckYesUnchecked(text: []const u8, form: Form) usize {
     const ascii_end = asciiPrefixLen(text);
     if (ascii_end == text.len) return text.len;
 
     var starter_offset: usize = if (ascii_end > 0) ascii_end - 1 else 0;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
-    var iterator = std.unicode.Utf8Iterator{ .bytes = text, .i = ascii_end };
-    while (true) {
-        const start = iterator.i;
-        const codepoint = iterator.nextCodepoint() orelse break;
+    var index: usize = ascii_end;
+    while (index < text.len) {
+        if (text[index] < 0x80) {
+            var end = index;
+            while (end < text.len and text[end] < 0x80) end += 1;
+            starter = text[end - 1];
+            starter_offset = end - 1;
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
+        const start = index;
+        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+            return text.len;
+        if (index + length > text.len) return text.len;
+        const codepoint = std.unicode.utf8Decode(
+            text[index..][0..length],
+        ) catch return text.len;
+        index += length;
         const quick_check = data.quickCheck(codepoint, form);
         if (quick_check == .no) return starter_offset;
         const current_class = combining_class.forCodepoint(codepoint);
@@ -763,6 +837,32 @@ pub fn spanQuickCheckYes(
             starter_offset = start;
         }
         previous_input_class = current_class;
+    }
+    return text.len;
+}
+
+/// Return the byte offset of the next segment start at or after `index`.
+/// A segment starts at a starter that cannot compose with or reorder
+/// against the preceding character; normalizing `[index, result)` in
+/// isolation is safe.
+fn segmentEnd(text: []const u8, index: usize) usize {
+    var cursor = index;
+    var first = true;
+    while (cursor < text.len) {
+        const length = std.unicode.utf8ByteSequenceLength(text[cursor]) catch
+            return text.len;
+        if (cursor + length > text.len) return text.len;
+        const codepoint = std.unicode.utf8Decode(
+            text[cursor..][0..length],
+        ) catch return text.len;
+        if (!first and combining_class.forCodepoint(codepoint) == 0 and
+            !data.isCompositionSecond(codepoint) and
+            !isHangulVOrT(codepoint))
+        {
+            return cursor;
+        }
+        first = false;
+        cursor += length;
     }
     return text.len;
 }
@@ -1175,6 +1275,43 @@ test "streaming normalizer matches one-shot normalization" {
                 expected orelse input,
                 output.items,
             );
+        }
+    }
+}
+
+test "span editing matches whole-string normalization" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const inputs = [_][]const u8{
+        "a\u{0301}b\u{0323}c",
+        "e\u{0301}\u{0323}",
+        "A\u{030a}\u{0301}",
+        "\u{1100}\u{1161}\u{11a8}",
+        "\u{ac00}\u{11a8}",
+        "\u{ac01}",
+        "\u{0301}abc",
+        "a\u{0340}b",
+        "x\u{0dcf}y",
+        "\u{0d15}\u{094d}\u{0937}\u{093f}",
+        "aa\u{0301}\u{0323}\u{0302}bb",
+        "\u{fb01}\u{212b}",
+        "\u{1e9b}\u{0323}",
+        "a\u{0301}bcdef\u{0323}g",
+        "plain ASCII",
+        "",
+    };
+    const forms = [_]Form{ .nfc, .nfd, .nfkc, .nfkd };
+    for (forms) |form| {
+        for (inputs) |input| {
+            var reference = std.ArrayList(u8).empty;
+            defer reference.deinit(allocator);
+            try normalizeChangedFormInto(allocator, input, form, &reference);
+
+            var edited = std.ArrayList(u8).empty;
+            defer edited.deinit(allocator);
+            try normalizeWithEditsInto(allocator, input, form, &edited);
+
+            try testing.expectEqualStrings(reference.items, edited.items);
         }
     }
 }
