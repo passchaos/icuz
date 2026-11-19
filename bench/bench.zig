@@ -1036,6 +1036,13 @@ pub fn main() !void {
         .{ .strength = .primary, .locale = "sv" },
         allocator,
     );
+    benchSearch(
+        "search missing Swedish",
+        swedish_runtime,
+        "wombat",
+        .{ .strength = .primary, .locale = "sv" },
+        allocator,
+    );
     benchNumber(
         "scientific number",
         1234.5,

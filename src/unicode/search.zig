@@ -28,6 +28,8 @@ pub const Search = struct {
     candidate_key: std.ArrayList(u32),
     text_codepoints: std.ArrayList(u21),
     text_offsets: std.ArrayList(usize),
+    /// Direct-mapped cache of the first primary weight per code point.
+    primary_cache: [64]u64,
     needle_empty: bool,
 
     pub fn init(
@@ -44,6 +46,7 @@ pub const Search = struct {
             .candidate_key = .empty,
             .text_codepoints = .empty,
             .text_offsets = .empty,
+            .primary_cache = @splat(0),
             .needle_empty = needle.len == 0,
         };
         errdefer search.deinit();
@@ -97,10 +100,11 @@ pub const Search = struct {
             // A context-free ASCII start can be rejected from its first
             // primary weight without building a key.
             if (!can_extend and self.needle_primary.items.len > 0) {
-                if (self.collator.asciiFirstPrimary(
+                const first_primary = self.collator.asciiFirstPrimary(
                     codepoints[index],
-                )) |first_primary| {
-                    if (first_primary != self.needle_primary.items[0]) {
+                ) orelse self.firstPrimary(codepoints[index]);
+                if (first_primary) |primary| {
+                    if (primary != self.needle_primary.items[0]) {
                         index += 1;
                         continue;
                     }
@@ -168,6 +172,30 @@ pub const Search = struct {
             index += 1;
         }
         return null;
+    }
+
+    /// First primary weight of a context-free single code point, cached.
+    fn firstPrimary(self: *Search, codepoint: u21) ?u32 {
+        const hash: usize = (@as(u32, codepoint) *% 0x9E3779B1) >> 26;
+        const cached = self.primary_cache[hash];
+        if (@as(u32, @truncate(cached >> 32)) == codepoint) {
+            const stored: u32 = @truncate(cached);
+            if (stored != 0) return stored - 1;
+        }
+        const codepoints = [_]u21{codepoint};
+        self.collator.sortKeyCodepointsInto(
+            self.allocator,
+            &codepoints,
+            &self.candidate_key,
+        ) catch return null;
+        const length = primaryLength(self.candidate_key.items);
+        const primary: u32 = if (length == 0)
+            0
+        else
+            self.candidate_key.items[0];
+        self.primary_cache[hash] = (@as(u64, codepoint) << 32) |
+            (@as(u64, primary) + 1);
+        return primary;
     }
 
     fn decodeText(self: *Search, text: []const u8) Error!void {
