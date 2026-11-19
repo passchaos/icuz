@@ -67,7 +67,8 @@ pub fn normalizeFormAlloc(
     text: []const u8,
     form: Form,
 ) Error!?[]u8 {
-    switch (checkFormUtf8(text, form)) {
+    const check = checkFormUtf8(text, form);
+    switch (check.state) {
         .invalid => return error.InvalidUtf8,
         .normalized => return null,
         .changed => {},
@@ -75,7 +76,15 @@ pub fn normalizeFormAlloc(
 
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    try normalizeChangedFormInto(allocator, text, form, &output);
+    // Everything before `span` is already normalized; copy it verbatim
+    // instead of decoding and re-encoding it.
+    if (check.span > 0) try output.appendSlice(allocator, text[0..check.span]);
+    try normalizeChangedFormInto(
+        allocator,
+        text[check.span..],
+        form,
+        &output,
+    );
     if (std.mem.eql(u8, output.items, text)) {
         output.deinit(allocator);
         return null;
@@ -94,7 +103,8 @@ pub fn normalizeFormInto(
     form: Form,
     output: *std.ArrayList(u8),
 ) Error!bool {
-    switch (checkFormUtf8(text, form)) {
+    const check = checkFormUtf8(text, form);
+    switch (check.state) {
         .invalid => return error.InvalidUtf8,
         .normalized => {
             try output.appendSlice(allocator, text);
@@ -104,7 +114,13 @@ pub fn normalizeFormInto(
     }
 
     const before = output.items.len;
-    try normalizeChangedFormInto(allocator, text, form, output);
+    if (check.span > 0) try output.appendSlice(allocator, text[0..check.span]);
+    try normalizeChangedFormInto(
+        allocator,
+        text[check.span..],
+        form,
+        output,
+    );
     return !std.mem.eql(u8, output.items[before..], text);
 }
 
@@ -612,44 +628,64 @@ pub fn isNormalizedFormAssumeValid(text: []const u8, form: Form) bool {
 
 const FormState = enum { invalid, normalized, changed };
 
+/// Result of the fused validation and quick check. `span` is the byte offset
+/// from which normalization must restart: everything before it is already in
+/// the requested form and can be copied verbatim.
+const FormCheck = struct { state: FormState, span: usize };
+
 /// Validate UTF-8 and run the normalization quick check in one pass.
-fn checkFormUtf8(text: []const u8, form: Form) FormState {
+fn checkFormUtf8(text: []const u8, form: Form) FormCheck {
     const ascii_end = asciiPrefixLen(text);
-    if (ascii_end == text.len) return .normalized;
+    if (ascii_end == text.len) {
+        return .{ .state = .normalized, .span = text.len };
+    }
 
     const compatibility = form == .nfkc or form == .nfkd;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
+    var starter_offset: usize = if (ascii_end > 0) ascii_end - 1 else 0;
     var previous_input_class: u8 = 0;
     var index: usize = ascii_end;
     while (index < text.len) {
+        const start = index;
         const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
-            return .invalid;
-        if (index + length > text.len) return .invalid;
+            return .{ .state = .invalid, .span = 0 };
+        if (index + length > text.len) {
+            return .{ .state = .invalid, .span = 0 };
+        }
         const codepoint = std.unicode.utf8Decode(
             text[index..][0..length],
-        ) catch return .invalid;
+        ) catch return .{ .state = .invalid, .span = 0 };
         index += length;
         if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
             starter = codepoint;
+            starter_offset = start;
             previous_input_class = 0;
             continue;
         }
         const quick_check = data.quickCheck(codepoint, form);
-        if (quick_check == .no) return .changed;
+        if (quick_check == .no) {
+            return .{ .state = .changed, .span = starter_offset };
+        }
         const current_class = combining_class.forCodepoint(codepoint);
         if (current_class != 0 and
-            previous_input_class > current_class) return .changed;
+            previous_input_class > current_class)
+        {
+            return .{ .state = .changed, .span = starter_offset };
+        }
         if (quick_check == .maybe and starter != null and
             (previous_input_class == 0 or
                 previous_input_class < current_class) and
             pairChangesUnderForm(starter.?, codepoint, form))
         {
-            return .changed;
+            return .{ .state = .changed, .span = starter_offset };
         }
-        if (current_class == 0) starter = codepoint;
+        if (current_class == 0) {
+            starter = codepoint;
+            starter_offset = start;
+        }
         previous_input_class = current_class;
     }
-    return .normalized;
+    return .{ .state = .normalized, .span = text.len };
 }
 
 fn isNormalizedFormUnchecked(text: []const u8, form: Form) bool {
@@ -689,10 +725,11 @@ fn isNormalizedFormUnchecked(text: []const u8, form: Form) bool {
 
 /// Return the length of the longest prefix that is definitely normalized.
 ///
-/// The result is the byte offset of the first scalar that can change under
-/// `form`, or `text.len` when the whole string is normalized. A `MAYBE` scalar
-/// returns the offset of the preceding starter, matching ICU's
-/// `spanQuickCheckYes` contract.
+/// The result is a safe byte offset at or before the first scalar that can
+/// change under `form`, or `text.len` when the whole string is normalized.
+/// When a combining mark could compose with or reorder against the preceding
+/// starter, the offset of that starter is returned so the caller can
+/// normalize the suffix independently.
 pub fn spanQuickCheckYes(
     text: []const u8,
     form: Form,
@@ -710,10 +747,10 @@ pub fn spanQuickCheckYes(
         const start = iterator.i;
         const codepoint = iterator.nextCodepoint() orelse break;
         const quick_check = data.quickCheck(codepoint, form);
-        if (quick_check == .no) return start;
+        if (quick_check == .no) return starter_offset;
         const current_class = combining_class.forCodepoint(codepoint);
         if (current_class != 0 and
-            previous_input_class > current_class) return start;
+            previous_input_class > current_class) return starter_offset;
         if (quick_check == .maybe and starter != null and
             (previous_input_class == 0 or
                 previous_input_class < current_class) and
@@ -1061,6 +1098,32 @@ test "spanQuickCheckYes reports the first unstable offset" {
         @as(usize, 0),
         try spanQuickCheckYes("\u{0340}", .nfc),
     );
+    // U+0340 is Quick_Check=No with ccc 230, so the preceding starter must
+    // stay inside the suffix that gets normalized.
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        try spanQuickCheckYes("abc\u{0340}", .nfc),
+    );
+}
+
+test "normalization copies stable prefixes" {
+    const allocator = std.testing.allocator;
+    const input = "abcde\u{0301}xyz";
+    const expected = "abcd\xc3\xa9xyz";
+
+    const result = (try normalizeAlloc(allocator, input)).?;
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings(expected, result);
+
+    var output = std.ArrayList(u8).empty;
+    defer output.deinit(allocator);
+    try std.testing.expect(try normalizeFormInto(
+        allocator,
+        input,
+        .nfc,
+        &output,
+    ));
+    try std.testing.expectEqualStrings(expected, output.items);
 }
 
 test "UTF-16 normalization" {
