@@ -37,6 +37,8 @@ comptime {
 
 pub const tzdata_version = blob[strings_offset + @as(usize, tzdata_offset) ..][0..tzdata_length];
 
+pub const names = @import("names.zig");
+
 pub const Offset = struct {
     /// Seconds east of UTC.
     seconds: i32,
@@ -264,4 +266,14 @@ test "time zone formatting uses the zone offset" {
     );
     defer allocator.free(text);
     try testing.expect(std.mem.indexOf(u8, text, "2:00") != null);
+}
+
+/// Whether the zone observes daylight saving time at or after `unix_seconds`.
+pub fn usesDaylight(zone: Zone, unix_seconds: i64) bool {
+    var index: usize = 0;
+    while (index < zone.transition_count) : (index += 1) {
+        const transition = transitionAt(zone.first_transition + index);
+        if (transition.at >= unix_seconds and transition.daylight) return true;
+    }
+    return false;
 }

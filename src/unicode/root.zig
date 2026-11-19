@@ -252,6 +252,12 @@ pub const timeZoneUtcSeconds = timezone_mod.utcSeconds;
 pub const timeZoneCount = timezone_mod.count;
 pub const timeZoneAt = timezone_mod.at;
 pub const tzdata_version = timezone_mod.tzdata_version;
+pub const timeZoneUsesDaylight = timezone_mod.usesDaylight;
+pub const TimeZoneNameWidth = timezone_mod.names.Width;
+pub const TimeZoneNameKind = timezone_mod.names.Kind;
+pub const timeZoneNameAlloc = timezone_mod.names.zoneNameAlloc;
+pub const timeZoneGmtOffsetAlloc = timezone_mod.names.gmtOffsetAlloc;
+pub const timeZoneExemplarCityAlloc = timezone_mod.names.exemplarCityAlloc;
 
 pub const DateTime = dates_mod.DateTime;
 pub const DateStyle = dates_mod.Style;
@@ -264,6 +270,10 @@ pub const dateTimeFromUnixSeconds = dates_mod.fromUnixSeconds;
 pub const dateTimeFromUnixSecondsInZone =
     dates_mod.dateTimeFromUnixSecondsInZone;
 pub const formatUnixTimeInZoneAlloc = dates_mod.formatUnixTimeInZoneAlloc;
+pub const formatTimeInZoneAlloc = dates_mod.formatTimeInZoneAlloc;
+pub const formatPatternInZoneAlloc = dates_mod.formatPatternInZoneAlloc;
+pub const unixSecondsFromDateTime = dates_mod.unixSeconds;
+pub const ZoneInfo = dates_mod.ZoneInfo;
 pub const date_cldr_version = dates_mod.cldr_version;
 
 pub const MessageArgument = message_mod.Argument;

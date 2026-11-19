@@ -3,6 +3,7 @@
 const std = @import("std");
 const data = @import("dates_data.zig");
 const timezone = @import("../timezone/root.zig");
+const timezone_names = @import("../timezone/names.zig");
 
 pub const cldr_version = "48";
 
@@ -21,6 +22,17 @@ pub const DateTime = struct {
 
 pub const Error = error{ InvalidDate, OutOfMemory };
 
+/// Zone identity used by the `z`, `v`, `V`, and `O` pattern fields.
+pub const ZoneInfo = struct {
+    /// IANA zone ID; empty when only a display label is available.
+    id: []const u8 = "",
+    /// Abbreviation or caller-provided label used as the final fallback.
+    label: []const u8 = "",
+    daylight: bool = false,
+    uses_daylight: bool = false,
+    unix_seconds: i64 = 0,
+};
+
 /// Format a date using the locale's full/long/medium/short date pattern.
 pub fn formatDateAlloc(
     allocator: std.mem.Allocator,
@@ -35,7 +47,14 @@ pub fn formatDateAlloc(
         .medium => locale.date_medium,
         .short => locale.date_short,
     };
-    return formatPatternWithLocale(allocator, pattern, date_time, locale, "UTC");
+    return formatPatternWithLocale(
+        allocator,
+        pattern,
+        date_time,
+        locale,
+        locale_name,
+        .{ .label = "UTC" },
+    );
 }
 
 /// Format a time using the locale's time pattern. The zone name defaults to
@@ -74,7 +93,8 @@ pub fn formatTimeWithZoneAlloc(
         pattern,
         date_time,
         locale,
-        zone_name,
+        locale_name,
+        .{ .label = zone_name },
     );
 }
 
@@ -110,7 +130,8 @@ pub fn formatDateTimeAlloc(
         date_pattern,
         date_time,
         locale,
-        zone_name,
+        locale_name,
+        .{ .label = zone_name },
     );
     defer allocator.free(date_text);
     const time_text = try formatPatternWithLocale(
@@ -118,7 +139,8 @@ pub fn formatDateTimeAlloc(
         time_pattern,
         date_time,
         locale,
-        zone_name,
+        locale_name,
+        .{ .label = zone_name },
     );
     defer allocator.free(time_text);
 
@@ -144,7 +166,8 @@ pub fn formatPatternAlloc(
         pattern,
         date_time,
         locale,
-        zone_name,
+        locale_name,
+        .{ .label = zone_name },
     );
 }
 
@@ -176,13 +199,113 @@ pub fn formatUnixTimeInZoneAlloc(
             zone_name,
         );
     const offset = timezone.offsetAt(zone, unix_seconds);
-    return formatTimeWithZoneAlloc(
+    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const pattern = switch (style) {
+        .full => locale.time_full,
+        .long => locale.time_long,
+        .medium => locale.time_medium,
+        .short => locale.time_short,
+    };
+    return formatPatternWithLocale(
         allocator,
+        pattern,
         fromUnixSeconds(unix_seconds, offset.seconds),
+        locale,
         locale_name,
-        style,
-        offset.abbreviation,
+        .{
+            .id = zone_name,
+            .label = offset.abbreviation,
+            .daylight = offset.daylight,
+            .uses_daylight = timezone.usesDaylight(zone, unix_seconds),
+            .unix_seconds = unix_seconds,
+        },
     );
+}
+
+/// Format a civil date/time in an IANA zone, selecting localized zone names
+/// from the zone ID and recomputing the offset for the instant.
+pub fn formatTimeInZoneAlloc(
+    allocator: std.mem.Allocator,
+    date_time: DateTime,
+    locale_name: []const u8,
+    style: Style,
+    zone_name: []const u8,
+) Error![]u8 {
+    const zone = timezone.find(zone_name) orelse
+        return formatTimeWithZoneAlloc(
+            allocator,
+            date_time,
+            locale_name,
+            style,
+            zone_name,
+        );
+    const unix_seconds = unixSeconds(date_time);
+    const offset = timezone.offsetAt(zone, unix_seconds);
+    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const pattern = switch (style) {
+        .full => locale.time_full,
+        .long => locale.time_long,
+        .medium => locale.time_medium,
+        .short => locale.time_short,
+    };
+    return formatPatternWithLocale(
+        allocator,
+        pattern,
+        fromUnixSeconds(unix_seconds, offset.seconds),
+        locale,
+        locale_name,
+        .{
+            .id = zone_name,
+            .label = offset.abbreviation,
+            .daylight = offset.daylight,
+            .uses_daylight = timezone.usesDaylight(zone, unix_seconds),
+            .unix_seconds = unix_seconds,
+        },
+    );
+}
+
+/// Format a custom CLDR pattern for a Unix instant in an IANA zone.
+pub fn formatPatternInZoneAlloc(
+    allocator: std.mem.Allocator,
+    pattern: []const u8,
+    unix_seconds: i64,
+    locale_name: []const u8,
+    zone_name: []const u8,
+) Error![]u8 {
+    const locale = findLocale(locale_name) orelse findLocale("en").?;
+    const zone = timezone.find(zone_name) orelse return formatPatternWithLocale(
+        allocator,
+        pattern,
+        fromUnixSeconds(unix_seconds, 0),
+        locale,
+        locale_name,
+        .{ .label = zone_name },
+    );
+    const offset = timezone.offsetAt(zone, unix_seconds);
+    return formatPatternWithLocale(
+        allocator,
+        pattern,
+        fromUnixSeconds(unix_seconds, offset.seconds),
+        locale,
+        locale_name,
+        .{
+            .id = zone_name,
+            .label = offset.abbreviation,
+            .daylight = offset.daylight,
+            .uses_daylight = timezone.usesDaylight(zone, unix_seconds),
+            .unix_seconds = unix_seconds,
+        },
+    );
+}
+
+/// Unix seconds for civil fields interpreted with `offset_seconds`.
+pub fn unixSeconds(date_time: DateTime) i64 {
+    const days = daysFromCivil(date_time.year, date_time.month, date_time.day);
+    return days * 86400 +
+        @as(i64, date_time.hour) * 3600 +
+        @as(i64, date_time.minute) * 60 +
+        date_time.second -
+        date_time.offset_seconds;
 }
 
 /// Convert a Unix timestamp plus UTC offset into civil date/time fields.
@@ -207,7 +330,8 @@ fn formatPatternWithLocale(
     pattern: []const u8,
     date_time: DateTime,
     locale: data.Locale,
-    zone_name: []const u8,
+    locale_name: []const u8,
+    zone: ZoneInfo,
 ) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
@@ -250,7 +374,8 @@ fn formatPatternWithLocale(
                 end - index,
                 date_time,
                 locale,
-                zone_name,
+                locale_name,
+                zone,
             );
             index = end;
             continue;
@@ -269,7 +394,8 @@ fn appendField(
     length: usize,
     date_time: DateTime,
     locale: data.Locale,
-    zone_name: []const u8,
+    locale_name: []const u8,
+    zone: ZoneInfo,
 ) Error!void {
     switch (field) {
         'G' => {
@@ -393,14 +519,111 @@ fn appendField(
                 locale,
             );
         },
-        'z' => try output.appendSlice(allocator, zone_name),
-        'Z' => try appendOffset(
-            allocator,
-            output,
-            date_time.offset_seconds,
-            length,
-            locale,
-        ),
+        'z' => {
+            if (zone.id.len != 0) {
+                const width: timezone_names.Width = if (length >= 4) .long else .short;
+                if (try timezone_names.zoneNameAlloc(
+                    allocator,
+                    locale_name,
+                    zone.id,
+                    zone.unix_seconds,
+                    zone.daylight,
+                    zone.uses_daylight,
+                    width,
+                    .specific,
+                )) |value| {
+                    defer allocator.free(value);
+                    try output.appendSlice(allocator, value);
+                } else {
+                    const value = try timezone_names.gmtOffsetAlloc(
+                        allocator,
+                        locale_name,
+                        date_time.offset_seconds,
+                        width,
+                    );
+                    defer allocator.free(value);
+                    try output.appendSlice(allocator, value);
+                }
+            } else {
+                try output.appendSlice(allocator, zone.label);
+            }
+        },
+        'v' => {
+            if (zone.id.len != 0) {
+                const width: timezone_names.Width = if (length >= 4) .long else .short;
+                if (try timezone_names.zoneNameAlloc(
+                    allocator,
+                    locale_name,
+                    zone.id,
+                    zone.unix_seconds,
+                    zone.daylight,
+                    zone.uses_daylight,
+                    width,
+                    .generic,
+                )) |value| {
+                    defer allocator.free(value);
+                    try output.appendSlice(allocator, value);
+                } else {
+                    const value = try timezone_names.gmtOffsetAlloc(
+                        allocator,
+                        locale_name,
+                        date_time.offset_seconds,
+                        width,
+                    );
+                    defer allocator.free(value);
+                    try output.appendSlice(allocator, value);
+                }
+            } else {
+                try output.appendSlice(allocator, zone.label);
+            }
+        },
+        'V' => {
+            if (zone.id.len != 0) {
+                try output.appendSlice(allocator, zone.id);
+            } else {
+                try output.appendSlice(allocator, zone.label);
+            }
+        },
+        'O' => {
+            const width: timezone_names.Width = if (length >= 4) .long else .short;
+            const value = try timezone_names.gmtOffsetAlloc(
+                allocator,
+                locale_name,
+                date_time.offset_seconds,
+                width,
+            );
+            defer allocator.free(value);
+            try output.appendSlice(allocator, value);
+        },
+        'Z' => {
+            if (length == 4) {
+                const value = try timezone_names.gmtOffsetAlloc(
+                    allocator,
+                    locale_name,
+                    date_time.offset_seconds,
+                    .long,
+                );
+                defer allocator.free(value);
+                try output.appendSlice(allocator, value);
+            } else if (length >= 5) {
+                try appendIsoOffset(
+                    allocator,
+                    output,
+                    date_time.offset_seconds,
+                    length,
+                    true,
+                    locale,
+                );
+            } else {
+                try appendOffset(
+                    allocator,
+                    output,
+                    date_time.offset_seconds,
+                    length,
+                    locale,
+                );
+            }
+        },
         'X', 'x' => try appendIsoOffset(
             allocator,
             output,
@@ -825,4 +1048,69 @@ test "custom patterns and Unix timestamps" {
     );
     defer allocator.free(date_time);
     try testing.expectEqualStrings("Nov 18, 2026, 3:04:05\u{202f}PM", date_time);
+}
+
+
+test "time zone name conformance" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("../timezone/names_conformance.bin");
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJZQ", fixture[0..4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var total: usize = 0;
+    var printed: usize = 0;
+    for (0..case_count) |_| {
+        const locale_length = fixture[cursor];
+        const zone_length = fixture[cursor + 1];
+        const expected_length = std.mem.readInt(u16, fixture[cursor + 2 ..][0..2], .little);
+        const unix_seconds = std.mem.readInt(i64, fixture[cursor + 4 ..][0..8], .little);
+        const field = fixture[cursor + 12];
+        cursor += 16;
+        const locale_name = fixture[cursor .. cursor + locale_length];
+        cursor += locale_length;
+        const zone_name = fixture[cursor .. cursor + zone_length];
+        cursor += zone_length;
+        const expected = fixture[cursor .. cursor + expected_length];
+        cursor += expected_length;
+        const pattern = switch (field) {
+            0 => "z",
+            1 => "zzzz",
+            2 => "v",
+            3 => "vvvv",
+            4 => "O",
+            5 => "OOOO",
+            else => "ZZZZ",
+        };
+        total += 1;
+        const actual = formatPatternInZoneAlloc(
+            allocator,
+            pattern,
+            unix_seconds,
+            locale_name,
+            zone_name,
+        ) catch |err| {
+            failures += 1;
+            if (printed < 40) {
+                printed += 1;
+                std.debug.print("zone name mismatch {s} {s} {s}: {s}\n", .{ locale_name, zone_name, pattern, @errorName(err) });
+            }
+            continue;
+        };
+        defer allocator.free(actual);
+        if (!std.mem.eql(u8, actual, expected)) {
+            failures += 1;
+            if (printed < 40) {
+                printed += 1;
+                std.debug.print(
+                    "zone name mismatch {s} {s} {s}: got '{s}' expected '{s}'\n",
+                    .{ locale_name, zone_name, pattern, actual, expected },
+                );
+            }
+        }
+    }
+    std.debug.print("zone name conformance: {d}/{d} passed\n", .{ total - failures, total });
+    try testing.expect(failures == 0);
 }
