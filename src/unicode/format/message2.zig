@@ -2,9 +2,10 @@
 //!
 //! Supported: simple messages, `.input`/`.local` declarations, quoted
 //! patterns, `.match` matchers with multiple selectors, expressions with
-//! `:string`, `:number`, and `:integer` functions, numeric and plural
-//! selection, and attribute parsing (attributes are ignored). Markup,
-//! date/time functions, and custom functions are rejected.
+//! `:string`, `:number`, `:integer`, `:date`, `:time`, and `:datetime`
+//! functions, numeric and plural selection, and attribute parsing
+//! (attributes are ignored). Markup, date selection, and custom functions
+//! are rejected.
 //!
 //! The parsed `Message` borrows the input text and owns only its AST
 //! arrays; keep the message string alive while the message is used.
@@ -12,6 +13,7 @@
 const std = @import("std");
 const number = @import("number.zig");
 const plural = @import("plurals.zig");
+const dates = @import("dates.zig");
 const normalization = @import("../normalization/root.zig");
 
 pub const ParseError = error{
@@ -35,6 +37,7 @@ pub const FormatError = error{
 pub const Value = union(enum) {
     string: []const u8,
     number: f64,
+    date: dates.DateTime,
 };
 
 pub const Input = struct {
@@ -715,11 +718,14 @@ const Context = struct {
     variables: std.ArrayList(Resolved),
     names: std.ArrayList([]const u8),
     scratch: std.ArrayList(u8),
+    owned: std.ArrayList([]u8),
 
     fn deinit(self: *Context) void {
+        for (self.owned.items) |value| self.allocator.free(value);
         self.variables.deinit(self.allocator);
         self.names.deinit(self.allocator);
         self.scratch.deinit(self.allocator);
+        self.owned.deinit(self.allocator);
     }
 
     fn findVariable(self: *Context, name: []const u8) ?Resolved {
@@ -780,6 +786,7 @@ pub fn formatAlloc(
         .variables = .empty,
         .names = .empty,
         .scratch = .empty,
+        .owned = .empty,
     };
     defer context.deinit();
 
@@ -789,7 +796,10 @@ pub fn formatAlloc(
         else
             try resolveExpression(&context, declaration.expression);
         try context.names.append(allocator, declaration.name);
-        try context.variables.append(allocator, resolved);
+        try context.variables.append(
+            allocator,
+            try ownResolved(&context, resolved),
+        );
     }
 
     const pattern = switch (message.body) {
@@ -858,6 +868,21 @@ fn applyFunction(function: Function, value: Value) FormatError!Value {
                     return error.BadOperand;
                 break :blk .{ .number = parsed };
             },
+            else => error.BadOperand,
+        };
+    }
+    if (std.mem.eql(u8, function.name, "date") or
+        std.mem.eql(u8, function.name, "time") or
+        std.mem.eql(u8, function.name, "datetime"))
+    {
+        return switch (value) {
+            .date => value,
+            .string => |text| blk: {
+                const parsed = parseIsoDateTime(text) orelse
+                    return error.BadOperand;
+                break :blk .{ .date = parsed };
+            },
+            else => error.BadOperand,
         };
     }
     return error.UnsupportedFunction;
@@ -937,7 +962,260 @@ fn formatResolved(
             }
             try formatNumber(context, value, function, output);
         },
+        .date => |value| {
+            if (function != null and !isDateFunction(name)) {
+                return error.BadOperand;
+            }
+            try formatDateValue(context, value, function, output);
+        },
     }
+}
+
+fn isDateFunction(name: []const u8) bool {
+    return std.mem.eql(u8, name, "date") or
+        std.mem.eql(u8, name, "time") or
+        std.mem.eql(u8, name, "datetime");
+}
+
+fn ownResolved(context: *Context, resolved: Resolved) FormatError!Resolved {
+    var result = resolved;
+    switch (result.value) {
+        .string => |text| {
+            const copy = try context.allocator.dupe(u8, text);
+            errdefer context.allocator.free(copy);
+            try context.owned.append(context.allocator, copy);
+            result.value = .{ .string = copy };
+        },
+        else => {},
+    }
+    return result;
+}
+
+const DateFields = enum {
+    weekday,
+    day_weekday,
+    month_day,
+    month_day_weekday,
+    year_month_day,
+    year_month_day_weekday,
+};
+
+const DateLength = enum { long, medium, short };
+const TimePrecision = enum { hour, minute, second };
+
+fn dateSkeleton(fields: DateFields, length: DateLength) []const u8 {
+    return switch (fields) {
+        .weekday => switch (length) {
+            .long => "EEEE",
+            .medium => "EEE",
+            .short => "EEEEE",
+        },
+        .day_weekday => switch (length) {
+            .long => "EEEEd",
+            .medium, .short => "Ed",
+        },
+        .month_day => switch (length) {
+            .long => "MMMMd",
+            .medium => "MMMd",
+            .short => "Md",
+        },
+        .month_day_weekday => switch (length) {
+            .long => "MMMMEEEEd",
+            .medium => "MMMEd",
+            .short => "MEd",
+        },
+        .year_month_day => switch (length) {
+            .long => "yMMMMd",
+            .medium => "yMMMd",
+            .short => "yMd",
+        },
+        .year_month_day_weekday => switch (length) {
+            .long => "yMMMMEEEEd",
+            .medium => "yMMMEd",
+            .short => "yMdE",
+        },
+    };
+}
+
+fn formatDateValue(
+    context: *Context,
+    value: dates.DateTime,
+    function: ?Function,
+    output: *std.ArrayList(u8),
+) FormatError!void {
+    var fields: DateFields = .year_month_day;
+    var date_length: DateLength = .medium;
+    var precision: TimePrecision = .minute;
+    var include_date = true;
+    var include_time = true;
+    const name = if (function) |value_function| value_function.name else
+        "datetime";
+    if (std.mem.eql(u8, name, "date")) {
+        include_time = false;
+    } else if (std.mem.eql(u8, name, "time")) {
+        include_date = false;
+    }
+    if (function) |value_function| {
+        for (value_function.options) |option| {
+            if (include_date and (std.mem.eql(u8, option.name, "fields") or
+                std.mem.eql(u8, option.name, "dateFields")))
+            {
+                const text = try optionText(context, option);
+                fields = parseDateFields(text) orelse return error.BadOption;
+            } else if (include_date and
+                (std.mem.eql(u8, option.name, "length") or
+                    std.mem.eql(u8, option.name, "dateLength")))
+            {
+                const text = try optionText(context, option);
+                date_length = parseDateLength(text) orelse
+                    return error.BadOption;
+            } else if (include_time and
+                (std.mem.eql(u8, option.name, "precision") or
+                    std.mem.eql(u8, option.name, "timePrecision")))
+            {
+                const text = try optionText(context, option);
+                precision = parseTimePrecision(text) orelse
+                    return error.BadOption;
+            } else if (std.mem.eql(u8, option.name, "timeZoneStyle")) {
+                const text = try optionText(context, option);
+                if (!std.mem.eql(u8, text, "long") and
+                    !std.mem.eql(u8, text, "short"))
+                {
+                    return error.BadOption;
+                }
+            }
+        }
+    }
+
+    var skeleton: [64]u8 = undefined;
+    var length: usize = 0;
+    if (include_date) {
+        const date_part = dateSkeleton(fields, date_length);
+        @memcpy(skeleton[length..][0..date_part.len], date_part);
+        length += date_part.len;
+    }
+    if (include_time) {
+        const time_part = switch (precision) {
+            .hour => "H",
+            .minute => "Hm",
+            .second => "Hms",
+        };
+        @memcpy(skeleton[length..][0..time_part.len], time_part);
+        length += time_part.len;
+    }
+    const formatted = dates.formatSkeletonAlloc(
+        context.allocator,
+        value,
+        context.locale,
+        skeleton[0..length],
+    ) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.BadOption,
+    };
+    defer context.allocator.free(formatted);
+    try output.appendSlice(context.allocator, formatted);
+}
+
+fn parseDateFields(text: []const u8) ?DateFields {
+    if (std.mem.eql(u8, text, "weekday")) return .weekday;
+    if (std.mem.eql(u8, text, "day-weekday")) return .day_weekday;
+    if (std.mem.eql(u8, text, "month-day")) return .month_day;
+    if (std.mem.eql(u8, text, "month-day-weekday")) return .month_day_weekday;
+    if (std.mem.eql(u8, text, "year-month-day")) return .year_month_day;
+    if (std.mem.eql(u8, text, "year-month-day-weekday")) {
+        return .year_month_day_weekday;
+    }
+    return null;
+}
+
+fn parseDateLength(text: []const u8) ?DateLength {
+    if (std.mem.eql(u8, text, "long")) return .long;
+    if (std.mem.eql(u8, text, "medium")) return .medium;
+    if (std.mem.eql(u8, text, "short")) return .short;
+    return null;
+}
+
+fn parseTimePrecision(text: []const u8) ?TimePrecision {
+    if (std.mem.eql(u8, text, "hour")) return .hour;
+    if (std.mem.eql(u8, text, "minute")) return .minute;
+    if (std.mem.eql(u8, text, "second")) return .second;
+    return null;
+}
+
+fn parseIsoDateTime(text: []const u8) ?dates.DateTime {
+    if (text.len < 10) return null;
+    if (text[4] != '-' or text[7] != '-') return null;
+    const year = std.fmt.parseInt(i32, text[0..4], 10) catch return null;
+    const month = std.fmt.parseInt(u8, text[5..7], 10) catch return null;
+    const day = std.fmt.parseInt(u8, text[8..10], 10) catch return null;
+    if (month < 1 or month > 12 or day < 1 or day > 31) return null;
+    var result = dates.DateTime{
+        .year = year,
+        .month = month,
+        .day = day,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    };
+    var rest = text[10..];
+    if (rest.len == 0) return result;
+    if (rest[0] != 'T') return null;
+    rest = rest[1..];
+    if (rest.len < 5 or rest[2] != ':') return null;
+    result.hour = std.fmt.parseInt(u8, rest[0..2], 10) catch return null;
+    result.minute = std.fmt.parseInt(u8, rest[3..5], 10) catch return null;
+    if (result.hour > 23 or result.minute > 59) return null;
+    var index: usize = 5;
+    if (index + 3 <= rest.len and rest[index] == ':') {
+        result.second = std.fmt.parseInt(
+            u8,
+            rest[index + 1 .. index + 3],
+            10,
+        ) catch return null;
+        if (result.second > 59) return null;
+        index += 3;
+        if (index < rest.len and rest[index] == '.') {
+            const start = index + 1;
+            var end = start;
+            while (end < rest.len and rest[end] >= '0' and
+                rest[end] <= '9') : (end += 1)
+            {}
+            const digits = end - start;
+            if (digits == 0 or digits > 9) return null;
+            var value = std.fmt.parseInt(
+                u32,
+                rest[start..end],
+                10,
+            ) catch return null;
+            var scale = digits;
+            while (scale < 9) : (scale += 1) value *= 10;
+            result.nanosecond = value;
+            index = end;
+        }
+    }
+    if (index == rest.len) return result;
+    if (rest[index] == 'Z' and index + 1 == rest.len) {
+        result.offset_seconds = 0;
+        return result;
+    }
+    if (rest[index] == '+' or rest[index] == '-') {
+        if (index + 6 != rest.len or rest[index + 3] != ':') return null;
+        const hours = std.fmt.parseInt(
+            i32,
+            rest[index + 1 .. index + 3],
+            10,
+        ) catch return null;
+        const minutes = std.fmt.parseInt(
+            i32,
+            rest[index + 4 .. index + 6],
+            10,
+        ) catch return null;
+        if (hours > 23 or minutes > 59) return null;
+        const sign: i32 = if (rest[index] == '-') -1 else 1;
+        result.offset_seconds = sign * (hours * 3600 + minutes * 60);
+        return result;
+    }
+    return null;
 }
 
 fn formatNumber(
@@ -1114,6 +1392,10 @@ fn matchKey(
         };
         if (std.mem.eql(u8, value, key)) return .exact;
         return if (try nfcEqual(context, value, key)) .exact else .none;
+    }
+    if (isDateFunction(function.name)) {
+        // Selection on date/time values is not required by the spec.
+        return error.UnsupportedFunction;
     }
     if (std.mem.eql(u8, function.name, "number") or
         std.mem.eql(u8, function.name, "integer"))
@@ -1351,4 +1633,73 @@ test "message format 2 errors" {
         error.BadOperand,
         formatAlloc(allocator, &bad, "en", &inputs),
     );
+}
+
+test "message format 2 date functions" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    {
+        var message = try parse(allocator, "{$d :date}");
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "d", .value = .{ .string = "2024-03-05" } },
+        };
+        const text = try formatAlloc(allocator, &message, "en", &inputs);
+        defer allocator.free(text);
+        try testing.expectEqualStrings("Mar 5, 2024", text);
+    }
+    {
+        var message = try parse(
+            allocator,
+            "{$d :date fields=year-month-day-weekday length=long}",
+        );
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "d", .value = .{ .string = "2024-03-05" } },
+        };
+        const text = try formatAlloc(allocator, &message, "en", &inputs);
+        defer allocator.free(text);
+        try testing.expect(std.mem.indexOf(u8, text, "Tuesday") != null);
+        try testing.expect(std.mem.indexOf(u8, text, "March") != null);
+    }
+    {
+        var message = try parse(allocator, "{$t :time precision=second}");
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "t", .value = .{ .string = "2024-03-05T14:30:45" } },
+        };
+        const text = try formatAlloc(allocator, &message, "en", &inputs);
+        defer allocator.free(text);
+        try testing.expect(std.mem.indexOf(u8, text, "14:30:45") != null);
+    }
+    {
+        var message = try parse(allocator, "{$d :datetime}");
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "d", .value = .{ .date = .{
+                .year = 2024,
+                .month = 3,
+                .day = 5,
+                .hour = 14,
+                .minute = 30,
+                .second = 0,
+            } } },
+        };
+        const text = try formatAlloc(allocator, &message, "en", &inputs);
+        defer allocator.free(text);
+        try testing.expect(std.mem.indexOf(u8, text, "2024") != null);
+        try testing.expect(std.mem.indexOf(u8, text, "14:30") != null);
+    }
+    {
+        var message = try parse(allocator, "{$d :date}");
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "d", .value = .{ .string = "not-a-date" } },
+        };
+        try testing.expectError(
+            error.BadOperand,
+            formatAlloc(allocator, &message, "en", &inputs),
+        );
+    }
 }
