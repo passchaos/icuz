@@ -77,20 +77,20 @@ pub fn formatAlloc(
 ) Error![]u8 {
     const scaled = value * @as(f64, @floatFromInt(options.scale));
     return switch (options.style) {
-        .scientific => formatScientificAlloc(allocator, scaled, locale_name, options),
-        .compact => formatCompactAlloc(allocator, scaled, locale_name, options),
+        .scientific => formatScientificAlloc(allocator, scaled, locale_name, &options),
+        .compact => formatCompactAlloc(allocator, scaled, locale_name, &options),
         .decimal, .percent, .currency => formatStandardAlloc(
             allocator,
             scaled,
             locale_name,
-            options,
+            &options,
         ),
     };
 }
 
 fn resolveLocale(
     locale_name: []const u8,
-    options: Options,
+    options: *const Options,
     storage: *data.Locale,
 ) *const data.Locale {
     const split = misc.splitNumberingSystem(locale_name);
@@ -151,7 +151,7 @@ fn formatStandardAlloc(
     allocator: std.mem.Allocator,
     value: f64,
     locale_name: []const u8,
-    options: Options,
+    options: *const Options,
 ) Error![]u8 {
     var locale_storage: data.Locale = undefined;
     const locale = resolveLocale(locale_name, options, &locale_storage);
@@ -285,7 +285,7 @@ pub fn formatIntegerAlloc(
         return formatAlloc(allocator, @floatFromInt(value), locale_name, options);
     }
     var locale_storage: data.Locale = undefined;
-    const locale = resolveLocale(locale_name, options, &locale_storage);
+    const locale = resolveLocale(locale_name, &options, &locale_storage);
     var currency_display_text: []const u8 = "";
     if (options.style == .currency) {
         const code = options.currency orelse return error.MissingCurrency;
@@ -298,7 +298,7 @@ pub fn formatIntegerAlloc(
     const pattern_text = switch (options.style) {
         .decimal => locale.decimal_pattern,
         .percent => locale.percent_pattern,
-        .currency => currencyPatternText(locale, options, currency_display_text),
+        .currency => currencyPatternText(locale, &options, currency_display_text),
         .scientific, .compact => unreachable,
     };
     const pattern = parsePattern(pattern_text) orelse
@@ -566,7 +566,7 @@ fn formatScientificAlloc(
     allocator: std.mem.Allocator,
     value: f64,
     locale_name: []const u8,
-    options: Options,
+    options: *const Options,
 ) Error![]u8 {
     var locale_storage: data.Locale = undefined;
     const locale = resolveLocale(locale_name, options, &locale_storage);
@@ -616,7 +616,7 @@ fn formatScientificAlloc(
         allocator,
         mantissa,
         locale_name,
-        .{
+        &.{
             .style = .decimal,
             .min_fraction_digits = options.min_fraction_digits orelse 0,
             .max_fraction_digits = max_fraction,
@@ -756,12 +756,12 @@ fn formatCompactAlloc(
     allocator: std.mem.Allocator,
     value: f64,
     locale_name: []const u8,
-    options: Options,
+    options: *const Options,
 ) Error![]u8 {
     if (options.currency != null) {
         // Compact notation formats the magnitude, then the currency affixes
         // wrap the whole compact string ("$1.2K", "1,2 k $US").
-        var inner_options = options;
+        var inner_options = options.*;
         inner_options.currency = null;
         inner_options.sign = .auto;
         // CLDR defines compact currency patterns only for the short style.
@@ -770,7 +770,7 @@ fn formatCompactAlloc(
             allocator,
             @abs(value),
             locale_name,
-            inner_options,
+            &inner_options,
         );
         defer allocator.free(body);
         var locale_storage: data.Locale = undefined;
@@ -854,7 +854,7 @@ fn formatCompactAlloc(
         allocator,
         scaled,
         locale_name,
-        .{
+        &.{
             .style = .decimal,
             .min_fraction_digits = if (options.skeleton) 0 else info.fraction_digits,
             .max_fraction_digits = fraction_digits,
@@ -938,7 +938,7 @@ fn wrapCurrencyAlloc(
     allocator: std.mem.Allocator,
     number_text: []const u8,
     locale: *const data.Locale,
-    options: Options,
+    options: *const Options,
     negative: bool,
     magnitude: f64,
 ) Error![]u8 {
@@ -1012,9 +1012,9 @@ fn compactFallback(
     allocator: std.mem.Allocator,
     value: f64,
     locale_name: []const u8,
-    options: Options,
+    options: *const Options,
 ) Error![]u8 {
-    var fallback_options = options;
+    var fallback_options = options.*;
     fallback_options.style = .decimal;
     fallback_options.use_grouping = false;
     if (options.skeleton and options.min_fraction_digits == null and
@@ -1023,18 +1023,18 @@ fn compactFallback(
         fallback_options.min_fraction_digits = 0;
         fallback_options.max_fraction_digits = compactSkeletonDigits(value);
     }
-    return formatStandardAlloc(allocator, value, locale_name, fallback_options);
+    return formatStandardAlloc(allocator, value, locale_name, &fallback_options);
 }
 
 fn decimalFallback(
     allocator: std.mem.Allocator,
     value: f64,
     locale_name: []const u8,
-    options: Options,
+    options: *const Options,
 ) Error![]u8 {
-    var fallback_options = options;
+    var fallback_options = options.*;
     fallback_options.style = .decimal;
-    return formatStandardAlloc(allocator, value, locale_name, fallback_options);
+    return formatStandardAlloc(allocator, value, locale_name, &fallback_options);
 }
 
 fn appendCodepoint(
@@ -1076,7 +1076,7 @@ fn currencyDisplayText(
 
 fn currencyPatternText(
     locale: *const data.Locale,
-    options: Options,
+    options: *const Options,
     display_text: []const u8,
 ) []const u8 {
     const base = if (options.accounting)
@@ -1130,7 +1130,7 @@ fn formatCurrencyNameAlloc(
     allocator: std.mem.Allocator,
     value: f64,
     locale_name: []const u8,
-    options: Options,
+    options: *const Options,
     locale: *const data.Locale,
     code: []const u8,
 ) Error![]u8 {
@@ -1142,7 +1142,7 @@ fn formatCurrencyNameAlloc(
         allocator,
         magnitude,
         locale_name,
-        .{
+        &.{
             .style = .decimal,
             .min_fraction_digits = min_fraction,
             .max_fraction_digits = fraction_digits,
