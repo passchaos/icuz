@@ -49,6 +49,15 @@ pub const Options = struct {
     /// Maximum integer digits; 0 means unlimited. ICU skeletons without a
     /// `+` in `integer-width` truncate leading digits.
     integer_max_digits: u8 = 0,
+    /// Engineering notation: exponents are multiples of three.
+    engineering: bool = false,
+    /// Minimum exponent digits in scientific notation (1 when unset).
+    exponent_min_digits: u8 = 1,
+    /// Always show a sign on the exponent.
+    exponent_sign: bool = false,
+    /// Round to significant digits instead of fraction digits.
+    min_significant_digits: u8 = 0,
+    max_significant_digits: u8 = 0,
     compact_style: CompactStyle = .short,
     numbering_system: ?[]const u8 = null,
 };
@@ -216,10 +225,22 @@ fn formatStandardAlloc(
     const magnitude = @abs(value) *
         @as(f64, @floatFromInt(pattern.multiplier));
 
+    var rounded_magnitude = roundHalfEven(magnitude, max_fraction);
+    if (options.max_significant_digits > 0) {
+        const significant = significantDigits(
+            magnitude,
+            options.min_significant_digits,
+            options.max_significant_digits,
+        );
+        min_fraction = significant.min_fraction;
+        max_fraction = significant.max_fraction;
+        rounded_magnitude = significant.magnitude;
+    }
+
     var number_buffer: [64]u8 = undefined;
     const formatted = formatFloat(
         &number_buffer,
-        roundHalfEven(magnitude, max_fraction),
+        rounded_magnitude,
         max_fraction,
     );
 
@@ -256,7 +277,7 @@ pub fn formatIntegerAlloc(
     options: Options,
 ) Error![]u8 {
     if (options.style == .scientific or options.style == .compact or
-        options.scale != 1 or
+        options.scale != 1 or options.max_significant_digits > 0 or
         (options.style == .currency and
             (options.currency_display == .name or
                 options.currency_display == .hidden)))
@@ -378,6 +399,48 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
             std.mem.eql(u8, token, "notation-scientific"))
         {
             options.style = .scientific;
+        } else if (std.mem.eql(u8, token, "engineering")) {
+            options.style = .scientific;
+            options.engineering = true;
+        } else if (std.mem.startsWith(u8, token, "scientific/") or
+            std.mem.startsWith(u8, token, "engineering/"))
+        {
+            options.style = .scientific;
+            if (std.mem.startsWith(u8, token, "engineering/")) {
+                options.engineering = true;
+            }
+            const suffix = if (std.mem.startsWith(u8, token, "engineering/"))
+                token["engineering/".len..]
+            else
+                token["scientific/".len..];
+            var digits: u8 = 0;
+            for (suffix) |byte| {
+                // '+' only allows more exponent digits than the minimum.
+                if (byte == '+') {
+                    continue;
+                } else if (byte == 'e') {
+                    digits += 1;
+                } else {
+                    return error.InvalidPattern;
+                }
+            }
+            options.exponent_min_digits = @max(digits, 1);
+        } else if (token[0] == '@') {
+            var minimum: u8 = 0;
+            var maximum: u8 = 0;
+            for (token) |byte| {
+                if (byte == '@') {
+                    minimum += 1;
+                    maximum += 1;
+                } else if (byte == '#') {
+                    maximum += 1;
+                } else {
+                    return error.InvalidPattern;
+                }
+            }
+            if (minimum == 0) return error.InvalidPattern;
+            options.min_significant_digits = minimum;
+            options.max_significant_digits = maximum;
         } else if (std.mem.eql(u8, token, "integer")) {
             options.style = .decimal;
             options.min_fraction_digits = 0;
@@ -526,6 +589,9 @@ fn formatScientificAlloc(
         if (scaled >= 10.0) exponent += 1;
         if (scaled < 1.0) exponent -= 1;
     }
+    if (options.engineering and value != 0) {
+        exponent = @divFloor(exponent, 3) * 3;
+    }
     const power = std.math.pow(f64, 10.0, @floatFromInt(exponent));
     if (power == 0) return decimalFallback(allocator, value, locale_name, options);
     var mantissa = if (value == 0) 0.0 else value / power;
@@ -533,6 +599,16 @@ fn formatScientificAlloc(
     if (roundHalfEven(@abs(mantissa), max_fraction) >= 10.0) {
         exponent += 1;
         mantissa /= 10.0;
+        if (options.engineering) {
+            const aligned = @divFloor(exponent, 3) * 3;
+            if (aligned != exponent) {
+                exponent = aligned;
+                mantissa = if (value == 0)
+                    0.0
+                else
+                    value / std.math.pow(f64, 10.0, @floatFromInt(exponent));
+            }
+        }
     }
 
     const mantissa_text = try formatStandardAlloc(
@@ -555,10 +631,19 @@ fn formatScientificAlloc(
     if (exponent < 0) {
         try output.appendSlice(allocator, locale.minus);
         exponent = -exponent;
+    } else if (options.exponent_sign) {
+        try output.appendSlice(allocator, locale.plus);
     }
     var buffer: [12]u8 = undefined;
     const digits = std.fmt.bufPrint(&buffer, "{d}", .{exponent}) catch
         unreachable;
+    var padding = if (digits.len < options.exponent_min_digits)
+        options.exponent_min_digits - @as(u8, @intCast(digits.len))
+    else
+        0;
+    while (padding > 0) : (padding -= 1) {
+        try appendCodepoint(allocator, &output, locale.digits[0]);
+    }
     for (digits) |digit| {
         try appendCodepoint(allocator, &output, locale.digits[digit - '0']);
     }
@@ -761,6 +846,53 @@ fn formatCompactAlloc(
 
 /// ICU compact skeletons keep at most two significant digits of the
 /// scaled mantissa: one fraction digit below 10, none at 10 and above.
+const SignificantDigits = struct {
+    magnitude: f64,
+    min_fraction: u8,
+    max_fraction: u8,
+};
+
+/// Round a magnitude to `max_significant` significant digits and derive the
+/// fraction-digit window that preserves `min_significant` trailing zeros.
+fn significantDigits(
+    value: f64,
+    min_significant: u8,
+    max_significant: u8,
+) SignificantDigits {
+    var exponent: i32 = 0;
+    if (value != 0 and std.math.isFinite(value)) {
+        exponent = @intFromFloat(@floor(@log10(value)));
+    }
+    const max_fraction_signed: i32 = @as(i32, max_significant) - 1 - exponent;
+    const min_fraction_signed: i32 = @as(i32, min_significant) - 1 - exponent;
+    const max_fraction: u8 = @intCast(std.math.clamp(
+        max_fraction_signed,
+        0,
+        9,
+    ));
+    const min_fraction: u8 = @intCast(std.math.clamp(
+        min_fraction_signed,
+        0,
+        @as(i32, max_fraction),
+    ));
+    var rounded = value;
+    if (max_fraction_signed < 0) {
+        const scale = std.math.pow(
+            f64,
+            10.0,
+            @floatFromInt(-max_fraction_signed),
+        );
+        rounded = roundHalfEven(value / scale, 0) * scale;
+    } else {
+        rounded = roundHalfEven(value, max_fraction);
+    }
+    return .{
+        .magnitude = rounded,
+        .min_fraction = min_fraction,
+        .max_fraction = max_fraction,
+    };
+}
+
 fn compactSkeletonDigits(value: f64) u8 {
     const magnitude = @abs(value);
     if (magnitude < 1) return 2;
