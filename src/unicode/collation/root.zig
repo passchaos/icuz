@@ -76,61 +76,67 @@ const CollationElement = struct {
     variable: bool,
 };
 
-/// Collation-element buffer that starts on the stack and spills to the heap
-/// only for long inputs, so a typical sort key costs no allocation.
-const CeBuffer = struct {
-    stack: []CollationElement,
-    len: usize = 0,
-    heap: ?std.ArrayList(CollationElement) = null,
-    allocator: std.mem.Allocator,
-
-    fn init(allocator: std.mem.Allocator, stack: []CollationElement) CeBuffer {
-        return .{ .stack = stack, .allocator = allocator };
-    }
-
-    fn deinit(self: *CeBuffer) void {
-        if (self.heap) |*list| list.deinit(self.allocator);
-    }
-
-    fn items(self: *const CeBuffer) []const CollationElement {
-        return if (self.heap) |list| list.items else self.stack[0..self.len];
-    }
-
-    fn ensureTotalCapacity(
-        self: *CeBuffer,
-        capacity: usize,
-    ) error{OutOfMemory}!void {
-        if (capacity <= self.stack.len) return;
-        if (self.heap) |*list| {
-            try list.ensureTotalCapacity(self.allocator, capacity);
-            return;
-        }
-        var list = std.ArrayList(CollationElement).empty;
-        try list.ensureTotalCapacity(self.allocator, capacity);
-        try list.appendSlice(self.allocator, self.stack[0..self.len]);
-        self.heap = list;
-        self.len = 0;
-    }
-
-    fn append(
-        self: *CeBuffer,
+/// Element buffer that starts on the stack and spills to the heap only for
+/// long inputs, so a typical sort key costs no allocation.
+fn ElementBuffer(comptime T: type) type {
+    return struct {
+        stack: []T,
+        len: usize = 0,
+        heap: ?std.ArrayList(T) = null,
         allocator: std.mem.Allocator,
-        element: CollationElement,
-    ) error{OutOfMemory}!void {
-        _ = allocator;
-        if (self.heap) |*list| {
-            try list.append(self.allocator, element);
-            return;
+
+        const Self = @This();
+
+        fn init(allocator: std.mem.Allocator, stack: []T) Self {
+            return .{ .stack = stack, .allocator = allocator };
         }
-        if (self.len < self.stack.len) {
-            self.stack[self.len] = element;
-            self.len += 1;
-            return;
+
+        fn deinit(self: *Self) void {
+            if (self.heap) |*list| list.deinit(self.allocator);
         }
-        try self.ensureTotalCapacity(self.stack.len * 2);
-        try self.heap.?.append(self.allocator, element);
-    }
-};
+
+        fn items(self: *const Self) []const T {
+            return if (self.heap) |list| list.items else self.stack[0..self.len];
+        }
+
+        fn ensureTotalCapacity(
+            self: *Self,
+            capacity: usize,
+        ) error{OutOfMemory}!void {
+            if (capacity <= self.stack.len) return;
+            if (self.heap) |*list| {
+                try list.ensureTotalCapacity(self.allocator, capacity);
+                return;
+            }
+            var list = std.ArrayList(T).empty;
+            try list.ensureTotalCapacity(self.allocator, capacity);
+            try list.appendSlice(self.allocator, self.stack[0..self.len]);
+            self.heap = list;
+            self.len = 0;
+        }
+
+        fn append(
+            self: *Self,
+            allocator: std.mem.Allocator,
+            element: T,
+        ) error{OutOfMemory}!void {
+            _ = allocator;
+            if (self.heap) |*list| {
+                try list.append(self.allocator, element);
+                return;
+            }
+            if (self.len < self.stack.len) {
+                self.stack[self.len] = element;
+                self.len += 1;
+                return;
+            }
+            try self.ensureTotalCapacity(self.stack.len * 2);
+            try self.heap.?.append(self.allocator, element);
+        }
+    };
+}
+
+const CeBuffer = ElementBuffer(CollationElement);
 
 const WeightedElement = struct {
     primary: u32,
@@ -850,9 +856,10 @@ fn appendTailoredLatinSortKey(
         }
     }
 
-    var ces = std.ArrayList(LatinElement).empty;
-    defer ces.deinit(allocator);
-    try ces.ensureTotalCapacity(allocator, source.len * 2 + 8);
+    var stack_ces: [512]LatinElement = undefined;
+    var ces = ElementBuffer(LatinElement).init(allocator, &stack_ces);
+    defer ces.deinit();
+    try ces.ensureTotalCapacity(source.len * 2 + 8);
     var index: usize = 0;
     while (index < source.len) {
         if (tailorings.match(tailoring, pages, source, index)) |matched| {
@@ -876,12 +883,12 @@ fn appendTailoredLatinSortKey(
         index += 1;
     }
 
-    try output.ensureTotalCapacity(allocator, ces.items.len * 3 + 8);
-    try appendLatinCesLevel(allocator, output, ces.items, .primary);
+    try output.ensureTotalCapacity(allocator, ces.items().len * 3 + 8);
+    try appendLatinCesLevel(allocator, output, ces.items(), .primary);
     if (strength == .primary) return true;
-    try appendLatinCesLevel(allocator, output, ces.items, .secondary);
+    try appendLatinCesLevel(allocator, output, ces.items(), .secondary);
     if (strength == .secondary) return true;
-    try appendLatinCesLevel(allocator, output, ces.items, .tertiary);
+    try appendLatinCesLevel(allocator, output, ces.items(), .tertiary);
     if (strength == .tertiary) return true;
     try output.append(allocator, 0);
     if (strength == .quaternary) return true;
