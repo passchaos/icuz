@@ -33,8 +33,10 @@ need without pulling in a font or layout engine.
 - Unicode 17 Arabic joining properties and the joining state machine.
 - Character names and aliases, including algorithmic CJK/Tangut/Egyptian/
   Khitan/Nushu names and UAX #44 loose name lookup.
-- UnicodeSet range/property construction, set algebra, and a practical
-  `\p{...}`/`[a-z]` pattern parser.
+- UnicodeSet range/property construction, union/intersection/difference/
+  complement, `containsAll`/`containsNone`/`containsSome`, pattern
+  round-tripping, and a practical `\p{...}`/`[a-z]` pattern parser,
+  validated by a 610-case PyICU range differential fixture.
 - CLDR 48 root collation (UCA 17.0.0) with NFD preprocessing, contiguous and
   discontiguous contractions, implicit weights, non-ignorable/shifted variable
   weighting, sort keys, and comparison.

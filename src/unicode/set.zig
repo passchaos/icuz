@@ -362,7 +362,90 @@ pub const Set = struct {
     pub fn rangeIterator(self: Set) RangeIterator {
         return .{ .ranges = self.ranges.items };
     }
+
+    /// True when every code point of `other` is in this set.
+    pub fn containsAll(self: Set, other: Set) bool {
+        return other.subsetOf(self);
+    }
+
+    /// True when the two sets share no code point.
+    pub fn containsNone(self: Set, other: Set) bool {
+        var left: usize = 0;
+        var right: usize = 0;
+        while (left < self.ranges.items.len and
+            right < other.ranges.items.len)
+        {
+            const a = self.ranges.items[left];
+            const b = other.ranges.items[right];
+            if (a.last < b.first) {
+                left += 1;
+            } else if (b.last < a.first) {
+                right += 1;
+            } else {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// True when the two sets share at least one code point.
+    pub fn containsSome(self: Set, other: Set) bool {
+        return !self.containsNone(other);
+    }
+
+    /// Render an ICU-style pattern that parses back to this set.
+    pub fn toPatternAlloc(
+        self: Set,
+        allocator: std.mem.Allocator,
+    ) error{OutOfMemory}![]u8 {
+        var output = std.ArrayList(u8).empty;
+        errdefer output.deinit(allocator);
+        try output.append(allocator, '[');
+        for (self.ranges.items) |range| {
+            try appendPatternCodepoint(allocator, &output, range.first);
+            if (range.last != range.first) {
+                try output.append(allocator, '-');
+                try appendPatternCodepoint(allocator, &output, range.last);
+            }
+        }
+        try output.append(allocator, ']');
+        return output.toOwnedSlice(allocator);
+    }
 };
+
+fn appendPatternCodepoint(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    codepoint: u21,
+) error{OutOfMemory}!void {
+    switch (codepoint) {
+        '\\', '[', ']', '-', '^', '&' => {
+            try output.append(allocator, '\\');
+            try output.append(allocator, @intCast(codepoint));
+        },
+        else => {
+            if (codepoint >= 0x20 and codepoint <= 0x7e) {
+                try output.append(allocator, @intCast(codepoint));
+            } else if (codepoint <= 0xffff) {
+                var buffer: [6]u8 = undefined;
+                const text = std.fmt.bufPrint(
+                    &buffer,
+                    "\\u{X:0>4}",
+                    .{codepoint},
+                ) catch unreachable;
+                try output.appendSlice(allocator, text);
+            } else {
+                var buffer: [10]u8 = undefined;
+                const text = std.fmt.bufPrint(
+                    &buffer,
+                    "\\U{X:0>8}",
+                    .{codepoint},
+                ) catch unreachable;
+                try output.appendSlice(allocator, text);
+            }
+        },
+    }
+}
 
 pub const RangeIterator = struct {
     ranges: []const Range,
@@ -824,4 +907,154 @@ test "subtract and remove" {
 
     try letters.remove('b');
     try testing.expect(!letters.contains('b'));
+}
+
+test "set algebra and pattern round-trip" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var a = try parse(allocator, "[a-z]");
+    defer a.deinit();
+    var b = try parse(allocator, "[m-p0-9]");
+    defer b.deinit();
+
+    var union_set = try a.clone(allocator);
+    defer union_set.deinit();
+    try union_set.unionWith(b);
+    try testing.expect(union_set.contains('a'));
+    try testing.expect(union_set.contains('5'));
+    try testing.expect(union_set.contains('p'));
+    try testing.expect(!union_set.contains('A'));
+
+    var intersection = try a.clone(allocator);
+    defer intersection.deinit();
+    try intersection.intersectWith(b);
+    try testing.expect(intersection.contains('m'));
+    try testing.expect(intersection.contains('p'));
+    try testing.expect(!intersection.contains('9'));
+    try testing.expect(!intersection.contains('a'));
+
+    var difference = try a.clone(allocator);
+    defer difference.deinit();
+    try difference.subtract(b);
+    try testing.expect(difference.contains('a'));
+    try testing.expect(!difference.contains('m'));
+
+    var small = try parse(allocator, "[a-c]");
+    defer small.deinit();
+    try testing.expect(a.containsAll(small));
+    try testing.expect(!a.containsAll(b));
+    try testing.expect(a.containsSome(b));
+    var upper = try parse(allocator, "[A-Z]");
+    defer upper.deinit();
+    try testing.expect(a.containsNone(upper));
+
+    var complement = try a.clone(allocator);
+    defer complement.deinit();
+    try complement.complement();
+    try testing.expect(complement.contains('A'));
+    try testing.expect(!complement.contains('a'));
+    try testing.expect(complement.contains(0x1f600));
+
+    const patterns = [_][]const u8{
+        "[a-z]",
+        "[^a-z]",
+        "[]",
+        "[\\p{Lu}]",
+        "[\\u0000-\\u007f]",
+        "[\\p{sc=Greek}]",
+    };
+    for (patterns) |pattern| {
+        var original = try parse(allocator, pattern);
+        defer original.deinit();
+        const rendered = try original.toPatternAlloc(allocator);
+        defer allocator.free(rendered);
+        var round_trip = try parse(allocator, rendered);
+        defer round_trip.deinit();
+        try testing.expect(original.eql(round_trip));
+    }
+}
+
+test "set algebra conformance" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("set/conformance.bin");
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJSU", fixture[0..4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    for (0..case_count) |_| {
+        const op = fixture[cursor];
+        const first_length = std.mem.readInt(
+            u16,
+            fixture[cursor + 1 ..][0..2],
+            .little,
+        );
+        const second_length = std.mem.readInt(
+            u16,
+            fixture[cursor + 3 ..][0..2],
+            .little,
+        );
+        const sample_count = std.mem.readInt(
+            u16,
+            fixture[cursor + 5 ..][0..2],
+            .little,
+        );
+        cursor += 11;
+        const first_pattern = fixture[cursor .. cursor + first_length];
+        cursor += first_length;
+        const second_pattern = fixture[cursor .. cursor + second_length];
+        cursor += second_length;
+
+        var first = parse(allocator, first_pattern) catch {
+            failures += 1;
+            continue;
+        };
+        defer first.deinit();
+        var second = Set.init(allocator);
+        defer second.deinit();
+        if (second_length > 0) {
+            second.deinit();
+            second = parse(allocator, second_pattern) catch {
+                failures += 1;
+                continue;
+            };
+        }
+
+        if (op <= 3) {
+            var result = try first.clone(allocator);
+            defer result.deinit();
+            switch (op) {
+                0 => try result.unionWith(second),
+                1 => try result.intersectWith(second),
+                2 => try result.subtract(second),
+                else => try result.complement(),
+            }
+            for (0..sample_count) |_| {
+                const codepoint: u21 = @intCast(std.mem.readInt(
+                    u32,
+                    fixture[cursor..][0..4],
+                    .little,
+                ));
+                const expected = fixture[cursor + 4] != 0;
+                cursor += 5;
+                if (result.contains(codepoint) != expected) failures += 1;
+            }
+        } else {
+            const expected = fixture[cursor] != 0;
+            cursor += 1;
+            const actual = switch (op) {
+                4 => first.containsAll(second),
+                5 => first.containsNone(second),
+                else => first.containsSome(second),
+            };
+            if (actual != expected) failures += 1;
+        }
+    }
+    std.debug.print("set conformance: {d}/{d} cases passed\n", .{
+        case_count - failures,
+        case_count,
+    });
+    try testing.expect(failures == 0);
 }
