@@ -674,6 +674,14 @@ pub fn encodeAlloc(
     if (asciiCompatible(encoding) and isAscii(text)) {
         return allocator.dupe(u8, text);
     }
+    if (encoding == .utf16_le or encoding == .utf16_be) {
+        return utf8ToUtf16Alloc(
+            allocator,
+            text,
+            if (encoding == .utf16_le) .little else .big,
+            options,
+        );
+    }
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
     var encoder = Encoder.init(encoding);
@@ -703,6 +711,84 @@ pub fn encodeAlloc(
     return output.toOwnedSlice(allocator);
 }
 
+/// Append a replacement codepoint as UTF-16, honoring the error mode.
+fn appendUtf16Replacement(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    endian: std.builtin.Endian,
+    options: Options,
+) Error!void {
+    if (options.on_error == .strict) return error.InvalidSequence;
+    if (options.on_error == .ignore) return;
+    const candidates = [_]u21{ options.replacement, '?', 0x1A };
+    for (candidates) |candidate| {
+        var buffer: [4]u8 = undefined;
+        switch (utf16Encode(candidate, &buffer, endian)) {
+            .written => |length| {
+                try output.appendSlice(allocator, buffer[0..length]);
+                return;
+            },
+            else => {},
+        }
+    }
+}
+
+/// UTF-8 to UTF-16 conversion with one capacity reservation. Valid UTF-8
+/// never needs more than two output bytes per input byte, so the hot loop
+/// appends without capacity checks.
+fn utf8ToUtf16Alloc(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    endian: std.builtin.Endian,
+    options: Options,
+) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try output.ensureTotalCapacity(allocator, input.len * 2);
+    var index: usize = 0;
+    while (index < input.len) {
+        const byte = input[index];
+        if (byte < 0x80) {
+            const unit = if (endian == .little)
+                [2]u8{ byte, 0 }
+            else
+                [2]u8{ 0, byte };
+            output.appendSliceAssumeCapacity(&unit);
+            index += 1;
+            continue;
+        }
+        const length: usize = std.unicode.utf8ByteSequenceLength(byte) catch {
+            try appendUtf16Replacement(allocator, &output, endian, options);
+            index += 1;
+            continue;
+        };
+        if (index + length > input.len) {
+            try appendUtf16Replacement(allocator, &output, endian, options);
+            index = input.len;
+            continue;
+        }
+        const codepoint = std.unicode.utf8Decode(input[index..][0..length]) catch {
+            try appendUtf16Replacement(allocator, &output, endian, options);
+            index += 1;
+            continue;
+        };
+        index += length;
+        var buffer: [4]u8 = undefined;
+        switch (utf16Encode(codepoint, &buffer, endian)) {
+            .written => |written| output.appendSliceAssumeCapacity(
+                buffer[0..written],
+            ),
+            else => try appendUtf16Replacement(
+                allocator,
+                &output,
+                endian,
+                options,
+            ),
+        }
+    }
+    return output.toOwnedSlice(allocator);
+}
+
 /// Convert `input` from one encoding to another without an intermediate
 /// allocation.
 pub fn convertAlloc(
@@ -714,6 +800,14 @@ pub fn convertAlloc(
 ) Error![]u8 {
     if (asciiCompatible(from) and asciiCompatible(to) and isAscii(input)) {
         return allocator.dupe(u8, input);
+    }
+    if (from == .utf8 and (to == .utf16_le or to == .utf16_be)) {
+        return utf8ToUtf16Alloc(
+            allocator,
+            input,
+            if (to == .utf16_le) .little else .big,
+            options,
+        );
     }
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
