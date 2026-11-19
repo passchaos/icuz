@@ -50,6 +50,14 @@ SKELETONS = (
     "currency/JPY",
     "compact-short currency/USD",
     "compact-long currency/EUR",
+    "measure-unit/length-meter",
+    "measure-unit/length-meter unit-width-full-name",
+    "compact-short measure-unit/length-meter",
+    "compact-long measure-unit/length-meter",
+    "measure-unit/speed-kilometer-per-hour",
+    "measure-unit/duration-hour",
+    "compact-short measure-unit/duration-hour",
+    "measure-unit/temperature-celsius",
 )
 
 VALUES = (0.0, 0.25, 5.0, -5.0, 1234.5, -1234.5, 1234567.0, 0.1234)

@@ -176,6 +176,33 @@ pub fn formatAlloc(
     return misc.replacePlaceholderAlloc(allocator, pattern, formatted);
 }
 
+/// Apply a unit pattern to an already formatted number.
+pub fn applyNumberAlloc(
+    allocator: std.mem.Allocator,
+    plural_value: f64,
+    number_text: []const u8,
+    unit: Unit,
+    locale: []const u8,
+    style: Style,
+) error{ InvalidPattern, OutOfMemory }![]u8 {
+    const category = misc.pluralCategory(locale, plural_value);
+    var pattern: []const u8 = "";
+    if (localeRecord(locale)) |index| {
+        pattern = patternAt(index, unit, style, category);
+        if (pattern.len == 0) pattern = patternAt(index, unit, style, .other);
+    }
+    if (pattern.len == 0) {
+        if (findLocaleRecord("en")) |index| {
+            pattern = patternAt(index, unit, style, category);
+            if (pattern.len == 0) {
+                pattern = patternAt(index, unit, style, .other);
+            }
+        }
+    }
+    if (pattern.len == 0) return error.InvalidPattern;
+    return misc.replacePlaceholderAlloc(allocator, pattern, number_text);
+}
+
 /// Format a value for a CLDR unit identifier.
 pub fn formatUnitIdAlloc(
     allocator: std.mem.Allocator,

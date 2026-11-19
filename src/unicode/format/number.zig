@@ -6,6 +6,7 @@ const currencies = @import("currencies.zig");
 const plural = @import("plurals.zig");
 const misc = @import("misc.zig");
 const numbering_systems = @import("numbering_systems.zig");
+const units = @import("units.zig");
 const properties = @import("../properties.zig");
 
 pub const cldr_version = "48";
@@ -25,6 +26,8 @@ pub const SignMode = enum {
 };
 
 pub const GroupingMode = enum { auto, off, min2, on_aligned, thousands };
+
+pub const UnitStyle = enum { long, short };
 
 pub const Options = struct {
     style: Style = .decimal,
@@ -58,6 +61,10 @@ pub const Options = struct {
     /// Round to significant digits instead of fraction digits.
     min_significant_digits: u8 = 0,
     max_significant_digits: u8 = 0,
+    /// CLDR unit identifier for measure-unit skeletons.
+    unit_id: ?[]const u8 = null,
+    /// Long or short unit pattern (skeletons default to short).
+    unit_style: UnitStyle = .short,
     compact_style: CompactStyle = .short,
     numbering_system: ?[]const u8 = null,
 };
@@ -365,6 +372,36 @@ pub fn formatSkeletonAlloc(
     skeleton: []const u8,
 ) Error![]u8 {
     const options = try parseSkeleton(skeleton);
+    if (options.unit_id) |unit_id| {
+        const unit = units.unitFromId(unit_id) orelse
+            return error.InvalidPattern;
+        var inner = options;
+        inner.unit_id = null;
+        const number_text = try formatAlloc(
+            allocator,
+            value,
+            locale_name,
+            inner,
+        );
+        defer allocator.free(number_text);
+        // ICU rounds compact operands before selecting the unit's plural
+        // form; this matters for locales such as Arabic.
+        const plural_value = if (inner.style == .compact and @abs(value) >= 10)
+            roundHalfEven(value, 0)
+        else
+            value;
+        return units.applyNumberAlloc(
+            allocator,
+            plural_value,
+            number_text,
+            unit,
+            locale_name,
+            switch (options.unit_style) {
+                .long => .long,
+                .short => .short,
+            },
+        );
+    }
     return formatAlloc(allocator, value, locale_name, options);
 }
 
@@ -483,18 +520,25 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
             // Currency is a unit; keep an explicit notation style.
             if (options.style == .decimal) options.style = .currency;
             options.currency = code;
+        } else if (std.mem.startsWith(u8, token, "measure-unit/")) {
+            const unit_id = token["measure-unit/".len..];
+            if (unit_id.len == 0) return error.InvalidPattern;
+            options.unit_id = unit_id;
+            options.unit_style = .short;
         } else if (std.mem.startsWith(u8, token, "unit-width-")) {
             const width = token["unit-width-".len..];
             if (std.mem.eql(u8, width, "iso-code")) {
                 options.currency_display = .code;
             } else if (std.mem.eql(u8, width, "full-name")) {
                 options.currency_display = .name;
+                options.unit_style = .long;
             } else if (std.mem.eql(u8, width, "hidden")) {
                 options.currency_display = .hidden;
             } else if (std.mem.eql(u8, width, "short") or
                 std.mem.eql(u8, width, "narrow"))
             {
                 options.currency_display = .symbol;
+                options.unit_style = .short;
             } else {
                 return error.InvalidPattern;
             }
