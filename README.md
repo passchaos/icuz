@@ -86,7 +86,8 @@ need without pulling in a font or layout engine.
   2,520-case ICU C API fixture, and ranges against a 460-case ICU C API
   fixture. Localized number parsing (`parseFloat`, `parseFloatPrefix`,
   `parseInt`) accepts locale symbols, native digits, percent/permille
-  scaling, currency affixes, accounting parentheses, and NaN/infinity.
+  scaling, currency affixes, accounting parentheses, and NaN/infinity,
+  validated by a 600-case ICU parsing fixture across 30 locales.
 - CLDR 48 Gregorian date/time formatting for 87 locales, including localized
   month/day names, date/time styles, custom patterns, ICU date/time
   skeletons (`yMMMd`, `Hm`, combined date+time skeletons) resolved from
@@ -96,8 +97,10 @@ need without pulling in a font or layout engine.
   (`parsePattern`, `parseSkeleton`) consumes the same pattern syntax,
   including localized month, weekday, era, day-period, and quarter names,
   native digits, numeric zone offsets, and caller-supplied defaults for
-  absent fields. Calendar arithmetic (`addDays`, `addMonths`, `addYears`,
-  `fieldDifference`) matches ICU's clamping and whole-field semantics.
+  absent fields, validated by a 1,200-case ICU parsing fixture across 30
+  locales and eight patterns. Calendar arithmetic (`addDays`, `addMonths`,
+  `addYears`, `fieldDifference`) matches ICU's clamping and whole-field
+  semantics.
 - Non-Gregorian calendar conversion and formatting for Buddhist, Japanese,
   ROC, Islamic civil/tbla/umalqura, Hebrew, Chinese, Persian, Indian,
   Coptic, Ethiopic, Ethiopic Amete Alem, and ISO-8601 calendars, following
