@@ -70,7 +70,8 @@ need without pulling in a font or layout engine.
 - UTS #39 confusable detection from the Unicode 17.0.0 security data:
   skeletons (NFD, prototype mapping, NFD, default-ignorable removal) and
   `areConfusable` with optional case folding, validated by a 6,603-case
-  ICU 78 skeleton fixture.
+  ICU 78 skeleton fixture; `isAllowedIdentifier` and `identifierAllowed`
+  expose the Identifier_Status=Allowed set (1,649 ranges).
 - CLDR 48 cardinal plural rules for 224 locales and ordinal plural rules for
   110 locales, including both CLDR sample conformance fixtures.
 - CLDR 48 decimal, percent, currency, scientific, and compact number
