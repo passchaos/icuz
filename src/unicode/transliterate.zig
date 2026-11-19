@@ -13,6 +13,12 @@ const case_mapping = @import("case/root.zig");
 const unicode_name = @import("name.zig");
 const word_rules = @import("word/rules.zig");
 
+/// Runtime ICU-rule transliteration engine (`createFromRules` subset).
+pub const rule_engine = @import("transliterate/rules.zig");
+pub const Rules = rule_engine.Rules;
+pub const compileRulesAlloc = rule_engine.compileRulesAlloc;
+pub const applyRulesAlloc = rule_engine.applyRulesAlloc;
+
 /// CLDR release the compiled transform tables come from.
 pub const cldr_version = "48";
 
@@ -153,10 +159,9 @@ fn transformAt(index: usize) TransformRecord {
 }
 
 const named_transform_names = [_][]const u8{
-    "NFC",       "NFD",       "NFKC",      "NFKD",     "Any-Lower",
-    "Any-Upper", "Any-Title", "nl-Title",  "Any-Null", "Hex-Any",
-    "Any-Hex",   "Name-Any",  "Any-Name",  "Latin-NumericPinyin",
-    "NumericPinyin-Latin",
+    "NFC",       "NFD",       "NFKC",     "NFKD",                "Any-Lower",
+    "Any-Upper", "Any-Title", "nl-Title", "Any-Null",            "Hex-Any",
+    "Any-Hex",   "Name-Any",  "Any-Name", "Latin-NumericPinyin", "NumericPinyin-Latin",
 };
 
 /// Number of transforms available by name, including named engines.
@@ -206,9 +211,9 @@ fn aliasTransform(name: []const u8) ?[]const u8 {
 
 fn isNamedTransform(name: []const u8) bool {
     const names = [_][]const u8{
-        "Latin-ASCII", "NFC",       "NFD",       "NFKC",      "NFKD",
-        "Any-Lower",   "Any-Upper", "Any-Title", "nl-Title",  "Any-Null",
-        "Null",        "Hex-Any",   "Any-Hex",   "Name-Any",  "Any-Name",
+        "Latin-ASCII",         "NFC",                 "NFD",       "NFKC",     "NFKD",
+        "Any-Lower",           "Any-Upper",           "Any-Title", "nl-Title", "Any-Null",
+        "Null",                "Hex-Any",             "Any-Hex",   "Name-Any", "Any-Name",
         "Latin-NumericPinyin", "NumericPinyin-Latin",
     };
     for (names) |candidate| {
@@ -1157,30 +1162,27 @@ fn runStepProgramAlloc(
     const end = index + record.step_count;
     while (index < end) : (index += 1) {
         const step = stepAt(index);
-        const next: []u8 = if (step.kind == step_kind_set_filter)
-            blk: {
-                current_filter = step.value;
-                break :blk try allocator.dupe(u8, current);
+        const next: []u8 = if (step.kind == step_kind_set_filter) blk: {
+            current_filter = step.value;
+            break :blk try allocator.dupe(u8, current);
+        } else blk: {
+            // ICU's step filters scope the consecutive compound steps;
+            // a rule segment runs unfiltered and clears the step filter.
+            const filter = if (step.kind == step_kind_run_table)
+                step_filter_clear
+            else
+                current_filter;
+            const result = try applyFilteredStepOperationAlloc(
+                allocator,
+                current,
+                stepOperation(step, transform_index),
+                filter,
+            );
+            if (step.kind == step_kind_run_table) {
+                current_filter = step_filter_clear;
             }
-        else
-            blk: {
-                // ICU's step filters scope the consecutive compound steps;
-                // a rule segment runs unfiltered and clears the step filter.
-                const filter = if (step.kind == step_kind_run_table)
-                    step_filter_clear
-                else
-                    current_filter;
-                const result = try applyFilteredStepOperationAlloc(
-                    allocator,
-                    current,
-                    stepOperation(step, transform_index),
-                    filter,
-                );
-                if (step.kind == step_kind_run_table) {
-                    current_filter = step_filter_clear;
-                }
-                break :blk result;
-            };
+            break :blk result;
+        };
         allocator.free(current);
         current = next;
     }
@@ -2897,7 +2899,8 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/armenian_latin_conformance.bin"),
         .magic = "CJAR".*,
         .name = "Armenian-Latin",
-    },    .{
+    },
+    .{
         .bytes = @embedFile("transliterate/bengali_interindic_conformance.bin"),
         .magic = "CJBI".*,
         .name = "Bengali-InterIndic",
@@ -3556,7 +3559,8 @@ const conformance_fixtures = [_]struct {
         .bytes = @embedFile("transliterate/latin_telugu_conformance.bin"),
         .magic = "CJBW".*,
         .name = "Latin-Telugu",
-    },    .{
+    },
+    .{
         .bytes = @embedFile("transliterate/bengali_devanagari_conformance.bin"),
         .magic = "CJAC".*,
         .name = "Bengali-Devanagari",
@@ -4395,4 +4399,8 @@ test "transform aliases execute" {
         const out = try transliterateByNameAlloc(allocator, "abc", alias.icu);
         defer allocator.free(out);
     }
+}
+
+test "rule engine module" {
+    _ = rule_engine;
 }

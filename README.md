@@ -204,15 +204,22 @@ need without pulling in a font or layout engine.
   XML
   comment stripping, `::Null;`/`::(null);`/`::null();` multi-pass
   pipelines, and mid-rule normalization directives that split passes.
+- Runtime ICU-rule transliteration engine (`compileRulesAlloc` /
+  `applyRulesAlloc`): forward `createFromRules` rules with comments,
+  string and UnicodeSet `$variables`, `::Null;` and `::[set];` directives,
+  `ante { input } post > output;` context, sets, `.` wildcard, grouping,
+  `?`/`*`/`+` quantifiers, output string variables, `|` cursor
+  repositioning, quoted literals and escapes, validated by a 48-case
+  PyICU differential fixture.
 - Embedded, version-pinned generated data plus conformance fixtures.
 
 ## Non-goals for 0.1
 
 `icuz` is not a drop-in ICU replacement. Its transliteration support is a
-compiled rule-table engine covering the constructs listed above, not a
-general runtime ICU-rule interpreter: arbitrary embedded transform
-calls (case calls are supported) and script-extension (`scx=`) based
-filters are not yet supported. Regular expressions and display/layout
+compiled rule-table engine covering the constructs listed above plus a
+runtime ICU-rule interpreter for the forward rule subset: reverse rules,
+captures, alternation, and embedded `::Transform;` calls in user rule text
+are not yet interpreted at runtime. Regular expressions and display/layout
 tailoring are also out of scope. Collation supports root ordering plus CLDR
 standard and common
 non-standard tailorings, including locale `caseFirst`, backwards secondary
