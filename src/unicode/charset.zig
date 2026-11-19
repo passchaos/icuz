@@ -747,17 +747,30 @@ fn utf8ToUtf16Alloc(
     try output.ensureTotalCapacity(allocator, input.len * 2);
     var index: usize = 0;
     while (index < input.len) {
-        const byte = input[index];
-        if (byte < 0x80) {
-            const unit = if (endian == .little)
-                [2]u8{ byte, 0 }
-            else
-                [2]u8{ 0, byte };
-            output.appendSliceAssumeCapacity(&unit);
-            index += 1;
+        if (input[index] < 0x80) {
+            // Widen the whole ASCII run directly into the output buffer.
+            var end = index;
+            while (end < input.len and input[end] < 0x80) end += 1;
+            const count = end - index;
+            try output.ensureUnusedCapacity(allocator, count * 2);
+            const start = output.items.len;
+            output.items.len = start + count * 2;
+            const destination = output.items[start..];
+            if (endian == .little) {
+                for (input[index..end], 0..) |value, position| {
+                    destination[position * 2] = value;
+                    destination[position * 2 + 1] = 0;
+                }
+            } else {
+                for (input[index..end], 0..) |value, position| {
+                    destination[position * 2] = 0;
+                    destination[position * 2 + 1] = value;
+                }
+            }
+            index = end;
             continue;
         }
-        const length: usize = std.unicode.utf8ByteSequenceLength(byte) catch {
+        const length: usize = std.unicode.utf8ByteSequenceLength(input[index]) catch {
             try appendUtf16Replacement(allocator, &output, endian, options);
             index += 1;
             continue;
