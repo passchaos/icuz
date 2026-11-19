@@ -791,6 +791,117 @@ fn utf8ToUtf16Alloc(
 
 /// Convert `input` from one encoding to another without an intermediate
 /// allocation.
+/// Direct decoder/encoder pairs for stateless encodings. Comptime dispatch
+/// removes the per-character encoding switch from the conversion loop.
+fn decoderFor(comptime encoding: Encoding) fn ([]const u8, *usize) DecodeResult {
+    return switch (encoding) {
+        .utf8 => utf8Next,
+        .gbk => cjk.gbkNext,
+        .gb18030 => cjk.gb18030Next,
+        .big5 => cjk.big5Next,
+        .euc_jp => cjk.eucJpNext,
+        .shift_jis => cjk.shiftJisNext,
+        .euc_kr => cjk.eucKrNext,
+        else => @compileError("unsupported stateless decoder"),
+    };
+}
+
+fn encoderFor(comptime encoding: Encoding) fn (u21, []u8) EncodeResult {
+    return switch (encoding) {
+        .utf8 => utf8Encode,
+        .gbk => cjk.gbkEncode,
+        .gb18030 => cjk.gb18030Encode,
+        .big5 => cjk.big5Encode,
+        .euc_jp => cjk.eucJpEncode,
+        .shift_jis => cjk.shiftJisEncode,
+        .euc_kr => cjk.eucKrEncode,
+        else => @compileError("unsupported stateless encoder"),
+    };
+}
+
+fn writeReplacementFor(
+    comptime to: Encoding,
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    options: Options,
+) Error!void {
+    const encode = comptime encoderFor(to);
+    const candidates = [_]u21{ options.replacement, '?', 0x1A };
+    for (candidates) |candidate| {
+        var buffer: [8]u8 = undefined;
+        switch (encode(candidate, &buffer)) {
+            .written => |length| {
+                try output.appendSlice(allocator, buffer[0..length]);
+                return;
+            },
+            .unmappable => {},
+        }
+    }
+    return error.UnmappableCharacter;
+}
+
+fn convertAllocStateless(
+    comptime from: Encoding,
+    comptime to: Encoding,
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    options: Options,
+) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try output.ensureTotalCapacity(allocator, input.len + 8);
+    const decode = comptime decoderFor(from);
+    const encode = comptime encoderFor(to);
+    var index: usize = 0;
+    while (index < input.len) {
+        switch (decode(input, &index)) {
+            .end => break,
+            .codepoint => |codepoint| {
+                var buffer: [8]u8 = undefined;
+                switch (encode(codepoint, &buffer)) {
+                    .written => |length| {
+                        try output.appendSlice(allocator, buffer[0..length]);
+                    },
+                    .unmappable => switch (options.on_error) {
+                        .strict => return error.UnmappableCharacter,
+                        .ignore => {},
+                        .replace => try writeReplacementFor(
+                            to,
+                            allocator,
+                            &output,
+                            options,
+                        ),
+                    },
+                }
+            },
+            .malformed => switch (options.on_error) {
+                .strict => return error.InvalidSequence,
+                .ignore => {},
+                .replace => try writeReplacementFor(
+                    to,
+                    allocator,
+                    &output,
+                    options,
+                ),
+            },
+            .incomplete => {
+                switch (options.on_error) {
+                    .strict => return error.InvalidSequence,
+                    .ignore => {},
+                    .replace => try writeReplacementFor(
+                        to,
+                        allocator,
+                        &output,
+                        options,
+                    ),
+                }
+                index = input.len;
+            },
+        }
+    }
+    return output.toOwnedSlice(allocator);
+}
+
 pub fn convertAlloc(
     allocator: std.mem.Allocator,
     input: []const u8,
@@ -808,6 +919,24 @@ pub fn convertAlloc(
             if (to == .utf16_le) .little else .big,
             options,
         );
+    }
+    switch (from) {
+        .utf8 => switch (to) {
+            .gbk => return convertAllocStateless(.utf8, .gbk, allocator, input, options),
+            .gb18030 => return convertAllocStateless(.utf8, .gb18030, allocator, input, options),
+            .big5 => return convertAllocStateless(.utf8, .big5, allocator, input, options),
+            .euc_jp => return convertAllocStateless(.utf8, .euc_jp, allocator, input, options),
+            .shift_jis => return convertAllocStateless(.utf8, .shift_jis, allocator, input, options),
+            .euc_kr => return convertAllocStateless(.utf8, .euc_kr, allocator, input, options),
+            else => {},
+        },
+        .gbk => if (to == .utf8) return convertAllocStateless(.gbk, .utf8, allocator, input, options),
+        .gb18030 => if (to == .utf8) return convertAllocStateless(.gb18030, .utf8, allocator, input, options),
+        .big5 => if (to == .utf8) return convertAllocStateless(.big5, .utf8, allocator, input, options),
+        .euc_jp => if (to == .utf8) return convertAllocStateless(.euc_jp, .utf8, allocator, input, options),
+        .shift_jis => if (to == .utf8) return convertAllocStateless(.shift_jis, .utf8, allocator, input, options),
+        .euc_kr => if (to == .utf8) return convertAllocStateless(.euc_kr, .utf8, allocator, input, options),
+        else => {},
     }
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
