@@ -702,6 +702,28 @@ fn benchNumber(
     reportOps(name, rounds, best);
 }
 
+fn benchNumberParse(
+    name: []const u8,
+    text: []const u8,
+    locale: []const u8,
+    options: icuz.number.ParseOptions,
+) void {
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 200000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const value = icuz.number.parseFloat(text, locale, options) orelse
+                unreachable;
+            sink +%= @intFromFloat(value);
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps(name, rounds, best);
+}
+
 fn benchSkeleton(allocator: std.mem.Allocator) void {
     var best: u64 = std.math.maxInt(u64);
     const trials = 5;
@@ -975,6 +997,8 @@ pub fn main() !void {
 
     std.debug.print("\n-- number formatting --\n", .{});
     benchNumber("decimal number", 1234.5, .{}, allocator);
+    benchNumberParse("parse decimal", "1,234,567.89", "en", .{});
+    benchNumberParse("parse decimal de", "1.234.567,89", "de", .{});
     benchNumber(
         "scientific number",
         1234.5,

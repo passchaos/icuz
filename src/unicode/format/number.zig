@@ -2299,6 +2299,338 @@ fn lookup(locale: []const u8) ?*const data.Locale {
     return null;
 }
 
+pub const ParseOptions = struct {
+    style: Style = .decimal,
+    currency: ?[]const u8 = null,
+    numbering_system: ?[]const u8 = null,
+    permille: bool = false,
+    /// Accept grouping separators in any position and ASCII digits
+    /// alongside the locale's digits, matching ICU's lenient parsing.
+    lenient: bool = true,
+};
+
+const ParseCursor = struct {
+    text: []const u8,
+    index: usize = 0,
+
+    fn peek(self: *const ParseCursor) ?u21 {
+        if (self.index >= self.text.len) return null;
+        const length = std.unicode.utf8ByteSequenceLength(self.text[self.index]) catch
+            return null;
+        if (self.index + length > self.text.len) return null;
+        return std.unicode.utf8Decode(self.text[self.index..][0..length]) catch
+            null;
+    }
+
+    fn skipSpace(self: *ParseCursor) void {
+        while (self.peek()) |codepoint| {
+            if (!isParseSpace(codepoint)) return;
+            self.index += utf8LengthAt(self.text, self.index);
+        }
+    }
+
+    fn match(self: *ParseCursor, symbol: []const u8) bool {
+        if (symbol.len == 0) return false;
+        if (!std.mem.startsWith(u8, self.text[self.index..], symbol)) {
+            return false;
+        }
+        self.index += symbol.len;
+        return true;
+    }
+
+    fn matchAny(self: *ParseCursor, symbols: []const []const u8) bool {
+        for (symbols) |symbol| {
+            if (self.match(symbol)) return true;
+        }
+        return false;
+    }
+};
+
+fn isParseSpace(codepoint: u21) bool {
+    return codepoint == ' ' or codepoint == '\t' or codepoint == '\n' or
+        codepoint == '\r' or codepoint == 0x00A0 or codepoint == 0x2007 or
+        codepoint == 0x2009 or codepoint == 0x202F or codepoint == 0x3000;
+}
+
+fn utf8LengthAt(text: []const u8, index: usize) usize {
+    return std.unicode.utf8ByteSequenceLength(text[index]) catch 1;
+}
+
+fn parseDigit(locale: *const data.Locale, codepoint: u21) ?u8 {
+    if (codepoint >= '0' and codepoint <= '9') {
+        return @intCast(codepoint - '0');
+    }
+    for (locale.digits, 0..) |digit, index| {
+        if (digit == codepoint) return @intCast(index);
+    }
+    return null;
+}
+
+pub const ParseResult = struct {
+    value: f64,
+    /// Byte offset just past the parsed number, matching ICU's `pos`.
+    end: usize,
+};
+
+/// Parse a localized decimal number prefix, returning the value and the
+/// offset where parsing stopped. ICU's `unum_parseDouble` contract.
+pub fn parseFloatPrefix(
+    text: []const u8,
+    locale_name: []const u8,
+    options: ParseOptions,
+) ?ParseResult {
+    var locale_storage: data.Locale = undefined;
+    const format_options = Options{
+        .numbering_system = options.numbering_system,
+    };
+    const locale = resolveLocale(locale_name, &format_options, &locale_storage);
+
+    var cursor = ParseCursor{ .text = text };
+    cursor.skipSpace();
+    const start = cursor.index;
+
+    if (cursor.match(locale.nan)) {
+        cursor.skipSpace();
+        return .{ .value = std.math.nan(f64), .end = cursor.index };
+    }
+    if (cursor.match(locale.infinity)) {
+        cursor.skipSpace();
+        return .{ .value = std.math.inf(f64), .end = cursor.index };
+    }
+    cursor.index = start;
+
+    var negative = false;
+    var parenthesized = false;
+    if (options.style == .currency and cursor.peek() == '(') {
+        parenthesized = true;
+        cursor.index += 1;
+        cursor.skipSpace();
+    }
+    if (cursor.matchAny(&.{ locale.minus, "-", "\xe2\x88\x92" })) {
+        negative = true;
+    } else {
+        _ = cursor.matchAny(&.{ locale.plus, "+" });
+    }
+    cursor.skipSpace();
+
+    var scale: f64 = 1.0;
+    if (options.style == .percent) {
+        if (cursor.matchAny(&.{ locale.percent, "%" })) scale = 0.01;
+    } else if (options.permille) {
+        if (cursor.matchAny(&.{ "\xe2\x80\xb0", locale.percent })) scale = 0.001;
+    } else if (options.style == .currency) {
+        if (options.currency) |code| {
+            const symbol = currencyDisplayText(locale, code, .symbol);
+            _ = cursor.matchAny(&.{ symbol, code });
+            cursor.skipSpace();
+        }
+    }
+
+    var ascii: [128]u8 = undefined;
+    var length: usize = 0;
+    var seen_digit = false;
+    var seen_decimal = false;
+    var last_was_digit = false;
+
+    while (cursor.index < text.len) {
+        const save = cursor.index;
+        if (cursor.match(locale.decimal)) {
+            if (seen_decimal) {
+                cursor.index = save;
+                break;
+            }
+            if (length + 1 >= ascii.len) return null;
+            seen_decimal = true;
+            last_was_digit = false;
+            ascii[length] = '.';
+            length += 1;
+            continue;
+        }
+        cursor.index = save;
+        if (cursor.match(locale.group)) {
+            if (!options.lenient and
+                (!seen_digit or seen_decimal or !last_was_digit))
+            {
+                return null;
+            }
+            last_was_digit = false;
+            continue;
+        }
+        cursor.index = save;
+        const codepoint = cursor.peek() orelse return null;
+        const digit = parseDigit(locale, codepoint) orelse break;
+        if (length + 1 >= ascii.len) return null;
+        ascii[length] = '0' + digit;
+        length += 1;
+        seen_digit = true;
+        last_was_digit = true;
+        cursor.index += utf8LengthAt(text, cursor.index);
+    }
+    if (!seen_digit) return null;
+
+    const exponent_start = cursor.index;
+    const before_exponent = length;
+    if (cursor.matchAny(&.{ locale.exponential, "e", "E" })) {
+        if (length + 4 >= ascii.len) return null;
+        ascii[length] = 'e';
+        length += 1;
+        if (cursor.matchAny(&.{ locale.minus, "-", "\xe2\x88\x92" })) {
+            ascii[length] = '-';
+            length += 1;
+        } else if (cursor.matchAny(&.{ locale.plus, "+" })) {
+            ascii[length] = '+';
+            length += 1;
+        }
+        var exponent_digits = false;
+        while (cursor.index < text.len) {
+            const codepoint = cursor.peek() orelse return null;
+            const digit = parseDigit(locale, codepoint) orelse break;
+            if (length + 1 >= ascii.len) return null;
+            ascii[length] = '0' + digit;
+            length += 1;
+            exponent_digits = true;
+            cursor.index += utf8LengthAt(text, cursor.index);
+        }
+        if (!exponent_digits) {
+            cursor.index = exponent_start;
+            length = before_exponent;
+        }
+    }
+
+    const before_suffix_space = cursor.index;
+    cursor.skipSpace();
+    var suffix_matched = false;
+    if (options.style == .percent) {
+        if (cursor.matchAny(&.{ locale.percent, "%" })) {
+            scale = 0.01;
+            suffix_matched = true;
+        }
+    } else if (options.permille) {
+        if (cursor.matchAny(&.{ "\xe2\x80\xb0", locale.percent })) {
+            scale = 0.001;
+            suffix_matched = true;
+        }
+    } else if (options.style == .currency) {
+        if (options.currency) |code| {
+            const symbol = currencyDisplayText(locale, code, .symbol);
+            if (cursor.matchAny(&.{ symbol, code })) suffix_matched = true;
+        }
+    }
+    if (!suffix_matched) cursor.index = before_suffix_space;
+    if (parenthesized) {
+        cursor.skipSpace();
+        if (cursor.peek() != ')') return null;
+        cursor.index += 1;
+        negative = true;
+    }
+
+    const magnitude = std.fmt.parseFloat(f64, ascii[0..length]) catch
+        return null;
+    const value = if (negative) -magnitude else magnitude;
+    return .{ .value = value * scale, .end = cursor.index };
+}
+
+/// Parse a localized decimal number that must span the whole string apart
+/// from surrounding whitespace.
+pub fn parseFloat(
+    text: []const u8,
+    locale_name: []const u8,
+    options: ParseOptions,
+) ?f64 {
+    const result = parseFloatPrefix(text, locale_name, options) orelse
+        return null;
+    var end = result.end;
+    while (end < text.len) {
+        const length = utf8LengthAt(text, end);
+        const codepoint = std.unicode.utf8Decode(text[end..][0..length]) catch
+            return null;
+        if (!isParseSpace(codepoint)) return null;
+        end += length;
+    }
+    return result.value;
+}
+
+/// Parse a localized integer, truncating any fraction toward zero.
+pub fn parseInt(
+    text: []const u8,
+    locale_name: []const u8,
+    options: ParseOptions,
+) ?i64 {
+    const value = parseFloat(text, locale_name, options) orelse return null;
+    if (!std.math.isFinite(value)) return null;
+    const truncated = @trunc(value);
+    if (truncated < -9223372036854775808.0 or
+        truncated >= 9223372036854775808.0)
+    {
+        return null;
+    }
+    return @intFromFloat(truncated);
+}
+
+test "localized number parsing" {
+    const testing = @import("std").testing;
+
+    try testing.expectEqual(@as(?f64, 1234.5), parseFloat("1,234.5", "en", .{}));
+    try testing.expectEqual(@as(?f64, 1234.5), parseFloat("1.234,5", "de", .{}));
+    try testing.expectEqual(@as(?f64, 1234.5), parseFloat("1\u{00a0}234,5", "sv", .{}));
+    try testing.expectEqual(@as(?f64, -42), parseFloat("-42", "en", .{}));
+    try testing.expectEqual(@as(?f64, 0.5), parseFloat(".5", "en", .{}));
+    try testing.expectEqual(@as(?f64, 1500), parseFloat("1.5E3", "en", .{}));
+    try testing.expectEqual(
+        @as(?f64, -3.5),
+        parseFloat(
+            "($3.50)",
+            "en",
+            .{ .style = .currency, .currency = "USD" },
+        ),
+    );
+    try testing.expectApproxEqAbs(
+        @as(f64, 0.12),
+        parseFloat("12%", "en", .{ .style = .percent }).?,
+        1e-12,
+    );
+    try testing.expectEqual(
+        @as(?f64, 123),
+        parseFloat(
+            "\u{0661}\u{0662}\u{0663}",
+            "ar",
+            .{ .numbering_system = "arab" },
+        ),
+    );
+    try testing.expectEqual(
+        @as(?f64, 12.5),
+        parseFloat(
+            "$12.50",
+            "en",
+            .{ .style = .currency, .currency = "USD" },
+        ),
+    );
+
+    try testing.expect(parseFloat("abc", "en", .{}) == null);
+    try testing.expect(parseFloat("1.2.3", "en", .{}) == null);
+    try testing.expect(parseFloat("12abc", "en", .{}) == null);
+    try testing.expect(parseFloat("(3.5)", "en", .{}) == null);
+    try testing.expect(parseFloat("", "en", .{}) == null);
+
+    const prefix = parseFloatPrefix("12abc", "en", .{}).?;
+    try testing.expectEqual(@as(f64, 12), prefix.value);
+    try testing.expectEqual(@as(usize, 2), prefix.end);
+    const dotted = parseFloatPrefix("1.2.3", "en", .{}).?;
+    try testing.expectEqual(@as(f64, 1.2), dotted.value);
+    try testing.expectEqual(@as(usize, 3), dotted.end);
+    const spaced = parseFloatPrefix(" 42 ", "en", .{}).?;
+    try testing.expectEqual(@as(f64, 42), spaced.value);
+    try testing.expectEqual(@as(usize, 3), spaced.end);
+
+    try testing.expectEqual(@as(?i64, 1234), parseInt("1,234", "en", .{}));
+    try testing.expectEqual(@as(?i64, -7), parseInt("-7.9", "en", .{}));
+    try testing.expectEqual(
+        @as(?i64, 0),
+        parseInt("12.5%", "en", .{ .style = .percent }),
+    );
+    try testing.expect(parseInt("inf", "en", .{}) == null);
+}
+
 test "decimal number formatting" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;

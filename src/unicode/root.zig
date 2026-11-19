@@ -235,11 +235,16 @@ pub const NumberStyle = number_mod.Style;
 pub const NumberCompactStyle = number_mod.CompactStyle;
 pub const NumberCurrencyDisplay = number_mod.CurrencyDisplay;
 pub const NumberOptions = number_mod.Options;
+pub const NumberParseOptions = number_mod.ParseOptions;
 pub const formatNumberAlloc = number_mod.formatAlloc;
 pub const formatIntegerAlloc = number_mod.formatIntegerAlloc;
 pub const formatNumberSkeletonAlloc = number_mod.formatSkeletonAlloc;
 pub const formatNumberSkeletonIntegerAlloc =
     number_mod.formatSkeletonIntegerAlloc;
+pub const parseNumberFloat = number_mod.parseFloat;
+pub const parseNumberFloatPrefix = number_mod.parseFloatPrefix;
+pub const parseNumberInt = number_mod.parseInt;
+pub const NumberParseResult = number_mod.ParseResult;
 pub const number_cldr_version = number_mod.cldr_version;
 
 const rbnf_mod = @import("./format/rbnf.zig");
