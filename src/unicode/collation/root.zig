@@ -627,6 +627,83 @@ const latin_elements = blk: {
     break :blk .{ .usable = usable, .table = table };
 };
 
+const AsciiEntry = struct {
+    count: u8,
+    elements: [2]LatinElement,
+};
+
+/// Compact table for pure-ASCII text. Latin-1/Extended entries need up to
+/// four elements and would quadruple the cache footprint of the hottest
+/// collation path.
+const ascii_elements = blk: {
+    @setEvalBranchQuota(2_000_000);
+    var table: [128]AsciiEntry = undefined;
+    var usable = true;
+    for (0..128) |codepoint| {
+        const sequence = [_]u21{@intCast(codepoint)};
+        if (findEntryExact(&sequence)) |entry| {
+            if (entry.len != 1 or entry.ce_count > 2) {
+                usable = false;
+                table[codepoint] = .{ .count = 0, .elements = undefined };
+                continue;
+            }
+            var stored = AsciiEntry{
+                .count = entry.ce_count,
+                .elements = undefined,
+            };
+            var element_index: usize = 0;
+            while (element_index < entry.ce_count) : (element_index += 1) {
+                const element = ceAt(
+                    @as(usize, entry.ce_offset) + element_index,
+                );
+                stored.elements[element_index] = .{
+                    .primary = element.primary,
+                    .secondary = element.secondary,
+                    .tertiary = element.tertiary,
+                };
+            }
+            table[codepoint] = stored;
+        } else {
+            usable = false;
+            table[codepoint] = .{ .count = 0, .elements = undefined };
+        }
+    }
+    // A contraction whose continuation is also ASCII could match inside a
+    // pure-ASCII string, so the one-character table would be incomplete.
+    var entry_index = pageStart(0);
+    while (entry_index < entry_count) : (entry_index += 1) {
+        const entry = entryAt(entry_index);
+        if (entry.first >= 128) break;
+        if (entry.len > 1 and (entry.second < 128 or
+            (entry.len > 2 and entry.third < 128)))
+        {
+            usable = false;
+        }
+    }
+    break :blk .{ .usable = usable, .table = table };
+};
+
+fn appendAsciiLevel(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    codepoints: []const u21,
+    level: Level,
+) error{OutOfMemory}!void {
+    for (codepoints) |codepoint| {
+        const entry = ascii_elements.table[codepoint];
+        for (entry.elements[0..entry.count]) |element| {
+            const weight = switch (level) {
+                .primary => element.primary,
+                .secondary => element.secondary,
+                .tertiary => element.tertiary,
+                .quaternary => 0,
+            };
+            if (weight != 0) try output.append(allocator, weight);
+        }
+    }
+    try output.append(allocator, 0);
+}
+
 /// Emit a root-order sort key for Latin-script text from a compact table,
 /// bypassing page lookups and the collation-element list. Text with
 /// precomposed letters is decomposed into a stack buffer first.
@@ -641,6 +718,20 @@ fn appendLatinSortKey(
     for (codepoints) |codepoint| {
         if (codepoint >= latin_limit) return false;
         if (codepoint >= 0x80) all_ascii = false;
+    }
+
+    if (all_ascii and ascii_elements.usable) {
+        try output.ensureTotalCapacity(allocator, codepoints.len * 6 + 8);
+        try appendAsciiLevel(allocator, output, codepoints, .primary);
+        if (strength == .primary) return true;
+        try appendAsciiLevel(allocator, output, codepoints, .secondary);
+        if (strength == .secondary) return true;
+        try appendAsciiLevel(allocator, output, codepoints, .tertiary);
+        if (strength == .tertiary) return true;
+        try output.append(allocator, 0);
+        if (strength == .quaternary) return true;
+        try appendIdenticalLevel(allocator, output, codepoints);
+        return true;
     }
 
     var buffer: [1024]u21 = undefined;
