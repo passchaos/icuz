@@ -840,9 +840,10 @@ fn writeReplacementFor(
     return error.UnmappableCharacter;
 }
 
-/// Fast path for well-formed UTF-8 text that the GBK encoder can map.
+/// Fast path for well-formed UTF-8 text that a DBCS encoder can map.
 /// Returns null when the input needs the generic error handling.
-fn convertUtf8ToGbkFast(
+fn convertUtf8ToDbcsFast(
+    comptime encode: fn (u21, *[4]u8) ?u8,
     allocator: std.mem.Allocator,
     input: []const u8,
 ) error{OutOfMemory}!?[]u8 {
@@ -890,11 +891,28 @@ fn convertUtf8ToGbkFast(
             } else {
                 break :blk false;
             }
-            var buffer: [2]u8 = undefined;
-            const length = cjk.gbkEncodeFast(codepoint, &buffer) orelse
+            var buffer: [4]u8 = undefined;
+            const length = encode(codepoint, &buffer) orelse
                 break :blk false;
-            spare[written] = buffer[0];
-            if (length == 2) spare[written + 1] = buffer[1];
+            switch (length) {
+                1 => spare[written] = buffer[0],
+                2 => {
+                    spare[written] = buffer[0];
+                    spare[written + 1] = buffer[1];
+                },
+                3 => {
+                    spare[written] = buffer[0];
+                    spare[written + 1] = buffer[1];
+                    spare[written + 2] = buffer[2];
+                },
+                4 => {
+                    spare[written] = buffer[0];
+                    spare[written + 1] = buffer[1];
+                    spare[written + 2] = buffer[2];
+                    spare[written + 3] = buffer[3];
+                },
+                else => break :blk false,
+            }
             written += length;
         }
         output.items.len = written;
@@ -914,9 +932,47 @@ fn convertAllocStateless(
     input: []const u8,
     options: Options,
 ) Error![]u8 {
-    if (comptime from == .utf8 and to == .gbk) {
-        if (try convertUtf8ToGbkFast(allocator, input)) |result| {
-            return result;
+    if (comptime from == .utf8) {
+        if (comptime to == .gbk or to == .gb18030) {
+            if (try convertUtf8ToDbcsFast(
+                cjk.gbkEncodeFast,
+                allocator,
+                input,
+            )) |result| {
+                return result;
+            }
+        } else if (comptime to == .big5) {
+            if (try convertUtf8ToDbcsFast(
+                cjk.big5EncodeFast,
+                allocator,
+                input,
+            )) |result| {
+                return result;
+            }
+        } else if (comptime to == .shift_jis) {
+            if (try convertUtf8ToDbcsFast(
+                cjk.shiftJisEncodeFast,
+                allocator,
+                input,
+            )) |result| {
+                return result;
+            }
+        } else if (comptime to == .euc_kr) {
+            if (try convertUtf8ToDbcsFast(
+                cjk.eucKrEncodeFast,
+                allocator,
+                input,
+            )) |result| {
+                return result;
+            }
+        } else if (comptime to == .euc_jp) {
+            if (try convertUtf8ToDbcsFast(
+                cjk.eucJpEncodeFast,
+                allocator,
+                input,
+            )) |result| {
+                return result;
+            }
         }
     }
     // Valid input never grows past this bound: a 3-byte UTF-8 sequence maps

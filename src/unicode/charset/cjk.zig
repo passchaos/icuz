@@ -89,7 +89,7 @@ fn gbNext(input: []const u8, index: *usize, comptime gbk: bool) DecodeResult {
 /// Encode one scalar for the GBK fast path. Returns the byte count (1 or
 /// 2), or null when the scalar needs the generic encoder (unmappable or
 /// the E5E5 special case).
-pub fn gbkEncodeFast(codepoint: u21, out: *[2]u8) ?u8 {
+pub fn gbkEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
     if (codepoint < 0x80) {
         out[0] = @intCast(codepoint);
         return 1;
@@ -111,6 +111,128 @@ pub fn gbkEncodeFast(codepoint: u21, out: *[2]u8) ?u8 {
     out[0] = lead;
     out[1] = trail;
     return 2;
+}
+
+/// Encode one scalar for the Big5 fast path.
+pub fn big5EncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
+    if (codepoint < 0x80) {
+        out[0] = @intCast(codepoint);
+        return 1;
+    }
+    const special: ?u32 = switch (codepoint) {
+        0x00CA => 1133,
+        0x00EA => 1135,
+        0x0304 => 1164,
+        0x030C => 1166,
+        else => null,
+    };
+    const pointer = special orelse tables.reverseLookupCached(
+        &big5_reverse_cache,
+        tables.big5_reverse,
+        &tables.big5_reverse_pages,
+        codepoint,
+    ) orelse return null;
+    const lead: u8 = @intCast(pointer / 157 + 0x81);
+    var trail: u8 = @intCast(pointer % 157);
+    trail += if (trail < 0x3F) 0x40 else 0x62;
+    out[0] = lead;
+    out[1] = trail;
+    return 2;
+}
+
+/// Encode one scalar for the EUC-KR fast path.
+pub fn eucKrEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
+    if (codepoint < 0x80) {
+        out[0] = @intCast(codepoint);
+        return 1;
+    }
+    const pointer = tables.reverseLookupCached(
+        &euc_kr_reverse_cache,
+        tables.euc_kr_reverse,
+        &tables.euc_kr_reverse_pages,
+        codepoint,
+    ) orelse return null;
+    out[0] = @intCast(pointer / 190 + 0x81);
+    out[1] = @intCast(pointer % 190 + 0x41);
+    return 2;
+}
+
+/// Encode one scalar for the Shift_JIS fast path.
+pub fn shiftJisEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
+    if (codepoint < 0x80 or codepoint == 0x80) {
+        out[0] = @intCast(codepoint);
+        return 1;
+    }
+    if (codepoint == 0x00A5) {
+        out[0] = 0x5C;
+        return 1;
+    }
+    if (codepoint == 0x203E) {
+        out[0] = 0x7E;
+        return 1;
+    }
+    if (codepoint >= 0xFF61 and codepoint <= 0xFF9F) {
+        out[0] = @intCast(0xA1 + codepoint - 0xFF61);
+        return 1;
+    }
+    const target: u21 = if (codepoint == 0x2212) 0xFF0D else codepoint;
+    const pointer = tables.reverseLookupCached(
+        &shift_jis_reverse_cache,
+        tables.shift_jis_reverse,
+        &tables.shift_jis_reverse_pages,
+        target,
+    ) orelse return null;
+    var lead: u8 = @intCast(pointer / 188);
+    lead += if (lead < 0x1F) 0x81 else 0xC1;
+    var trail: u8 = @intCast(pointer % 188);
+    trail += if (trail < 0x3F) 0x40 else 0x41;
+    out[0] = lead;
+    out[1] = trail;
+    return 2;
+}
+
+/// Encode one scalar for the EUC-JP fast path.
+pub fn eucJpEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
+    if (codepoint < 0x80) {
+        out[0] = @intCast(codepoint);
+        return 1;
+    }
+    if (codepoint == 0x00A5) {
+        out[0] = 0x5C;
+        return 1;
+    }
+    if (codepoint == 0x203E) {
+        out[0] = 0x7E;
+        return 1;
+    }
+    if (codepoint >= 0xFF61 and codepoint <= 0xFF9F) {
+        out[0] = 0x8E;
+        out[1] = @intCast(0xA1 + codepoint - 0xFF61);
+        return 2;
+    }
+    const target: u21 = if (codepoint == 0x2212) 0xFF0D else codepoint;
+    if (tables.reverseLookupCached(
+        &jis0208_reverse_cache,
+        tables.jis0208_reverse,
+        &tables.jis0208_reverse_pages,
+        target,
+    )) |pointer| {
+        out[0] = @intCast(pointer / 94 + 0xA1);
+        out[1] = @intCast(pointer % 94 + 0xA1);
+        return 2;
+    }
+    if (tables.reverseLookupCached(
+        &jis0212_reverse_cache,
+        tables.jis0212_reverse,
+        &tables.jis0212_reverse_pages,
+        target,
+    )) |pointer| {
+        out[0] = 0x8F;
+        out[1] = @intCast(pointer / 94 + 0xA1);
+        out[2] = @intCast(pointer % 94 + 0xA1);
+        return 3;
+    }
+    return null;
 }
 
 pub fn gbkEncode(codepoint: u21, out: []u8) EncodeResult {
