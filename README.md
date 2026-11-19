@@ -252,9 +252,9 @@ need without pulling in a font or layout engine.
 
 `icuz` is not a drop-in ICU replacement. Its transliteration support is a
 compiled rule-table engine covering the constructs listed above plus a
-runtime ICU-rule interpreter: reverse rules with captures or context and
-embedded `::Transform;` pipeline calls in user rule text are not yet
-interpreted at runtime. Regular expressions and display/layout
+runtime ICU-rule interpreter that runs embedded `::Transform;` (including
+normalization and Any-Case) directives as pipeline steps. Reverse rules with
+captures or context are not yet interpreted at runtime. Regular expressions and display/layout
 tailoring are also out of scope. Collation supports root ordering plus CLDR
 standard and common
 non-standard tailorings, including locale `caseFirst`, backwards secondary

@@ -5,8 +5,9 @@
 //! `::[set];` filters, and `ante { input } post > output;` conversion rules
 //! with UnicodeSets, `.` (any), grouping, and `?`/`*`/`+` quantifiers.
 //! Output supports literals, string variables, and the `|` cursor marker.
-//! Reverse rules (`<`) are ignored when compiling in the forward direction;
-//! captures, alternation, and `::` transform calls report
+//! `::Transform;` directives run the named transform as a pipeline step
+//! between the surrounding rule sections. Reverse rules (`<`) are ignored
+//! when compiling in the forward direction; captures and alternation report
 //! `error.UnsupportedRule`.
 
 const std = @import("std");
@@ -77,10 +78,21 @@ const Variable = union(enum) {
     set: *const set.Set,
 };
 
+/// One stage of a rule program. Rules between `::` transform directives form
+/// a section that runs to a fixpoint before the next stage begins.
+pub const Step = union(enum) {
+    rules: struct {
+        start: u32,
+        count: u32,
+    },
+    transform: []const u8,
+};
+
 /// A compiled rule set. Release with `deinit`.
 pub const Rules = struct {
     arena: std.heap.ArenaAllocator,
     rules: []const Rule = &.{},
+    steps: []const Step = &.{},
 
     pub fn deinit(self: *Rules) void {
         self.arena.deinit();
@@ -112,12 +124,15 @@ pub fn compileRulesDirectionAlloc(
         .index = 0,
         .variables = std.StringHashMap(Variable).init(arena_allocator),
         .rules = std.ArrayList(Rule).empty,
+        .steps = std.ArrayList(Step).empty,
         .direction = direction,
     };
     try parser.parseAll();
+    try parser.flushRulesStep();
     return .{
         .arena = arena,
         .rules = try parser.rules.toOwnedSlice(arena_allocator),
+        .steps = try parser.steps.toOwnedSlice(arena_allocator),
     };
 }
 
@@ -133,17 +148,51 @@ pub fn applyRulesAlloc(
     defer buffer.deinit(allocator);
     try buffer.appendSlice(allocator, decoded);
 
+    for (rules.steps) |step| {
+        switch (step) {
+            .rules => |range| try applyRuleSection(
+                allocator,
+                rules.rules[range.start..][0..range.count],
+                &buffer,
+            ),
+            .transform => |name| {
+                const encoded = try encodeUtf8Alloc(allocator, buffer.items);
+                defer allocator.free(encoded);
+                const converted = transliterate.transliterateByNameAlloc(
+                    allocator,
+                    encoded,
+                    name,
+                ) catch |err| switch (err) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    else => return error.UnsupportedRule,
+                };
+                defer allocator.free(converted);
+                const redecoded = try decodeUtf8Alloc(allocator, converted);
+                defer allocator.free(redecoded);
+                buffer.clearRetainingCapacity();
+                try buffer.appendSlice(allocator, redecoded);
+            },
+        }
+    }
+    return encodeUtf8Alloc(allocator, buffer.items);
+}
+
+fn applyRuleSection(
+    allocator: std.mem.Allocator,
+    rules: []const Rule,
+    buffer: *std.ArrayList(u21),
+) Error!void {
     var replacement = std.ArrayList(u21).empty;
     defer replacement.deinit(allocator);
 
     var cursor: usize = 0;
     var steps: usize = 0;
-    const step_budget = text.len * 16 + 4096;
+    const step_budget = buffer.items.len * 16 + 4096;
     while (cursor < buffer.items.len) {
         steps += 1;
         if (steps > step_budget) return error.RuleLoop;
         var matched = false;
-        for (rules.rules) |rule| {
+        for (rules) |rule| {
             var captures: Captures = undefined;
             for (&captures) |*slot| slot.* = null;
             const input_end = matchRule(
@@ -195,7 +244,7 @@ pub fn applyRulesAlloc(
             try next.appendSlice(allocator, replacement.items);
             try next.appendSlice(allocator, buffer.items[input_end..]);
             buffer.deinit(allocator);
-            buffer = next;
+            buffer.* = next;
             cursor = if (saw_cursor)
                 new_cursor
             else
@@ -205,7 +254,6 @@ pub fn applyRulesAlloc(
         }
         if (!matched) cursor += 1;
     }
-    return encodeUtf8Alloc(allocator, buffer.items);
 }
 
 fn applyFunction(
@@ -577,6 +625,8 @@ const Parser = struct {
     index: usize,
     variables: std.StringHashMap(Variable),
     rules: std.ArrayList(Rule),
+    steps: std.ArrayList(Step),
+    segment_start: usize = 0,
     group_count: u16 = 0,
     direction: Direction = .forward,
 
@@ -655,7 +705,33 @@ const Parser = struct {
             };
             return;
         }
-        return error.UnsupportedRule;
+        // `::Transform;` (including NFC/NFD/NFKC/NFKD and Any-Case): the
+        // surrounding rule sections become separate steps that run before
+        // and after the transform.
+        var index: usize = 0;
+        while (index < trimmed.len and
+            !std.ascii.isWhitespace(trimmed[index]))
+        {
+            index += 1;
+        }
+        if (index != trimmed.len) return error.UnsupportedRule;
+        try self.flushRulesStep();
+        try self.steps.append(self.arena, .{
+            .transform = try self.arena.dupe(u8, trimmed),
+        });
+    }
+
+    /// Close the rule section that precedes the next transform step.
+    fn flushRulesStep(self: *Parser) Error!void {
+        const count = self.rules.items.len - self.segment_start;
+        if (count == 0) return;
+        try self.steps.append(self.arena, .{
+            .rules = .{
+                .start = @intCast(self.segment_start),
+                .count = @intCast(count),
+            },
+        });
+        self.segment_start = self.rules.items.len;
     }
 
     fn parseVariable(self: *Parser, statement: []const u8) Error!void {
@@ -1354,10 +1430,19 @@ test "rule engine rejects unsupported syntax" {
         error.UnsupportedRule,
         compileRulesAlloc(testing.allocator, "(a|b) > X;"),
     );
-    try testing.expectError(
-        error.UnsupportedRule,
-        compileRulesAlloc(testing.allocator, "::NFD; a > b;"),
-    );
+    // Transform directives compile into pipeline steps; unknown names fail
+    // at apply time instead of compile time.
+    {
+        var rules = try compileRulesAlloc(
+            testing.allocator,
+            "::No-Such-Transform; a > b;",
+        );
+        defer rules.deinit();
+        try testing.expectError(
+            error.UnsupportedRule,
+            applyRulesAlloc(testing.allocator, &rules, "a"),
+        );
+    }
     try testing.expectError(
         error.InvalidRule,
         compileRulesAlloc(testing.allocator, "{ } > x;"),
@@ -1375,6 +1460,21 @@ test "rule engine rejects unsupported syntax" {
 test "rule engine ignores reverse rules in forward mode" {
     try expectRules("a < b;", "ab", "ab");
     try expectRules("a <> b;", "ab", "bb");
+}
+
+test "rule engine transform directives" {
+    // Normalization steps run between rule sections.
+    try expectRules("::NFD; a > X;", "\u{e9}a", "e\u{301}X");
+    try expectRules("::NFC;", "e\u{301}", "\u{e9}");
+    try expectRules("::NFKC;", "\u{fb01}", "fi");
+    // Named transforms compose with the surrounding sections in order.
+    try expectRules("::Latin-ASCII; x > y;", "\u{e9}x", "ey");
+    try expectRules("a > X; ::Latin-ASCII;", "a\u{e9}", "Xe");
+    try expectRules(
+        "\u{e9} > E; ::Any-Upper;",
+        "\u{e9}b",
+        "EB",
+    );
 }
 
 test "rule engine conformance" {
