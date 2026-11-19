@@ -36,6 +36,8 @@ pub const Date = struct {
     day: u8,
     /// True for leap months in lunisolar calendars.
     leap_month: bool = false,
+    /// True when the containing year is a leap year (Hebrew/Chinese).
+    leap_year: bool = false,
 };
 
 const Civil = struct {
@@ -119,6 +121,261 @@ fn japaneseDate(days: i64, civil: Civil) Date {
         .year = civil.year - 1867,
         .month = civil.month,
         .day = civil.day,
+    };
+}
+
+const hebrew_epoch = 347997;
+const hebrew_hour_parts = 1080;
+const hebrew_day_parts = 24 * 1080;
+const hebrew_month_fract = 12 * 1080 + 793;
+const hebrew_month_parts = 29 * hebrew_day_parts + hebrew_month_fract;
+const hebrew_baharad = 11 * 1080 + 204;
+
+const hebrew_month_length = [13][3]u8{
+    .{ 30, 30, 30 },
+    .{ 29, 29, 30 },
+    .{ 29, 30, 30 },
+    .{ 29, 29, 29 },
+    .{ 30, 30, 30 },
+    .{ 30, 30, 30 },
+    .{ 29, 29, 29 },
+    .{ 30, 30, 30 },
+    .{ 29, 29, 29 },
+    .{ 30, 30, 30 },
+    .{ 29, 29, 29 },
+    .{ 30, 30, 30 },
+    .{ 29, 29, 29 },
+};
+
+const hebrew_month_start = [14][3]u16{
+    .{ 0, 0, 0 },
+    .{ 30, 30, 30 },
+    .{ 59, 59, 60 },
+    .{ 88, 89, 90 },
+    .{ 117, 118, 119 },
+    .{ 147, 148, 149 },
+    .{ 147, 148, 149 },
+    .{ 176, 177, 178 },
+    .{ 206, 207, 208 },
+    .{ 235, 236, 237 },
+    .{ 265, 266, 267 },
+    .{ 294, 295, 296 },
+    .{ 324, 325, 326 },
+    .{ 353, 354, 355 },
+};
+
+const hebrew_leap_month_start = [14][3]u16{
+    .{ 0, 0, 0 },
+    .{ 30, 30, 30 },
+    .{ 59, 59, 60 },
+    .{ 88, 89, 90 },
+    .{ 117, 118, 119 },
+    .{ 147, 148, 149 },
+    .{ 177, 178, 179 },
+    .{ 206, 207, 208 },
+    .{ 236, 237, 238 },
+    .{ 265, 266, 267 },
+    .{ 295, 296, 297 },
+    .{ 324, 325, 326 },
+    .{ 354, 355, 356 },
+    .{ 383, 384, 385 },
+};
+
+fn hebrewIsLeapYear(year: i32) bool {
+    const value = @mod(@as(i64, year) * 12 + 17, 19);
+    return value >= 12;
+}
+
+fn hebrewStartOfYear(year: i32) i64 {
+    const months = @divFloor(235 * @as(i64, year) - 234, 19);
+    var fraction = months * hebrew_month_fract + hebrew_baharad;
+    const fraction_div = @divFloor(fraction, hebrew_day_parts);
+    var day = months * 29 + fraction_div;
+    fraction -= fraction_div * hebrew_day_parts;
+    var weekday = @mod(day, 7);
+    if (weekday == 2 or weekday == 4 or weekday == 6) {
+        day += 1;
+        weekday = @mod(day, 7);
+    } else if (weekday == 1 and fraction >= 15 * hebrew_hour_parts + 204 and
+        !hebrewIsLeapYear(year))
+    {
+        day += 2;
+    } else if (weekday == 0 and fraction >= 21 * hebrew_hour_parts + 589 and
+        hebrewIsLeapYear(year - 1))
+    {
+        day += 1;
+    }
+    return day;
+}
+
+fn hebrewYearType(year: i32) usize {
+    var length = hebrewStartOfYear(year + 1) - hebrewStartOfYear(year);
+    if (length > 380) length -= 30;
+    return switch (length) {
+        353 => 0,
+        354 => 1,
+        355 => 2,
+        else => 1,
+    };
+}
+
+fn hebrewDate(days: i64) Date {
+    const value = julianDay(days) - hebrew_epoch;
+    const months = @divFloor(value * hebrew_day_parts, hebrew_month_parts);
+    var year: i32 = @intCast(@divFloor(19 * months + 234, 235) + 1);
+    var year_start = hebrewStartOfYear(year);
+    var day_of_year = value - year_start;
+    while (day_of_year < 1) {
+        year -= 1;
+        year_start = hebrewStartOfYear(year);
+        day_of_year = value - year_start;
+    }
+    const year_type = hebrewYearType(year);
+    const leap = hebrewIsLeapYear(year);
+    var month: usize = 0;
+    const starts = if (leap) &hebrew_leap_month_start else &hebrew_month_start;
+    while (month < 14 and day_of_year > starts[month][year_type]) : (month += 1) {}
+    if (month == 0) month = 1;
+    if (month > 13) month = 13;
+    month -= 1;
+    const day = day_of_year - starts[month][year_type];
+    var ordinal: i64 = @intCast(month);
+    if (!leap and ordinal > 5) ordinal -= 1;
+    return .{
+        .era = 0,
+        .year = year,
+        .month = @intCast(ordinal + 1),
+        .day = @intCast(day),
+        .leap_year = leap,
+    };
+}
+
+const umalqura_year_start = 1300;
+const umalqura_year_end = 1600;
+
+const umalqura_month_length = [_]u16{
+    0x0AAA, 0x0D54, 0x0EC9, 0x06D4, 0x06EA, 0x036C, 0x0AAD, 0x0555, 0x06A9, 0x0792, 0x0BA9, 0x05D4,
+    0x0ADA, 0x055C, 0x0D2D, 0x0695, 0x074A, 0x0B54, 0x0B6A, 0x05AD, 0x04AE, 0x0A4F, 0x0517, 0x068B,
+    0x06A5, 0x0AD5, 0x02D6, 0x095B, 0x049D, 0x0A4D, 0x0D26, 0x0D95, 0x05AC, 0x09B6, 0x02BA, 0x0A5B,
+    0x052B, 0x0A95, 0x06CA, 0x0AE9, 0x02F4, 0x0976, 0x02B6, 0x0956, 0x0ACA, 0x0BA4, 0x0BD2, 0x05D9,
+    0x02DC, 0x096D, 0x054D, 0x0AA5, 0x0B52, 0x0BA5, 0x05B4, 0x09B6, 0x0557, 0x0297, 0x054B, 0x06A3,
+    0x0752, 0x0B65, 0x056A, 0x0AAB, 0x052B, 0x0C95, 0x0D4A, 0x0DA5, 0x05CA, 0x0AD6, 0x0957, 0x04AB,
+    0x094B, 0x0AA5, 0x0B52, 0x0B6A, 0x0575, 0x0276, 0x08B7, 0x045B, 0x0555, 0x05A9, 0x05B4, 0x09DA,
+    0x04DD, 0x026E, 0x0936, 0x0AAA, 0x0D54, 0x0DB2, 0x05D5, 0x02DA, 0x095B, 0x04AB, 0x0A55, 0x0B49,
+    0x0B64, 0x0B71, 0x05B4, 0x0AB5, 0x0A55, 0x0D25, 0x0E92, 0x0EC9, 0x06D4, 0x0AE9, 0x096B, 0x04AB,
+    0x0A93, 0x0D49, 0x0DA4, 0x0DB2, 0x0AB9, 0x04BA, 0x0A5B, 0x052B, 0x0A95, 0x0B2A, 0x0B55, 0x055C,
+    0x04BD, 0x023D, 0x091D, 0x0A95, 0x0B4A, 0x0B5A, 0x056D, 0x02B6, 0x093B, 0x049B, 0x0655, 0x06A9,
+    0x0754, 0x0B6A, 0x056C, 0x0AAD, 0x0555, 0x0B29, 0x0B92, 0x0BA9, 0x05D4, 0x0ADA, 0x055A, 0x0AAB,
+    0x0595, 0x0749, 0x0764, 0x0BAA, 0x05B5, 0x02B6, 0x0A56, 0x0E4D, 0x0B25, 0x0B52, 0x0B6A, 0x05AD,
+    0x02AE, 0x092F, 0x0497, 0x064B, 0x06A5, 0x06AC, 0x0AD6, 0x055D, 0x049D, 0x0A4D, 0x0D16, 0x0D95,
+    0x05AA, 0x05B5, 0x02DA, 0x095B, 0x04AD, 0x0595, 0x06CA, 0x06E4, 0x0AEA, 0x04F5, 0x02B6, 0x0956,
+    0x0AAA, 0x0B54, 0x0BD2, 0x05D9, 0x02EA, 0x096D, 0x04AD, 0x0A95, 0x0B4A, 0x0BA5, 0x05B2, 0x09B5,
+    0x04D6, 0x0A97, 0x0547, 0x0693, 0x0749, 0x0B55, 0x056A, 0x0A6B, 0x052B, 0x0A8B, 0x0D46, 0x0DA3,
+    0x05CA, 0x0AD6, 0x04DB, 0x026B, 0x094B, 0x0AA5, 0x0B52, 0x0B69, 0x0575, 0x0176, 0x08B7, 0x025B,
+    0x052B, 0x0565, 0x05B4, 0x09DA, 0x04ED, 0x016D, 0x08B6, 0x0AA6, 0x0D52, 0x0DA9, 0x05D4, 0x0ADA,
+    0x095B, 0x04AB, 0x0653, 0x0729, 0x0762, 0x0BA9, 0x05B2, 0x0AB5, 0x0555, 0x0B25, 0x0D92, 0x0EC9,
+    0x06D2, 0x0AE9, 0x056B, 0x04AB, 0x0A55, 0x0D29, 0x0D54, 0x0DAA, 0x09B5, 0x04BA, 0x0A3B, 0x049B,
+    0x0A4D, 0x0AAA, 0x0AD5, 0x02DA, 0x095D, 0x045E, 0x0A2E, 0x0C9A, 0x0D55, 0x06B2, 0x06B9, 0x04BA,
+    0x0A5D, 0x052D, 0x0A95, 0x0B52, 0x0BA8, 0x0BB4, 0x05B9, 0x02DA, 0x095A, 0x0B4A, 0x0DA4, 0x0ED1,
+    0x06E8, 0x0B6A, 0x056D, 0x0535, 0x0695, 0x0D4A, 0x0DA8, 0x0DD4, 0x06DA, 0x055B, 0x029D, 0x062B,
+    0x0B15, 0x0B4A, 0x0B95, 0x05AA, 0x0AAE, 0x092E, 0x0C8F, 0x0527, 0x0695,
+};
+
+const umalqura_year_fix = [_]i8{
+    0, 0, -1, 0, -1, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, -1, 0,
+    1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+    0, 0, 1, 0, 0, -1, -1, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 1, 1, 0,
+    0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 1, 1, 0, 0, -1, 0, 1, 0, 1,
+    1, 0, 0, -1, 0, 1, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0, 0, -1, 0, 0,
+    0, 0, -1, -1, 0, -1, 0, 1, 0, 0, 0, -1, 0, 0, 0, 1, 0, 0, 0, 0,
+    0, 1, 0, 0, -1, -1, 0, 0, 0, 1, 0, 0, -1, -1, 0, -1, 0, 0, -1, -1,
+    0, -1, 0, -1, 0, 0, -1, -1, 0, 0, 0, 0, 0, 0, -1, 0, 1, 0, 1, 1,
+    0, 0, -1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, -1, 0, 1, 0,
+    0, -1, -1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+    1, 0, 0, -1, 0, 0, 0, 1, 1, 0, 0, -1, 0, 1, 0, 1, 1, 0, 0, 0,
+    0, 1, 0, 0, 0, -1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0, 0, 0, -1,
+    0, -1, 0, 1, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0,
+    -1, 0, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0, 0, -1, -1, 0, -1, 0, 1,
+    0, 0, -1, -1, 0, 0, 1, 1, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+    1,
+};
+
+fn islamicCivilYearStart(year: i64) i64 {
+    return 354 * (year - 1) + @divFloor(11 * year + 3, 30);
+}
+
+fn islamicCivilMonthLength(year: i64, month: u8) u8 {
+    const leap = @mod(11 * year + 3, 30) >= 12;
+    if (month == 11 and leap) return 30;
+    return if (month % 2 == 0) 30 else 29;
+}
+
+fn umalquraYearStart(year: i32) i64 {
+    if (year < umalqura_year_start or year > umalqura_year_end) {
+        return islamicCivilYearStart(year);
+    }
+    const index: usize = @intCast(year - umalqura_year_start);
+    const estimate = 354.36720 * @as(f64, @floatFromInt(index)) + 460322.05 + 0.5;
+    return @as(i64, @intFromFloat(estimate)) + umalqura_year_fix[index];
+}
+
+fn umalquraMonthLength(year: i32, month: u8) u8 {
+    if (year < umalqura_year_start or year > umalqura_year_end) {
+        return islamicCivilMonthLength(year, month);
+    }
+    const index: usize = @intCast(year - umalqura_year_start);
+    const mask: u16 = @as(u16, 1) << @intCast(11 - month);
+    return if (umalqura_month_length[index] & mask != 0) 30 else 29;
+}
+
+fn umalquraYearLength(year: i32) u16 {
+    if (year < umalqura_year_start or year > umalqura_year_end) {
+        return 354 + @as(u16, if (@mod(11 * @as(i64, year) + 3, 30) >= 12) 1 else 0);
+    }
+    var length: u16 = 0;
+    for (0..12) |month| length += umalquraMonthLength(year, @intCast(month));
+    return length;
+}
+
+fn umalquraDate(days: i64) Date {
+    const value = julianDay(days) - 1948440;
+    if (value < umalquraYearStart(umalqura_year_start)) {
+        return islamicDate(days, 1948440);
+    }
+    var year: i32 = @intFromFloat(
+        (@as(f64, @floatFromInt(value)) - (460322.05 + 0.5)) / 354.36720 +
+            @as(f64, umalqura_year_start - 1),
+    );
+    var month: u8 = 0;
+    var day: i64 = 1;
+    while (day > 0) {
+        year += 1;
+        day = value - umalquraYearStart(year) + 1;
+        const length = umalquraYearLength(year);
+        if (day == length) {
+            month = 11;
+            break;
+        }
+        if (day < length) {
+            var month_length = umalquraMonthLength(year, month);
+            while (day > month_length) {
+                day -= month_length;
+                month += 1;
+                month_length = umalquraMonthLength(year, month);
+            }
+            break;
+        }
+    }
+    var month_start = umalquraYearStart(year);
+    var index: u8 = 0;
+    while (index < month) : (index += 1) {
+        month_start += umalquraMonthLength(year, index);
+    }
+    return .{
+        .era = 0,
+        .year = year,
+        .month = month + 1,
+        .day = @intCast(value - month_start + 1),
     };
 }
 
@@ -342,6 +599,8 @@ pub fn fromDays(calendar: Calendar, days: i64) Date {
         .roc => rocDate(civil, days),
         .islamic_civil => islamicDate(days, 1948440),
         .islamic_tbla => islamicDate(days, 1948439),
+        .islamic_umalqura => umalquraDate(days),
+        .hebrew => hebrewDate(days),
         .persian => persianDate(days),
         .indian => indianDate(civil, days),
         .coptic => copticDate(days),

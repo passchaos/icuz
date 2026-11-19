@@ -27,11 +27,13 @@ CALENDARS = (
     ("roc", 3),
     ("islamic-civil", 4),
     ("islamic-tbla", 5),
+    ("islamic-umalqura", 6),
     ("persian", 7),
     ("indian", 8),
     ("coptic", 9),
     ("ethiopic", 10),
     ("ethiopic-amete-alem", 11),
+    ("hebrew", 12),
     ("iso8601", 14),
 )
 

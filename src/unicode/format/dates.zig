@@ -211,7 +211,7 @@ fn calendarOverrides(
         .era = value.era,
         .gannen = calendar == .japanese and value.year == 1 and
             isJapaneseLocale(locale_name),
-        .months = calendars.monthTable(locale_name, index),
+        .months = calendars.monthTable(locale_name, index, value.leap_year),
         .era_wide = calendars.eraName(locale_name, index, value.era, .wide),
         .era_abbreviated = calendars.eraName(locale_name, index, value.era, .abbreviated),
         .era_narrow = calendars.eraName(locale_name, index, value.era, .narrow),

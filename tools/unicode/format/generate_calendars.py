@@ -54,11 +54,13 @@ CALENDARS = (
     (3, "roc", ()),
     (4, "islamic-civil", ("islamic",)),
     (5, "islamic-tbla", ("islamic",)),
+    (6, "islamic-umalqura", ("islamic",)),
     (7, "persian", ()),
     (8, "indian", ()),
     (9, "coptic", ()),
     (10, "ethiopic", ()),
     (11, "ethiopic-amete-alem", ("ethiopic",)),
+    (12, "hebrew", ()),
     (14, "iso8601", ()),
 )
 
@@ -76,6 +78,7 @@ WIDTH_FALLBACK = {
 STYLES = ("full", "long", "medium", "short")
 
 FLAG_GREGORIAN_MONTHS = 1
+FLAG_LEAP_MONTHS = 2
 
 
 def parent_chain(locale: str) -> list[str]:
@@ -129,7 +132,14 @@ def month_data(element) -> dict:
             for month in width.findall("month"):
                 value = (month.text or "").strip()
                 if value:
-                    data[(context_type, width_type, int(month.get("type")))] = value
+                    data[
+                        (
+                            context_type,
+                            width_type,
+                            int(month.get("type")),
+                            month.get("yeartype"),
+                        )
+                    ] = value
     return data
 
 
@@ -193,32 +203,51 @@ def root_calendar_data(archive, cache: dict) -> dict:
     return merged_calendar_data(archive, "root", cache)
 
 
-def resolve_months(raw: dict, calendar_index: int) -> list[tuple[str, str, str]]:
-    if calendar_index in GREGORIAN_MONTHS:
-        return []
-    if calendar_index in NO_MONTHS:
-        return []
-    names = []
-    for month in range(1, 14):
-        row = []
-        for width in MONTH_WIDTHS:
-            value = ""
+def month_row(raw: dict, month: int, yeartype: str | None) -> tuple:
+    row = []
+    for width in MONTH_WIDTHS:
+        value = ""
+        # CLDR falls back through wider widths within the format context
+        # before using stand-alone names.
+        for context in ("format", "stand-alone"):
             for candidate_width in WIDTH_FALLBACK[width]:
-                for context in ("format", "stand-alone"):
-                    candidate = raw.get((context, candidate_width, month))
-                    if candidate:
-                        value = candidate
-                        break
-                if value:
+                candidate = raw.get((context, candidate_width, month, yeartype))
+                if not candidate and yeartype is not None:
+                    candidate = raw.get((context, candidate_width, month, None))
+                if candidate:
+                    value = candidate
                     break
-            row.append(value)
-        if any(row):
-            names.append(tuple(row))
-        else:
-            names.append(("", "", ""))
-    while names and not any(names[-1]):
-        names.pop()
-    return names
+            if value:
+                break
+        row.append(value)
+    return tuple(row)
+
+
+def trim_rows(rows: list) -> list:
+    while rows and not any(rows[-1]):
+        rows.pop()
+    return rows
+
+
+def resolve_months(
+    raw: dict,
+    calendar_index: int,
+) -> tuple[list, list]:
+    if calendar_index in GREGORIAN_MONTHS or calendar_index in NO_MONTHS:
+        return [], []
+    has_leap = any(key[3] == "leap" for key in raw)
+    if has_leap:
+        # Hebrew-style calendars: leap years have 13 months; non-leap years
+        # skip month 6 (Adar I).
+        leap = trim_rows([month_row(raw, month, "leap") for month in range(1, 14)])
+        non_leap = trim_rows(
+            [
+                month_row(raw, month, None)
+                for month in (1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13)
+            ]
+        )
+        return non_leap, leap
+    return trim_rows([month_row(raw, month, None) for month in range(1, 14)]), []
 
 
 def resolve_eras(raw: dict, calendar_index: int, root_raw: dict) -> list:
@@ -265,7 +294,7 @@ def render(locale_records: dict, cache: dict) -> bytes:
         entries = locale_records[locale]
         cal_start = len(locale_calendar_bytes) // 4
         for calendar_index in sorted(entries):
-            months, eras, patterns = entries[calendar_index]
+            months, leap_months, eras, patterns = entries[calendar_index]
             key = hashlib.sha256(
                 repr((months, eras, patterns)).encode("utf-8")
             ).hexdigest()
@@ -275,6 +304,11 @@ def render(locale_records: dict, cache: dict) -> bytes:
                 record_index[key] = record
                 month_start = len(month_bytes) // 12
                 for row in months:
+                    month_bytes += struct.pack(
+                        "<III", *(intern(value) for value in row)
+                    )
+                leap_start = len(month_bytes) // 12
+                for row in leap_months:
                     month_bytes += struct.pack(
                         "<III", *(intern(value) for value in row)
                     )
@@ -291,16 +325,18 @@ def render(locale_records: dict, cache: dict) -> bytes:
                 flags = FLAG_GREGORIAN_MONTHS if calendar_index in GREGORIAN_MONTHS else 0
                 if calendar_index in NO_MONTHS:
                     flags = 0
+                if leap_months:
+                    flags |= FLAG_LEAP_MONTHS
                 records.append(
                     (
                         calendar_index,
                         flags,
                         len(months),
-                        0,
+                        len(leap_months),
                         month_start,
                         era_start,
                         len(eras),
-                        0,
+                        leap_start if leap_months else 0,
                         *(intern(patterns.get(style, "")) for style in STYLES),
                     )
                 )
@@ -362,7 +398,9 @@ def main() -> int:
             merged = merged_calendar_data(archive, locale, cache)
             entries = {}
             for index, _name, _fallbacks in CALENDARS:
-                months = resolve_months(merged[index]["months"], index)
+                months, leap_months = resolve_months(
+                    merged[index]["months"], index
+                )
                 eras = resolve_eras(
                     merged[index]["eras"], index, root_raw[index]["eras"]
                 )
@@ -370,7 +408,7 @@ def main() -> int:
                 for style in STYLES:
                     if not patterns.get(style):
                         patterns[style] = root_raw[index]["patterns"].get(style, "")
-                entries[index] = (months, eras, patterns)
+                entries[index] = (months, leap_months, eras, patterns)
             locale_records[locale] = entries
 
     blob = render(locale_records, cache)

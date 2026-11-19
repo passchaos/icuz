@@ -24,11 +24,13 @@ CALENDARS = (
     ("roc", 3),
     ("islamic-civil", 4),
     ("islamic-tbla", 5),
+    ("islamic-umalqura", 6),
     ("persian", 7),
     ("indian", 8),
     ("coptic", 9),
     ("ethiopic", 10),
     ("ethiopic-amete-alem", 11),
+    ("hebrew", 12),
     ("iso8601", 14),
 )
 
@@ -69,6 +71,10 @@ def main() -> int:
             icu.Locale("en@calendar=" + name)
         )
         calendar.setTimeZone(icu.TimeZone.createTimeZone("UTC"))
+        month_formatter = icu.SimpleDateFormat(
+            "M", icu.Locale("en@calendar=" + name)
+        )
+        month_formatter.setTimeZone(icu.TimeZone.createTimeZone("UTC"))
         for date in dates:
             moment = datetime.datetime(
                 date.year, date.month, date.day, tzinfo=datetime.timezone.utc
@@ -76,7 +82,7 @@ def main() -> int:
             calendar.setTime(moment)
             era = calendar.get(calendar.ERA)
             year = calendar.get(calendar.YEAR)
-            month = calendar.get(calendar.MONTH) + 1
+            month = int(month_formatter.format(moment))
             day = calendar.get(calendar.DATE)
             days = (date - epoch).days
             cases.append((index, era, year, month, day, days))

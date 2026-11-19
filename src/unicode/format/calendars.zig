@@ -24,6 +24,7 @@ const era_offset = month_offset + month_count * 12;
 const strings_offset = era_offset + era_count * 16;
 
 const flag_gregorian_months = 1;
+const flag_leap_months = 2;
 
 comptime {
     if (blob.len < header_len or !std.mem.eql(u8, blob[0..4], "CJKD") or
@@ -103,9 +104,11 @@ const Record = struct {
     calendar: u8,
     flags: u8,
     month_count: u8,
+    leap_month_count: u8,
     month_start: u32,
     era_start: u32,
     era_count: u16,
+    leap_month_start: u16,
     patterns: [4]u32,
 };
 
@@ -115,9 +118,11 @@ fn recordAt(index: usize) Record {
         .calendar = blob[base],
         .flags = blob[base + 1],
         .month_count = blob[base + 2],
+        .leap_month_count = blob[base + 3],
         .month_start = readU32(base + 4),
         .era_start = readU32(base + 8),
         .era_count = readU16(base + 12),
+        .leap_month_start = readU16(base + 14),
         .patterns = .{
             readU32(base + 16),
             readU32(base + 20),
@@ -160,7 +165,11 @@ fn gregorianLocale(name: []const u8) ?dates_data.Locale {
 
 /// Resolved month names for a calendar. Calendars that share the Gregorian
 /// month names use the locale's Gregorian month data.
-pub fn monthTable(locale_name: []const u8, calendar: u8) MonthTable {
+pub fn monthTable(
+    locale_name: []const u8,
+    calendar: u8,
+    leap_year: bool,
+) MonthTable {
     var table = MonthTable{
         .wide = [_][]const u8{""} ** 13,
         .abbreviated = [_][]const u8{""} ** 13,
@@ -177,9 +186,18 @@ pub fn monthTable(locale_name: []const u8, calendar: u8) MonthTable {
         }
         return table;
     }
+    const use_leap = leap_year and record.leap_month_count != 0;
+    const count: usize = if (use_leap)
+        record.leap_month_count
+    else
+        record.month_count;
+    const start: usize = if (use_leap)
+        record.leap_month_start
+    else
+        record.month_start;
     var index: usize = 0;
-    while (index < record.month_count) : (index += 1) {
-        const base = month_offset + (record.month_start + index) * 12;
+    while (index < count) : (index += 1) {
+        const base = month_offset + (start + index) * 12;
         table.wide[index] = strAt(readU32(base));
         table.abbreviated[index] = strAt(readU32(base + 4));
         table.narrow[index] = strAt(readU32(base + 8));
@@ -236,11 +254,11 @@ pub fn pattern(
 
 test "calendar data" {
     const testing = @import("std").testing;
-    const islamic_months = monthTable("en", 4);
+    const islamic_months = monthTable("en", 4, false);
     try testing.expectEqualStrings("Muharram", islamic_months.wide[0]);
     try testing.expectEqualStrings("Rajab", islamic_months.wide[6]);
     try testing.expectEqualStrings("Ramadan", islamic_months.wide[8]);
-    const buddhist_months = monthTable("en", 1);
+    const buddhist_months = monthTable("en", 1, false);
     try testing.expectEqualStrings("January", buddhist_months.wide[0]);
     try testing.expectEqualStrings("BE", eraName("en", 1, 0, .abbreviated));
     try testing.expectEqualStrings("Reiwa", eraName("en", 2, 236, .abbreviated));
