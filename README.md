@@ -172,8 +172,9 @@ need without pulling in a font or layout engine.
   literal/variable/function operands and options, `:string`, `:number`,
   `:integer` formatting with exact-value and plural/ordinal selection, and
   `:date`/`:time`/`:datetime` formatting from ISO 8601 strings or DateTime
-  values (date fields/length and time precision options). Markup and
-  date-value selection are rejected as unsupported.
+  values (date fields/length and time precision options). Markup parses and
+  formats as an empty string, matching the spec's default; date-value
+  selection is rejected as unsupported.
 - UTF-16 validation, iteration, and UTF-8/UTF-16 conversion helpers.
 - Charset conversion for UTF-8/16/32, ASCII, Latin-1, 28 legacy single-byte
   encodings, GBK/GB18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, and EUC-KR,

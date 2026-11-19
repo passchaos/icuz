@@ -4,8 +4,9 @@
 //! patterns, `.match` matchers with multiple selectors, expressions with
 //! `:string`, `:number`, `:integer`, `:date`, `:time`, and `:datetime`
 //! functions, numeric and plural selection, and attribute parsing
-//! (attributes are ignored). Markup, date selection, and custom functions
-//! are rejected.
+//! (attributes are ignored). Markup parses and formats as an empty string,
+//! matching the spec's default string representation. Date selection and
+//! custom functions are rejected.
 //!
 //! The parsed `Message` borrows the input text and owns only its AST
 //! arrays; keep the message string alive while the message is used.
@@ -68,6 +69,8 @@ pub const Part = union(enum) {
     /// Raw text; escape sequences are resolved when formatting.
     text: []const u8,
     expression: Expression,
+    /// Markup formats as an empty string in plain-text output.
+    markup,
 };
 
 pub const Expression = struct {
@@ -386,7 +389,10 @@ const Parser = struct {
                     (self.text[self.index + 1] == '#' or
                         self.text[self.index + 1] == '/'))
                 {
-                    return error.UnsupportedMarkup;
+                    try self.parseMarkup();
+                    try parts.append(self.allocator, .markup);
+                    text_start = self.index;
+                    continue;
                 }
                 const expression = try self.parseExpression();
                 try parts.append(self.allocator, .{
@@ -407,6 +413,47 @@ const Parser = struct {
             });
         }
         return .{ .parts = try parts.toOwnedSlice(self.allocator) };
+    }
+
+    fn parseMarkup(self: *Parser) ParseError!void {
+        self.index += 1; // '{'
+        self.skipO();
+        if (self.eof()) return error.SyntaxError;
+        if (self.text[self.index] == '#' or self.text[self.index] == '/') {
+            self.index += 1;
+        } else {
+            return error.SyntaxError;
+        }
+        _ = try self.parseIdentifier();
+        while (true) {
+            const save = self.index;
+            if (!self.skipS()) break;
+            const decoded = self.peekCodepoint() orelse {
+                self.index = save;
+                break;
+            };
+            if (!isNameStart(decoded.value)) {
+                self.index = save;
+                break;
+            }
+            _ = try self.parseOption();
+        }
+        while (true) {
+            const save = self.index;
+            if (!self.skipS()) break;
+            if (self.eof() or self.text[self.index] != '@') {
+                self.index = save;
+                break;
+            }
+            try self.parseAttribute();
+        }
+        self.skipO();
+        if (!self.eof() and self.text[self.index] == '/') self.index += 1;
+        self.skipO();
+        if (self.eof() or self.text[self.index] != '}') {
+            return error.SyntaxError;
+        }
+        self.index += 1;
     }
 
     fn parseExpression(self: *Parser) ParseError!Expression {
@@ -905,6 +952,7 @@ fn formatPattern(
                 expression,
                 output,
             ),
+            .markup => {},
         }
     }
 }
@@ -1597,10 +1645,20 @@ test "message format 2 errors" {
         error.SyntaxError,
         parse(allocator, "Hello, {$name"),
     );
-    try testing.expectError(
-        error.UnsupportedMarkup,
-        parse(allocator, "Hello {#b}"),
-    );
+    {
+        var message = try parse(allocator, "Hello {#b}world{/b}!");
+        defer message.deinit();
+        const text = try formatAlloc(allocator, &message, "en", &.{});
+        defer allocator.free(text);
+        try testing.expectEqualStrings("Hello world!", text);
+    }
+    {
+        var message = try parse(allocator, "a{#b /}b");
+        defer message.deinit();
+        const text = try formatAlloc(allocator, &message, "en", &.{});
+        defer allocator.free(text);
+        try testing.expectEqualStrings("ab", text);
+    }
     try testing.expectError(
         error.DataModelError,
         parse(
