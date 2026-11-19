@@ -54,7 +54,7 @@ need without pulling in a font or layout engine.
 - CLDR 48 cardinal plural rules for 224 locales and ordinal plural rules for
   110 locales, including both CLDR sample conformance fixtures.
 - CLDR 48 decimal, percent, currency, scientific, and compact number
-  formatting for 30 locales, with locale symbols, grouping, fraction-digit
+  formatting for 87 locales, with locale symbols, grouping, fraction-digit
   options, 25 currencies with locale-specific symbols/names/codes and
   currency-specific fraction digits, accounting parentheses, short/long
   compact notation, and ICU-style number skeletons.

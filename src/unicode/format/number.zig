@@ -1045,22 +1045,40 @@ fn appendGroupedDigits(
         return;
     }
 
-    const rest = length - primary;
-    var first_group = if (secondary > 0) rest % secondary else primary;
-    if (first_group == 0) first_group = secondary;
-    if (first_group == 0) first_group = primary;
+    // Build the group sizes from the right: the last group holds `primary`
+    // digits and every preceding group holds `secondary` (or `primary` when
+    // the pattern has a single group size, as in Indian "#,##,##0").
+    var sizes: [32]usize = undefined;
+    var count: usize = 0;
+    var remaining = length;
+    sizes[count] = @min(primary, remaining);
+    count += 1;
+    remaining -= sizes[0];
+    const step = if (secondary > 0) secondary else primary;
+    while (remaining > 0 and count < sizes.len) {
+        const take = @min(step, remaining);
+        sizes[count] = take;
+        count += 1;
+        remaining -= take;
+    }
+    if (remaining > 0) {
+        // Extremely long digit strings fall back to one group.
+        for (digits) |byte| {
+            try appendDigit(allocator, output, byte - '0', locale);
+        }
+        return;
+    }
 
     var index: usize = 0;
-    var group_length = first_group;
-    while (index < length) {
+    var group_index = count;
+    while (group_index > 0) {
+        group_index -= 1;
         if (index > 0) try output.appendSlice(allocator, locale.group);
-        const end = index + group_length;
+        const end = index + sizes[group_index];
         for (digits[index..end]) |byte| {
             try appendDigit(allocator, output, byte - '0', locale);
         }
         index = end;
-        group_length = if (index == first_group) secondary else primary;
-        if (group_length == 0) group_length = primary;
     }
 }
 
@@ -1449,6 +1467,41 @@ test "currency display and accounting" {
     });
     defer allocator.free(won);
     try testing.expectEqualStrings("\u{20a9}1,235", won);
+}
+
+test "number formatting covers additional locales" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const cases = [_]struct {
+        value: f64,
+        locale: []const u8,
+        expected: []const u8,
+    }{
+        .{ .value = 1234.5, .locale = "de", .expected = "1.234,5" },
+        .{ .value = 12345678.5, .locale = "es", .expected = "12.345.678,5" },
+        .{ .value = 12345678.5, .locale = "it", .expected = "12.345.678,5" },
+        .{ .value = 12345678.5, .locale = "pl", .expected = "12\u{00a0}345\u{00a0}678,5" },
+        .{ .value = 1234.5, .locale = "tr", .expected = "1.234,5" },
+        .{ .value = 1234.5, .locale = "ko", .expected = "1,234.5" },
+        .{ .value = 1234.5, .locale = "hi", .expected = "1,234.5" },
+        .{ .value = 12345678.5, .locale = "hi", .expected = "1,23,45,678.5" },
+        .{ .value = 12345678.5, .locale = "en-IN", .expected = "1,23,45,678.5" },
+        .{ .value = 1234.5, .locale = "fr-CA", .expected = "1\u{00a0}234,5" },
+        .{ .value = 1234.5, .locale = "ru", .expected = "1\u{00a0}234,5" },
+        .{ .value = 12345678.5, .locale = "pt-PT", .expected = "12\u{00a0}345\u{00a0}678,5" },
+        .{ .value = 1234.5, .locale = "nl-BE", .expected = "1.234,5" },
+        .{ .value = 1234.5, .locale = "cs", .expected = "1\u{00a0}234,5" },
+        .{ .value = 1234.5, .locale = "da", .expected = "1.234,5" },
+        .{ .value = 1234.5, .locale = "vi", .expected = "1.234,5" },
+        .{ .value = 12345678.5, .locale = "ja", .expected = "12,345,678.5" },
+        .{ .value = 12345678.5, .locale = "zh-Hant", .expected = "12,345,678.5" },
+    };
+    for (cases) |case| {
+        const result = try formatAlloc(allocator, case.value, case.locale, .{});
+        defer allocator.free(result);
+        try testing.expectEqualStrings(case.expected, result);
+    }
 }
 
 test "number skeletons" {
