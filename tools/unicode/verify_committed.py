@@ -54,6 +54,10 @@ BLOBS = (
     Blob("src/unicode/format/durations_data.bin", b"CJQ0", 1, "f41a08233a4a439a956d6ba4562d87c96ac66413117c44e94429c688184b3590", version=(0, 0, 0)),
     Blob("src/unicode/format/duration_conformance.bin", b"CJQK", 1, "bbcecde310b0bbc976aad662692ee4e76205a6235d3cecbaae4c827d2182b6e3", version=(0, 0, 0)),
     Blob("src/unicode/format/numbering_conformance.bin", b"CJNS", 1, "c3de214ed4b258a56061dd27ff23f5247ac68ba49ab09eb7b890e3ce3382cb85", version=(0, 0, 0)),
+    Blob("src/unicode/format/display_names_data.bin", b"CJLD", 1, "73c9a4116c90e2bbb618a1bcec962048108f1754b0fb853a5047d11887cf729c", version=(0, 0, 0)),
+    Blob("src/unicode/format/display_names_conformance.bin", b"CJLE", 1, "de5ec4eb4cb5e5ff37d612d77b49247775e742e58e9d8cf91d149fb35e2ef809", version=(0, 0, 0)),
+    Blob("src/unicode/format/likely_subtags_data.bin", b"CJL1", 1, "fb4541669bfad8afef1ebe5824c5e457aa226dd74545d4918a1e455afef6fdb6", version=(0, 0, 0)),
+    Blob("src/unicode/format/likely_subtags_conformance.bin", b"CJLV", 1, "6f8b716f5a81967d1130c1b976179fdcd439db384120f807c8e6ba2ff8e078c1", version=(0, 0, 0)),
     Blob("src/unicode/format/calendar_format_conformance.bin", b"CJKF", 1, "ffa627f64f42870b6d2ba203ff8abb707c7124360d910bab7f93cd41808d305f", version=(0, 0, 0)),
     Blob("src/unicode/transliterate/data.bin", b"CJTR", 19, "1190245efaa8c9a54fb02dbfa5cc19cbbe5d36576b49efc060cbf65801cf07c1", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/und_fonipa_ar_conformance.bin", b"CJQ8", 1, "df5e3c2037f7d6f8b2bcab29859548555aafc5d70be90454461275858c533d88", version=(48, 0, 0)),
@@ -432,6 +436,10 @@ GENERATORS = {
     "tools/unicode/format/generate_duration_conformance.py": "2e883fa048074e09ee2bd62bc131b0de07a1d0fc36c3a480b4ff3e2ff886bd65",
     "tools/unicode/format/generate_numbering_systems.py": "60eebb96082479abd4f772a925a863bb201644f3d1e81952ea7d2d29ddb99e1e",
     "tools/unicode/format/generate_numbering_conformance.py": "fbf566c26b4945a2fee4576882034eb3239f58839889cbfcacd1764129d2fbee",
+    "tools/unicode/format/generate_display_names.py": "4db3c14cc4d27e55c82f1d3903f0d7969230f07eedd1ab50055cf3fb11fe2013",
+    "tools/unicode/format/generate_display_names_conformance.py": "d87750b780f7809ea1031149faba1e929cec7c532246adfad1a4e953ba49d844",
+    "tools/unicode/format/generate_likely_subtags.py": "aab79fd344e8397809fc1b1960c63ad6f80bca9b826d25366d20282a6729c268",
+    "tools/unicode/format/generate_likely_subtags_conformance.py": "a7285f908b8c3f3bb60153ba1cb62c7aaa9fa5248734f04530864c8b48024ae6",
     "tools/unicode/format/generate_dates.py": "cb9ae3350d32eb4d2289205872f53ffe07cef3a1c4d8549c3a7b2ba5fd94b0d5",
     "tools/unicode/format/generate_misc.py": "b126eb131c01bfdd7541ca78496df0b2e0a49e3a0524a666b4b9fd1d55c17086",
     "tools/unicode/charset/generate_data.py": "4c0c5da6fc12a091083e942607aa76c578e649c5c9bf121ad7a17114613fcb59",
@@ -885,6 +893,31 @@ def check_layout(blob: Blob, data: bytes) -> None:
             system_len = data[offset + 2]
             expected_len = struct.unpack_from("<H", data, offset + 12)[0]
             offset += 16 + locale_len + system_len + expected_len
+        assert offset == len(data)
+    elif magic == b"CJLD":
+        locale_count = struct.unpack_from("<H", data, 8)[0]
+        entry_count = struct.unpack_from("<I", data, 12)[0]
+        string_len = struct.unpack_from("<I", data, 16)[0]
+        assert 24 + locale_count * 42 + entry_count * 8 + string_len == len(data)
+    elif magic == b"CJLE":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            display_len = data[offset + 1]
+            code_len = data[offset + 2]
+            expected_len = struct.unpack_from("<H", data, offset + 4)[0]
+            offset += 16 + display_len + code_len + expected_len
+        assert offset == len(data)
+    elif magic == b"CJL1":
+        entry_count, string_len = struct.unpack_from("<II", data, 8)
+        assert 16 + entry_count * 8 + string_len == len(data)
+    elif magic == b"CJLV":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            value_len = data[offset]
+            expected_len = data[offset + 1]
+            offset += 4 + value_len + expected_len
         assert offset == len(data)
     elif magic == b"CJKF":
         case_count = struct.unpack_from("<I", data, 8)[0]

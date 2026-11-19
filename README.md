@@ -70,6 +70,10 @@ need without pulling in a font or layout engine.
   covers 1850-2150 with cycle era, leap month, and month-length data.
   Validated by a 24,645-case conversion fixture and a 12,888-case PyICU
   formatting fixture.
+- CLDR 48 locale display names for 87 locales: language, script, region,
+  and variant names, locale display composition, and likely-subtags
+  maximization, validated by 329 display-name and 48 likely-subtag PyICU
+  conformance cases.
 - Numbering system selection for number and date formatting across 78 CLDR
   numeric systems (latn, arab, arabext, thai, deva, beng, hanidec,
   fullwide, and others) through `@numbers=`/`-u-nu-` locale keywords or an
