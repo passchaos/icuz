@@ -37,6 +37,9 @@ pub const Options = struct {
     /// Overrides the locale tailoring's backwards-secondary setting (French
     /// style accent ordering). `null` uses the tailoring setting.
     backwards_secondary: ?bool = null,
+    /// Compare runs of decimal digits by numeric value (ICU's numeric
+    /// collation): `a2` sorts before `a10`, and leading zeros are ignored.
+    numeric: bool = false,
 };
 
 const data = @embedFile("data.bin");
@@ -182,7 +185,7 @@ pub fn sortKeyCodepointsInto(
         (if (locale_tailoring) |tailoring| tailoring.backwards else false);
 
     if (locale_tailoring == null and !shifted and case_first == .off and
-        !backwards)
+        !backwards and !options.numeric)
     {
         if (try appendAsciiSortKey(allocator, output, codepoints, options.strength)) {
             return;
@@ -203,6 +206,18 @@ pub fn sortKeyCodepointsInto(
 
     var index: usize = 0;
     while (index < source.len) {
+        if (options.numeric) {
+            if (decimalValue(source[index]) != null) {
+                const end = decimalRunEnd(source, index);
+                try appendNumeric(
+                    allocator,
+                    &ces,
+                    source[index..end],
+                );
+                index = end;
+                continue;
+            }
+        }
         if (locale_tailoring) |tailoring| {
             if (tailorings.match(tailoring, source, index)) |matched| {
                 try appendTailored(allocator, &ces, matched.rule);
@@ -603,6 +618,80 @@ fn appendAsciiLevel(
         }
     }
     try output.append(allocator, 0);
+}
+
+/// Decimal value of a `General_Category=Nd` code point, or null.
+fn decimalValue(codepoint: u21) ?u8 {
+    if (properties.category(codepoint) != .Nd) return null;
+    var zero = codepoint;
+    while (zero > 0 and properties.category(zero - 1) == .Nd) zero -= 1;
+    return @intCast((@as(u32, codepoint) - @as(u32, zero)) % 10);
+}
+
+fn decimalRunEnd(codepoints: []const u21, start: usize) usize {
+    var end = start;
+    while (end < codepoints.len and decimalValue(codepoints[end]) != null) {
+        end += 1;
+    }
+    return end;
+}
+
+const digit_zero = blk: {
+    const sequence = [_]u21{'0'};
+    const entry = findEntryExact(&sequence) orelse
+        @compileError("missing digit collation entry");
+    break :blk ceAt(entry.ce_offset);
+};
+
+comptime {
+    @setEvalBranchQuota(100_000);
+    for (0..10) |digit| {
+        const sequence = [_]u21{'0' + @as(u21, @intCast(digit))};
+        const entry = findEntryExact(&sequence) orelse
+            @compileError("missing digit collation entry");
+        const element = ceAt(entry.ce_offset);
+        if (element.primary != digit_zero.primary + digit * 0x1000) {
+            @compileError("digit collation primaries are not contiguous");
+        }
+    }
+}
+
+/// Emit collation elements for a decimal digit run. Length weights make
+/// shorter numbers sort first; each significant digit then contributes its
+/// numeric weight. Secondary and tertiary weights are the Latin digit's, so
+/// digits from different numbering systems compare equal.
+fn appendNumeric(
+    allocator: std.mem.Allocator,
+    ces: *std.ArrayList(CollationElement),
+    digits: []const u21,
+) error{OutOfMemory}!void {
+    var start: usize = 0;
+    while (start + 1 < digits.len and decimalValue(digits[start]).? == 0) {
+        start += 1;
+    }
+    const significant = digits.len - start;
+    const length_bytes = [_]u32{
+        @intCast((significant >> 16) & 0xff),
+        @intCast((significant >> 8) & 0xff),
+        @intCast(significant & 0xff),
+    };
+    for (length_bytes) |byte| {
+        try ces.append(allocator, .{
+            .primary = digit_zero.primary + byte * 0x1000,
+            .secondary = digit_zero.secondary,
+            .tertiary = digit_zero.tertiary,
+            .variable = false,
+        });
+    }
+    for (digits[start..]) |codepoint| {
+        const value = decimalValue(codepoint).?;
+        try ces.append(allocator, .{
+            .primary = digit_zero.primary + @as(u32, value) * 0x1000,
+            .secondary = digit_zero.secondary,
+            .tertiary = digit_zero.tertiary,
+            .variable = false,
+        });
+    }
 }
 
 fn implicitWeights(codepoint: u21) [2]u32 {
@@ -1302,6 +1391,71 @@ test "CLDR 48 shifted conformance" {
     );
 }
 
+test "numeric collation orders digit runs by value" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const numeric = Options{ .numeric = true };
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "a2", "a10", numeric),
+    );
+    try testing.expectEqual(
+        std.math.Order.gt,
+        try compare(allocator, "a10", "a2", numeric),
+    );
+    try testing.expectEqual(
+        std.math.Order.eq,
+        try compare(allocator, "a02", "a2", numeric),
+    );
+    try testing.expectEqual(
+        std.math.Order.eq,
+        try compare(allocator, "a0", "a00", numeric),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "a0002", "a10", numeric),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "1.5", "1.10", numeric),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "x9y", "x10y", numeric),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "2", "b", numeric),
+    );
+    try testing.expectEqual(
+        std.math.Order.gt,
+        try compare(allocator, "2", "-", numeric),
+    );
+    try testing.expectEqual(
+        std.math.Order.eq,
+        try compare(allocator, "\u{0662}", "2", numeric),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(
+            allocator,
+            "99999999999999999999",
+            "100000000000000000000",
+            numeric,
+        ),
+    );
+    // Numeric ordering must also work with a locale tailoring active.
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "a2", "a10", .{ .numeric = true, .locale = "sv" }),
+    );
+    // Disabled numeric collation keeps digit-by-digit order.
+    try testing.expectEqual(
+        std.math.Order.gt,
+        try compare(allocator, "a2", "a10", .{}),
+    );
+}
+
 test "ascii fast path keeps the quaternary separator" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
@@ -1320,4 +1474,55 @@ test "ascii fast path keeps the quaternary separator" {
         quaternary_key[0..tertiary_key.len],
     );
     try testing.expectEqual(@as(u32, 0), quaternary_key[quaternary_key.len - 1]);
+}
+
+test "numeric collation conformance" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("numeric_conformance.bin");
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJNC", fixture[0..4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    for (0..case_count) |_| {
+        const locale_length = fixture[cursor];
+        const first_length = std.mem.readInt(
+            u16,
+            fixture[cursor + 1 ..][0..2],
+            .little,
+        );
+        const second_length = std.mem.readInt(
+            u16,
+            fixture[cursor + 3 ..][0..2],
+            .little,
+        );
+        const expected: i8 = @bitCast(fixture[cursor + 5]);
+        cursor += 8;
+        const locale = fixture[cursor .. cursor + locale_length];
+        cursor += locale_length;
+        const first = fixture[cursor .. cursor + first_length];
+        cursor += first_length;
+        const second = fixture[cursor .. cursor + second_length];
+        cursor += second_length;
+
+        const order = compare(allocator, first, second, .{
+            .numeric = true,
+            .locale = locale,
+        }) catch {
+            failures += 1;
+            continue;
+        };
+        const actual: i8 = switch (order) {
+            .lt => -1,
+            .eq => 0,
+            .gt => 1,
+        };
+        if (actual != expected) failures += 1;
+    }
+    std.debug.print("numeric collation conformance: {d}/{d} cases passed\n", .{
+        case_count - failures,
+        case_count,
+    });
+    try testing.expect(failures == 0);
 }

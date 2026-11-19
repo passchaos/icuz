@@ -44,7 +44,9 @@ need without pulling in a font or layout engine.
   validated by a 610-case PyICU range differential fixture.
 - CLDR 48 root collation (UCA 17.0.0) with NFD preprocessing, contiguous and
   discontiguous contractions, implicit weights, non-ignorable/shifted variable
-  weighting, sort keys, and comparison.
+  weighting, numeric collation (`a2` before `a10`, leading zeros ignored,
+  digits from any numbering system compared by value), sort keys, and
+  comparison, validated by a 34-case ICU C API differential fixture.
 - CLDR 48 locale collation tailorings for 147 locale/type entries, including
   standard, search, phonebook, traditional, eor, pinyin, stroke, zhuyin, and
   unihan variants. Applied through `Options.locale` and `Options.collation`
