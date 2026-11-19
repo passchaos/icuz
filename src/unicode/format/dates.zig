@@ -1815,13 +1815,15 @@ const ParseState = struct {
     hour12: ?u8 = null,
     bc: bool = false,
     day_of_year: ?u16 = null,
+    offset_seconds: i32 = 0,
 };
 
 /// Parse `text` according to a localized date/time pattern.
 ///
 /// Supports era, year, month (numeric and names), day, day of year,
 /// weekday names, day periods, 12/24-hour clocks, minutes, seconds,
-/// fractional seconds, and quarter names. Zone and week fields are not
+/// fractional seconds, quarter names, and numeric zone offsets (`Z`, `X`,
+/// `x`, `O`). Named zone fields (`z`, `v`, `V`) and week fields are not
 /// supported and make the parse fail. Fields absent from the pattern keep
 /// their `defaults` value; a two-digit year maps to 2000-2079 or 1900-1999.
 pub fn parsePattern(
@@ -2105,6 +2107,9 @@ fn parsePatternField(
             return true;
         },
         'G' => return parseEra(state, text, index, length, locale),
+        'Z', 'X', 'x', 'O' => {
+            return parseZoneOffset(state, text, index, field, length);
+        },
         'Q', 'q' => {
             if (length <= 2) {
                 const value = parseDateNumber(locale, text, index, 1) orelse
@@ -2207,6 +2212,71 @@ fn parseEra(
     return true;
 }
 
+fn parseZoneOffset(
+    state: *ParseState,
+    text: []const u8,
+    index: *usize,
+    field: u8,
+    length: usize,
+) bool {
+    if (field == 'O' or (field == 'Z' and length == 4)) {
+        if (startsWithIgnoreCase(text[index.*..], "GMT")) {
+            index.* += 3;
+        } else if (startsWithIgnoreCase(text[index.*..], "UTC")) {
+            index.* += 3;
+        } else {
+            return false;
+        }
+    }
+    if (index.* < text.len and (text[index.*] == 'Z' or text[index.*] == 'z')) {
+        index.* += 1;
+        state.offset_seconds = 0;
+        return true;
+    }
+    var sign: i32 = 1;
+    if (index.* < text.len and text[index.*] == '+') {
+        index.* += 1;
+    } else if (index.* < text.len and text[index.*] == '-') {
+        sign = -1;
+        index.* += 1;
+    } else {
+        return false;
+    }
+    var hours: i32 = 0;
+    var hour_digits: usize = 0;
+    while (hour_digits < 2 and index.* < text.len and
+        text[index.*] >= '0' and text[index.*] <= '9')
+    {
+        hours = hours * 10 + (text[index.*] - '0');
+        hour_digits += 1;
+        index.* += 1;
+    }
+    if (hour_digits == 0) return false;
+    var minutes: i32 = 0;
+    if (index.* < text.len and text[index.*] == ':') {
+        index.* += 1;
+        var minute_digits: usize = 0;
+        while (minute_digits < 2 and index.* < text.len and
+            text[index.*] >= '0' and text[index.*] <= '9')
+        {
+            minutes = minutes * 10 + (text[index.*] - '0');
+            minute_digits += 1;
+            index.* += 1;
+        }
+        if (minute_digits != 2) return false;
+    } else if (index.* + 2 <= text.len and
+        text[index.*] >= '0' and text[index.*] <= '9' and
+        text[index.* + 1] >= '0' and text[index.* + 1] <= '9')
+    {
+        minutes = @as(i32, text[index.*] - '0') * 10 +
+            (text[index.* + 1] - '0');
+        index.* += 2;
+    }
+    if (hours > 23 or minutes > 59) return false;
+    state.offset_seconds = sign * (hours * 3600 + minutes * 60);
+    return true;
+}
+
 fn parseQuarterName(
     state: *ParseState,
     text: []const u8,
@@ -2281,6 +2351,7 @@ fn finishParsedDate(state: *ParseState) ?DateTime {
         .minute = state.minute,
         .second = state.second,
         .nanosecond = state.nanosecond,
+        .offset_seconds = state.offset_seconds,
     };
 }
 
@@ -2361,6 +2432,35 @@ test "date pattern parsing" {
     try testing.expect(parsePattern("13/45/2024", "MM/dd/y", "en", .{}) == null);
     try testing.expect(parsePattern("2024-03-05", "y-MM-dd z", "en", .{}) == null);
     try testing.expect(parsePattern("", "y", "en", .{}) == null);
+
+    const offset = parsePattern(
+        "2024-03-05T14:30:45+08:00",
+        "y-MM-dd'T'HH:mm:ssXXX",
+        "en",
+        .{},
+    ).?;
+    try testing.expectEqual(@as(i32, 8 * 3600), offset.offset_seconds);
+    const utc = parsePattern(
+        "2024-03-05T14:30:45Z",
+        "y-MM-dd'T'HH:mm:ssX",
+        "en",
+        .{},
+    ).?;
+    try testing.expectEqual(@as(i32, 0), utc.offset_seconds);
+    const west = parsePattern(
+        "2024-03-05 14:30 -0500",
+        "y-MM-dd HH:mm Z",
+        "en",
+        .{},
+    ).?;
+    try testing.expectEqual(@as(i32, -5 * 3600), west.offset_seconds);
+    const gmt = parsePattern(
+        "2024-03-05 14:30 GMT+08:00",
+        "y-MM-dd HH:mm ZZZZ",
+        "en",
+        .{},
+    ).?;
+    try testing.expectEqual(@as(i32, 8 * 3600), gmt.offset_seconds);
 }
 
 test "date pattern round trips" {
