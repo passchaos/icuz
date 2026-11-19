@@ -47,9 +47,12 @@ def checked_text(path: Path, expected_sha256: str) -> str:
     return data.decode("utf-8")
 
 
-def parse_unicode_data(text: str) -> tuple[dict[int, tuple[int, ...]], dict[int, int]]:
+def parse_unicode_data(
+    text: str,
+) -> tuple[dict[int, tuple[int, ...]], dict[int, int], set[int]]:
     decompositions: dict[int, tuple[int, ...]] = {}
     combining_classes: dict[int, int] = {}
+    compatibility: set[int] = set()
     for line_number, line in enumerate(text.splitlines(), 1):
         fields = line.split(";")
         if len(fields) < 6:
@@ -59,9 +62,15 @@ def parse_unicode_data(text: str) -> tuple[dict[int, tuple[int, ...]], dict[int,
         if combining_class != 0:
             combining_classes[codepoint] = combining_class
         mapping = fields[5]
-        if mapping and not mapping.startswith("<"):
-            decompositions[codepoint] = tuple(int(token, 16) for token in mapping.split())
-    return decompositions, combining_classes
+        if not mapping:
+            continue
+        if mapping.startswith("<"):
+            compatibility.add(codepoint)
+        else:
+            decompositions[codepoint] = tuple(
+                int(token, 16) for token in mapping.split()
+            )
+    return decompositions, combining_classes, compatibility
 
 
 def parse_derived(
@@ -144,9 +153,23 @@ def render_quick_check_blob(values: list[int]) -> bytes:
     return bytes(payload)
 
 
+def simple_page_bits(
+    excluded: set[int],
+) -> list[int]:
+    """Bit per 256-code-point page: no excluded scalar in the page."""
+    bits = [0] * (0x1100 // 8)
+    excluded_pages = {codepoint >> 8 for codepoint in excluded}
+    for page in range(0x1100):
+        if page in excluded_pages:
+            continue
+        bits[page >> 3] |= 1 << (page & 7)
+    return bits
+
+
 def render(
     decompositions: dict[int, tuple[int, ...]],
     combining_classes: dict[int, int],
+    compatibility: set[int],
     exclusions: set[int],
     quick_check: dict[str, list[tuple[int, int, str]]],
 ) -> str:
@@ -292,6 +315,52 @@ def render(
             "    return composition_second_pages[codepoint >> 8];",
             "}",
             "",
+            "/// Pages where every scalar has no decomposition of the given kind,",
+            "/// combining class 0, and cannot compose with a previous starter.",
+            "/// Normalization can copy such scalars straight to the output.",
+            "const canonical_simple_pages = [_]u8{",
+        ]
+    )
+    canonical_excluded = (
+        set(decompositions)
+        | set(combining_classes)
+        | {combining for _starter, combining, _composed in compositions}
+        # Hangul V and T jamo compose algorithmically and are absent from
+        # the composition table; Hangul syllables decompose algorithmically
+        # and have no UnicodeData mapping.
+        | set(range(0x1161, 0x1176))
+        | set(range(0x11A8, 0x11C3))
+        | set(range(0xAC00, 0xD7A4))
+    )
+    compatibility_excluded = canonical_excluded | compatibility
+    for label, values in (
+        ("canonical_simple_pages", simple_page_bits(canonical_excluded)),
+        ("compatibility_simple_pages", simple_page_bits(compatibility_excluded)),
+    ):
+        if label == "compatibility_simple_pages":
+            lines.extend(
+                [
+                    "};",
+                    "",
+                    "const compatibility_simple_pages = [_]u8{",
+                ]
+            )
+        for index in range(0, len(values), 16):
+            chunk = ", ".join(f"0x{value:02x}" for value in values[index : index + 16])
+            lines.append(f"    {chunk},")
+    lines.extend(
+        [
+            "};",
+            "",
+            "pub inline fn isSimplePage(codepoint: u21, compatibility: bool) bool {",
+            "    const page: usize = @as(usize, codepoint) >> 8;",
+            "    const bits = if (compatibility)",
+            "        compatibility_simple_pages[page >> 3]",
+            "    else",
+            "        canonical_simple_pages[page >> 3];",
+            "    return (bits & (@as(u8, 1) << @intCast(page & 7))) != 0;",
+            "}",
+            "",
             "pub fn composePair(starter: u21, combining: u21) ?u21 {",
             "    const page = starter >> 8;",
             "    var low: usize = composition_index[page];",
@@ -338,13 +407,21 @@ def main() -> None:
         )
     unicode_text = checked_text(Path(sys.argv[1]), UNICODE_DATA_SHA256)
     derived_text = checked_text(Path(sys.argv[2]), DERIVED_NORMALIZATION_SHA256)
-    decompositions, combining_classes = parse_unicode_data(unicode_text)
+    decompositions, combining_classes, compatibility = parse_unicode_data(
+        unicode_text
+    )
     exclusions, quick_check = parse_derived(derived_text)
     if not exclusions or not any(quick_check.values()):
         raise SystemExit("missing Unicode 17 normalization properties")
     output_path = Path(sys.argv[3])
     output_path.write_text(
-        render(decompositions, combining_classes, exclusions, quick_check),
+        render(
+            decompositions,
+            combining_classes,
+            compatibility,
+            exclusions,
+            quick_check,
+        ),
         encoding="utf-8",
     )
     output_path.with_name("quick_check.bin").write_bytes(

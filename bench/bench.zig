@@ -861,6 +861,8 @@ pub fn main() !void {
     benchNormalization("isNormalized ASCII", ascii_runtime, allocator, true);
     benchNormalization("isNormalized mixed", mixed_runtime, allocator, true);
     benchNormalization("NFC ASCII", ascii_runtime, allocator, false);
+    benchNormalization("isNormalized Chinese", chinese_runtime, allocator, true);
+    benchNormalization("NFC Chinese", chinese_runtime, allocator, false);
     benchNormalization("NFC mixed", mixed_runtime, allocator, false);
     {
         var decoded: [256]u21 = undefined;

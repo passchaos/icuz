@@ -246,6 +246,15 @@ fn SegmentEngine(comptime Sink: type) type {
         }
 
         fn feed(self: *Self, codepoint: u21) error{OutOfMemory}!void {
+            // Scalars on a simple page have no decomposition, combining class
+            // 0, and cannot compose with a previous starter.
+            if (codepoint >= 0x80 and
+                data.isSimplePage(codepoint, self.compatibility))
+            {
+                try self.settle();
+                self.pending = codepoint;
+                return;
+            }
             // Unicode 17's longest recursive compatibility decomposition has
             // 18 components; 64 leaves generous headroom.
             var parts: [64]u21 = undefined;
@@ -341,9 +350,15 @@ pub fn isNormalizedCodepoints(
     codepoints: []const u21,
     form: Form,
 ) bool {
+    const compatibility = form == .nfkc or form == .nfkd;
     var starter: ?u21 = null;
     var previous_input_class: u8 = 0;
     for (codepoints) |codepoint| {
+        if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
+            starter = codepoint;
+            previous_input_class = 0;
+            continue;
+        }
         const quick_check = data.quickCheck(codepoint, form);
         if (quick_check == .no) return false;
         const current_class = combining_class.forCodepoint(codepoint);
@@ -593,10 +608,16 @@ fn isNormalizedFormUnchecked(text: []const u8, form: Form) bool {
     const ascii_end = asciiPrefixLen(text);
     if (ascii_end == text.len) return true;
 
+    const compatibility = form == .nfkc or form == .nfkd;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
     var iterator = std.unicode.Utf8Iterator{ .bytes = text, .i = ascii_end };
     while (iterator.nextCodepoint()) |codepoint| {
+        if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
+            starter = codepoint;
+            previous_input_class = 0;
+            continue;
+        }
         const quick_check = data.quickCheck(codepoint, form);
         if (quick_check == .no) return false;
         const current_class = combining_class.forCodepoint(codepoint);
