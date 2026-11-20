@@ -12,7 +12,12 @@ import sys
 
 import icu
 
-DISPLAY_LOCALES = ("en", "fr", "de", "ja", "zh", "ko", "ru", "ar", "hi", "th")
+DISPLAY_LOCALES = (
+    "en", "fr", "de", "ja", "zh", "ko", "ru", "ar", "hi", "th",
+    "ak", "ccp", "chr", "ee", "en-001", "eo", "fa-AF", "ff", "fo",
+    "fr-BE", "ky", "lb", "lrc", "nn", "no", "qu", "se", "su", "vec",
+    "yue", "yue-Hans",
+)
 LANGUAGES = ("en", "fr", "de", "zh", "sr", "und", "zgh", "qqq")
 SCRIPTS = ("Latn", "Hant", "Hans", "Arab", "Zzzz")
 REGIONS = ("US", "419", "ZZ", "EU", "CN", "DE")

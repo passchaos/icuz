@@ -202,10 +202,10 @@ need without pulling in a font or layout engine.
   covers 1850-2150 with cycle era, leap month, and month-length data.
   Validated by a 24,645-case conversion fixture and a 12,888-case PyICU
   formatting fixture.
-- CLDR 48 locale display names for 87 locales: language, script, region,
+- CLDR 48 locale display names for 108 locales: language, script, region,
   and variant names, locale display composition, and likely-subtags
   maximization and minimization (including ICU's favor-script minimization),
-  validated by 329 display-name and 48
+  validated by 1,022 display-name and 48
   likely-subtag PyICU conformance cases.
 - BCP 47 locale tag canonicalization (`canonicalizeLocaleAlloc`): case and
   separator normalization, CLDR 48 language, script, territory, and variant

@@ -115,33 +115,11 @@ fn lookupName(record: LocaleRecord, kind: Kind, code: []const u8) ?[]const u8 {
     return null;
 }
 
-const RootEntry = struct {
-    kind: Kind,
-    code: []const u8,
-    name: []const u8,
-};
-
-const root_entries = [_]RootEntry{
-    .{ .kind = .variant, .code = "POSIX", .name = "Computer" },
-};
-
-fn lookupRootName(kind: Kind, code: []const u8) ?[]const u8 {
-    for (root_entries) |entry| {
-        if (entry.kind == kind and std.mem.eql(u8, entry.code, code)) {
-            return entry.name;
-        }
-    }
-    return null;
-}
-
 /// Localized display name for a language, script, region, or variant code.
 pub fn name(locale_name: []const u8, kind: Kind, code: []const u8) []const u8 {
     if (findLocale(locale_name)) |record| {
         if (lookupName(record, kind, code)) |value| return value;
     }
-    // ICU falls back to its root bundle, which only carries a few legacy
-    // names; otherwise the code itself is returned.
-    if (lookupRootName(kind, code)) |value| return value;
     return code;
 }
 
