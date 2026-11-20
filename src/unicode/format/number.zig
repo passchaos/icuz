@@ -205,6 +205,7 @@ fn buildAffixTextAlloc(
         locale,
         currency_display,
         percent_symbol,
+        null,
     );
     return output.toOwnedSlice(allocator);
 }
@@ -611,6 +612,36 @@ fn rangePluralCategory(
 }
 
 /// Format a floating-point value for one locale.
+/// Field categories reported by `formatFieldsAlloc`.
+pub const NumberField = enum {
+    sign,
+    integer,
+    grouping_separator,
+    decimal_separator,
+    fraction,
+    currency,
+    percent,
+};
+
+/// Byte range of one formatted number field.
+pub const NumberFieldPosition = struct {
+    field: NumberField,
+    start: usize,
+    end: usize,
+};
+
+fn recordField(
+    allocator: std.mem.Allocator,
+    fields: ?*std.ArrayList(NumberFieldPosition),
+    field: NumberField,
+    start: usize,
+    end: usize,
+) error{OutOfMemory}!void {
+    const list = fields orelse return;
+    if (end <= start) return;
+    try list.append(allocator, .{ .field = field, .start = start, .end = end });
+}
+
 pub fn formatAlloc(
     allocator: std.mem.Allocator,
     value: f64,
@@ -626,6 +657,36 @@ pub fn formatAlloc(
             scaled,
             locale_name,
             &options,
+            null,
+        ),
+    };
+}
+
+/// Format a decimal, percent, or currency value and report the byte range of
+/// every numeric field. Scientific and compact styles format normally but
+/// leave `fields` empty.
+pub fn formatFieldsAlloc(
+    allocator: std.mem.Allocator,
+    value: f64,
+    locale_name: []const u8,
+    options: Options,
+    fields: *std.ArrayList(NumberFieldPosition),
+) Error![]u8 {
+    fields.clearRetainingCapacity();
+    const scaled = value * @as(f64, @floatFromInt(options.scale));
+    return switch (options.style) {
+        .decimal, .percent, .currency => formatStandardAlloc(
+            allocator,
+            scaled,
+            locale_name,
+            &options,
+            fields,
+        ),
+        .scientific, .compact => formatAlloc(
+            allocator,
+            value,
+            locale_name,
+            options,
         ),
     };
 }
@@ -694,6 +755,7 @@ fn formatStandardAlloc(
     value: f64,
     locale_name: []const u8,
     options: *const Options,
+    fields: ?*std.ArrayList(NumberFieldPosition),
 ) Error![]u8 {
     var locale_storage: data.Locale = undefined;
     const locale = resolveLocale(locale_name, options, &locale_storage);
@@ -827,6 +889,7 @@ fn formatStandardAlloc(
         options.integer_min_digits,
         options.integer_max_digits,
         if (options.permille) "\u{2030}" else locale.percent,
+        fields,
     );
 }
 
@@ -915,6 +978,7 @@ pub fn formatIntegerAlloc(
         options.integer_min_digits,
         options.integer_max_digits,
         if (options.permille) "\u{2030}" else locale.percent,
+        null,
     );
 }
 
@@ -1262,6 +1326,7 @@ fn formatScientificAlloc(
             .max_fraction_digits = max_fraction,
             .use_grouping = false,
         },
+        null,
     );
     defer allocator.free(mantissa_text);
 
@@ -1500,6 +1565,7 @@ fn formatCompactAlloc(
             .max_fraction_digits = fraction_digits,
             .use_grouping = false,
         },
+        null,
     );
     defer allocator.free(scaled_text);
 
@@ -1606,6 +1672,7 @@ fn wrapCurrencyAlloc(
             locale,
             display_text,
             locale.percent,
+            null,
         );
     } else {
         if (negative) {
@@ -1623,6 +1690,7 @@ fn wrapCurrencyAlloc(
             locale,
             display_text,
             locale.percent,
+            null,
         );
     }
     try output.appendSlice(allocator, number_text);
@@ -1634,6 +1702,7 @@ fn wrapCurrencyAlloc(
             locale,
             display_text,
             locale.percent,
+            null,
         );
     } else {
         try appendAffix(
@@ -1643,6 +1712,7 @@ fn wrapCurrencyAlloc(
             locale,
             display_text,
             locale.percent,
+            null,
         );
     }
     return output.toOwnedSlice(allocator);
@@ -1663,7 +1733,13 @@ fn compactFallback(
         fallback_options.min_fraction_digits = 0;
         fallback_options.max_fraction_digits = compactSkeletonDigits(value);
     }
-    return formatStandardAlloc(allocator, value, locale_name, &fallback_options);
+    return formatStandardAlloc(
+        allocator,
+        value,
+        locale_name,
+        &fallback_options,
+        null,
+    );
 }
 
 fn decimalFallback(
@@ -1674,7 +1750,13 @@ fn decimalFallback(
 ) Error![]u8 {
     var fallback_options = options.*;
     fallback_options.style = .decimal;
-    return formatStandardAlloc(allocator, value, locale_name, &fallback_options);
+    return formatStandardAlloc(
+        allocator,
+        value,
+        locale_name,
+        &fallback_options,
+        null,
+    );
 }
 
 fn appendCodepoint(
@@ -1788,6 +1870,7 @@ fn formatCurrencyNameAlloc(
             .max_fraction_digits = fraction_digits,
             .use_grouping = options.use_grouping,
         },
+        null,
     );
     defer allocator.free(formatted);
 
@@ -1877,7 +1960,9 @@ fn formatParts(
     min_integer_digits: u8,
     max_integer_digits: u8,
     percent_symbol: []const u8,
+    fields: ?*std.ArrayList(NumberFieldPosition),
 ) Error![]u8 {
+    if (fields) |list| list.clearRetainingCapacity();
     var fraction_len = fraction_digits.len;
     while (fraction_len > min_fraction and
         fraction_digits[fraction_len - 1] == '0')
@@ -1911,10 +1996,19 @@ fn formatParts(
             locale,
             currency_display,
             percent_symbol,
+            fields,
         );
     } else {
-        if (negative) try output.appendSlice(allocator, locale.minus);
-        if (show_plus) try output.appendSlice(allocator, locale.plus);
+        if (negative) {
+            const start = output.items.len;
+            try output.appendSlice(allocator, locale.minus);
+            try recordField(allocator, fields, .sign, start, output.items.len);
+        }
+        if (show_plus) {
+            const start = output.items.len;
+            try output.appendSlice(allocator, locale.plus);
+            try recordField(allocator, fields, .sign, start, output.items.len);
+        }
         try appendAffix(
             allocator,
             &output,
@@ -1922,6 +2016,7 @@ fn formatParts(
             locale,
             currency_display,
             percent_symbol,
+            fields,
         );
     }
 
@@ -1933,13 +2028,30 @@ fn formatParts(
         locale,
         use_grouping,
         grouping,
+        fields,
     );
 
     if (fraction_len > 0) {
+        const decimal_start = output.items.len;
         try output.appendSlice(allocator, locale.decimal);
+        try recordField(
+            allocator,
+            fields,
+            .decimal_separator,
+            decimal_start,
+            output.items.len,
+        );
+        const fraction_start = output.items.len;
         for (fraction_digits[0..fraction_len]) |byte| {
             try appendDigit(allocator, &output, byte - '0', locale);
         }
+        try recordField(
+            allocator,
+            fields,
+            .fraction,
+            fraction_start,
+            output.items.len,
+        );
     }
 
     if (negative_pattern) {
@@ -1950,6 +2062,7 @@ fn formatParts(
             locale,
             currency_display,
             percent_symbol,
+            fields,
         );
     } else {
         try appendAffix(
@@ -1959,6 +2072,7 @@ fn formatParts(
             locale,
             currency_display,
             percent_symbol,
+            fields,
         );
     }
     return output.toOwnedSlice(allocator);
@@ -2221,6 +2335,7 @@ fn appendGroupedDigits(
     locale: *const data.Locale,
     use_grouping: bool,
     grouping: GroupingMode,
+    fields: ?*std.ArrayList(NumberFieldPosition),
 ) Error!void {
     const length = digits.len;
     var primary = @as(usize, pattern.group_primary);
@@ -2238,9 +2353,11 @@ fn appendGroupedDigits(
         .min2 => length > primary + 1,
     };
     if (!enabled or primary == 0 or length <= primary) {
+        const start = output.items.len;
         for (digits) |byte| {
             try appendDigit(allocator, output, byte - '0', locale);
         }
+        try recordField(allocator, fields, .integer, start, output.items.len);
         return;
     }
 
@@ -2262,9 +2379,11 @@ fn appendGroupedDigits(
     }
     if (remaining > 0) {
         // Extremely long digit strings fall back to one group.
+        const start = output.items.len;
         for (digits) |byte| {
             try appendDigit(allocator, output, byte - '0', locale);
         }
+        try recordField(allocator, fields, .integer, start, output.items.len);
         return;
     }
 
@@ -2272,11 +2391,29 @@ fn appendGroupedDigits(
     var group_index = count;
     while (group_index > 0) {
         group_index -= 1;
-        if (index > 0) try output.appendSlice(allocator, locale.group);
+        if (index > 0) {
+            const separator_start = output.items.len;
+            try output.appendSlice(allocator, locale.group);
+            try recordField(
+                allocator,
+                fields,
+                .grouping_separator,
+                separator_start,
+                output.items.len,
+            );
+        }
+        const group_start = output.items.len;
         const end = index + sizes[group_index];
         for (digits[index..end]) |byte| {
             try appendDigit(allocator, output, byte - '0', locale);
         }
+        try recordField(
+            allocator,
+            fields,
+            .integer,
+            group_start,
+            output.items.len,
+        );
         index = end;
     }
 }
@@ -2301,6 +2438,7 @@ fn appendAffix(
     locale: *const data.Locale,
     currency_display: []const u8,
     percent_symbol: []const u8,
+    fields: ?*std.ArrayList(NumberFieldPosition),
 ) Error!void {
     var in_quote = false;
     var index: usize = 0;
@@ -2318,7 +2456,15 @@ fn appendAffix(
         if (!in_quote and byte == 0xc2 and index + 1 < affix.len and
             affix[index + 1] == 0xa4)
         {
+            const start = output.items.len;
             try output.appendSlice(allocator, currency_display);
+            try recordField(
+                allocator,
+                fields,
+                .currency,
+                start,
+                output.items.len,
+            );
             if (index + 3 < affix.len and affix[index + 2] == 0xc2 and
                 affix[index + 3] == 0xa4)
             {
@@ -2335,7 +2481,15 @@ fn appendAffix(
             continue;
         }
         if (!in_quote and byte == '%') {
+            const start = output.items.len;
             try output.appendSlice(allocator, percent_symbol);
+            try recordField(
+                allocator,
+                fields,
+                .percent,
+                start,
+                output.items.len,
+            );
             continue;
         }
         try output.append(allocator, byte);
@@ -2859,6 +3013,83 @@ test "percent and currency formatting" {
     });
     defer allocator.free(euro);
     try testing.expectEqualStrings("1.234,50\u{00a0}\u{20ac}", euro);
+}
+
+test "number field positions" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var fields = std.ArrayList(NumberFieldPosition).empty;
+    defer fields.deinit(allocator);
+    const text = try formatFieldsAlloc(allocator, 1234.5, "en", .{}, &fields);
+    defer allocator.free(text);
+    try testing.expectEqualStrings("1,234.5", text);
+    const expected = [_]struct { field: NumberField, value: []const u8 }{
+        .{ .field = .integer, .value = "1" },
+        .{ .field = .grouping_separator, .value = "," },
+        .{ .field = .integer, .value = "234" },
+        .{ .field = .decimal_separator, .value = "." },
+        .{ .field = .fraction, .value = "5" },
+    };
+    try testing.expectEqual(expected.len, fields.items.len);
+    for (expected, fields.items) |item, position| {
+        try testing.expectEqual(item.field, position.field);
+        try testing.expectEqualStrings(
+            item.value,
+            text[position.start..position.end],
+        );
+    }
+
+    var currency_fields = std.ArrayList(NumberFieldPosition).empty;
+    defer currency_fields.deinit(allocator);
+    const currency = try formatFieldsAlloc(
+        allocator,
+        -1234.5,
+        "en",
+        .{ .style = .currency, .currency = "USD" },
+        &currency_fields,
+    );
+    defer allocator.free(currency);
+    try testing.expectEqualStrings("-$1,234.50", currency);
+    const currency_expected = [_]struct {
+        field: NumberField,
+        value: []const u8,
+    }{
+        .{ .field = .sign, .value = "-" },
+        .{ .field = .currency, .value = "$" },
+        .{ .field = .integer, .value = "1" },
+        .{ .field = .grouping_separator, .value = "," },
+        .{ .field = .integer, .value = "234" },
+        .{ .field = .decimal_separator, .value = "." },
+        .{ .field = .fraction, .value = "50" },
+    };
+    try testing.expectEqual(currency_expected.len, currency_fields.items.len);
+    for (currency_expected, currency_fields.items) |item, position| {
+        try testing.expectEqual(item.field, position.field);
+        try testing.expectEqualStrings(
+            item.value,
+            currency[position.start..position.end],
+        );
+    }
+
+    var percent_fields = std.ArrayList(NumberFieldPosition).empty;
+    defer percent_fields.deinit(allocator);
+    const percent = try formatFieldsAlloc(
+        allocator,
+        0.25,
+        "en",
+        .{ .style = .percent },
+        &percent_fields,
+    );
+    defer allocator.free(percent);
+    try testing.expectEqualStrings("25%", percent);
+    try testing.expectEqual(@as(usize, 2), percent_fields.items.len);
+    try testing.expectEqual(NumberField.integer, percent_fields.items[0].field);
+    try testing.expectEqual(NumberField.percent, percent_fields.items[1].field);
+    try testing.expectEqualStrings(
+        "%",
+        percent[percent_fields.items[1].start..percent_fields.items[1].end],
+    );
 }
 
 test "scientific and compact formatting" {
