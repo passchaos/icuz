@@ -345,6 +345,8 @@ pub const formatTimeAlloc = dates_mod.formatTimeAlloc;
 pub const formatTimeWithZoneAlloc = dates_mod.formatTimeWithZoneAlloc;
 pub const formatDateTimeAlloc = dates_mod.formatDateTimeAlloc;
 pub const formatDatePatternAlloc = dates_mod.formatPatternAlloc;
+pub const DateFieldPosition = dates_mod.DateFieldPosition;
+pub const formatDatePatternFieldsAlloc = dates_mod.formatPatternFieldsAlloc;
 pub const dateTimeFromUnixSeconds = dates_mod.fromUnixSeconds;
 pub const dateTimeFromUnixSecondsInZone =
     dates_mod.dateTimeFromUnixSecondsInZone;

@@ -57,6 +57,31 @@ const FieldOverrides = struct {
     era_narrow: ?[]const u8 = null,
 };
 
+/// Format a custom CLDR date/time pattern and report the byte range of
+/// every expanded pattern field in `fields`.
+pub fn formatPatternFieldsAlloc(
+    allocator: std.mem.Allocator,
+    pattern: []const u8,
+    date_time: DateTime,
+    locale_name: []const u8,
+    zone_name: []const u8,
+    fields: *std.ArrayList(DateFieldPosition),
+) Error![]u8 {
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
+    return formatPatternWithLocaleFields(
+        allocator,
+        pattern,
+        date_time,
+        locale,
+        locale_name,
+        .{ .label = zone_name },
+        .{},
+        fields,
+    );
+}
+
 /// Format a date using the locale's full/long/medium/short date pattern.
 pub fn formatDateAlloc(
     allocator: std.mem.Allocator,
@@ -979,6 +1004,14 @@ fn resolveLocale(
     return storage;
 }
 
+/// Byte range of one pattern field in formatted output.
+pub const DateFieldPosition = struct {
+    /// CLDR pattern letter, for example 'y', 'M', 'd', 'H', 'm', 's', or 'a'.
+    field: u8,
+    start: usize,
+    end: usize,
+};
+
 fn formatPatternWithLocale(
     allocator: std.mem.Allocator,
     pattern: []const u8,
@@ -987,6 +1020,28 @@ fn formatPatternWithLocale(
     locale_name: []const u8,
     zone: ZoneInfo,
     overrides: FieldOverrides,
+) Error![]u8 {
+    return formatPatternWithLocaleFields(
+        allocator,
+        pattern,
+        date_time,
+        locale,
+        locale_name,
+        zone,
+        overrides,
+        null,
+    );
+}
+
+fn formatPatternWithLocaleFields(
+    allocator: std.mem.Allocator,
+    pattern: []const u8,
+    date_time: DateTime,
+    locale: *const data.Locale,
+    locale_name: []const u8,
+    zone: ZoneInfo,
+    overrides: FieldOverrides,
+    fields: ?*std.ArrayList(DateFieldPosition),
 ) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
@@ -1029,6 +1084,7 @@ fn formatPatternWithLocale(
                 index = end;
                 continue;
             }
+            const field_start = output.items.len;
             try appendField(
                 allocator,
                 &output,
@@ -1040,6 +1096,16 @@ fn formatPatternWithLocale(
                 zone,
                 overrides,
             );
+            if (fields) |list| {
+                const field_end = output.items.len;
+                if (field_end > field_start) {
+                    try list.append(allocator, .{
+                        .field = byte,
+                        .start = field_start,
+                        .end = field_end,
+                    });
+                }
+            }
             index = end;
             continue;
         }
@@ -2966,6 +3032,47 @@ test "custom patterns and Unix timestamps" {
     );
     defer allocator.free(date_time);
     try testing.expectEqualStrings("Nov 18, 2026, 3:04:05\u{202f}PM", date_time);
+}
+
+test "date field positions" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var fields = std.ArrayList(DateFieldPosition).empty;
+    defer fields.deinit(allocator);
+    const text = try formatPatternFieldsAlloc(
+        allocator,
+        "yyyy-MM-dd HH:mm:ss",
+        .{
+            .year = 2026,
+            .month = 11,
+            .day = 18,
+            .hour = 15,
+            .minute = 4,
+            .second = 5,
+        },
+        "en",
+        "UTC",
+        &fields,
+    );
+    defer allocator.free(text);
+    try testing.expectEqualStrings("2026-11-18 15:04:05", text);
+    try testing.expectEqual(@as(usize, 6), fields.items.len);
+    const expected = [_]struct { field: u8, value: []const u8 }{
+        .{ .field = 'y', .value = "2026" },
+        .{ .field = 'M', .value = "11" },
+        .{ .field = 'd', .value = "18" },
+        .{ .field = 'H', .value = "15" },
+        .{ .field = 'm', .value = "04" },
+        .{ .field = 's', .value = "05" },
+    };
+    for (expected, fields.items) |item, position| {
+        try testing.expectEqual(item.field, position.field);
+        try testing.expectEqualStrings(
+            item.value,
+            text[position.start..position.end],
+        );
+    }
 }
 
 test "time zone name conformance" {

@@ -136,7 +136,8 @@ need without pulling in a font or layout engine.
   absent fields, validated by a 1,200-case ICU parsing fixture across 30
   locales and eight patterns. Calendar arithmetic (`addDays`, `addMonths`,
   `addYears`, `fieldDifference`) matches ICU's clamping and whole-field
-  semantics.
+  semantics, and `formatPatternFieldsAlloc` reports the byte range of every
+  expanded pattern field for editor-style highlighting.
 - Non-Gregorian calendar conversion and formatting for Buddhist, Japanese,
   ROC, Islamic civil/tbla/umalqura, Hebrew, Chinese, Persian, Indian,
   Coptic, Ethiopic, Ethiopic Amete Alem, and ISO-8601 calendars, following
@@ -406,10 +407,12 @@ search. Normalization runs per starter segment: one-code-point segments skip
 canonical ordering and composition entirely, a composition-second page table
 keeps ordinary starters out of the composition binary search, and simple-page
 bitmaps let CJK and other non-decomposing scripts skip all three per-scalar
-lookups. UTF-8 validation is fused into the quick check, the quick check
-bulk-skips interior ASCII runs, stable spans before and between changes are
-copied verbatim, and the segment engine streams UTF-8 straight to the output
-sink with ASCII runs bulk-copied.
+lookups. UTF-8 validation is fused into the quick check through an inlined
+scalar decoder that rejects truncation, overlongs, and surrogates without the
+generic `std.unicode` helpers, the quick check bulk-skips interior ASCII
+runs, stable spans before and between changes are copied verbatim, and the
+segment engine streams UTF-8 straight to the output sink with ASCII runs
+bulk-copied.
 
 Collation keeps five fast paths: a 128-entry ASCII table, a compile-time table
 for Latin-1 and Latin Extended-A/B (decomposed on the stack) that bypasses the
