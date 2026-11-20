@@ -1037,6 +1037,72 @@ fn applyPassStreamingAlloc(
     return output;
 }
 
+
+const SimpleCacheEntry = struct {
+    codepoint: u21 = 0x110000,
+    entry: ?Entry = null,
+};
+
+/// True when every entry in the pass is a single-code-point literal mapping
+/// with no context. Such passes can cache first-code-point lookups because a
+/// match never depends on neighboring input.
+fn isSimpleRange(range: EntryRange) bool {
+    if (range.has_lead or range.has_negated) return false;
+    if (range.literals_start == range.literals_end) return false;
+    if (range.end - range.start > 1024) return false;
+    var index = range.start;
+    while (index < range.end) : (index += 1) {
+        const entry = entryAt(index);
+        if (entry.flags != 0 or entry.source_len != 1 or
+            entry.before_context != 0 or entry.after_context != 0)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+fn applySimplePassAlloc(
+    allocator: std.mem.Allocator,
+    codepoints: []const u21,
+    range: EntryRange,
+    filter_set: u32,
+) Error!std.ArrayList(u21) {
+    var output = std.ArrayList(u21).empty;
+    errdefer output.deinit(allocator);
+    try output.ensureTotalCapacity(
+        allocator,
+        codepoints.len + codepoints.len / 2 + 16,
+    );
+    var cache: [256]SimpleCacheEntry = [_]SimpleCacheEntry{.{}} ** 256;
+    var index: usize = 0;
+    while (index < codepoints.len) : (index += 1) {
+        const codepoint = codepoints[index];
+        const slot = &cache[(@as(u32, codepoint) *% 0x9E3779B1) >> 24];
+        var entry: ?Entry = null;
+        if (slot.codepoint == codepoint) {
+            entry = slot.entry;
+        } else {
+            entry = findMatchInRange(
+                range,
+                codepoints,
+                index,
+                output.items,
+                filter_set,
+            );
+            slot.* = .{ .codepoint = codepoint, .entry = entry };
+        }
+        if (entry) |matched| {
+            for (0..@as(usize, matched.target_len)) |offset| {
+                try output.append(allocator, targetCodepoint(matched, offset));
+            }
+        } else {
+            try output.append(allocator, codepoint);
+        }
+    }
+    return output;
+}
+
 fn applyPassAlloc(
     allocator: std.mem.Allocator,
     codepoints: []const u21,
@@ -1044,6 +1110,9 @@ fn applyPassAlloc(
     filter_set: u32,
     streamable: bool,
 ) Error!std.ArrayList(u21) {
+    if (codepoints.len >= 8 and isSimpleRange(range)) {
+        return applySimplePassAlloc(allocator, codepoints, range, filter_set);
+    }
     if (codepoints.len >= 8 and streamable) {
         return applyPassStreamingAlloc(allocator, codepoints, range, filter_set);
     }
