@@ -351,6 +351,11 @@ pub const Runner = struct {
                         }
                         continue;
                     }
+                    if (expected <= 0x7f and self.text[pos] == expected) {
+                        pos += 1;
+                        pc += 1;
+                        continue;
+                    }
                     const decoded = nextScalar(self.text, pos) orelse {
                         if (!try self.backtrackTo(bt_base, journal_base, atomic_base, &pc, &pos)) {
                             return null;
@@ -369,6 +374,17 @@ pub const Runner = struct {
                 .char_ci => |expected| {
                     if (pos >= self.active_limit) {
                         self.hit_end = true;
+                        if (!try self.backtrackTo(bt_base, journal_base, atomic_base, &pc, &pos)) {
+                            return null;
+                        }
+                        continue;
+                    }
+                    if (self.text[pos] < 0x80) {
+                        if (expected <= 0x7f and asciiFold(self.text[pos]) == expected) {
+                            pos += 1;
+                            pc += 1;
+                            continue;
+                        }
                         if (!try self.backtrackTo(bt_base, journal_base, atomic_base, &pc, &pos)) {
                             return null;
                         }
@@ -426,6 +442,18 @@ pub const Runner = struct {
                         }
                         continue;
                     }
+                    const byte = self.text[pos];
+                    if (byte < 0x80) {
+                        if (!self.sets[index].contains(byte)) {
+                            if (!try self.backtrackTo(bt_base, journal_base, atomic_base, &pc, &pos)) {
+                                return null;
+                            }
+                            continue;
+                        }
+                        pos += 1;
+                        pc += 1;
+                        continue;
+                    }
                     const decoded = nextScalar(self.text, pos) orelse {
                         if (!try self.backtrackTo(bt_base, journal_base, atomic_base, &pc, &pos)) {
                             return null;
@@ -447,6 +475,24 @@ pub const Runner = struct {
                         if (!try self.backtrackTo(bt_base, journal_base, atomic_base, &pc, &pos)) {
                             return null;
                         }
+                        continue;
+                    }
+                    const byte = self.text[pos];
+                    if (byte < 0x80) {
+                        const blocked = if (dot.dotall)
+                            false
+                        else if (dot.unix_lines)
+                            byte == '\n'
+                        else
+                            isLineTerminator(byte);
+                        if (blocked) {
+                            if (!try self.backtrackTo(bt_base, journal_base, atomic_base, &pc, &pos)) {
+                                return null;
+                            }
+                            continue;
+                        }
+                        pos += 1;
+                        pc += 1;
                         continue;
                     }
                     const decoded = nextScalar(self.text, pos) orelse {
@@ -661,6 +707,14 @@ pub const Runner = struct {
                 self.hit_end = true;
                 return null;
             }
+            if (self.text[pos] < 0x80) {
+                if (pattern[pattern_index] == asciiFold(self.text[pos])) {
+                    pattern_index += 1;
+                    pos += 1;
+                    continue;
+                }
+                return null;
+            }
             const decoded = nextScalar(self.text, pos) orelse {
                 self.hit_end = true;
                 return null;
@@ -789,18 +843,26 @@ pub const Runner = struct {
         if (pos >= self.look_end) self.hit_end = true;
         var current_is_word = false;
         if (pos < self.look_end) {
-            const decoded = nextScalar(self.text, pos) orelse return false;
-            if (properties.isGraphemeExtend(decoded.cp) or
-                properties.category(decoded.cp) == .Cf)
-            {
-                return false;
+            if (self.text[pos] < 0x80) {
+                current_is_word = asciiWord(self.text[pos]);
+            } else {
+                const decoded = nextScalar(self.text, pos) orelse return false;
+                if (properties.isGraphemeExtend(decoded.cp) or
+                    properties.category(decoded.cp) == .Cf)
+                {
+                    return false;
+                }
+                current_is_word = self.word_set.contains(decoded.cp);
             }
-            current_is_word = self.word_set.contains(decoded.cp);
         }
 
         var previous_is_word = false;
         var cursor = pos;
         while (cursor > self.look_start) {
+            if (self.text[cursor - 1] < 0x80) {
+                previous_is_word = asciiWord(self.text[cursor - 1]);
+                break;
+            }
             const previous = prevScalar(self.text, cursor) orelse break;
             cursor = previous.start;
             if (properties.isGraphemeExtend(previous.cp) or
@@ -929,6 +991,16 @@ fn prevScalar(text: []const u8, pos: usize) ?Previous {
     while (start > 0 and (text[start] & 0xc0) == 0x80) start -= 1;
     const cp = std.unicode.utf8Decode(text[start..pos]) catch return null;
     return .{ .cp = cp, .start = start };
+}
+
+fn asciiFold(byte: u8) u8 {
+    return if (byte >= 'A' and byte <= 'Z') byte + ('a' - 'A') else byte;
+}
+
+fn asciiWord(byte: u8) bool {
+    return (byte >= 'a' and byte <= 'z') or
+        (byte >= 'A' and byte <= 'Z') or
+        (byte >= '0' and byte <= '9') or byte == '_';
 }
 
 const Folded = struct {
