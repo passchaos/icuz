@@ -45,9 +45,11 @@ SYSTEMS = (
     (3, "zh_TW@calendar=roc"),
     (4, "en_US@calendar=islamic-umalqura"),
     (5, "fa_IR@calendar=persian"),
+    (6, "he_IL@calendar=hebrew"),
     (7, "hi_IN@calendar=indian"),
     (8, "ar_EG@calendar=coptic"),
     (9, "am_ET@calendar=ethiopic"),
+    (10, "zh_CN@calendar=chinese"),
 )
 ZONES = ("UTC", "America/New_York", "Asia/Tokyo")
 INITIAL_MILLIS = (100_000_000_000, 1_600_000_000_000, 1_700_000_000_000)
@@ -213,6 +215,10 @@ def main() -> int:
                 script = OPS
                 if system in SET_YEAR:
                     script = ((0, 1, SET_YEAR[system]),) + OPS
+                if system in (6, 10):
+                    # Hebrew and Chinese month slots differ from icuz's
+                    # CLDR-facing numbering; validate field reads only.
+                    script = ()
                 for opcode, field, amount in script:
                     if opcode == 0:
                         ucal_set(calendar, field, amount)

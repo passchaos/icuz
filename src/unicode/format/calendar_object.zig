@@ -202,7 +202,14 @@ pub const Calendar = struct {
         return switch (field) {
             .era => @intCast(date.era),
             .year => date.year,
-            .month => @as(i32, date.month) - 1,
+            .month => switch (self.system) {
+                .hebrew => blk: {
+                    const month: i32 = date.month;
+                    if (date.leap_year) break :blk month - 1;
+                    break :blk month - 1 + @intFromBool(month >= 6);
+                },
+                else => @as(i32, date.month) - 1,
+            },
             .date => date.day,
             .day_of_year => self.dayOfYear(local.days, date),
             .day_of_week => @intCast(@mod(local.days + 4, 7) + 1),
