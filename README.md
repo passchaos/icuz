@@ -422,15 +422,16 @@ need without pulling in a font or layout engine.
   package. Validated against ICU `ures_openDirect` and `ures_open` traces
   for standalone, pooled, fallback, and packaged lookups.
 - UTF-16 validation, iteration, and UTF-8/UTF-16 conversion helpers.
-- Charset conversion for UTF-8/16/32, UTF-7, HZ, SCSU, ASCII, Latin-1, 28
-  WHATWG legacy single-byte encodings, 28 IBM/DOS/EBCDIC code pages
-  (437/850/852/855/857/858/860-865/869/1026/1047/1140-1149/1160/1162/1164),
-  GBK/GB18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, and EUC-KR, with
-  strict/replace/ignore error modes and ICU-style label resolution. UTF-7,
-  HZ, and SCSU are validated by a 76-record ICU `ucnv` differential fixture
-  covering RFC examples, supplementary code points, direct-set characters,
-  dynamic/extended SCSU windows, and GB2312 text; the IBM page tables are
-  generated from ICU converters.
+- Charset conversion for UTF-8/16/32, UTF-7, HZ, SCSU, BOCU-1, ASCII,
+  Latin-1, 28 WHATWG legacy single-byte encodings, 28 IBM/DOS/EBCDIC code
+  pages (437/850/852/855/857/858/860-865/869/1026/1047/1140-1149/1160/
+  1162/1164), GBK/GB18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, and EUC-KR,
+  with strict/replace/ignore error modes and ICU-style label resolution.
+  UTF-7, HZ, SCSU, and BOCU-1 are validated by a 104-record ICU `ucnv`
+  differential fixture covering RFC examples, supplementary code points,
+  direct-set characters, dynamic/extended SCSU windows, BOCU-1 difference
+  runs, and GB2312 text; the IBM page tables are generated from ICU
+  converters.
 - ICU-compatible charset detection (`detectCharset`, `detectCharsetsAlloc`):
   UTF-8, UTF-16/32 (BE/LE), ISO-8859-1/2/5/6/7/8/8-I/9, windows-1250/1251/
   1252/1253/1254/1255/1256, KOI8-R, Shift_JIS, GB18030, EUC-JP, EUC-KR,

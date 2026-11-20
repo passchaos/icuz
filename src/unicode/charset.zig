@@ -19,6 +19,7 @@ const iso2022jp = @import("charset/iso2022jp.zig");
 const utf7 = @import("charset/utf7.zig");
 const hz = @import("charset/hz.zig");
 const scsu = @import("charset/scsu.zig");
+const bocu1 = @import("charset/bocu1.zig");
 
 pub const DecodeResult = types.DecodeResult;
 pub const EncodeResult = types.EncodeResult;
@@ -32,6 +33,7 @@ pub const Encoding = enum {
     utf7,
     hz,
     scsu,
+    bocu1,
     ascii,
     latin1,
     ibm866,
@@ -115,6 +117,7 @@ pub fn encodingName(encoding: Encoding) []const u8 {
         .utf7 => "UTF-7",
         .hz => "HZ",
         .scsu => "SCSU",
+        .bocu1 => "BOCU-1",
         .ascii => "US-ASCII",
         .latin1 => "ISO-8859-1",
         .ibm866 => "IBM866",
@@ -177,6 +180,7 @@ pub fn maxCharSize(encoding: Encoding) u8 {
         .utf7, .iso_2022_jp => 8,
         .hz => 4,
         .scsu => 6,
+        .bocu1 => 4,
         else => unreachable,
     };
 }
@@ -240,6 +244,7 @@ const base_aliases = [_]Alias{
     .{ .name = "hz", .encoding = .hz },
     .{ .name = "hzgb2312", .encoding = .hz },
     .{ .name = "scsu", .encoding = .scsu },
+    .{ .name = "bocu1", .encoding = .bocu1 },
 
     .{ .name = "ascii", .encoding = .ascii },
     .{ .name = "usascii", .encoding = .ascii },
@@ -547,6 +552,7 @@ pub const Decoder = struct {
     utf7_state: utf7.State = .{},
     hz_state: hz.State = .{},
     scsu_state: scsu.State = .{},
+    bocu1_state: bocu1.State = .{},
 
     pub fn init(encoding: Encoding) Decoder {
         return .{ .encoding = encoding };
@@ -563,6 +569,7 @@ pub const Decoder = struct {
             .utf7 => utf7.next(&self.utf7_state, input, index),
             .hz => hz.next(&self.hz_state, input, index),
             .scsu => scsu.next(&self.scsu_state, input, index),
+            .bocu1 => bocu1.next(&self.bocu1_state, input, index),
             .ascii => asciiNext(input, index),
             .latin1 => latin1Next(input, index),
             .x_user_defined => xUserDefinedNext(input, index),
@@ -585,6 +592,7 @@ pub const Encoder = struct {
     utf7_state: utf7.State = .{},
     hz_state: hz.State = .{},
     scsu_state: scsu.State = .{},
+    bocu1_state: bocu1.State = .{},
 
     pub fn init(encoding: Encoding) Encoder {
         return .{ .encoding = encoding };
@@ -600,6 +608,7 @@ pub const Encoder = struct {
             .utf7 => utf7.encode(&self.utf7_state, codepoint, out),
             .hz => hz.encode(&self.hz_state, codepoint, out),
             .scsu => scsu.encode(&self.scsu_state, codepoint, out),
+            .bocu1 => bocu1.encode(&self.bocu1_state, codepoint, out),
             .ascii => if (codepoint < 0x80)
                 writeByte(codepoint, out)
             else
@@ -627,6 +636,7 @@ pub const Encoder = struct {
             .utf7 => utf7.flush(&self.utf7_state, out),
             .hz => hz.flush(&self.hz_state, out),
             .scsu => scsu.flush(&self.scsu_state, out),
+            .bocu1 => bocu1.flush(&self.bocu1_state, out),
             .iso_2022_jp => iso2022jp.flush(&self.state, out),
             else => 0,
         };
@@ -1885,7 +1895,45 @@ test "SCSU conversion" {
     try testing.expectEqual(@as(u8, 6), maxCharSize(.scsu));
 }
 
-test "ICU UTF-7, HZ, and SCSU conformance fixture" {
+test "BOCU-1 conversion" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const encoded = try encodeAlloc(allocator, "Hello", .bocu1, .{});
+    defer allocator.free(encoded);
+    try testing.expectEqualSlices(
+        u8,
+        &[_]u8{ 0x98, 0xB5, 0xBC, 0xBC, 0xBF },
+        encoded,
+    );
+    const decoded = try decodeAlloc(allocator, encoded, .bocu1, .{});
+    defer allocator.free(decoded);
+    try testing.expectEqualStrings("Hello", decoded);
+
+    const cases = [_][]const u8{
+        "Hello, World!",
+        "Привет",
+        "日本語テスト",
+        "😀😁😂",
+        "€£¥",
+        "\x00\t\n\r",
+        "→←↑↓",
+        "𝕳𝖊𝖑𝖑𝖔",
+        "café naïve",
+    };
+    for (cases) |text| {
+        const bytes = try encodeAlloc(allocator, text, .bocu1, .{});
+        defer allocator.free(bytes);
+        const roundtrip = try decodeAlloc(allocator, bytes, .bocu1, .{});
+        defer allocator.free(roundtrip);
+        try testing.expectEqualStrings(text, roundtrip);
+    }
+    try testing.expectEqualStrings("BOCU-1", encodingName(.bocu1));
+    try testing.expectEqual(@as(?Encoding, .bocu1), fromLabel("BOCU-1"));
+    try testing.expectEqual(@as(u8, 4), maxCharSize(.bocu1));
+}
+
+test "ICU UTF-7, HZ, SCSU, and BOCU-1 conformance fixture" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
     const fixture = @embedFile("charset/stateful_conformance.bin");
@@ -1895,7 +1943,7 @@ test "ICU UTF-7, HZ, and SCSU conformance fixture" {
     try testing.expectEqual(@as(u8, 1), fixture[4]);
     const record_count = std.mem.readInt(u32, fixture[8..12], .little);
 
-    const encodings = [_]Encoding{ .utf7, .hz, .scsu };
+    const encodings = [_]Encoding{ .utf7, .hz, .scsu, .bocu1 };
     var cursor: usize = 12;
     var failures: usize = 0;
     var record_index: usize = 0;
@@ -1942,7 +1990,7 @@ test "ICU UTF-7, HZ, and SCSU conformance fixture" {
                     continue;
                 };
                 defer allocator.free(actual);
-                if (encoding == .utf7) {
+                if (encoding == .utf7 or encoding == .bocu1) {
                     if (!std.mem.eql(u8, actual, expected)) {
                         failures += 1;
                         if (failures <= 10) {
