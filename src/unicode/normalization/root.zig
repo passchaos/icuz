@@ -807,10 +807,13 @@ pub fn isNormalized(text: []const u8) error{InvalidUtf8}!bool {
 
 /// Validate UTF-8 and report whether `text` is in `form` without allocating.
 pub fn isNormalizedForm(text: []const u8, form: Form) error{InvalidUtf8}!bool {
-    // Validate the whole string: a quick-check failure may short-circuit
-    // before later invalid bytes.
+    // The scan validates every scalar it visits. A true result therefore
+    // proves the whole string is valid and no second pass is needed. A false
+    // result may short-circuit before later invalid bytes, so validate the
+    // whole string before reporting "not normalized".
+    if (isNormalizedFormUnchecked(text, form)) return true;
     if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
-    return isNormalizedFormUnchecked(text, form);
+    return false;
 }
 
 /// Report whether prevalidated UTF-8 is in NFC without allocating.
@@ -1533,4 +1536,5 @@ test "Unicode 17 NFC normalization conformance" {
     }
     try std.testing.expectEqual(conformance.len, fixture_offset);
 }
+
 
