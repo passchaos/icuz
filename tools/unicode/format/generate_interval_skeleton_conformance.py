@@ -19,6 +19,9 @@ import icu
 LOCALES = (
     "en", "fr", "de", "es", "it", "pt", "ru", "pl", "ar", "hi",
     "th", "ja", "zh", "ko", "fa", "tr", "vi", "nl", "sv", "da",
+    "ak", "ccp", "chr", "ee", "en-001", "eo", "ff", "fo",
+    "fr-BE", "ky", "lb", "no", "qu", "se", "su", "vec",
+    "yue-Hans",
 )
 
 SKELETONS = (

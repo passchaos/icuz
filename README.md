@@ -251,14 +251,14 @@ need without pulling in a font or layout engine.
   `Duration` with years through nanoseconds and composes every non-zero unit
   through the locale's long, short, or narrow unit and unit-list patterns. Validated by an 858-case
   PyICU fixture.
-- CLDR 48 date and time interval formatting for 87 locales, using ICU's
+- CLDR 48 date and time interval formatting for 108 locales, using ICU's
   repeated-field pattern splitting, greatest-difference selection,
   single-date collapse, hour-cycle-aware time skeletons, and locale
-  fallback formatting, validated by a 160-case PyICU fixture. Skeleton
+  fallback formatting, validated by a 296-case PyICU fixture. Skeleton
   intervals (`formatSkeletonIntervalAlloc`) follow ICU DateIntervalFormat
   semantics: canonical skeleton best-match resolution, interval-pattern
   width adjustment, date-once time-range composition, and fallback
-  formatting, validated by a 5,060-case PyICU fixture across 23 skeletons
+  formatting, validated by a 9,361-case PyICU fixture across 23 skeletons
   and 20 locales.
 - IANA tzdata 2026e time zones for 597 IDs, including backward link names,
   with transition-based UTC offset and daylight resolution from 1970 through
