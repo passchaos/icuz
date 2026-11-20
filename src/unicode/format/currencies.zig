@@ -4,6 +4,7 @@
 //! CLDR locale currency blocks and supplemental fraction digits.
 
 const std = @import("std");
+const plural = @import("plurals.zig");
 
 const blob = @embedFile("currencies_data.bin");
 
@@ -133,6 +134,31 @@ pub fn find(locale_name: []const u8, code: []const u8) ?Entry {
     return lookup(locale_name, code);
 }
 
+/// Localized currency symbol, falling back to the ISO code when the locale
+/// has no symbol for it.
+pub fn symbol(locale_name: []const u8, code: []const u8) []const u8 {
+    if (find(locale_name, code)) |entry| {
+        if (entry.symbol.len != 0) return entry.symbol;
+    }
+    return code;
+}
+
+/// Localized currency display name for a plural category, falling back to
+/// the `other` name and then the ISO code.
+pub fn name(
+    locale_name: []const u8,
+    code: []const u8,
+    category: plural.Category,
+) []const u8 {
+    if (find(locale_name, code)) |entry| {
+        const value = entry.names[@intFromEnum(category)];
+        if (value.len != 0) return value;
+        const other = entry.names[@intFromEnum(plural.Category.other)];
+        if (other.len != 0) return other;
+    }
+    return code;
+}
+
 test "currency data" {
     const testing = @import("std").testing;
     try testing.expectEqual(@as(u8, 2), fractionDigits("USD"));
@@ -145,4 +171,14 @@ test "currency data" {
     try testing.expect(afn != null);
     try testing.expectEqualStrings("", afn.?.symbol);
     try testing.expectEqualStrings("afghanis afghan", afn.?.names[5]);
+    try testing.expectEqualStrings("$", symbol("en", "USD"));
+    try testing.expectEqualStrings("XYZ", symbol("en", "XYZ"));
+    try testing.expectEqualStrings(
+        "US dollars",
+        name("en", "USD", .other),
+    );
+    try testing.expectEqualStrings(
+        "afghani afghan",
+        name("fr", "AFN", .one),
+    );
 }
