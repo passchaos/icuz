@@ -5,6 +5,7 @@
 //! GMT formats, and the IANA zone-to-country/primary-zone mapping.
 
 const std = @import("std");
+const numbers_data = @import("../format/numbers_data.zig");
 
 const blob = @embedFile("names_data.bin");
 
@@ -301,13 +302,60 @@ fn appendPadded(
     output: *std.ArrayList(u8),
     value: u32,
     digits: usize,
+    locale_digits: [10]u21,
 ) !void {
     var buffer: [8]u8 = undefined;
     const text = std.fmt.bufPrint(&buffer, "{d}", .{value}) catch return;
     if (text.len < digits) {
-        try output.appendNTimes(allocator, '0', digits - text.len);
+        try appendDigit(allocator, output, '0', locale_digits, digits - text.len);
     }
-    try output.appendSlice(allocator, text);
+    for (text) |byte| {
+        try appendDigit(allocator, output, byte, locale_digits, 1);
+    }
+}
+
+fn appendDigit(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    ascii: u8,
+    locale_digits: [10]u21,
+    count: usize,
+) !void {
+    const digit = locale_digits[ascii - '0'];
+    var encoded: [4]u8 = undefined;
+    const length = std.unicode.utf8Encode(digit, &encoded) catch return;
+    var index: usize = 0;
+    while (index < count) : (index += 1) {
+        try output.appendSlice(allocator, encoded[0..length]);
+    }
+}
+
+fn digitsForLocale(locale_name: []const u8) [10]u21 {
+    var low: usize = 0;
+    var high = numbers_data.locales.len;
+    var name = locale_name;
+    while (true) {
+        while (low < high) {
+            const middle = low + (high - low) / 2;
+            const entry = numbers_data.locales[middle];
+            switch (std.mem.order(u8, entry.id, name)) {
+                .lt => low = middle + 1,
+                .gt => high = middle,
+                .eq => return entry.digits,
+            }
+        }
+        if (std.mem.indexOfAny(u8, name, "-_")) |position| {
+            name = name[0..position];
+            low = 0;
+            high = numbers_data.locales.len;
+            continue;
+        }
+        if (std.mem.eql(u8, name, "en")) break;
+        name = "en";
+        low = 0;
+        high = numbers_data.locales.len;
+    }
+    return .{ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' };
 }
 
 /// Format a UTC offset as a localized GMT string (for example `GMT+05:30`).
@@ -330,20 +378,21 @@ pub fn gmtOffsetAlloc(
         if (length <= template.len) sign = template[0..length];
     }
 
+    const locale_digits = digitsForLocale(locale_name);
     var offset_text = std.ArrayList(u8).empty;
     defer offset_text.deinit(allocator);
     try offset_text.appendSlice(allocator, sign);
     if (width == .long) {
-        try appendPadded(allocator, &offset_text, hours, 2);
+        try appendPadded(allocator, &offset_text, hours, 2, locale_digits);
     } else {
-        try appendPadded(allocator, &offset_text, hours, 1);
+        try appendPadded(allocator, &offset_text, hours, 1, locale_digits);
     }
     if (minutes != 0 or width == .long) {
         try offset_text.append(allocator, ':');
-        try appendPadded(allocator, &offset_text, minutes, 2);
+        try appendPadded(allocator, &offset_text, minutes, 2, locale_digits);
         if (seconds != 0) {
             try offset_text.append(allocator, ':');
-            try appendPadded(allocator, &offset_text, seconds, 2);
+            try appendPadded(allocator, &offset_text, seconds, 2, locale_digits);
         }
     }
     const pattern = if (locale.gmt_format.len != 0) locale.gmt_format else "GMT{0}";

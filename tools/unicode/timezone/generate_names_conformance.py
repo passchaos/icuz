@@ -19,6 +19,9 @@ import icu
 LOCALES = (
     "en", "fr", "de", "es", "it", "pt", "nl", "ru", "pl", "ja",
     "zh", "ko", "ar", "hi", "tr", "sv",
+    "ak", "ccp", "chr", "ee", "eo", "ff", "fo",
+    "fr-BE", "ky", "lb", "nn", "no", "qu", "se", "vec",
+    "yue", "yue-Hans",
 )
 
 ZONES = (

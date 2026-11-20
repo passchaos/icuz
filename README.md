@@ -267,13 +267,13 @@ need without pulling in a font or layout engine.
   `timeZonePreviousTransition`), and local-time resolution
   (`timeZoneOffsetFromLocal`) that distinguishes DST gaps from overlaps and
   supports earlier/later/rejected disambiguation.
-- CLDR 48 localized time zone names for 87 locales: specific and generic
+- CLDR 48 localized time zone names for 108 locales: specific and generic
   zone/metazone names, exemplar cities, region and localized GMT formats,
   and the `z`, `v`, `V`, `O`, `Z`, and `X`/`x` pattern fields, including
   standard/daylight selection, primary-zone location fallbacks, and
   metazone period resolution.
 - Differential fixtures validate 15,883 time zone offset/daylight cases
-  against an independent TZif reader and 1,792 localized name cases against
+  against an independent TZif reader and 3,696 localized name cases against
   PyICU.
 - CLDR 48 Windows time zone ID mapping (`windowsIdForTimeZone`,
   `timeZoneIdForWindowsId`): 139 Windows IDs over 445 IANA zones, with
