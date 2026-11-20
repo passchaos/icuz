@@ -12,6 +12,7 @@ pub const unicode = @import("unicode/root.zig");
 
 pub const properties = @import("unicode/properties.zig");
 pub const normalization = @import("unicode/normalization/root.zig");
+pub const normalization_boundary = @import("unicode/normalization/boundary.zig");
 pub const case = @import("unicode/case/root.zig");
 pub const name = @import("unicode/name.zig");
 pub const set = @import("unicode/set.zig");

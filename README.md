@@ -29,7 +29,11 @@ need without pulling in a font or layout engine.
   mappings and the required final NFC pass, with an ASCII fast path and the
   complete Unicode 17 mapping tables. Scalar helpers (`composePair`,
   `decompositionFor`, `compatibilityDecompositionFor`, `combiningClass`)
-  expose the underlying normalization tables.
+  expose the underlying normalization tables. Normalizer2 boundary and
+  incremental helpers (`isNormalizationInert`,
+  `hasNormalizationBoundaryBefore`, `hasNormalizationBoundaryAfter`,
+  `appendNormalizedAlloc`, `normalizeSecondAndAppendAlloc`) use a generated
+  42,845-record table that matches ICU's per-scalar flags.
 - Simple lower/upper/title mappings, full case folding, and full
   lower/upper/title mappings with `Final_Sigma`, Turkic, and Lithuanian
   context rules. The `Edits` recorder (`fullLowerWithEditsAlloc`,

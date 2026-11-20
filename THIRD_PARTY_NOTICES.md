@@ -8,7 +8,7 @@ and case-mapping tables, and General_Category and property-alias data. Their
 conformance fixtures are compact encodings of the official Unicode 17 test
 files. The Arabic shaping tables in `src/unicode/shape/tables.zig` are
 Unicode-derived positional-form data mirrored from ICU's `u_shapeArabic`
-tables; the shaping conformance fixture was generated with PyICU.
+tables; the shaping conformance fixture and the Normalizer2 boundary table were generated with PyICU.
 
 - Project: <https://www.unicode.org/>
 - Copyright: Unicode, Inc.

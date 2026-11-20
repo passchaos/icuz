@@ -37,6 +37,7 @@ class GeneratedText:
 
 BLOBS = (
     Blob("src/unicode/bidi/conformance.bin", b"CJBT", 1, "40d4b9145779f8aad815e1f5ea5201ccd9cc5daeb73c8bf73b06c6f1c76d9a26"),
+    Blob("src/unicode/normalization/boundary_data.bin", b"CJNB", 1, "45ae76d3e8268dcb286471ab3e8ae951c77b0bf9fa4905ef7d424eca0208e7c7"),
     Blob("src/unicode/shape/conformance.bin", b"CJSH", 1, "aa14145e977197c683e9991d8caa238ed13084008e42e5dfb71be238762a4ef2"),
     Blob("src/unicode/bidi/data.bin", b"CJB1", 1, "9e9f9937100d6019f7308743916c3606bdb31c9cc4f142eb605becf45a210c3f"),
     Blob("src/unicode/canonical/combining_class.bin", b"CJC1", 1, "336130546fc300108806f5ae23144cda93da13488a810946357304b5a12f5fcc"),
@@ -446,6 +447,7 @@ GENERATORS = {
     "tools/generate_nonspacing_marks.py": "12d45f34ce2891ccf1b342bc8f44c6fe32e15e019d7a41489d8036dee9f8555c",
     "tools/unicode/normalization/generate_conformance.py": "c3e9f80b8fb410a2d142cfbb228941d01322672b28261c1e0c0de53eb662ee43",
     "tools/unicode/normalization/generate_data.py": "e61fd24b9b23e554ebded137825546a4378e61050eae3cbbe1863555df79f864",
+    "tools/unicode/normalization/generate_boundaries.py": "a3603e318545dcb539136fc608f2c07211742e4a9ee2aaf6d8199cfbf0e3fa26",
     "tools/unicode/normalization/generate_casefold.py": "ddfa581f1fdaa2e914bf4a216aeb0dd6d428a5413dc96ddb0e005f7966d2a5e9",
     "tools/unicode/locale/generate_matcher.py": "d184c9ae1b441f60d3bae49386ea476c53e538c9d2bf41051bfa761102f74690",
     "tools/unicode/locale/generate_extension_aliases.py": "5853caa458dca1ffc133ce165e40543648e2209ff446093b58d11dc05197589f",
@@ -711,7 +713,10 @@ def check_page_table(data: bytes, width: int) -> None:
 
 def check_layout(blob: Blob, data: bytes) -> None:
     magic = blob.magic
-    if magic == b"CJPG":
+    if magic == b"CJNB":
+        count = struct.unpack_from("<I", data, 8)[0]
+        assert 12 + count * 8 == len(data)
+    elif magic == b"CJPG":
         case_count = struct.unpack_from("<I", data, 8)[0]
         offset = 12
         for _ in range(case_count):
