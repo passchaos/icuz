@@ -213,6 +213,13 @@ need without pulling in a font or layout engine.
   maximization and minimization (including ICU's favor-script minimization),
   validated by 1,022 display-name and 48
   likely-subtag PyICU conformance cases.
+- ICU `uregion`-compatible region data (`regionFromCode`,
+  `regionFromNumericCode`, `Region`): canonical region codes, ISO 3166
+  alpha-3 and UN M.49 numeric aliases, deprecated-code canonicalization to
+  preferred replacements, region types (world, continent, subcontinent,
+  territory, grouping, deprecated, unknown), containment parents and
+  children, transitive containment, and available-region enumeration,
+  validated by a 138-case ICU 78 differential fixture.
 - BCP 47 locale tag canonicalization (`canonicalizeLocaleAlloc`): case and
   separator normalization, CLDR 48 language, script, territory, and variant
   alias rules with multi-field replacements, wildcard and chained aliases,

@@ -37,6 +37,7 @@ pub const shape = @import("unicode/shape/root.zig");
 pub const pattern_generator = @import("unicode/format/pattern_generator.zig");
 pub const time_scale = @import("unicode/format/time_scale.zig");
 pub const regex = @import("unicode/regex/root.zig");
+pub const region = @import("unicode/locale/region.zig");
 pub const calendar_preferences = @import("unicode/format/calendar_preferences.zig");
 pub const break_rules = @import("unicode/break_rules.zig");
 pub const bidi = @import("unicode/bidi/paragraph.zig");
