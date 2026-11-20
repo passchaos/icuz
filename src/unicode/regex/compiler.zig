@@ -83,6 +83,8 @@ pub const Program = struct {
     literal_prefix: ?[]u8,
     /// Exact literal substring that every match must contain.
     required_literal: ?[]u8,
+    /// Exact literal covering the whole pattern, when no VM is needed.
+    full_literal: ?[]u8,
 
     pub fn deinit(self: *Program, allocator: std.mem.Allocator) void {
         allocator.free(self.insts);
@@ -90,6 +92,7 @@ pub const Program = struct {
         allocator.free(self.folded);
         if (self.literal_prefix) |prefix| allocator.free(prefix);
         if (self.required_literal) |literal| allocator.free(literal);
+        if (self.full_literal) |literal| allocator.free(literal);
     }
 };
 
@@ -112,6 +115,8 @@ pub fn compile(allocator: std.mem.Allocator, parsed: *const parser.Parsed) Error
     errdefer if (literal_prefix) |prefix| allocator.free(prefix);
     const required_literal = try compiler.computeRequiredLiteral();
     errdefer if (required_literal) |literal| allocator.free(literal);
+    const full_literal = try compiler.computeFullLiteral();
+    errdefer if (full_literal) |literal| allocator.free(literal);
 
     return .{
         .insts = try compiler.insts.toOwnedSlice(allocator),
@@ -122,6 +127,7 @@ pub fn compile(allocator: std.mem.Allocator, parsed: *const parser.Parsed) Error
         .first_byte_bitmap = first_byte_bitmap,
         .literal_prefix = literal_prefix,
         .required_literal = required_literal,
+        .full_literal = full_literal,
     };
 }
 
@@ -449,6 +455,35 @@ const Compiler = struct {
         }
         const owned = try prefix.toOwnedSlice(self.allocator);
         return owned;
+    }
+
+    fn computeFullLiteral(self: *Compiler) Error!?[]u8 {
+        return self.fullLiteralFromNode(self.parsed.root);
+    }
+
+    fn fullLiteralFromNode(self: *Compiler, node: *const parser.Node) Error!?[]u8 {
+        return switch (node.*) {
+            .literal => |literal| if (literal.case_insensitive)
+                null
+            else
+                try self.allocator.dupe(u8, literal.text),
+            .concat => |children| blk: {
+                var output = std.ArrayList(u8).empty;
+                errdefer output.deinit(self.allocator);
+                for (children) |child| {
+                    if (std.meta.activeTag(child.*) != .literal or
+                        child.literal.case_insensitive)
+                    {
+                        output.deinit(self.allocator);
+                        break :blk null;
+                    }
+                    try output.appendSlice(self.allocator, child.literal.text);
+                }
+                const owned = try output.toOwnedSlice(self.allocator);
+                break :blk owned;
+            },
+            else => null,
+        };
     }
 
     fn computeRequiredLiteral(self: *Compiler) Error!?[]u8 {

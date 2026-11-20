@@ -506,3 +506,30 @@ test "regex required-literal prefilter" {
     try expectFind("a(bc)?d", "ad", 0, 2);
     try expectFind("(?i)needle", "NEEDLE", 0, 6);
 }
+
+test "regex whole-literal fast path" {
+    var re = try compile("needle");
+    defer re.deinit();
+
+    var m = try re.matcher("a needle b");
+    defer m.deinit();
+    try std.testing.expect(try m.find());
+    try std.testing.expectEqual(@as(?usize, 2), m.start(0));
+    try std.testing.expectEqual(@as(?usize, 8), m.end(0));
+    try std.testing.expect(!(try m.matches()));
+    try std.testing.expect(!(try m.lookingAt()));
+
+    var exact = try re.matcher("needle");
+    defer exact.deinit();
+    try std.testing.expect(try exact.matches());
+    try std.testing.expectEqualStrings("needle", exact.group(0).?);
+
+    var prefix = try re.matcher("needlex");
+    defer prefix.deinit();
+    try std.testing.expect(try prefix.lookingAt());
+    try std.testing.expectEqual(@as(?usize, 6), prefix.end(0));
+
+    const replaced = try re.replaceAllAlloc(std.testing.allocator, "needle needle", "x");
+    defer std.testing.allocator.free(replaced);
+    try std.testing.expectEqualStrings("x x", replaced);
+}

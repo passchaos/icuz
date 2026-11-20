@@ -395,6 +395,7 @@ pub const Matcher = struct {
             regex.program.first_byte_bitmap,
             regex.program.literal_prefix,
             regex.program.required_literal,
+            regex.program.full_literal,
             .{
                 .transparent_bounds = options.transparent_bounds,
                 .anchoring_bounds = options.anchoring_bounds,

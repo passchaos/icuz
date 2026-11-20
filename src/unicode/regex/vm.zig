@@ -60,6 +60,7 @@ pub const Runner = struct {
     first_byte_bitmap: ?[4]u64,
     literal_prefix: ?[]const u8,
     required_literal: ?[]const u8,
+    full_literal: ?[]const u8,
 
     region_start: usize,
     region_end: usize,
@@ -104,6 +105,7 @@ pub const Runner = struct {
         first_byte_bitmap: ?[4]u64,
         literal_prefix: ?[]const u8,
         required_literal: ?[]const u8,
+        full_literal: ?[]const u8,
         options: Options,
     ) error{OutOfMemory}!Runner {
         const capture_slots = (@as(usize, group_count) + 1) * 2;
@@ -126,6 +128,7 @@ pub const Runner = struct {
             .first_byte_bitmap = first_byte_bitmap,
             .literal_prefix = literal_prefix,
             .required_literal = required_literal,
+            .full_literal = full_literal,
             .region_start = 0,
             .region_end = text.len,
             .anchor_start = 0,
@@ -223,6 +226,19 @@ pub const Runner = struct {
         self.beginOperation();
         self.had_match = false;
         self.exhausted = false;
+        if (self.full_literal) |literal| {
+            const region = self.text[self.region_start..self.region_end];
+            if (literal.len == region.len and std.mem.eql(u8, literal, region)) {
+                self.captures[0] = self.region_start;
+                self.captures[1] = self.region_end;
+                self.last_match_end = self.region_end;
+                self.had_match = true;
+                self.hit_end = true;
+                self.require_end = true;
+                return true;
+            }
+            return false;
+        }
         const match_pc: u32 = @intCast(self.program.len - 1);
         const result = try self.execRange(0, match_pc, self.region_start, self.region_end);
         if (result) |end| {
@@ -239,6 +255,18 @@ pub const Runner = struct {
         self.beginOperation();
         self.had_match = false;
         self.exhausted = false;
+        if (self.full_literal) |literal| {
+            if (self.region_start + literal.len <= self.region_end and
+                std.mem.eql(u8, literal, self.text[self.region_start..][0..literal.len]))
+            {
+                self.captures[0] = self.region_start;
+                self.captures[1] = self.region_start + literal.len;
+                self.last_match_end = self.region_start + literal.len;
+                self.had_match = true;
+                return true;
+            }
+            return false;
+        }
         const match_pc: u32 = @intCast(self.program.len - 1);
         const result = try self.execRange(0, match_pc, self.region_start, null);
         if (result) |end| {
@@ -275,6 +303,24 @@ pub const Runner = struct {
         var position = snapForward(self.text, @max(start, self.region_start));
         position = @min(position, self.region_end);
         const match_pc: u32 = @intCast(self.program.len - 1);
+
+        if (self.full_literal) |literal| {
+            const found = std.mem.indexOfPos(u8, self.text, position, literal) orelse {
+                self.had_match = false;
+                self.exhausted = true;
+                return false;
+            };
+            if (found + literal.len > self.region_end) {
+                self.had_match = false;
+                self.exhausted = true;
+                return false;
+            }
+            self.captures[0] = found;
+            self.captures[1] = found + literal.len;
+            self.last_match_end = found + literal.len;
+            self.had_match = true;
+            return true;
+        }
 
         if (self.required_literal) |literal| {
             const found = std.mem.indexOfPos(u8, self.text, position, literal);
