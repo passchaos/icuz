@@ -374,8 +374,10 @@ need without pulling in a font or layout engine.
   optional rule branches, plural substitutions, Indian grouping, fraction
   rule sets, and an 6,840-case PyICU differential conformance fixture.
 - ICU-style message formatting with positional/named arguments, plural,
-  selectordinal, and select branches, `#` substitution, number/date arguments,
-  and quoting.
+  selectordinal, select, and choice branches, `#` substitution,
+  number/date arguments, and quoting. `ChoiceFormat` provides ICU range
+  patterns with `<`/`#`/`≤` selectors, infinity limits, `setChoices`, and
+  longest-match parsing, validated by an ICU 78 differential fixture.
 - Unicode MessageFormat 2 core subset: `.input`/`.local` declarations, quoted
   patterns, `.match` matchers with multiple selectors, expressions with
   literal/variable/function operands and options, `:string`, `:number`,

@@ -5,6 +5,7 @@ const std = @import("std");
 const number = @import("number.zig");
 const plural = @import("plurals.zig");
 const dates = @import("dates.zig");
+const choice = @import("choice.zig");
 
 pub const Error = error{
     InvalidMessage,
@@ -31,7 +32,8 @@ pub const Arguments = struct {
 };
 
 /// Format a message using `{0}`, `{name}`, `{0, number, percent}`,
-/// `{0, date, medium}`, `{0, plural, ...}`, and `{0, select, ...}` syntax.
+/// `{0, date, medium}`, `{0, plural, ...}`, `{0, select, ...}`, and
+/// `{0, choice, ...}` syntax.
 pub fn formatAlloc(
     allocator: std.mem.Allocator,
     pattern: []const u8,
@@ -184,6 +186,19 @@ fn formatArgumentBlock(
 
     if (std.mem.eql(u8, fields.kind, "select")) {
         try appendSelectArgument(
+            allocator,
+            argument,
+            locale,
+            fields.rest,
+            arguments,
+            hash_text,
+            output,
+        );
+        return;
+    }
+
+    if (std.mem.eql(u8, fields.kind, "choice")) {
+        try appendChoiceArgument(
             allocator,
             argument,
             locale,
@@ -550,6 +565,32 @@ fn findSelectBranch(style: []const u8, wanted: []const u8) ?[]const u8 {
     return other_branch;
 }
 
+fn appendChoiceArgument(
+    allocator: std.mem.Allocator,
+    argument: Argument,
+    locale: []const u8,
+    style: []const u8,
+    arguments: Arguments,
+    hash_text: ?[]const u8,
+    output: *std.ArrayList(u8),
+) Error!void {
+    const value: f64 = switch (argument) {
+        .integer => |integer| @floatFromInt(integer),
+        .float => |float| float,
+        else => return error.InvalidArgument,
+    };
+    const branch = choice.selectMessage(style, value) orelse
+        return error.InvalidMessage;
+    try formatMessage(
+        allocator,
+        branch,
+        locale,
+        arguments,
+        hash_text,
+        output,
+    );
+}
+
 fn findClosingBrace(text: []const u8, start: usize) ?usize {
     var depth: usize = 1;
     var in_quote = false;
@@ -730,4 +771,65 @@ test "select, number, and date arguments" {
     );
     defer allocator.free(nested);
     try testing.expectEqualStrings("She has 2 items", nested);
+}
+
+test "choice arguments" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const pattern = "{0, choice, 0#no files|1#one file|1<many files}";
+    const cases = [_]struct { value: f64, expected: []const u8 }{
+        .{ .value = 0, .expected = "no files" },
+        .{ .value = 0.5, .expected = "no files" },
+        .{ .value = 1, .expected = "one file" },
+        .{ .value = 1.5, .expected = "many files" },
+        .{ .value = 2, .expected = "many files" },
+    };
+    for (cases) |case| {
+        const formatted = try formatAlloc(
+            allocator,
+            pattern,
+            "en",
+            .{ .positional = &.{Argument{ .float = case.value }} },
+        );
+        defer allocator.free(formatted);
+        try testing.expectEqualStrings(case.expected, formatted);
+    }
+
+    const integer = try formatAlloc(
+        allocator,
+        pattern,
+        "en",
+        .{ .positional = &.{Argument{ .integer = 1 }} },
+    );
+    defer allocator.free(integer);
+    try testing.expectEqualStrings("one file", integer);
+
+    const escaped = try formatAlloc(
+        allocator,
+        "{0, choice, 0#a''b|1#c}",
+        "en",
+        .{ .positional = &.{Argument{ .float = 0.5 }} },
+    );
+    defer allocator.free(escaped);
+    try testing.expectEqualStrings("a'b", escaped);
+
+    const literal_hash = try formatAlloc(
+        allocator,
+        "{0, choice, 0#a#b|1#c}",
+        "en",
+        .{ .positional = &.{Argument{ .float = 0.5 }} },
+    );
+    defer allocator.free(literal_hash);
+    try testing.expectEqualStrings("a#b", literal_hash);
+
+    try testing.expectError(
+        error.InvalidArgument,
+        formatAlloc(
+            allocator,
+            pattern,
+            "en",
+            .{ .positional = &.{Argument{ .string = "one" }} },
+        ),
+    );
 }
