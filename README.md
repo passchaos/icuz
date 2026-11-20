@@ -10,6 +10,9 @@ need without pulling in a font or layout engine.
   properties including `ID_Start`/`ID_Continue`/`XID_*`, `Case_Ignorable`,
   `Cased`, `Grapheme_Base`/`Grapheme_Extend`, pattern syntax, identifier and
   emoji properties, Script, Script_Extensions, and variation selectors.
+  `Numeric_Value` and `Numeric_Type` (`numericValue`, `numericType`,
+  `digitValue`) cover all 2,023 numeric scalars as exact rationals,
+  including Han numerals and fractions.
 - General_Category, Script, and binary-property alias resolution for
   `\p{...}`-style consumers.
 - UAX #9 bidirectional paragraph resolution.

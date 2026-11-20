@@ -51,6 +51,12 @@ pub const isNoncharacterCodePoint = general_category.isNoncharacterCodePoint;
 
 pub const isNonspacingMark = mark.isNonspacing;
 
+pub const numeric = @import("properties/numeric.zig");
+pub const NumericType = numeric.NumericType;
+pub const numericValue = numeric.numericValue;
+pub const numericType = numeric.numericType;
+pub const digitValue = numeric.digitValue;
+
 /// Exact Unicode 17.0 General_Category=L (Lu, Ll, Lt, Lm, Lo).
 /// Numbers, marks, unassigned codepoints and invalid scalar values are false.
 pub fn isLetter(codepoint: u21) bool {

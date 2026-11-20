@@ -173,6 +173,10 @@ pub const isNormalizedUtf16 = normalization.isNormalizedUtf16;
 pub const Normalizer = normalization.Normalizer;
 pub const isNormalizedNfc = normalization.isNormalized;
 pub const isNormalizedNfcAssumeValid = normalization.isNormalizedAssumeValid;
+pub const NumericType = properties.NumericType;
+pub const numericValue = properties.numericValue;
+pub const numericType = properties.numericType;
+pub const digitValue = properties.digitValue;
 pub const nfkcCasefoldAlloc =
     @import("./normalization/casefold.zig").nfkcCasefoldAlloc;
 
@@ -660,6 +664,7 @@ test {
     _ = relative_mod;
     _ = units_mod;
     _ = properties;
+    _ = properties.numeric;
     _ = scalar_value;
     _ = scalar_cursor;
     _ = word_cursor;
