@@ -164,8 +164,9 @@ need without pulling in a font or layout engine.
   separator normalization, CLDR 48 language, script, territory, and variant
   alias rules with multi-field replacements, wildcard and chained aliases,
   and variant ordering, validated by the official 1,773-case CLDR
-  canonicalization fixture. Extension and private-use subtags are preserved;
-  key/type aliases inside extensions are not applied. A zero-allocation
+  canonicalization fixture. Extension and private-use subtags are preserved,
+  and `-u-` extension type aliases from CLDR BCP 47 data are applied (for
+  example `ca-islamicc` becomes `ca-islamic-civil`). A zero-allocation
   `Locale` parser (`Locale.parse`) exposes the language, script, region,
   variants, and `-u-` keyword values of a tag.
 - CLDR 48 language matching (`localeBestMatchAlloc`, `localeDistanceAlloc`,

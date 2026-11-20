@@ -9,6 +9,7 @@
 
 const std = @import("std");
 
+const extension_aliases = @import("locale/extension_aliases.zig");
 const alias_blob = @embedFile("locale/aliases.bin");
 const conformance_blob = @embedFile("locale/canonicalization_conformance.bin");
 
@@ -480,7 +481,138 @@ pub fn canonicalizeAlloc(
     for (ordered[0..parsed.variant_count]) |variant| {
         try appendLowered(allocator, &output, variant);
     }
-    try appendLowered(allocator, &output, parsed.tail);
+    if (parsed.tail.len != 0) {
+        if (output.items.len != 0) try output.append(allocator, '-');
+        const tail = try canonicalizeTailAlloc(allocator, parsed.tail);
+        defer allocator.free(tail);
+        try output.appendSlice(allocator, tail);
+    }
+    return output.toOwnedSlice(allocator);
+}
+
+fn lowerInto(buffer: []u8, text: []const u8) []const u8 {
+    const length = @min(text.len, buffer.len);
+    for (text[0..length], 0..) |byte, index| {
+        buffer[index] = std.ascii.toLower(byte);
+    }
+    return buffer[0..length];
+}
+
+fn appendTokenLower(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    token: []const u8,
+) error{OutOfMemory}!void {
+    if (output.items.len != 0) try output.append(allocator, '-');
+    for (token) |byte| try output.append(allocator, std.ascii.toLower(byte));
+}
+
+fn aliasFor(key: []const u8, value: []const u8) ?[]const u8 {
+    var low: usize = 0;
+    var high = extension_aliases.aliases.len;
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        const entry = extension_aliases.aliases[middle];
+        switch (std.mem.order(u8, entry.key, key)) {
+            .lt => low = middle + 1,
+            .gt => high = middle,
+            .eq => switch (std.mem.order(u8, entry.alias, value)) {
+                .lt => low = middle + 1,
+                .gt => high = middle,
+                .eq => return entry.canonical,
+            },
+        }
+    }
+    return null;
+}
+
+/// Canonicalize the extension and private-use subtags of a locale tag. Only
+/// the `-u-` extension applies BCP 47 key/type aliases; other extensions and
+/// private use are lowercased and preserved.
+fn canonicalizeTailAlloc(
+    allocator: std.mem.Allocator,
+    tail: []const u8,
+) error{OutOfMemory}![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    var tokens = std.ArrayList([]const u8).empty;
+    defer tokens.deinit(allocator);
+    var index: usize = 0;
+    while (index < tail.len) {
+        const start = index;
+        while (index < tail.len and tail[index] != '-') index += 1;
+        if (index > start) try tokens.append(allocator, tail[start..index]);
+        if (index < tail.len) index += 1;
+    }
+
+    var token_index: usize = 0;
+    while (token_index < tokens.items.len) {
+        const token = tokens.items[token_index];
+        if (token.len == 1) {
+            const singleton = std.ascii.toLower(token[0]);
+            try appendTokenLower(allocator, &output, token);
+            token_index += 1;
+            if (singleton != 'u') {
+                while (token_index < tokens.items.len and
+                    tokens.items[token_index].len != 1)
+                {
+                    try appendTokenLower(
+                        allocator,
+                        &output,
+                        tokens.items[token_index],
+                    );
+                    token_index += 1;
+                }
+                continue;
+            }
+            // Attributes precede the first key.
+            while (token_index < tokens.items.len and
+                tokens.items[token_index].len != 1 and
+                tokens.items[token_index].len != 2)
+            {
+                try appendTokenLower(
+                    allocator,
+                    &output,
+                    tokens.items[token_index],
+                );
+                token_index += 1;
+            }
+            while (token_index < tokens.items.len and
+                tokens.items[token_index].len == 2)
+            {
+                const key = tokens.items[token_index];
+                var key_buffer: [2]u8 = undefined;
+                const lower_key = lowerInto(&key_buffer, key);
+                try appendTokenLower(allocator, &output, key);
+                token_index += 1;
+                const value_start = token_index;
+                while (token_index < tokens.items.len and
+                    tokens.items[token_index].len != 1 and
+                    tokens.items[token_index].len != 2)
+                {
+                    token_index += 1;
+                }
+                if (token_index == value_start) continue;
+                var value = std.ArrayList(u8).empty;
+                defer value.deinit(allocator);
+                for (tokens.items[value_start..token_index], 0..) |part, part_index| {
+                    if (part_index > 0) try value.append(allocator, '-');
+                    for (part) |byte| {
+                        try value.append(allocator, std.ascii.toLower(byte));
+                    }
+                }
+                try output.append(allocator, '-');
+                if (aliasFor(lower_key, value.items)) |canonical| {
+                    try output.appendSlice(allocator, canonical);
+                } else {
+                    try output.appendSlice(allocator, value.items);
+                }
+            }
+            continue;
+        }
+        try appendTokenLower(allocator, &output, token);
+        token_index += 1;
+    }
     return output.toOwnedSlice(allocator);
 }
 
@@ -564,6 +696,34 @@ pub const Locale = struct {
         return null;
     }
 };
+
+test "locale extension type aliases" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const cases = [_]struct { input: []const u8, expected: []const u8 }{
+        .{ .input = "en-u-ca-islamicc", .expected = "en-u-ca-islamic-civil" },
+        .{ .input = "en-u-ca-gregorian", .expected = "en-u-ca-gregory" },
+        .{ .input = "en-u-co-phonebook", .expected = "en-u-co-phonebk" },
+        .{ .input = "en-u-kb-yes", .expected = "en-u-kb-true" },
+        .{ .input = "de-u-co-traditional", .expected = "de-u-co-trad" },
+        .{
+            .input = "en-u-nu-thai-ca-islamicc",
+            .expected = "en-u-nu-thai-ca-islamic-civil",
+        },
+        .{
+            .input = "en-u-attr-ca-islamicc",
+            .expected = "en-u-attr-ca-islamic-civil",
+        },
+        .{ .input = "en-u-nu-thai", .expected = "en-u-nu-thai" },
+        .{ .input = "en-x-private", .expected = "en-x-private" },
+    };
+    for (cases) |case| {
+        const value = try canonicalizeAlloc(allocator, case.input);
+        defer allocator.free(value);
+        try testing.expectEqualStrings(case.expected, value);
+    }
+}
 
 test "locale tag parsing" {
     const testing = @import("std").testing;
