@@ -192,7 +192,9 @@ need without pulling in a font or layout engine.
   and 20 locales.
 - IANA tzdata 2026e time zones for 597 IDs, including backward link names,
   with transition-based UTC offset and daylight resolution from 1970 through
-  2100, local/UTC conversion, and zone-aware Unix timestamp formatting.
+  2100, local/UTC conversion, zone-aware Unix timestamp formatting, and
+  local-time resolution (`timeZoneOffsetFromLocal`) that distinguishes DST
+  gaps from overlaps and supports earlier/later/rejected disambiguation.
 - CLDR 48 localized time zone names for 87 locales: specific and generic
   zone/metazone names, exemplar cities, region and localized GMT formats,
   and the `z`, `v`, `V`, `O`, `Z`, and `X`/`x` pattern fields, including

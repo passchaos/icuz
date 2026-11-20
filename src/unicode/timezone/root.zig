@@ -167,6 +167,144 @@ pub fn utcSeconds(zone: Zone, local_seconds: i64) i64 {
     return local_seconds - offsetAt(zone, guess).seconds;
 }
 
+pub const LocalOption = enum {
+    /// Earlier occurrence for overlaps; the offset before the gap for gaps.
+    earlier,
+    /// Later occurrence for overlaps; the offset after the gap for gaps.
+    later,
+    /// Return null when the local time is ambiguous or does not exist.
+    rejected,
+};
+
+fn firstTransitionAtOrAfter(zone: Zone, target_time: i64) usize {
+    var low: usize = 0;
+    var high: usize = zone.transition_count;
+    if (target_time <= 0) return 0;
+    const target: u32 = @intCast(@min(target_time, std.math.maxInt(u32)));
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        if (transitionAt(zone.first_transition + middle).at < target) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+fn addOffsetCandidate(
+    candidates: *[8]Offset,
+    candidate_count: *usize,
+    offset: Offset,
+) void {
+    for (candidates[0..candidate_count.*]) |existing| {
+        if (existing.seconds == offset.seconds) return;
+    }
+    if (candidate_count.* == candidates.len) return;
+    candidates[candidate_count.*] = offset;
+    candidate_count.* += 1;
+}
+
+/// Offset in effect for a local timestamp, resolving DST gaps and overlaps.
+///
+/// Local times inside a spring-forward gap do not exist; `.earlier` returns
+/// the offset before the gap and `.later` the offset after it. Local times in
+/// a fall-back overlap occur twice; `.earlier` returns the first occurrence
+/// (the larger offset) and `.later` the second. `.rejected` returns null for
+/// both cases.
+pub fn offsetFromLocal(
+    zone: Zone,
+    local_seconds: i64,
+    option: LocalOption,
+) ?Offset {
+    if (zone.transition_count == 0) {
+        return .{ .seconds = 0, .abbreviation = "UTC", .daylight = false };
+    }
+    const window_start = local_seconds - 3 * 86400;
+    const window_end = local_seconds + 3 * 86400;
+    var candidates: [8]Offset = undefined;
+    var candidate_count: usize = 0;
+    addOffsetCandidate(
+        &candidates,
+        &candidate_count,
+        offsetAt(zone, window_start - 1),
+    );
+    var index = firstTransitionAtOrAfter(zone, window_start);
+    while (index < zone.transition_count) : (index += 1) {
+        const transition = transitionAt(zone.first_transition + index);
+        if (@as(i64, transition.at) > window_end) break;
+        addOffsetCandidate(&candidates, &candidate_count, .{
+            .seconds = transition.offset,
+            .abbreviation = transition.abbreviation,
+            .daylight = transition.daylight,
+        });
+    }
+
+    var valid: [8]Offset = undefined;
+    var valid_count: usize = 0;
+    for (candidates[0..candidate_count]) |candidate| {
+        const utc = local_seconds - candidate.seconds;
+        const actual = offsetAt(zone, utc);
+        if (actual.seconds == candidate.seconds) {
+            valid[valid_count] = actual;
+            valid_count += 1;
+        }
+    }
+    if (valid_count == 1) return valid[0];
+    if (valid_count > 1) {
+        if (option == .rejected) return null;
+        var best = valid[0];
+        for (valid[1..valid_count]) |candidate| {
+            const better = if (option == .later)
+                candidate.seconds < best.seconds
+            else
+                candidate.seconds > best.seconds;
+            if (better) best = candidate;
+        }
+        return best;
+    }
+    if (option == .rejected) return null;
+    return if (option == .later)
+        offsetAt(zone, local_seconds + 86400)
+    else
+        offsetAt(zone, local_seconds - 86400);
+}
+
+test "time zone offset from local" {
+    const testing = @import("std").testing;
+    const new_york = find("America/New_York").?;
+
+    // 2024-07-15T12:00Z is 08:00 local.
+    const summer = offsetFromLocal(
+        new_york,
+        1721044800 - 4 * 3600,
+        .earlier,
+    ).?;
+    try testing.expectEqual(@as(i32, -4 * 3600), summer.seconds);
+
+    // 2024-03-10 02:30 local does not exist (spring forward).
+    try testing.expectEqual(
+        @as(i32, -5 * 3600),
+        offsetFromLocal(new_york, 1710037800, .earlier).?.seconds,
+    );
+    try testing.expectEqual(
+        @as(i32, -4 * 3600),
+        offsetFromLocal(new_york, 1710037800, .later).?.seconds,
+    );
+    try testing.expect(offsetFromLocal(new_york, 1710037800, .rejected) == null);
+
+    // 2024-11-03 01:30 local occurs twice (fall back).
+    try testing.expectEqual(
+        @as(i32, -4 * 3600),
+        offsetFromLocal(new_york, 1730597400, .earlier).?.seconds,
+    );
+    try testing.expectEqual(
+        @as(i32, -5 * 3600),
+        offsetFromLocal(new_york, 1730597400, .later).?.seconds,
+    );
+    try testing.expect(offsetFromLocal(new_york, 1730597400, .rejected) == null);
+}
+
 test "time zone offsets" {
     const testing = @import("std").testing;
     const new_york = find("America/New_York").?;
