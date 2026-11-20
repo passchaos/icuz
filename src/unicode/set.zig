@@ -700,6 +700,10 @@ pub const Set = struct {
         return .{ .ranges = self.ranges.items };
     }
 
+    pub fn iterator(self: *const Set) Iterator {
+        return Iterator.init(self);
+    }
+
     /// True when every code point of `other` is in this set.
     pub fn containsAll(self: Set, other: Set) bool {
         return other.subsetOf(self);
@@ -796,6 +800,136 @@ fn appendPatternCodepoint(
         },
     }
 }
+
+/// ICU `UnicodeSetIterator`-style traversal: code points in sorted order,
+/// followed by multi-code-point strings. `nextRange` yields maximal ranges
+/// instead of individual code points.
+pub const Iterator = struct {
+    set: *const Set,
+    range_index: usize = 0,
+    codepoint: u32 = 0,
+    string_index: usize = 0,
+    string_buffer: [4]u8 = undefined,
+    string_length: u8 = 0,
+    current: Current = .none,
+
+    pub const Current = union(enum) {
+        none,
+        codepoint: u21,
+        range: Range,
+        string: []const u8,
+    };
+
+    pub fn init(set: *const Set) Iterator {
+        return .{ .set = set };
+    }
+
+    pub fn reset(self: *Iterator) void {
+        self.range_index = 0;
+        self.codepoint = 0;
+        self.string_index = 0;
+        self.string_length = 0;
+        self.current = .none;
+    }
+
+    /// Advance to the next single code point or string.
+    pub fn next(self: *Iterator) bool {
+        while (self.range_index < self.set.ranges.items.len) {
+            const range = self.set.ranges.items[self.range_index];
+            if (self.codepoint == 0) self.codepoint = range.first;
+            if (self.codepoint <= range.last) {
+                const value: u21 = @intCast(self.codepoint);
+                self.codepoint += 1;
+                self.current = .{ .codepoint = value };
+                return true;
+            }
+            self.range_index += 1;
+            self.codepoint = 0;
+        }
+        if (self.string_index < self.set.strings.items.len) {
+            self.current = .{ .string = self.set.strings.items[self.string_index] };
+            self.string_index += 1;
+            return true;
+        }
+        self.current = .none;
+        return false;
+    }
+
+    /// Advance to the next range or string.
+    pub fn nextRange(self: *Iterator) bool {
+        if (self.range_index < self.set.ranges.items.len) {
+            const range = self.set.ranges.items[self.range_index];
+            self.range_index += 1;
+            self.current = .{ .range = range };
+            return true;
+        }
+        if (self.string_index < self.set.strings.items.len) {
+            self.current = .{ .string = self.set.strings.items[self.string_index] };
+            self.string_index += 1;
+            return true;
+        }
+        self.current = .none;
+        return false;
+    }
+
+    pub fn skipToStrings(self: *Iterator) void {
+        self.range_index = self.set.ranges.items.len;
+        self.codepoint = 0;
+        self.current = .none;
+    }
+
+    pub fn isString(self: *const Iterator) bool {
+        return switch (self.current) {
+            .string => true,
+            else => false,
+        };
+    }
+
+    pub fn getCodepoint(self: *const Iterator) u21 {
+        return switch (self.current) {
+            .codepoint => |value| value,
+            .range => |range| range.first,
+            .string => |text| blk: {
+                if (text.len == 0) break :blk 0;
+                const length = std.unicode.utf8ByteSequenceLength(text[0]) catch
+                    break :blk 0;
+                if (length > text.len) break :blk 0;
+                break :blk std.unicode.utf8Decode(text[0..length]) catch 0;
+            },
+            .none => 0,
+        };
+    }
+
+    pub fn getCodepointEnd(self: *const Iterator) u21 {
+        return switch (self.current) {
+            .range => |range| range.last,
+            else => self.getCodepoint(),
+        };
+    }
+
+    /// Returns the current string, or a one-code-point string for a code
+    /// point/range item. The slice is valid until the iterator advances.
+    pub fn getString(self: *Iterator) []const u8 {
+        return switch (self.current) {
+            .string => |text| text,
+            .codepoint => |value| blk: {
+                self.string_length = std.unicode.utf8Encode(
+                    value,
+                    &self.string_buffer,
+                ) catch 0;
+                break :blk self.string_buffer[0..self.string_length];
+            },
+            .range => |range| blk: {
+                self.string_length = std.unicode.utf8Encode(
+                    range.first,
+                    &self.string_buffer,
+                ) catch 0;
+                break :blk self.string_buffer[0..self.string_length];
+            },
+            .none => "",
+        };
+    }
+};
 
 pub const RangeIterator = struct {
     ranges: []const Range,
@@ -1807,4 +1941,34 @@ test "set algebra conformance" {
         case_count,
     });
     try testing.expect(failures == 0);
+}
+
+test "UnicodeSetIterator ranges and strings" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    var set = try parse(allocator, "[a-c{xy}z]");
+    defer set.deinit();
+
+    var iterator = set.iterator();
+    var codepoints: [8]u21 = undefined;
+    var count: usize = 0;
+    while (iterator.next()) {
+        codepoints[count] = iterator.getCodepoint();
+        count += 1;
+    }
+    try testing.expectEqual(@as(usize, 5), count);
+    try testing.expectEqual(@as(u21, 'a'), codepoints[0]);
+    try testing.expectEqual(@as(u21, 'c'), codepoints[2]);
+    try testing.expect(iterator.isString() == false);
+
+    var ranges = set.iterator();
+    try testing.expect(ranges.nextRange());
+    try testing.expectEqual(@as(u21, 'a'), ranges.getCodepoint());
+    try testing.expectEqual(@as(u21, 'c'), ranges.getCodepointEnd());
+    try testing.expect(ranges.nextRange());
+    try testing.expectEqual(@as(u21, 'z'), ranges.getCodepoint());
+    try testing.expect(ranges.nextRange());
+    try testing.expect(ranges.isString());
+    try testing.expectEqualStrings("xy", ranges.getString());
+    try testing.expect(!ranges.nextRange());
 }

@@ -48,6 +48,7 @@ pub const Region = region.Region;
 pub const RegionType = region.RegionType;
 pub const LocaleData = locale_data.LocaleData;
 pub const ConverterSelector = charset_selector.ConverterSelector;
+pub const UnicodeSetIterator = unicode.UnicodeSetIterator;
 pub const calendar_preferences = @import("unicode/format/calendar_preferences.zig");
 pub const break_rules = @import("unicode/break_rules.zig");
 pub const bidi = @import("unicode/bidi/paragraph.zig");
