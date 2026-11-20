@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const rules = @import("rules.zig");
+const scalar = @import("../scalar/root.zig");
 const dictionary = @import("dictionary.zig");
 const test_data = @embedFile("conformance.bin");
 
@@ -45,19 +46,20 @@ pub const Iterator = struct {
         var regional_indicator_count: usize =
             if (first_properties.class == .regional_indicator) 1 else 0;
         while (end < self.text.len) {
-            const should_break = asciiBreaksAt(self.text, end) orelse breaksAt(
-                self.text,
-                end,
-                regional_indicator_count,
-            );
-            if (should_break) break;
-            if (self.text[end] < 0x80) {
+            if (asciiBreaksAt(self.text, end)) |should_break| {
+                if (should_break) break;
                 if (asciiIsWordAnchor(self.text[end])) is_word = true;
                 regional_indicator_count = 0;
                 end += 1;
                 continue;
             }
             const current = decode(self.text, end) orelse unreachable;
+            if (breaksAt(
+                self.text,
+                end,
+                current,
+                regional_indicator_count,
+            )) break;
             const current_properties = properties(current.codepoint);
             is_word = is_word or current_properties.word_anchor;
             if (current_properties.class == .regional_indicator) {
@@ -281,17 +283,22 @@ pub fn assumeValidWithDictionaries(text: []const u8) DictionaryIterator {
 fn breaksAt(
     text: []const u8,
     offset: usize,
+    current: Decoded,
     regional_indicator_count: usize,
 ) bool {
     const previous_actual = decodeBefore(text, offset) orelse unreachable;
-    const current = decode(text, offset) orelse unreachable;
     const previous_actual_properties = properties(previous_actual.codepoint);
     const current_properties = properties(current.codepoint);
 
     if (rules.adjacentBreak(previous_actual_properties, current_properties)) |decision|
         return decision;
 
-    const previous = previousSignificant(text, offset) orelse return true;
+    // The previous scalar is usually not ignored, so the backward skip scan
+    // can reuse the decode that already happened above.
+    const previous = if (isIgnored(previous_actual_properties.class))
+        previousSignificant(text, offset) orelse return true
+    else
+        previous_actual;
     const previous_properties = properties(previous.codepoint);
     if (isNewline(previous_properties.class)) return true;
     const previous_previous = previousSignificant(text, previous.start);
@@ -339,12 +346,10 @@ fn nextSignificant(text: []const u8, offset: usize) ?Decoded {
 }
 
 fn decode(text: []const u8, offset: usize) ?Decoded {
-    if (offset >= text.len) return null;
-    const sequence_len = std.unicode.utf8ByteSequenceLength(text[offset]) catch return null;
-    if (offset + sequence_len > text.len) return null;
-    const codepoint = std.unicode.utf8Decode(text[offset .. offset + sequence_len]) catch
-        return null;
-    return .{ .codepoint = codepoint, .start = offset, .next = offset + sequence_len };
+    // The iterator's contract is valid UTF-8 (`segments` validates up front),
+    // so the fast non-validating decoder is used.
+    const decoded = scalar.decodeValid(text, offset) orelse return null;
+    return .{ .codepoint = decoded.codepoint, .start = offset, .next = decoded.next };
 }
 
 fn decodeBefore(text: []const u8, offset: usize) ?Decoded {
