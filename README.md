@@ -91,7 +91,9 @@ need without pulling in a font or layout engine.
   over UTS #39 augmented script sets, and `hasMixedNumbers` detects mixed
   decimal number systems and non-decimal numbers.
 - CLDR 48 cardinal plural rules for 224 locales and ordinal plural rules for
-  110 locales, including both CLDR sample conformance fixtures.
+  110 locales, including both CLDR sample conformance fixtures, plus plural
+  range selection (`pluralRangeCategory`) for 91 locales from
+  `pluralRanges.xml`.
 - CLDR 48 decimal, percent, currency, scientific, and compact number
   formatting for 111 locales, with locale symbols, grouping, fraction-digit
   options, all 307 CLDR currencies with locale-specific symbols/names/codes

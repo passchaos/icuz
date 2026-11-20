@@ -261,6 +261,7 @@ pub const ordinalPluralCategoryForInteger = plural_mod.ordinalCategoryForInteger
 pub const ordinalPluralCategoryForDecimalString =
     plural_mod.ordinalCategoryForDecimalString;
 pub const plural_cldr_version = plural_mod.cldr_version;
+pub const pluralRangeCategory = @import("./format/plural_ranges.zig").select;
 
 pub const NumberStyle = number_mod.Style;
 pub const NumberCompactStyle = number_mod.CompactStyle;
@@ -648,6 +649,7 @@ test {
     _ = spoof_mod;
     _ = idna_mod;
     _ = plural_mod;
+    _ = @import("./format/plural_ranges.zig");
     _ = number_mod;
     _ = dates_mod;
     _ = dates_mod.weekend;
