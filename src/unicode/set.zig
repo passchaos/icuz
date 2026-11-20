@@ -575,6 +575,27 @@ pub const Set = struct {
         for (other.strings.items) |text| self.removeString(text);
     }
 
+    /// ICU-style alias for `unionWith`.
+    pub fn addAll(self: *Set, other: Set) !void {
+        return self.unionWith(other);
+    }
+
+    /// ICU-style alias for `intersectWith`.
+    pub fn retainAll(self: *Set, other: Set) !void {
+        return self.intersectWith(other);
+    }
+
+    /// ICU-style alias for `subtract`.
+    pub fn removeAll(self: *Set, other: Set) !void {
+        return self.subtract(other);
+    }
+
+    /// Remove every multi-code-point string element.
+    pub fn removeAllStrings(self: *Set) void {
+        for (self.strings.items) |text| self.allocator.free(text);
+        self.strings.clearRetainingCapacity();
+    }
+
     pub fn eql(self: Set, other: Set) bool {
         if (self.ranges.items.len != other.ranges.items.len) return false;
         for (self.ranges.items, other.ranges.items) |a, b| {
@@ -1489,6 +1510,27 @@ test "set string elements" {
     try difference.subtract(other);
     try testing.expectEqual(@as(usize, 1), difference.stringCount());
     try testing.expect(difference.containsString("x}y"));
+
+    var alias_union = try set.clone(allocator);
+    defer alias_union.deinit();
+    try alias_union.addAll(other);
+    try testing.expectEqual(@as(usize, 2), alias_union.stringCount());
+
+    var alias_retain = try set.clone(allocator);
+    defer alias_retain.deinit();
+    try alias_retain.retainAll(other);
+    try testing.expectEqual(@as(usize, 1), alias_retain.stringCount());
+
+    var alias_remove = try set.clone(allocator);
+    defer alias_remove.deinit();
+    try alias_remove.removeAll(other);
+    try testing.expectEqual(@as(usize, 1), alias_remove.stringCount());
+
+    var no_strings = try set.clone(allocator);
+    defer no_strings.deinit();
+    no_strings.removeAllStrings();
+    try testing.expectEqual(@as(usize, 0), no_strings.stringCount());
+    try testing.expect(no_strings.contains('a'));
 
     var complement = try set.clone(allocator);
     defer complement.deinit();

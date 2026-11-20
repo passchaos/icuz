@@ -56,7 +56,8 @@ need without pulling in a font or layout engine.
   (`{abc}`, `addString`, `containsString`), case closure (`closeOver` with
   simple/full case-insensitive and add-case-mappings modes),
   ICU-style `span`/`spanBack` scanning with longest string-element matches,
-  union/intersection/difference/complement,
+  union/intersection/difference/complement (also exposed as
+  `addAll`/`retainAll`/`removeAll`) and `removeAllStrings`,
   `containsAll`/`containsNone`/`containsSome`, pattern
   round-tripping, and a practical `\p{...}`/`[a-z]` pattern parser with
   binary, general-category, script, script-extension, `Age`, and
