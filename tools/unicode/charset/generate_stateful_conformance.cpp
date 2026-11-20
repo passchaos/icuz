@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    const char* converter_names[] = {"UTF-7", "HZ", "SCSU", "BOCU-1", "ISO-2022-KR"};
+    const char* converter_names[] = {"UTF-7", "HZ", "SCSU", "BOCU-1", "ISO-2022-KR", "Big5-HKSCS"};
     const char* utf7_inputs[] = {
         "Hello, World!",
         "Hi Mom -\u263a-!",
@@ -111,6 +111,18 @@ int main(int argc, char** argv) {
         "\uac00\ub098\ub2e4\ub77c\ub9c8\ubc14\uc0ac",
         "\uc548\ub155\ud558\uc138\uc694",
     };
+    const char* hkscs_inputs[] = {
+        "\u9999\u6e2f",
+        "\u20ac",
+        "\U00027267",
+        "Hello \u9999\u6e2f",
+        "\u53f0\u7063",
+        "\u9999\u6e2f\u7279\u5225\u884c\u653f\u5340",
+        "ABC 123",
+        "",
+        "\u4e2d\u6587\u6e2c\u8a66",
+        "\u4e00\u4e8c\u4e09\u56db\u4e94",
+    };
     const char* hz_inputs[] = {
         "Hello",
         "\u4e2d\u56fd",
@@ -128,7 +140,7 @@ int main(int argc, char** argv) {
 
     std::vector<uint8_t> records;
     uint32_t record_count = 0;
-    for (uint8_t converter_index = 0; converter_index < 5; converter_index++) {
+    for (uint8_t converter_index = 0; converter_index < 6; converter_index++) {
         UErrorCode status = U_ZERO_ERROR;
         UConverter* converter = ucnv_open(
             converter_names[converter_index],
@@ -145,7 +157,9 @@ int main(int argc, char** argv) {
                     ? scsu_inputs
                     : (converter_index == 3
                         ? bocu1_inputs
-                        : iso2022kr_inputs)));
+                        : (converter_index == 4
+                            ? iso2022kr_inputs
+                            : hkscs_inputs))));
         const size_t input_count = converter_index == 0
             ? sizeof(utf7_inputs) / sizeof(utf7_inputs[0])
             : (converter_index == 1
@@ -154,7 +168,9 @@ int main(int argc, char** argv) {
                     ? sizeof(scsu_inputs) / sizeof(scsu_inputs[0])
                     : (converter_index == 3
                         ? sizeof(bocu1_inputs) / sizeof(bocu1_inputs[0])
-                        : sizeof(iso2022kr_inputs) / sizeof(iso2022kr_inputs[0]))));
+                        : (converter_index == 4
+                            ? sizeof(iso2022kr_inputs) / sizeof(iso2022kr_inputs[0])
+                            : sizeof(hkscs_inputs) / sizeof(hkscs_inputs[0])))));
         for (size_t input_index = 0; input_index < input_count; input_index++) {
             const UnicodeString text = UnicodeString::fromUTF8(inputs[input_index]);
 

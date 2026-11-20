@@ -453,8 +453,9 @@ BLOBS = (
     Blob("src/unicode/resource/res_conformance.bin", b"CJGM", 1, "33a2b3b780fb3ce50df8476d0654366fd603301eeb42dadc4da2edc24f3febb6", version=(0, 0, 0)),
     Blob("src/unicode/resource/dat_conformance.bin", b"CJGN", 1, "3b37ef6070872e1ab0cac30b0be987e9192ad2351f44ef7f5d8f4bc803077331", version=(0, 0, 0)),
     Blob("src/unicode/format/decimal_conformance.bin", b"CJGO", 1, "1588fa94b4da9a3f350d583a4ff62896abe1847a1f31b537ac338d3dc0c573e4", version=(0, 0, 0)),
-    Blob("src/unicode/charset/stateful_conformance.bin", b"CJGP", 1, "8b485ee89b153de7131a150846066b1c13a4a28d75811cdfcfecf35eefc36f1a", version=(0, 0, 0)),
+    Blob("src/unicode/charset/stateful_conformance.bin", b"CJGP", 1, "d4574320a15555c743d11734b6881cd967e82e310a3af20906b50b2790fe027d", version=(0, 0, 0)),
     Blob("src/unicode/charset/ibm_pages.bin", b"CJGQ", 1, "d8e840575bbaf6036af580a8a9eff5e22374634fdaa62af8b05370e7024189b0", version=(0, 0, 0)),
+    Blob("src/unicode/charset/hkscs.bin", b"CJGS", 1, "b31b7bdbb3eee866e9ad0f0af2c4e8a095d47d65487b8f1815d804567d3862b7", version=(0, 0, 0)),
 )
 
 GENERATORS = {
@@ -480,8 +481,9 @@ GENERATORS = {
     "tools/unicode/resource/generate_conformance.cpp": "670771aeaa5d450866285ed5f4f520a8a330d9daa584b7490f183d5f16595c59",
     "tools/unicode/resource/generate_dat_conformance.cpp": "32c2610961d40e2e9328731dbd80a314823333b35ded83af7986fa0bff0e650d",
     "tools/unicode/format/generate_decimal_conformance.cpp": "3b5f0c4111546a84752b8170099ef0409525c7d92d1f12d352168d593cf628c3",
-    "tools/unicode/charset/generate_stateful_conformance.cpp": "e90235b92514c73328c02a2c61c8036a00203ee61bf2333181e1712480ffab18",
+    "tools/unicode/charset/generate_stateful_conformance.cpp": "ad1d5448c84c2a9411f53264b8b1895e4f5c5c04d0b7c36bf0c0002c645be65b",
     "tools/unicode/charset/generate_ibm_pages.cpp": "8308ebb48529f6934cccddcf6fdbf86720a953cc61bcf7de021438c49d7d3500",
+    "tools/unicode/charset/generate_hkscs.cpp": "49d5b58699b87396cbb4d12b558b850fcaffcb7adc0fa13493fe4d979d728a36",
     "tools/unicode/resource/generate_fixtures.sh": "0192498b15e091adad4c099264eec11176d7c213d160feabd03c46b39a867dc5",
     "tools/generate_canonical_decomposition.py": "450c932dbd278208bccd3ab8bb26f04f1b18a96051fc03944393f5d73e3ad6d8",
     "tools/generate_nonspacing_marks.py": "12d45f34ce2891ccf1b342bc8f44c6fe32e15e019d7a41489d8036dee9f8555c",
@@ -1061,6 +1063,13 @@ def check_layout(blob: Blob, data: bytes) -> None:
         for _ in range(page_count):
             name_len = struct.unpack_from("<H", data, offset)[0]
             offset += 2 + name_len + 2 + 512
+        assert offset == len(data)
+    elif magic == b"CJGS":
+        lead_count = struct.unpack_from("<I", data, 8)[0]
+        trail_count = struct.unpack_from("<I", data, 12)[0]
+        offset = 16 + lead_count * trail_count * 4
+        reverse_count = struct.unpack_from("<I", data, offset)[0]
+        offset += 4 + reverse_count * 6
         assert offset == len(data)
     elif magic == b"CJUC":
         case_count = struct.unpack_from("<I", data, 8)[0]

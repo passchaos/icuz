@@ -318,6 +318,75 @@ pub fn ibmReverse(index: usize, codepoint: u21) ?u8 {
     return null;
 }
 
+pub const hkscs_blob = @embedFile("hkscs.bin");
+const hkscs_lead_count = std.mem.readInt(u32, hkscs_blob[8..12], .little);
+const hkscs_trail_count = std.mem.readInt(u32, hkscs_blob[12..16], .little);
+const hkscs_forward_offset: usize = 16;
+const hkscs_reverse_count_offset: usize = hkscs_forward_offset +
+    @as(usize, hkscs_lead_count) * hkscs_trail_count * 4;
+const hkscs_reverse_count = std.mem.readInt(
+    u32,
+    hkscs_blob[hkscs_reverse_count_offset..][0..4],
+    .little,
+);
+const hkscs_reverse_offset: usize = hkscs_reverse_count_offset + 4;
+
+fn hkscsTrailIndex(trail: u8) ?usize {
+    if (trail >= 0x40 and trail <= 0x7E) return trail - 0x40;
+    if (trail >= 0x80 and trail <= 0xFE) return 63 + (trail - 0x80);
+    return null;
+}
+
+pub fn hkscsForward(lead: u8, trail: u8) ?u21 {
+    if (lead < 0x81 or lead > 0xFE) return null;
+    const trail_index = hkscsTrailIndex(trail) orelse return null;
+    const pointer = @as(usize, lead - 0x81) * hkscs_trail_count + trail_index;
+    const value = std.mem.readInt(
+        u32,
+        hkscs_blob[hkscs_forward_offset + pointer * 4 ..][0..4],
+        .little,
+    );
+    if (value == 0 or value > 0x10FFFF) return null;
+    return @intCast(value);
+}
+
+fn hkscsPair(pointer: usize) ?[2]u8 {
+    if (pointer >= @as(usize, hkscs_lead_count) * hkscs_trail_count) {
+        return null;
+    }
+    const lead = pointer / hkscs_trail_count + 0x81;
+    const trail_index = pointer % hkscs_trail_count;
+    const trail = if (trail_index < 63)
+        0x40 + trail_index
+    else
+        0x80 + (trail_index - 63);
+    return .{ @intCast(lead), @intCast(trail) };
+}
+
+pub fn hkscsReverse(codepoint: u21) ?[2]u8 {
+    var low: usize = 0;
+    var high: usize = hkscs_reverse_count;
+    while (low < high) {
+        const mid = low + (high - low) / 2;
+        const record = hkscs_reverse_offset + mid * 6;
+        const value = std.mem.readInt(
+            u32,
+            hkscs_blob[record..][0..4],
+            .little,
+        );
+        if (value == codepoint) {
+            const pointer = std.mem.readInt(
+                u16,
+                hkscs_blob[record + 4 ..][0..2],
+                .little,
+            );
+            return hkscsPair(pointer);
+        }
+        if (value < codepoint) low = mid + 1 else high = mid;
+    }
+    return null;
+}
+
 test "charset tables are structurally valid" {
     const testing = @import("std").testing;
     try testing.expectEqual(@as(u16, 17), section_count);

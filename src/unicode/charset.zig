@@ -21,6 +21,7 @@ const hz = @import("charset/hz.zig");
 const scsu = @import("charset/scsu.zig");
 const bocu1 = @import("charset/bocu1.zig");
 const iso2022kr = @import("charset/iso2022kr.zig");
+const hkscs = @import("charset/hkscs.zig");
 
 pub const DecodeResult = types.DecodeResult;
 pub const EncodeResult = types.EncodeResult;
@@ -36,6 +37,7 @@ pub const Encoding = enum {
     scsu,
     bocu1,
     iso_2022_kr,
+    hkscs,
     ascii,
     latin1,
     ibm866,
@@ -121,6 +123,7 @@ pub fn encodingName(encoding: Encoding) []const u8 {
         .scsu => "SCSU",
         .bocu1 => "BOCU-1",
         .iso_2022_kr => "ISO-2022-KR",
+        .hkscs => "Big5-HKSCS",
         .ascii => "US-ASCII",
         .latin1 => "ISO-8859-1",
         .ibm866 => "IBM866",
@@ -177,7 +180,7 @@ pub fn maxCharSize(encoding: Encoding) u8 {
         .windows_1250, .windows_1251, .windows_1252, .windows_1253,
         .windows_1254, .windows_1255, .windows_1256, .windows_1257,
         .windows_1258, .x_mac_cyrillic, .replacement => 1,
-        .big5, .shift_jis, .euc_kr => 2,
+        .big5, .shift_jis, .euc_kr, .hkscs => 2,
         .euc_jp => 3,
         .gbk, .gb18030, .x_user_defined => 4,
         .utf7, .iso_2022_jp, .iso_2022_kr => 8,
@@ -250,6 +253,8 @@ const base_aliases = [_]Alias{
     .{ .name = "bocu1", .encoding = .bocu1 },
     .{ .name = "iso2022kr", .encoding = .iso_2022_kr },
     .{ .name = "csiso2022kr", .encoding = .iso_2022_kr },
+    .{ .name = "big5hkscs", .encoding = .hkscs },
+    .{ .name = "hkscs", .encoding = .hkscs },
 
     .{ .name = "ascii", .encoding = .ascii },
     .{ .name = "usascii", .encoding = .ascii },
@@ -577,6 +582,7 @@ pub const Decoder = struct {
             .scsu => scsu.next(&self.scsu_state, input, index),
             .bocu1 => bocu1.next(&self.bocu1_state, input, index),
             .iso_2022_kr => iso2022kr.next(&self.iso2022kr_state, input, index),
+            .hkscs => hkscs.next({}, input, index),
             .ascii => asciiNext(input, index),
             .latin1 => latin1Next(input, index),
             .x_user_defined => xUserDefinedNext(input, index),
@@ -618,6 +624,7 @@ pub const Encoder = struct {
             .scsu => scsu.encode(&self.scsu_state, codepoint, out),
             .bocu1 => bocu1.encode(&self.bocu1_state, codepoint, out),
             .iso_2022_kr => iso2022kr.encode(&self.iso2022kr_state, codepoint, out),
+            .hkscs => hkscs.encode({}, codepoint, out),
             .ascii => if (codepoint < 0x80)
                 writeByte(codepoint, out)
             else
@@ -1524,7 +1531,7 @@ fn asciiCompatible(encoding: Encoding) bool {
     }
     return switch (encoding) {
         .utf8, .ascii, .latin1, .x_user_defined => true,
-        .gbk, .gb18030, .big5, .euc_jp, .shift_jis, .euc_kr => true,
+        .gbk, .gb18030, .big5, .hkscs, .euc_jp, .shift_jis, .euc_kr => true,
         else => singleByteIndex(encoding) != null,
     };
 }
@@ -1611,7 +1618,7 @@ test "encoding labels" {
     try testing.expectEqual(Encoding.windows_1251, fromLabel("windows_1251").?);
     try testing.expectEqual(Encoding.shift_jis, fromLabel("Shift_JIS").?);
     try testing.expectEqual(Encoding.gbk, fromLabel("GB2312").?);
-    try testing.expectEqual(Encoding.big5, fromLabel("Big5-HKSCS").?);
+    try testing.expectEqual(Encoding.hkscs, fromLabel("Big5-HKSCS").?);
     try testing.expectEqual(Encoding.euc_kr, fromLabel("EUC-KR").?);
     try testing.expectEqual(Encoding.iso_2022_jp, fromLabel("ISO-2022-JP").?);
     try testing.expectEqual(Encoding.ibm866, fromLabel("cp866").?);
@@ -1979,6 +1986,32 @@ test "ISO-2022-KR conversion" {
     try testing.expectEqual(@as(u8, 8), maxCharSize(.iso_2022_kr));
 }
 
+test "Big5-HKSCS conversion" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const cases = [_]struct { text: []const u8, encoded: []const u8 }{
+        .{ .text = "香港", .encoded = "\xAD\xBB\xB4\xE4" },
+        .{ .text = "€", .encoded = "\xA3\xE1" },
+        .{ .text = "\u{27267}", .encoded = "\x87\x45" },
+        .{ .text = "Hello 香港", .encoded = "Hello \xAD\xBB\xB4\xE4" },
+    };
+    for (cases) |case| {
+        const encoded = try encodeAlloc(allocator, case.text, .hkscs, .{});
+        defer allocator.free(encoded);
+        try testing.expectEqualStrings(case.encoded, encoded);
+        const decoded = try decodeAlloc(allocator, encoded, .hkscs, .{});
+        defer allocator.free(decoded);
+        try testing.expectEqualStrings(case.text, decoded);
+    }
+    try testing.expectEqualStrings("Big5-HKSCS", encodingName(.hkscs));
+    try testing.expectEqual(
+        @as(?Encoding, .hkscs),
+        fromLabel("Big5-HKSCS"),
+    );
+    try testing.expectEqual(@as(u8, 2), maxCharSize(.hkscs));
+}
+
 test "ICU stateful charset conformance fixture" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
@@ -1989,7 +2022,7 @@ test "ICU stateful charset conformance fixture" {
     try testing.expectEqual(@as(u8, 1), fixture[4]);
     const record_count = std.mem.readInt(u32, fixture[8..12], .little);
 
-    const encodings = [_]Encoding{ .utf7, .hz, .scsu, .bocu1, .iso_2022_kr };
+    const encodings = [_]Encoding{ .utf7, .hz, .scsu, .bocu1, .iso_2022_kr, .hkscs };
     var cursor: usize = 12;
     var failures: usize = 0;
     var record_index: usize = 0;
@@ -2037,7 +2070,7 @@ test "ICU stateful charset conformance fixture" {
                 };
                 defer allocator.free(actual);
                 if (encoding == .utf7 or encoding == .bocu1 or
-                    encoding == .iso_2022_kr) {
+                    encoding == .iso_2022_kr or encoding == .hkscs) {
                     if (!std.mem.eql(u8, actual, expected)) {
                         failures += 1;
                         if (failures <= 10) {
