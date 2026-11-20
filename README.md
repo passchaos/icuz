@@ -226,6 +226,9 @@ need without pulling in a font or layout engine.
   territory, grouping, deprecated, unknown), containment parents and
   children, transitive containment, and available-region enumeration,
   validated by a 138-case ICU 78 differential fixture.
+- Generic `StringEnumeration` and typed `NumberFieldIterator` /
+  `DateFieldIterator` for walking formatted field spans, matching ICU's
+  enumeration and `UFieldPositionIterator` traversal model.
 - ICU `ulocdata`-compatible locale data (`LocaleData`,
   `localeExemplarSetAlloc`, `localeMeasurementSystem`, `localePaperSize`):
   CLDR 48 exemplar sets (standard, auxiliary, index, and punctuation, with
