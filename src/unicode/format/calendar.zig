@@ -616,6 +616,36 @@ pub fn fromDays(calendar: Calendar, days: i64) Date {
     };
 }
 
+/// Convert calendar fields to days since 1970-01-01 for the Gregorian-like
+/// calendars that share Gregorian month and day arithmetic. Returns null for
+/// calendars without an inverse conversion.
+pub fn daysFromDate(calendar: Calendar, date: Date) ?i64 {
+    if (calendar == .japanese) {
+        var start: i64 = 0;
+        var start_year: i32 = 0;
+        var found = false;
+        for (japanese_eras) |era| {
+            if (era.type != date.era) continue;
+            start = era.start;
+            start_year = era.start_year;
+            found = true;
+            break;
+        }
+        if (!found) return null;
+        const year = start_year + date.year - 1;
+        const days = daysFromGregorian(year, date.month, date.day);
+        return if (days < start) start else days;
+    }
+    const gregorian_year: i32 = switch (calendar) {
+        .gregorian => if (date.era == 0) 1 - date.year else date.year,
+        .iso8601 => date.year,
+        .buddhist => date.year - 543,
+        .roc => if (date.era == 0) 1912 - date.year else 1911 + date.year,
+        else => return null,
+    };
+    return daysFromGregorian(gregorian_year, date.month, date.day);
+}
+
 fn expectDate(days: i64, calendar: Calendar, expected: Date) !void {
     const actual = fromDays(calendar, days);
     try std.testing.expectEqual(expected.era, actual.era);

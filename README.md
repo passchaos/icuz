@@ -210,6 +210,11 @@ need without pulling in a font or layout engine.
   expose era, month, weekday, quarter, and AM/PM names in wide,
   abbreviated, narrow, short, and stand-alone forms, validated by a
   2,251-record ICU 78 differential fixture.
+- ICU `ucal`-compatible mutable calendar (`Calendar`): timezone-aware
+  millisecond state, field get/set, `add`/`roll`, era/year/month/date and
+  clock fields, DST-aware zone and DST offsets, and Gregorian, Buddhist,
+  Japanese, ROC, and ISO-8601 systems, validated by a 36-case ICU 78
+  differential fixture.
 - ICU `DateTimePatternGenerator` helpers: pattern-to-skeleton conversion
   (`datePatternSkeletonAlloc`), base-skeleton reduction
   (`dateBaseSkeletonAlloc`), and skeleton-driven field replacement
