@@ -290,6 +290,8 @@ pub const formatNumberAlloc = number_mod.formatAlloc;
 pub const formatNumberFieldsAlloc = number_mod.formatFieldsAlloc;
 pub const formatIntegerAlloc = number_mod.formatIntegerAlloc;
 pub const formatNumberSkeletonAlloc = number_mod.formatSkeletonAlloc;
+pub const formatNumberSkeletonFieldsAlloc =
+    number_mod.formatSkeletonFieldsAlloc;
 pub const formatNumberSkeletonIntegerAlloc =
     number_mod.formatSkeletonIntegerAlloc;
 pub const parseNumberFloat = number_mod.parseFloat;

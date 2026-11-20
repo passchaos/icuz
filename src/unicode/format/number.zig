@@ -1023,6 +1023,61 @@ pub fn formatSkeletonAlloc(
     return formatAlloc(allocator, value, locale_name, options);
 }
 
+/// Format a number skeleton and report field positions. Unit skeletons shift
+/// the number's field offsets into the final unit pattern; scientific and
+/// compact skeletons leave `fields` empty.
+pub fn formatSkeletonFieldsAlloc(
+    allocator: std.mem.Allocator,
+    value: f64,
+    locale_name: []const u8,
+    skeleton: []const u8,
+    fields: *std.ArrayList(NumberFieldPosition),
+) Error![]u8 {
+    fields.clearRetainingCapacity();
+    const options = try parseSkeleton(skeleton);
+    if (options.unit_id) |unit_id| {
+        const unit = units.unitFromId(unit_id) orelse
+            return error.InvalidPattern;
+        var inner = options;
+        inner.unit_id = null;
+        const number_text = try formatFieldsAlloc(
+            allocator,
+            value,
+            locale_name,
+            inner,
+            fields,
+        );
+        defer allocator.free(number_text);
+        const plural_value = if (inner.style == .compact and @abs(value) >= 10)
+            roundHalfEven(value, 0)
+        else
+            value;
+        const result = try units.applyNumberAlloc(
+            allocator,
+            plural_value,
+            number_text,
+            unit,
+            locale_name,
+            switch (options.unit_style) {
+                .long => .long,
+                .short => .short,
+            },
+        );
+        if (std.mem.indexOf(u8, result, number_text)) |offset| {
+            if (offset != 0) {
+                for (fields.items) |*position| {
+                    position.start += offset;
+                    position.end += offset;
+                }
+            }
+        } else {
+            fields.clearRetainingCapacity();
+        }
+        return result;
+    }
+    return formatFieldsAlloc(allocator, value, locale_name, options, fields);
+}
+
 /// Format an integer using a compact ICU-style number skeleton.
 pub fn formatSkeletonIntegerAlloc(
     allocator: std.mem.Allocator,
@@ -3090,6 +3145,61 @@ test "number field positions" {
         "%",
         percent[percent_fields.items[1].start..percent_fields.items[1].end],
     );
+}
+
+test "skeleton field positions" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var fields = std.ArrayList(NumberFieldPosition).empty;
+    defer fields.deinit(allocator);
+    const percent = try formatSkeletonFieldsAlloc(
+        allocator,
+        25,
+        "en",
+        "percent",
+        &fields,
+    );
+    defer allocator.free(percent);
+    try testing.expectEqualStrings("25%", percent);
+    try testing.expectEqual(@as(usize, 2), fields.items.len);
+    try testing.expectEqual(NumberField.integer, fields.items[0].field);
+    try testing.expectEqualStrings(
+        "25",
+        percent[fields.items[0].start..fields.items[0].end],
+    );
+    try testing.expectEqual(NumberField.percent, fields.items[1].field);
+
+    var unit_fields = std.ArrayList(NumberFieldPosition).empty;
+    defer unit_fields.deinit(allocator);
+    const unit = try formatSkeletonFieldsAlloc(
+        allocator,
+        5,
+        "en",
+        "measure-unit/length-meter",
+        &unit_fields,
+    );
+    defer allocator.free(unit);
+    try testing.expectEqualStrings("5 m", unit);
+    try testing.expectEqual(@as(usize, 1), unit_fields.items.len);
+    try testing.expectEqual(NumberField.integer, unit_fields.items[0].field);
+    try testing.expectEqualStrings(
+        "5",
+        unit[unit_fields.items[0].start..unit_fields.items[0].end],
+    );
+
+    var compact_fields = std.ArrayList(NumberFieldPosition).empty;
+    defer compact_fields.deinit(allocator);
+    const compact = try formatSkeletonFieldsAlloc(
+        allocator,
+        1200,
+        "en",
+        "compact-short",
+        &compact_fields,
+    );
+    defer allocator.free(compact);
+    try testing.expectEqualStrings("1.2K", compact);
+    try testing.expectEqual(@as(usize, 0), compact_fields.items.len);
 }
 
 test "scientific and compact formatting" {

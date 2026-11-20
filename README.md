@@ -130,7 +130,8 @@ need without pulling in a font or layout engine.
   validated by a 600-case ICU parsing fixture across 30 locales.
   `formatNumberFieldsAlloc` reports sign, integer groups, grouping separators,
   decimal separator, fraction, currency, and percent spans for editor-style
-  highlighting.
+  highlighting; `formatNumberSkeletonFieldsAlloc` does the same for skeletons
+  and shifts the spans into unit patterns.
 - CLDR 48 Gregorian date/time formatting for 87 locales, including localized
   month/day names, date/time styles, custom patterns, ICU date/time
   skeletons (`yMMMd`, `Hm`, combined date+time skeletons) resolved from
