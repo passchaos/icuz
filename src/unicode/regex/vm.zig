@@ -245,6 +245,7 @@ pub const Runner = struct {
             }
             return false;
         }
+        if (!self.matchPrechecks(self.region_start)) return false;
         if (self.full_literal) |literal| {
             const region = self.text[self.region_start..self.region_end];
             if (literal.len == region.len and std.mem.eql(u8, literal, region)) {
@@ -289,6 +290,7 @@ pub const Runner = struct {
             }
             return false;
         }
+        if (!self.matchPrechecks(self.region_start)) return false;
         if (self.full_literal) |literal| {
             if (self.region_start + literal.len <= self.region_end and
                 std.mem.eql(u8, literal, self.text[self.region_start..][0..literal.len]))
@@ -329,6 +331,31 @@ pub const Runner = struct {
             return false;
         };
         return self.searchFrom(decoded.next);
+    }
+
+    fn matchPrechecks(self: *Runner, start: usize) bool {
+        if (start > self.region_end) return false;
+        const remaining = self.text[start..self.region_end];
+        if (self.literal_prefix) |prefix| {
+            if (remaining.len < prefix.len or
+                !std.mem.eql(u8, remaining[0..prefix.len], prefix))
+            {
+                return false;
+            }
+        }
+        if (self.required_literal) |literal| {
+            const found = std.mem.indexOfPos(u8, self.text, start, literal) orelse
+                return false;
+            if (found + literal.len > self.region_end) return false;
+        }
+        if (self.first_byte_bitmap) |bits| {
+            if (remaining.len == 0) return false;
+            const byte = remaining[0];
+            if (byte >= 0x80) return false;
+            const bits_word = bits[byte >> 6];
+            if ((bits_word >> @intCast(byte & 63)) & 1 == 0) return false;
+        }
+        return true;
     }
 
     fn searchFrom(self: *Runner, start: usize) Error!bool {

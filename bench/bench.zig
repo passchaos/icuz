@@ -309,6 +309,32 @@ fn benchRegex(
     sink +%= matches;
 }
 
+fn benchRegexMatches(
+    name: []const u8,
+    pattern: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    var regex = icuz.Regex.compileAlloc(allocator, pattern, .{}) catch return;
+    defer regex.deinit();
+    var matcher = regex.matcher(text) catch return;
+    defer matcher.deinit();
+
+    const rounds = 20_000;
+    const start = now();
+    var matched: usize = 0;
+    for (0..rounds) |_| {
+        if (matcher.matches() catch return) matched += 1;
+    }
+    const elapsed: u64 = @intCast(now() - start);
+    std.debug.print("{s:<32} {d:>8.3} ns/op ({d} matches)\n", .{
+        name,
+        @as(f64, @floatFromInt(elapsed)) / @as(f64, @floatFromInt(rounds)),
+        matched,
+    });
+    sink +%= matched;
+}
+
 fn benchCase(name: []const u8, text: []const u8, allocator: std.mem.Allocator) void {
     var best: u64 = std.math.maxInt(u64);
     const trials = 5;
@@ -1167,6 +1193,24 @@ pub fn main() !void {
         "literal alternation find",
         "needle|pin",
         "some text with needle or pin in it " ** 8,
+        allocator,
+    );
+    benchRegexMatches(
+        "literal matches",
+        "needle",
+        "needle",
+        allocator,
+    );
+    benchRegexMatches(
+        "literal matches miss",
+        "needle",
+        "some other text",
+        allocator,
+    );
+    benchRegexMatches(
+        "class matches miss",
+        "[0-9]+",
+        "abcdef",
         allocator,
     );
 

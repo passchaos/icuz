@@ -573,3 +573,40 @@ test "regex literal alternation fast path" {
     defer std.testing.allocator.free(replaced);
     try std.testing.expectEqualStrings("x x", replaced);
 }
+
+test "regex match prechecks" {
+    var prefix = try compile("abc.*");
+    defer prefix.deinit();
+    var pm = try prefix.matcher("abcdef");
+    defer pm.deinit();
+    try std.testing.expect(try pm.matches());
+    try pm.reset("xabc");
+    try std.testing.expect(!(try pm.matches()));
+    try std.testing.expect(!(try pm.lookingAt()));
+
+    var required = try compile(".*needle");
+    defer required.deinit();
+    var rm = try required.matcher("xxneedle");
+    defer rm.deinit();
+    try std.testing.expect(try rm.matches());
+    try rm.reset("none");
+    try std.testing.expect(!(try rm.matches()));
+
+    var digits = try compile("[0-9]+");
+    defer digits.deinit();
+    var dm = try digits.matcher("123");
+    defer dm.deinit();
+    try std.testing.expect(try dm.matches());
+    try dm.reset("abc");
+    try std.testing.expect(!(try dm.matches()));
+    try dm.reset("");
+    try std.testing.expect(!(try dm.matches()));
+
+    var anchored = try compile("^abc");
+    defer anchored.deinit();
+    var am = try anchored.matcher("abc");
+    defer am.deinit();
+    try std.testing.expect(try am.matches());
+    try am.reset("xabc");
+    try std.testing.expect(!(try am.matches()));
+}
