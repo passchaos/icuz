@@ -422,9 +422,12 @@ need without pulling in a font or layout engine.
   package. Validated against ICU `ures_openDirect` and `ures_open` traces
   for standalone, pooled, fallback, and packaged lookups.
 - UTF-16 validation, iteration, and UTF-8/UTF-16 conversion helpers.
-- Charset conversion for UTF-8/16/32, ASCII, Latin-1, 28 legacy single-byte
-  encodings, GBK/GB18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, and EUC-KR,
-  with strict/replace/ignore error modes and ICU-style label resolution.
+- Charset conversion for UTF-8/16/32, UTF-7, HZ, ASCII, Latin-1, 28 legacy
+  single-byte encodings, GBK/GB18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS,
+  and EUC-KR, with strict/replace/ignore error modes and ICU-style label
+  resolution. UTF-7 and HZ are validated by a 48-record ICU `ucnv`
+  differential fixture covering RFC examples, supplementary code points,
+  direct-set characters, and GB2312 text.
 - ICU-compatible charset detection (`detectCharset`, `detectCharsetsAlloc`):
   UTF-8, UTF-16/32 (BE/LE), ISO-8859-1/2/5/6/7/8/8-I/9, windows-1250/1251/
   1252/1253/1254/1255/1256, KOI8-R, Shift_JIS, GB18030, EUC-JP, EUC-KR,

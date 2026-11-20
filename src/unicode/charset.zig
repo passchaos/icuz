@@ -16,6 +16,8 @@ const types = @import("charset/types.zig");
 const tables = @import("charset/tables.zig");
 const cjk = @import("charset/cjk.zig");
 const iso2022jp = @import("charset/iso2022jp.zig");
+const utf7 = @import("charset/utf7.zig");
+const hz = @import("charset/hz.zig");
 
 pub const DecodeResult = types.DecodeResult;
 pub const EncodeResult = types.EncodeResult;
@@ -26,6 +28,8 @@ pub const Encoding = enum {
     utf16_be,
     utf32_le,
     utf32_be,
+    utf7,
+    hz,
     ascii,
     latin1,
     ibm866,
@@ -75,6 +79,8 @@ pub fn encodingName(encoding: Encoding) []const u8 {
         .utf16_be => "UTF-16BE",
         .utf32_le => "UTF-32LE",
         .utf32_be => "UTF-32BE",
+        .utf7 => "UTF-7",
+        .hz => "HZ",
         .ascii => "US-ASCII",
         .latin1 => "ISO-8859-1",
         .ibm866 => "IBM866",
@@ -132,7 +138,8 @@ pub fn maxCharSize(encoding: Encoding) u8 {
         .big5, .shift_jis, .euc_kr => 2,
         .euc_jp => 3,
         .gbk, .gb18030, .x_user_defined => 4,
-        .iso_2022_jp => 8,
+        .utf7, .iso_2022_jp => 8,
+        .hz => 4,
     };
 }
 
@@ -189,6 +196,11 @@ const aliases = [_]Alias{
     .{ .name = "unicodefffe", .encoding = .utf16_be },
     .{ .name = "utf32le", .encoding = .utf32_le },
     .{ .name = "utf32be", .encoding = .utf32_be },
+    .{ .name = "utf7", .encoding = .utf7 },
+    .{ .name = "unicode11utf7", .encoding = .utf7 },
+    .{ .name = "csunicode11utf7", .encoding = .utf7 },
+    .{ .name = "hz", .encoding = .hz },
+    .{ .name = "hzgb2312", .encoding = .hz },
 
     .{ .name = "ascii", .encoding = .ascii },
     .{ .name = "usascii", .encoding = .ascii },
@@ -427,6 +439,8 @@ fn normalizeLabel(label: []const u8, buffer: []u8) ?[]const u8 {
 pub const Decoder = struct {
     encoding: Encoding,
     state: iso2022jp.State = .{},
+    utf7_state: utf7.State = .{},
+    hz_state: hz.State = .{},
 
     pub fn init(encoding: Encoding) Decoder {
         return .{ .encoding = encoding };
@@ -440,6 +454,8 @@ pub const Decoder = struct {
             .utf16_be => utf16Next(input, index, .big),
             .utf32_le => utf32Next(input, index, .little),
             .utf32_be => utf32Next(input, index, .big),
+            .utf7 => utf7.next(&self.utf7_state, input, index),
+            .hz => hz.next(&self.hz_state, input, index),
             .ascii => asciiNext(input, index),
             .latin1 => latin1Next(input, index),
             .x_user_defined => xUserDefinedNext(input, index),
@@ -459,6 +475,8 @@ pub const Decoder = struct {
 pub const Encoder = struct {
     encoding: Encoding,
     state: iso2022jp.State = .{},
+    utf7_state: utf7.State = .{},
+    hz_state: hz.State = .{},
 
     pub fn init(encoding: Encoding) Encoder {
         return .{ .encoding = encoding };
@@ -471,6 +489,8 @@ pub const Encoder = struct {
             .utf16_be => utf16Encode(codepoint, out, .big),
             .utf32_le => utf32Encode(codepoint, out, .little),
             .utf32_be => utf32Encode(codepoint, out, .big),
+            .utf7 => utf7.encode(&self.utf7_state, codepoint, out),
+            .hz => hz.encode(&self.hz_state, codepoint, out),
             .ascii => if (codepoint < 0x80)
                 writeByte(codepoint, out)
             else
@@ -495,6 +515,8 @@ pub const Encoder = struct {
     /// Emit any trailing state-reset bytes (only ISO-2022-JP needs this).
     pub fn flush(self: *Encoder, out: []u8) u8 {
         return switch (self.encoding) {
+            .utf7 => utf7.flush(&self.utf7_state, out),
+            .hz => hz.flush(&self.hz_state, out),
             .iso_2022_jp => iso2022jp.flush(&self.state, out),
             else => 0,
         };
@@ -1666,4 +1688,213 @@ test "converter metadata" {
     try testing.expectEqual(@as(u8, 8), maxCharSize(.iso_2022_jp));
     try testing.expectEqual(@as(u8, 2), minCharSize(.utf16_le));
     try testing.expectEqual(@as(u8, 1), minCharSize(.utf8));
+}
+
+test "UTF-7 and HZ conversion" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const utf7_cases = [_]struct { text: []const u8, encoded: []const u8 }{
+        .{ .text = "Hello, World!", .encoded = "Hello, World!" },
+        .{ .text = "Hi Mom -☺-!", .encoded = "Hi Mom -+Jjo--!" },
+        .{ .text = "€", .encoded = "+IKw-" },
+        .{ .text = "😀", .encoded = "+2D3eAA-" },
+        .{ .text = "a€b", .encoded = "a+IKw-b" },
+        .{ .text = "+", .encoded = "+-" },
+    };
+    for (utf7_cases) |case| {
+        const encoded = try encodeAlloc(allocator, case.text, .utf7, .{});
+        defer allocator.free(encoded);
+        try testing.expectEqualStrings(case.encoded, encoded);
+        const decoded = try decodeAlloc(allocator, encoded, .utf7, .{});
+        defer allocator.free(decoded);
+        try testing.expectEqualStrings(case.text, decoded);
+    }
+
+    const hz_cases = [_]struct { text: []const u8, encoded: []const u8 }{
+        .{ .text = "Hello", .encoded = "Hello" },
+        .{ .text = "中国", .encoded = "~{VP9z~}" },
+        .{ .text = "a~b", .encoded = "a~~b" },
+        .{ .text = "中国abc", .encoded = "~{VP9z~}abc" },
+        .{ .text = "中文~test", .encoded = "~{VPND~}~~test" },
+    };
+    for (hz_cases) |case| {
+        const encoded = try encodeAlloc(allocator, case.text, .hz, .{});
+        defer allocator.free(encoded);
+        try testing.expectEqualStrings(case.encoded, encoded);
+        const decoded = try decodeAlloc(allocator, encoded, .hz, .{});
+        defer allocator.free(decoded);
+        try testing.expectEqualStrings(case.text, decoded);
+    }
+
+    try testing.expectEqualStrings("UTF-7", encodingName(.utf7));
+    try testing.expectEqualStrings("HZ", encodingName(.hz));
+    try testing.expectEqual(@as(?Encoding, .utf7), fromLabel("UTF-7"));
+    try testing.expectEqual(@as(?Encoding, .hz), fromLabel("HZ-GB-2312"));
+    try testing.expectEqual(@as(u8, 8), maxCharSize(.utf7));
+    try testing.expectEqual(@as(u8, 4), maxCharSize(.hz));
+}
+
+test "ICU UTF-7 and HZ conformance fixture" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("charset/utf7_hz_conformance.bin");
+
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJGP", fixture[0..4]);
+    try testing.expectEqual(@as(u8, 1), fixture[4]);
+    const record_count = std.mem.readInt(u32, fixture[8..12], .little);
+
+    const encodings = [_]Encoding{ .utf7, .hz };
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var record_index: usize = 0;
+    while (record_index < record_count) : (record_index += 1) {
+        const converter_index = fixture[cursor];
+        cursor += 1;
+        const kind = fixture[cursor];
+        cursor += 1;
+        if (converter_index >= encodings.len) return error.InvalidFixture;
+        const encoding = encodings[converter_index];
+
+        switch (kind) {
+            0 => {
+                const unit_length = std.mem.readInt(
+                    u16,
+                    fixture[cursor..][0..2],
+                    .little,
+                );
+                cursor += 2;
+                const input = try fixtureUtf16ToUtf8(
+                    allocator,
+                    fixture,
+                    cursor,
+                    unit_length,
+                );
+                defer allocator.free(input);
+                cursor += @as(usize, unit_length) * 2;
+                const byte_length = std.mem.readInt(
+                    u16,
+                    fixture[cursor..][0..2],
+                    .little,
+                );
+                cursor += 2;
+                const expected = fixture[cursor..][0..byte_length];
+                cursor += byte_length;
+
+                const actual = encodeAlloc(
+                    allocator,
+                    input,
+                    encoding,
+                    .{},
+                ) catch {
+                    failures += 1;
+                    continue;
+                };
+                defer allocator.free(actual);
+                if (encoding == .utf7) {
+                    if (!std.mem.eql(u8, actual, expected)) {
+                        failures += 1;
+                        if (failures <= 10) {
+                            std.debug.print(
+                                "charset encode mismatch: converter {d} input [{s}] got {any} want {any}\n",
+                                .{ converter_index, input, actual, expected },
+                            );
+                        }
+                    }
+                } else {
+                    // HZ permits different mode-switch placement; verify that
+                    // our output decodes back to the input.
+                    const roundtrip = decodeAlloc(
+                        allocator,
+                        actual,
+                        encoding,
+                        .{},
+                    ) catch {
+                        failures += 1;
+                        continue;
+                    };
+                    defer allocator.free(roundtrip);
+                    if (!std.mem.eql(u8, roundtrip, input)) {
+                        failures += 1;
+                        if (failures <= 10) {
+                            std.debug.print(
+                                "charset HZ round-trip mismatch: input [{s}] encoded {any} decoded [{s}]\n",
+                                .{ input, actual, roundtrip },
+                            );
+                        }
+                    }
+                }
+            },
+            1 => {
+                const byte_length = std.mem.readInt(
+                    u16,
+                    fixture[cursor..][0..2],
+                    .little,
+                );
+                cursor += 2;
+                const input = fixture[cursor..][0..byte_length];
+                cursor += byte_length;
+                const unit_length = std.mem.readInt(
+                    u16,
+                    fixture[cursor..][0..2],
+                    .little,
+                );
+                cursor += 2;
+                const expected = try fixtureUtf16ToUtf8(
+                    allocator,
+                    fixture,
+                    cursor,
+                    unit_length,
+                );
+                defer allocator.free(expected);
+                cursor += @as(usize, unit_length) * 2;
+
+                const actual = decodeAlloc(
+                    allocator,
+                    input,
+                    encoding,
+                    .{},
+                ) catch {
+                    failures += 1;
+                    continue;
+                };
+                defer allocator.free(actual);
+                if (!std.mem.eql(u8, actual, expected)) {
+                    failures += 1;
+                    if (failures <= 10) {
+                        std.debug.print(
+                            "charset decode mismatch: converter {d} input {any} got [{s}] want [{s}]\n",
+                            .{ converter_index, input, actual, expected },
+                        );
+                    }
+                }
+            },
+            else => return error.InvalidFixture,
+        }
+    }
+    try testing.expectEqual(fixture.len, cursor);
+    try testing.expectEqual(@as(usize, 0), failures);
+    std.debug.print(
+        "UTF-7/HZ conformance: {d} records passed\n",
+        .{record_count},
+    );
+}
+
+fn fixtureUtf16ToUtf8(
+    allocator: std.mem.Allocator,
+    fixture: []const u8,
+    offset: usize,
+    length: u16,
+) ![]u8 {
+    const units = try allocator.alloc(u16, length);
+    defer allocator.free(units);
+    for (units, 0..) |*unit, index| {
+        unit.* = std.mem.readInt(
+            u16,
+            fixture[offset + index * 2 ..][0..2],
+            .little,
+        );
+    }
+    return std.unicode.utf16LeToUtf8Alloc(allocator, units);
 }
