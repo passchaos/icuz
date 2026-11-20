@@ -407,6 +407,330 @@ pub const UCharsTrie = struct {
     }
 };
 
+
+/// ICU `UCharsTrieBuilder`-compatible builder.
+pub const Builder = struct {
+    allocator: std.mem.Allocator,
+    entries: std.ArrayList(Entry) = .empty,
+    units: std.ArrayList(u16) = .empty,
+
+    pub const Entry = struct {
+        units: []u16,
+        value: i32,
+    };
+
+    pub fn init(allocator: std.mem.Allocator) Builder {
+        return .{ .allocator = allocator };
+    }
+
+    pub fn deinit(self: *Builder) void {
+        for (self.entries.items) |entry| {
+            self.allocator.free(entry.units);
+        }
+        self.entries.deinit(self.allocator);
+        self.units.deinit(self.allocator);
+    }
+
+    pub fn add(
+        self: *Builder,
+        text: []const u16,
+        value: i32,
+    ) !void {
+        for (self.entries.items) |entry| {
+            if (std.mem.eql(u16, entry.units, text)) {
+                return error.DuplicateKey;
+            }
+        }
+        const copy = try self.allocator.dupe(u16, text);
+        errdefer self.allocator.free(copy);
+        try self.entries.append(self.allocator, .{
+            .units = copy,
+            .value = value,
+        });
+    }
+
+    pub fn buildAlloc(self: *Builder) ![]u16 {
+        std.sort.heap(Entry, self.entries.items, {}, entryLessThan);
+        if (self.entries.items.len == 0) {
+            return self.allocator.alloc(u16, 0);
+        }
+        self.units.clearRetainingCapacity();
+        _ = try self.writeNode(0, self.entries.items.len, 0, null);
+        return self.units.toOwnedSlice(self.allocator);
+    }
+
+    fn entryLessThan(_: void, a: Entry, b: Entry) bool {
+        return std.mem.order(u16, a.units, b.units) == .lt;
+    }
+
+    fn commonPrefix(
+        entries: []const Entry,
+        depth: usize,
+        cap: usize,
+    ) usize {
+        var max = cap;
+        for (entries) |entry| {
+            max = @min(max, entry.units.len - depth);
+        }
+        var length: usize = 0;
+        while (length < max) : (length += 1) {
+            const unit = entries[0].units[depth + length];
+            for (entries[1..]) |entry| {
+                if (entry.units[depth + length] != unit) return length;
+            }
+        }
+        return length;
+    }
+
+    fn writeValueUnits(self: *Builder, value: i32) !void {
+        const bits: u32 = @bitCast(value);
+        try self.units.append(self.allocator, @intCast(bits >> 16));
+        try self.units.append(
+            self.allocator,
+            @intCast(bits & 0xffff),
+        );
+    }
+
+    fn writeFinal(self: *Builder, value: i32) !usize {
+        const start = self.units.items.len;
+        try self.units.append(self.allocator, 0xffff);
+        try self.writeValueUnits(value);
+        return start;
+    }
+
+    fn writeIntermediate(
+        self: *Builder,
+        node_type: u16,
+        value: i32,
+    ) !void {
+        try self.units.append(self.allocator, 0x7fc0 | node_type);
+        try self.writeValueUnits(value);
+    }
+
+    fn writeValueDeltaPlaceholder(self: *Builder) !usize {
+        const start = self.units.items.len;
+        try self.units.appendSlice(self.allocator, &.{ 0x7fff, 0, 0 });
+        return start;
+    }
+
+    fn writeBranchDeltaPlaceholder(self: *Builder) !usize {
+        const start = self.units.items.len;
+        try self.units.appendSlice(self.allocator, &.{ 0xffff, 0, 0 });
+        return start;
+    }
+
+    fn patchDelta(self: *Builder, position: usize, target: usize) void {
+        const delta: u32 = @intCast(target - (position + 3));
+        self.units.items[position + 1] = @intCast(delta >> 16);
+        self.units.items[position + 2] = @intCast(delta & 0xffff);
+    }
+
+    fn writeNode(
+        self: *Builder,
+        start: usize,
+        end: usize,
+        depth: usize,
+        value: ?i32,
+    ) error{ OutOfMemory, Unsupported }!usize {
+        var first = start;
+        var node_value = value;
+        if (first < end and
+            self.entries.items[first].units.len == depth)
+        {
+            node_value = self.entries.items[first].value;
+            first += 1;
+        }
+        if (first == end) {
+            return self.writeFinal(node_value orelse 0);
+        }
+
+        const entries = self.entries.items[first..end];
+        var group_starts = std.ArrayList(usize).empty;
+        defer group_starts.deinit(self.allocator);
+        try group_starts.append(self.allocator, first);
+        var index = first + 1;
+        while (index < end) : (index += 1) {
+            if (self.entries.items[index].units[depth] !=
+                self.entries.items[index - 1].units[depth])
+            {
+                try group_starts.append(self.allocator, index);
+            }
+        }
+        const group_count = group_starts.items.len;
+
+        if (group_count == 1) {
+            const prefix_length = commonPrefix(entries, depth, 16);
+            const node_type: u16 = @intCast(0x30 + prefix_length - 1);
+            const node_start = self.units.items.len;
+            if (node_value) |current| {
+                try self.writeIntermediate(node_type, current);
+            } else {
+                try self.units.append(self.allocator, node_type);
+            }
+            try self.units.appendSlice(
+                self.allocator,
+                entries[0].units[depth..][0..prefix_length],
+            );
+            _ = try self.writeNode(
+                first,
+                end,
+                depth + prefix_length,
+                null,
+            );
+            return node_start;
+        }
+
+        return self.writeBranchNode(first, end, depth, node_value);
+    }
+
+    fn writeBranchNode(
+        self: *Builder,
+        start: usize,
+        end: usize,
+        depth: usize,
+        node_value: ?i32,
+    ) error{ OutOfMemory, Unsupported }!usize {
+        var group_starts = std.ArrayList(usize).empty;
+        defer group_starts.deinit(self.allocator);
+        try group_starts.append(self.allocator, start);
+        var index = start + 1;
+        while (index < end) : (index += 1) {
+            if (self.entries.items[index].units[depth] !=
+                self.entries.items[index - 1].units[depth])
+            {
+                try group_starts.append(self.allocator, index);
+            }
+        }
+        const group_count = group_starts.items.len;
+        if (group_count > 0x30 and node_value != null) {
+            return error.Unsupported;
+        }
+        const node_type: u16 = if (group_count > 0x30)
+            0
+        else
+            @intCast(group_count - 1);
+        const node_start = self.units.items.len;
+        if (node_value) |current| {
+            try self.writeIntermediate(node_type, current);
+        } else {
+            try self.units.append(self.allocator, node_type);
+        }
+        if (group_count > 0x30) {
+            try self.units.append(
+                self.allocator,
+                @intCast(group_count - 1),
+            );
+        }
+        try self.writeBranchData(group_starts.items, depth, end);
+        return node_start;
+    }
+
+    fn writeBranchData(
+        self: *Builder,
+        group_starts: []const usize,
+        depth: usize,
+        end: usize,
+    ) error{ OutOfMemory, Unsupported }!void {
+        const group_count = group_starts.len;
+        if (group_count <= 5) {
+            var delta_positions = std.ArrayList(usize).empty;
+            defer delta_positions.deinit(self.allocator);
+            for (group_starts[0 .. group_count - 1]) |group_start| {
+                try self.units.append(
+                    self.allocator,
+                    self.entries.items[group_start].units[depth],
+                );
+                try delta_positions.append(
+                    self.allocator,
+                    try self.writeValueDeltaPlaceholder(),
+                );
+            }
+            const last_start = group_starts[group_count - 1];
+            try self.units.append(
+                self.allocator,
+                self.entries.items[last_start].units[depth],
+            );
+            _ = try self.writeNode(last_start, end, depth + 1, null);
+            for (
+                group_starts[0 .. group_count - 1],
+                delta_positions.items,
+                0..,
+            ) |group_start, delta_position, group_index| {
+                const next_start = group_starts[group_index + 1];
+                const target = try self.writeNode(
+                    group_start,
+                    next_start,
+                    depth + 1,
+                    null,
+                );
+                self.patchDelta(delta_position, target);
+            }
+            return;
+        }
+
+        const left = group_count / 2;
+        const right_start = group_starts[left];
+        try self.units.append(
+            self.allocator,
+            self.entries.items[right_start].units[depth],
+        );
+        const delta_position = try self.writeBranchDeltaPlaceholder();
+        try self.writeBranchData(group_starts[left..], depth, end);
+        const left_start = self.units.items.len;
+        try self.writeBranchData(group_starts[0..left], depth, right_start);
+        self.patchDelta(delta_position, left_start);
+    }
+};
+
+test "UCharsTrie builder" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var builder = Builder.init(allocator);
+    defer builder.deinit();
+    try builder.add(&[_]u16{ 'a' }, 1);
+    try builder.add(&[_]u16{ 'a', 'b' }, 2);
+    try builder.add(&[_]u16{ 'a', 'b', 'c' }, 3);
+    try builder.add(&[_]u16{ 'b' }, 4);
+    try builder.add(&[_]u16{ 'b', 'a' }, 5);
+    const units = try builder.buildAlloc();
+    defer allocator.free(units);
+    var trie = UCharsTrie.init(units);
+    try testing.expectEqual(Result.intermediate_value, trie.first('a'));
+    try testing.expectEqual(@as(i32, 1), trie.getValue());
+    try testing.expectEqual(Result.intermediate_value, trie.next('b'));
+    try testing.expectEqual(@as(i32, 2), trie.getValue());
+    try testing.expectEqual(Result.final_value, trie.next('c'));
+    try testing.expectEqual(@as(i32, 3), trie.getValue());
+    try testing.expectEqual(Result.intermediate_value, trie.first('b'));
+    try testing.expectEqual(@as(i32, 4), trie.getValue());
+    try testing.expectEqual(Result.final_value, trie.next('a'));
+    try testing.expectEqual(@as(i32, 5), trie.getValue());
+    try testing.expectEqual(Result.no_match, trie.first('z'));
+    try testing.expectEqual(Result.intermediate_value, trie.first('a'));
+    try testing.expectEqual(Result.no_match, trie.next('x'));
+
+    var wide = Builder.init(allocator);
+    defer wide.deinit();
+    var words: [80][1]u16 = undefined;
+    for (0..80) |i| {
+        words[i][0] = @intCast(0x100 + i);
+        try wide.add(&words[i], @intCast(i));
+    }
+    const wide_units = try wide.buildAlloc();
+    defer allocator.free(wide_units);
+    var wide_trie = UCharsTrie.init(wide_units);
+    for (0..80) |i| {
+        const result = wide_trie.first(@intCast(0x100 + i));
+        try testing.expect(result.hasValue());
+        try testing.expectEqual(@as(i32, @intCast(i)), wide_trie.getValue());
+    }
+    try testing.expectEqual(
+        Result.no_match,
+        wide_trie.first(0x100 + 80),
+    );
+}
+
 test "UCharsTrie reader" {
     const testing = @import("std").testing;
     const units = [_]u16{

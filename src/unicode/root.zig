@@ -254,6 +254,7 @@ pub const CharIterator = char_iterator_mod.CharIterator;
 pub const CharIteratorOrigin = char_iterator_mod.Origin;
 pub const UText = text_mod.Text;
 pub const UCharsTrie = trie_mod.UCharsTrie;
+pub const UCharsTrieBuilder = trie_mod.Builder;
 pub const UCharsTrieResult = trie_mod.Result;
 pub const UTextKind = text_mod.Kind;
 

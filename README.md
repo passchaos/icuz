@@ -392,10 +392,12 @@ need without pulling in a font or layout engine.
   UTF-16BE storage, ICU `uiter` post-increment/pre-decrement movement,
   current, first/last, relative moves with boundary snapping,
   `hasNext`/`hasPrevious`, `indexAt`, and `getState`/`setState`.
-- ICU `UCharsTrie` reader (`UCharsTrie`): ICU-serialized linear-match,
-  branch, intermediate-value, and final-value nodes with `first`, `next`,
-  `nextString`, and code-point traversal, validated against 8 ICU 78 tries
-  and lookup traces.
+- ICU `UCharsTrie` reader and builder (`UCharsTrie`,
+  `UCharsTrieBuilder`): ICU-serialized linear-match, branch,
+  intermediate-value, and final-value nodes with `first`, `next`,
+  `nextString`, and code-point traversal. The reader is validated against
+  8 ICU 78 tries and lookup traces; builder output is accepted by ICU's
+  reader (including binary branches and supplementary code points).
 - ICU `UText`-style text abstraction (`UText`): UTF-8, UTF-16, and UTF-32
   storage with native indexes, backward boundary snapping on
   `setNativeIndex`, `next`/`previous`/`moveIndex32`, and range extraction,
