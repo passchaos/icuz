@@ -14,7 +14,7 @@ import icu
 
 LOCALES = (
     "en", "fr", "de", "ja", "zh", "ko", "ru", "ar", "hi", "th", "pt", "es",
-    "ak", "ccp", "chr", "ee", "en-001", "eo", "fa-AF", "ff", "fo", "fr-BE", "ky", "lb", "lrc", "nn", "no", "qu", "se", "su", "vec", "yue", "yue-Hans",
+    "ak", "ccp", "chr", "ee", "en-001", "eo", "fa-AF", "ff", "fo", "fr-BE", "kl", "ky", "lb", "lrc", "nn", "no", "qu", "se", "su", "vec", "yue", "yue-Hans",
 )
 CURRENCIES = (
     "USD", "EUR", "GBP", "JPY", "CNY", "KRW", "INR", "RUB", "BRL", "CAD",

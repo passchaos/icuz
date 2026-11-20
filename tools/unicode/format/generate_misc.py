@@ -23,7 +23,7 @@ LOCALES = (
     "en-001", "en-AU", "en-CA", "en-GB", "en-IN", "eo", "es", "es-419",
     "es-MX", "et", "eu", "fa", "fa-AF", "ff", "fi", "fil", "fo", "fr",
     "fr-BE", "fr-CA", "ga", "gl", "gu", "he", "hi", "hr", "hu",
-    "hy", "id", "is", "it", "ja", "ka", "kk", "km", "kn", "ko",
+    "hy", "id", "is", "it", "ja", "ka", "kk", "kl", "km", "kn", "ko",
     "ky", "lb", "lo", "lrc", "lt", "lv", "mk", "ml", "mn", "mr", "ms",
     "mt", "my", "nb", "ne", "nl", "nl-BE", "nn", "no", "pa", "pl", "ps",
     "pt", "pt-PT", "qu", "ro", "ru", "se", "si", "sk", "sl", "sq", "sr",

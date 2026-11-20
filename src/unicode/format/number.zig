@@ -210,6 +210,7 @@ fn buildAffixTextAlloc(
     locale: *const data.Locale,
     currency_display: []const u8,
     percent_symbol: []const u8,
+    prefix: bool,
 ) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
@@ -221,6 +222,7 @@ fn buildAffixTextAlloc(
         currency_display,
         percent_symbol,
         null,
+        prefix,
     );
     return output.toOwnedSlice(allocator);
 }
@@ -253,6 +255,7 @@ fn rangeAffix(
             locale,
             display,
             locale.percent,
+            true,
         );
         const suffix = try buildAffixTextAlloc(
             allocator,
@@ -260,6 +263,7 @@ fn rangeAffix(
             locale,
             display,
             locale.percent,
+            false,
         );
         if (!rangeAffixMatches(prefix, suffix, first, second)) {
             allocator.free(prefix);
@@ -282,6 +286,7 @@ fn rangeAffix(
             locale,
             "",
             symbol,
+            true,
         );
         const suffix = try buildAffixTextAlloc(
             allocator,
@@ -289,6 +294,7 @@ fn rangeAffix(
             locale,
             "",
             symbol,
+            false,
         );
         if (!rangeAffixMatches(prefix, suffix, first, second)) {
             allocator.free(prefix);
@@ -1852,6 +1858,7 @@ fn wrapCurrencyAlloc(
             display_text,
             locale.percent,
             null,
+            true,
         );
     } else {
         if (negative) {
@@ -1870,6 +1877,7 @@ fn wrapCurrencyAlloc(
             display_text,
             locale.percent,
             null,
+            true,
         );
     }
     try output.appendSlice(allocator, number_text);
@@ -1882,6 +1890,7 @@ fn wrapCurrencyAlloc(
             display_text,
             locale.percent,
             null,
+            false,
         );
     } else {
         try appendAffix(
@@ -1892,6 +1901,7 @@ fn wrapCurrencyAlloc(
             display_text,
             locale.percent,
             null,
+            false,
         );
     }
     return output.toOwnedSlice(allocator);
@@ -2192,6 +2202,7 @@ fn formatParts(
             currency_display,
             percent_symbol,
             fields,
+            true,
         );
     } else {
         if (negative) {
@@ -2212,6 +2223,7 @@ fn formatParts(
             currency_display,
             percent_symbol,
             fields,
+            true,
         );
     }
 
@@ -2258,6 +2270,7 @@ fn formatParts(
             currency_display,
             percent_symbol,
             fields,
+            false,
         );
     } else {
         try appendAffix(
@@ -2268,6 +2281,7 @@ fn formatParts(
             currency_display,
             percent_symbol,
             fields,
+            false,
         );
     }
     return output.toOwnedSlice(allocator);
@@ -2657,6 +2671,32 @@ fn appendDigit(
     try output.appendSlice(allocator, buffer[0..length]);
 }
 
+fn needsCurrencySpaceAfterNumber(text: []const u8) bool {
+    const codepoint = lastCodepoint(text) orelse return false;
+    return properties.category(codepoint) == .Nd;
+}
+
+fn needsCurrencySpaceBeforeSymbol(symbol: []const u8) bool {
+    const codepoint = lastCodepoint(symbol) orelse return false;
+    const category = properties.category(codepoint);
+    return category != .Sc and category != .Zs and category != .Zl and
+        category != .Zp;
+}
+
+fn affixHasContentAfter(affix: []const u8, start: usize) bool {
+    var index = start;
+    var in_quote = false;
+    while (index < affix.len) : (index += 1) {
+        const byte = affix[index];
+        if (byte == '\'') {
+            in_quote = !in_quote;
+            continue;
+        }
+        if (!in_quote and byte != ' ') return true;
+    }
+    return false;
+}
+
 fn appendAffix(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
@@ -2665,6 +2705,7 @@ fn appendAffix(
     currency_display: []const u8,
     percent_symbol: []const u8,
     fields: ?*std.ArrayList(NumberFieldPosition),
+    prefix: bool,
 ) Error!void {
     var in_quote = false;
     var index: usize = 0;
@@ -2682,6 +2723,11 @@ fn appendAffix(
         if (!in_quote and byte == 0xc2 and index + 1 < affix.len and
             affix[index + 1] == 0xa4)
         {
+            if (!prefix and needsCurrencySpaceAfterNumber(output.items) and
+                needsCurrencySpaceBeforeSymbol(currency_display))
+            {
+                try output.appendSlice(allocator, "\u{00a0}");
+            }
             const start = output.items.len;
             try output.appendSlice(allocator, currency_display);
             try recordField(
@@ -2691,13 +2737,18 @@ fn appendAffix(
                 start,
                 output.items.len,
             );
-            if (index + 3 < affix.len and affix[index + 2] == 0xc2 and
-                affix[index + 3] == 0xa4)
+            var next_index = index + 2;
+            if (next_index + 1 < affix.len and affix[next_index] == 0xc2 and
+                affix[next_index + 1] == 0xa4)
             {
-                index += 3;
-            } else {
-                index += 1;
+                next_index += 2;
             }
+            if (prefix and !affixHasContentAfter(affix, next_index) and
+                needsCurrencySpaceBeforeSymbol(currency_display))
+            {
+                try output.appendSlice(allocator, "\u{00a0}");
+            }
+            index = next_index - 1;
             continue;
         }
         // ICU substitutes the localized symbols for pattern characters in

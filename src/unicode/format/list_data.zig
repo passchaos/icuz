@@ -619,6 +619,17 @@ pub const locales = [_]Locale{
         .{ .start = "{0} {1}", .middle = "{0} {1}", .end = "{0} {1}", .two = "{0} {1}" },
         .{ .start = "{0} {1}", .middle = "{0} {1}", .end = "{0} {1}", .two = "{0} {1}" },
     } },
+    .{ .id = "kl", .patterns = .{
+        .{ .start = "{0}, {1}", .middle = "{0}, {1}", .end = "{0}, {1}", .two = "{0}, {1}" },
+        .{ .start = "{0}, {1}", .middle = "{0}, {1}", .end = "{0}, {1}", .two = "{0}, {1}" },
+        .{ .start = "{0}, {1}", .middle = "{0}, {1}", .end = "{0}, {1}", .two = "{0}, {1}" },
+        .{ .start = "{0}, {1}", .middle = "{0}, {1}", .end = "{0}, or {1}", .two = "{0} or {1}" },
+        .{ .start = "{0}, {1}", .middle = "{0}, {1}", .end = "{0}, or {1}", .two = "{0} or {1}" },
+        .{ .start = "{0}, {1}", .middle = "{0}, {1}", .end = "{0}, or {1}", .two = "{0} or {1}" },
+        .{ .start = "{0}, {1}", .middle = "{0}, {1}", .end = "{0}, {1}", .two = "{0}, {1}" },
+        .{ .start = "{0}, {1}", .middle = "{0}, {1}", .end = "{0}, {1}", .two = "{0}, {1}" },
+        .{ .start = "{0}, {1}", .middle = "{0}, {1}", .end = "{0}, {1}", .two = "{0}, {1}" },
+    } },
     .{ .id = "km", .patterns = .{
         .{ .start = "{0}, {1}", .middle = "{0}, {1}", .end = "{0} \xe1\x9e\x93\xe1\x9e\xb7\xe1\x9e\x84 {1}", .two = "{0} \xe1\x9e\x93\xe1\x9e\xb7\xe1\x9e\x84\xe2\x80\x8b{1}" },
         .{ .start = "{0}, {1}", .middle = "{0}, {1}", .end = "{0} \xe1\x9e\x93\xe1\x9e\xb7\xe1\x9e\x84 {1}", .two = "{0} \xe1\x9e\x93\xe1\x9e\xb7\xe1\x9e\x84 {1}" },

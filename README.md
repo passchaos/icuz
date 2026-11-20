@@ -133,7 +133,9 @@ need without pulling in a font or layout engine.
   digits/rounding (`currencyCashFractionDigits`, `currencyCashRounding`),
   localized currency symbols/names (`currencySymbol`, `currencyName`),
   region/locale currency codes (`currencyCodeForRegion`,
-  `currencyCodeForLocale`), cash rounding via `NumberOptions.cash`,
+  `currencyCodeForLocale`), CLDR currency spacing (the non-breaking space
+  inserted between a symbol and an adjacent digit), cash rounding via
+  `NumberOptions.cash`,
   accounting
   parentheses, short/long
   compact notation that keeps at least two significant digits of the scaled
@@ -154,7 +156,7 @@ need without pulling in a font or layout engine.
   unit pattern selected by the CLDR plural range category (for example
   Russian `1–2 дня`, `2–5 дней`), and currency-name ranges such as
   `1.00–2.00 US dollars`. Currency output is
-  validated against a 2,970-case PyICU fixture, skeleton output against a
+  validated against a 3,060-case PyICU fixture, skeleton output against a
   2,520-case ICU C API fixture, and ranges against a 1,356-case ICU C API
   fixture. Localized number parsing (`parseFloat`, `parseFloatPrefix`,
   `parseInt`) accepts locale symbols, native digits, percent/permille
@@ -296,18 +298,18 @@ need without pulling in a font or layout engine.
   with week-of-year (`weekOfYearForRegion`) and week-of-month
   (`weekOfMonthForRegion`) calculations using the region's first-day and
   minimal-days rules.
-- CLDR 48 list formatting for 108 locales, including and/or and unit list
+- CLDR 48 list formatting for 109 locales, including and/or and unit list
   styles with narrow/short variants. `listGender` implements the CLDR
   neutral, mixed-neutral, and male-tainting list-gender rules.
-- CLDR 48 relative time for 108 locales, including yesterday/today/tomorrow
+- CLDR 48 relative time for 109 locales, including yesterday/today/tomorrow
   text, future/past plural patterns, and long/short/narrow styles
   (`RelativeStyle`). Relative-type text always follows the long field, as in
   ICU's `RelativeDateTimeFormatter`.
-- CLDR 48 unit formatting for 108 locales and all 231 CLDR units across
+- CLDR 48 unit formatting for 109 locales and all 231 CLDR units across
   length, mass, temperature, speed, area, volume, duration, digital, energy,
   power, pressure, frequency, angle, light, electricity, torque, and
   concentration, with long, short, and narrow forms, CLDR unit identifiers,
-  and a 6,276-case PyICU differential conformance fixture.
+  and a 6,429-case PyICU differential conformance fixture.
 - CLDR 48 RBNF rule-based number formatting for 112 locales, covering
   spellout and ordinal rule sets with negative, decimal, fraction, and
   optional rule branches, plural substitutions, Indian grouping, fraction
