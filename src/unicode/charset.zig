@@ -62,6 +62,34 @@ pub const Encoding = enum {
     windows_1257,
     windows_1258,
     x_mac_cyrillic,
+    ibm_437,
+    ibm_850,
+    ibm_852,
+    ibm_855,
+    ibm_857,
+    ibm_858,
+    ibm_860,
+    ibm_861,
+    ibm_862,
+    ibm_863,
+    ibm_864,
+    ibm_865,
+    ibm_869,
+    ibm_1026,
+    ibm_1047,
+    ibm_1140,
+    ibm_1141,
+    ibm_1142,
+    ibm_1143,
+    ibm_1144,
+    ibm_1145,
+    ibm_1146,
+    ibm_1147,
+    ibm_1148,
+    ibm_1149,
+    ibm_1160,
+    ibm_1162,
+    ibm_1164,
     gbk,
     gb18030,
     big5,
@@ -75,6 +103,9 @@ pub const Encoding = enum {
 
 /// Canonical ICU-style converter name.
 pub fn encodingName(encoding: Encoding) []const u8 {
+    if (ibmPageIndex(encoding)) |index| {
+        return tables.ibmPageName(index) orelse "IBM";
+    }
     return switch (encoding) {
         .utf8 => "UTF-8",
         .utf16_le => "UTF-16LE",
@@ -123,12 +154,14 @@ pub fn encodingName(encoding: Encoding) []const u8 {
         .euc_kr => "EUC-KR",
         .x_user_defined => "x-user-defined",
         .replacement => "replacement",
+        else => unreachable,
     };
 }
 
 /// Maximum bytes a converter emits for one code point (ICU
 /// `ucnv_getMaxCharSize`).
 pub fn maxCharSize(encoding: Encoding) u8 {
+    if (ibmPageIndex(encoding) != null) return 1;
     return switch (encoding) {
         .utf8, .utf16_le, .utf16_be, .utf32_le, .utf32_be => 4,
         .ascii, .latin1, .ibm866, .iso_8859_2, .iso_8859_3, .iso_8859_4,
@@ -144,6 +177,7 @@ pub fn maxCharSize(encoding: Encoding) u8 {
         .utf7, .iso_2022_jp => 8,
         .hz => 4,
         .scsu => 6,
+        else => unreachable,
     };
 }
 
@@ -183,7 +217,7 @@ const Alias = struct {
 };
 
 // Labels are normalized to lowercase alphanumerics before lookup.
-const aliases = [_]Alias{
+const base_aliases = [_]Alias{
     .{ .name = "utf8", .encoding = .utf8 },
     .{ .name = "unicode11utf8", .encoding = .utf8 },
     .{ .name = "unicode20utf8", .encoding = .utf8 },
@@ -419,6 +453,72 @@ const aliases = [_]Alias{
     .{ .name = "iso2022kr", .encoding = .replacement },
 };
 
+const IbmPageDef = struct {
+    encoding: Encoding,
+    name: []const u8,
+    number: []const u8,
+};
+
+const ibm_page_defs = [_]IbmPageDef{
+    .{ .encoding = .ibm_437, .name = "ibm437", .number = "437" },
+    .{ .encoding = .ibm_850, .name = "ibm850", .number = "850" },
+    .{ .encoding = .ibm_852, .name = "ibm852", .number = "852" },
+    .{ .encoding = .ibm_855, .name = "ibm855", .number = "855" },
+    .{ .encoding = .ibm_857, .name = "ibm857", .number = "857" },
+    .{ .encoding = .ibm_858, .name = "ibm858", .number = "858" },
+    .{ .encoding = .ibm_860, .name = "ibm860", .number = "860" },
+    .{ .encoding = .ibm_861, .name = "ibm861", .number = "861" },
+    .{ .encoding = .ibm_862, .name = "ibm862", .number = "862" },
+    .{ .encoding = .ibm_863, .name = "ibm863", .number = "863" },
+    .{ .encoding = .ibm_864, .name = "ibm864", .number = "864" },
+    .{ .encoding = .ibm_865, .name = "ibm865", .number = "865" },
+    .{ .encoding = .ibm_869, .name = "ibm869", .number = "869" },
+    .{ .encoding = .ibm_1026, .name = "ibm1026", .number = "1026" },
+    .{ .encoding = .ibm_1047, .name = "ibm1047", .number = "1047" },
+    .{ .encoding = .ibm_1140, .name = "ibm1140", .number = "1140" },
+    .{ .encoding = .ibm_1141, .name = "ibm1141", .number = "1141" },
+    .{ .encoding = .ibm_1142, .name = "ibm1142", .number = "1142" },
+    .{ .encoding = .ibm_1143, .name = "ibm1143", .number = "1143" },
+    .{ .encoding = .ibm_1144, .name = "ibm1144", .number = "1144" },
+    .{ .encoding = .ibm_1145, .name = "ibm1145", .number = "1145" },
+    .{ .encoding = .ibm_1146, .name = "ibm1146", .number = "1146" },
+    .{ .encoding = .ibm_1147, .name = "ibm1147", .number = "1147" },
+    .{ .encoding = .ibm_1148, .name = "ibm1148", .number = "1148" },
+    .{ .encoding = .ibm_1149, .name = "ibm1149", .number = "1149" },
+    .{ .encoding = .ibm_1160, .name = "ibm1160", .number = "1160" },
+    .{ .encoding = .ibm_1162, .name = "ibm1162", .number = "1162" },
+    .{ .encoding = .ibm_1164, .name = "ibm1164", .number = "1164" },
+};
+
+const ibm_aliases = blk: {
+    var list: [ibm_page_defs.len * 4]Alias = undefined;
+    for (ibm_page_defs, 0..) |def, index| {
+        list[index * 4] = .{ .name = def.name, .encoding = def.encoding };
+        list[index * 4 + 1] = .{
+            .name = "cp" ++ def.number,
+            .encoding = def.encoding,
+        };
+        list[index * 4 + 2] = .{
+            .name = def.number,
+            .encoding = def.encoding,
+        };
+        list[index * 4 + 3] = .{
+            .name = "cs" ++ def.name,
+            .encoding = def.encoding,
+        };
+    }
+    break :blk list;
+};
+
+const aliases = base_aliases ++ ibm_aliases;
+
+fn ibmPageIndex(encoding: Encoding) ?usize {
+    for (ibm_page_defs, 0..) |def, index| {
+        if (def.encoding == encoding) return index;
+    }
+    return null;
+}
+
 /// Resolve an encoding label such as `UTF-8`, `windows-1252`, or `GB18030`.
 pub fn fromLabel(label: []const u8) ?Encoding {
     var buffer: [64]u8 = undefined;
@@ -619,6 +719,11 @@ fn singleByteNext(
 ) DecodeResult {
     const byte = input[index.*];
     index.* += 1;
+    if (ibmPageIndex(encoding)) |page| {
+        const codepoint = tables.ibmForward(page, byte) orelse
+            return .{ .malformed = 1 };
+        return .{ .codepoint = codepoint };
+    }
     if (byte < 0x80) return .{ .codepoint = byte };
     const table_index = singleByteIndex(encoding) orelse return .{ .malformed = 1 };
     const codepoint = tables.singleByteForward(table_index, byte) orelse
@@ -717,6 +822,12 @@ fn singleByteEncode(
     codepoint: u21,
     out: []u8,
 ) EncodeResult {
+    if (ibmPageIndex(encoding)) |page| {
+        const byte = tables.ibmReverse(page, codepoint) orelse
+            return .unmappable;
+        out[0] = byte;
+        return .{ .written = 1 };
+    }
     if (codepoint < 0x80) return writeByte(codepoint, out);
     const table_index = singleByteIndex(encoding) orelse return .unmappable;
     const byte = tables.singleByteReverse(table_index, codepoint) orelse
@@ -1388,6 +1499,9 @@ pub fn validate(input: []const u8, encoding: Encoding) bool {
 }
 
 fn asciiCompatible(encoding: Encoding) bool {
+    if (ibmPageIndex(encoding)) |index| {
+        return tables.ibmPageAsciiCompatible(index);
+    }
     return switch (encoding) {
         .utf8, .ascii, .latin1, .x_user_defined => true,
         .gbk, .gb18030, .big5, .euc_jp, .shift_jis, .euc_kr => true,
@@ -1933,4 +2047,79 @@ fn fixtureUtf16ToUtf8(
         );
     }
     return std.unicode.utf16LeToUtf8Alloc(allocator, units);
+}
+
+test "IBM code pages" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    try testing.expectEqual(@as(?Encoding, .ibm_437), fromLabel("cp437"));
+    try testing.expectEqual(@as(?Encoding, .ibm_437), fromLabel("IBM-437"));
+    try testing.expectEqual(@as(?Encoding, .ibm_437), fromLabel("437"));
+    try testing.expectEqual(@as(?Encoding, .ibm_1047), fromLabel("1047"));
+    try testing.expectEqualStrings("ibm-437", encodingName(.ibm_437));
+    try testing.expectEqualStrings("ibm-1047", encodingName(.ibm_1047));
+    try testing.expectEqual(@as(u8, 1), maxCharSize(.ibm_437));
+
+    const cp437_cases = [_]struct { byte: u8, codepoint: u21 }{
+        .{ .byte = 0x80, .codepoint = 0x00C7 },
+        .{ .byte = 0x9C, .codepoint = 0x00A3 },
+        .{ .byte = 0xE1, .codepoint = 0x00DF },
+    };
+    for (cp437_cases) |case| {
+        const input = [_]u8{case.byte};
+        const text = try decodeAlloc(allocator, &input, .ibm_437, .{});
+        defer allocator.free(text);
+        var buffer: [4]u8 = undefined;
+        const length = try std.unicode.utf8Encode(case.codepoint, &buffer);
+        try testing.expectEqualStrings(buffer[0..length], text);
+        const encoded = try encodeAlloc(allocator, text, .ibm_437, .{});
+        defer allocator.free(encoded);
+        try testing.expectEqualSlices(u8, &input, encoded);
+    }
+
+    const ebcdic = try decodeAlloc(allocator, "ABC", .ibm_1047, .{});
+    defer allocator.free(ebcdic);
+    try testing.expect(!std.mem.eql(u8, "ABC", ebcdic));
+    const a = [_]u8{0xC1};
+    const a_text = try decodeAlloc(allocator, &a, .ibm_1047, .{});
+    defer allocator.free(a_text);
+    try testing.expectEqualStrings("A", a_text);
+    const a_encoded = try encodeAlloc(allocator, "A", .ibm_1047, .{});
+    defer allocator.free(a_encoded);
+    try testing.expectEqualSlices(u8, &a, a_encoded);
+
+    const pages = [_]Encoding{
+        .ibm_437,
+        .ibm_850,
+        .ibm_869,
+        .ibm_1047,
+        .ibm_1162,
+    };
+    for (pages) |encoding| {
+        var byte: usize = 0;
+        while (byte < 256) : (byte += 1) {
+            const input = [_]u8{@intCast(byte)};
+            const text = decodeAlloc(
+                allocator,
+                &input,
+                encoding,
+                .{ .on_error = .ignore },
+            ) catch continue;
+            defer allocator.free(text);
+            if (text.len == 0) continue;
+            const encoded = encodeAlloc(allocator, text, encoding, .{}) catch
+                continue;
+            defer allocator.free(encoded);
+            if (encoded.len != 1) continue;
+            const roundtrip = decodeAlloc(
+                allocator,
+                encoded,
+                encoding,
+                .{ .on_error = .ignore },
+            ) catch continue;
+            defer allocator.free(roundtrip);
+            try testing.expectEqualStrings(text, roundtrip);
+        }
+    }
 }

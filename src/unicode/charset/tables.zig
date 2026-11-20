@@ -247,6 +247,77 @@ pub fn gb18030RangeByCodepoint(codepoint: u21) ?u32 {
     return pair.value + (codepoint - pair.key);
 }
 
+pub const ibm_blob = @embedFile("ibm_pages.bin");
+const ibm_page_count = std.mem.readInt(u16, ibm_blob[8..10], .little);
+
+const IbmPage = struct {
+    name: []const u8,
+    ascii_compatible: bool,
+    table: usize,
+};
+
+fn ibmPageAt(index: usize) ?IbmPage {
+    var offset: usize = 12;
+    var page: usize = 0;
+    while (page < ibm_page_count) : (page += 1) {
+        if (offset + 2 > ibm_blob.len) return null;
+        const name_length = std.mem.readInt(
+            u16,
+            ibm_blob[offset..][0..2],
+            .little,
+        );
+        const name_start = offset + 2;
+        const flags = name_start + name_length;
+        if (flags + 2 + 512 > ibm_blob.len) return null;
+        if (page == index) {
+            return .{
+                .name = ibm_blob[name_start..][0..name_length],
+                .ascii_compatible = ibm_blob[flags] != 0,
+                .table = flags + 2,
+            };
+        }
+        offset = flags + 2 + 512;
+    }
+    return null;
+}
+
+pub fn ibmPageCount() usize {
+    return ibm_page_count;
+}
+
+pub fn ibmPageName(index: usize) ?[]const u8 {
+    return (ibmPageAt(index) orelse return null).name;
+}
+
+pub fn ibmPageAsciiCompatible(index: usize) bool {
+    return (ibmPageAt(index) orelse return false).ascii_compatible;
+}
+
+pub fn ibmForward(index: usize, byte: u8) ?u21 {
+    const page = ibmPageAt(index) orelse return null;
+    const value = std.mem.readInt(
+        u16,
+        ibm_blob[page.table + @as(usize, byte) * 2 ..][0..2],
+        .little,
+    );
+    if (value == 0xFFFF or value == 0xFFFD) return null;
+    return value;
+}
+
+pub fn ibmReverse(index: usize, codepoint: u21) ?u8 {
+    const page = ibmPageAt(index) orelse return null;
+    var byte: usize = 0;
+    while (byte < 256) : (byte += 1) {
+        const value = std.mem.readInt(
+            u16,
+            ibm_blob[page.table + byte * 2 ..][0..2],
+            .little,
+        );
+        if (value == codepoint) return @intCast(byte);
+    }
+    return null;
+}
+
 test "charset tables are structurally valid" {
     const testing = @import("std").testing;
     try testing.expectEqual(@as(u16, 17), section_count);
