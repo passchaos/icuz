@@ -19,6 +19,9 @@ import icu
 LOCALES = (
     "en", "fr", "de", "es", "it", "pt", "ru", "pl", "ar", "hi",
     "th", "ja", "zh", "ko", "fa", "am", "sw", "tr", "vi", "nl",
+    "ak", "ccp", "chr", "en-001", "eo", "ff", "fo",
+    "fr-BE", "ky", "lb", "nn", "no", "qu", "se", "su", "vec",
+    "yue", "yue-Hans",
 )
 
 CALENDARS = (

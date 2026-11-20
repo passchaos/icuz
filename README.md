@@ -193,14 +193,14 @@ need without pulling in a font or layout engine.
   selects Buddhist, while `ar-SA` selects Gregorian as in ICU). Skeleton
   formatting remains Gregorian; use the calendar-aware date APIs for the
   selected non-Gregorian calendar.
-- Non-Gregorian calendar conversion and formatting for Buddhist, Japanese,
+- Non-Gregorian calendar conversion and formatting for 108 locales (Buddhist, Japanese,
   ROC, Islamic civil/tbla/umalqura, Hebrew, Chinese, Persian, Indian,
   Coptic, Ethiopic, Ethiopic Amete Alem, and ISO-8601 calendars, following
   ICU's arithmetic and month tables with CLDR 48 month names (including
   Hebrew leap-year months and Chinese leap-month patterns), era names, and
   date patterns (including Japanese gannen). The Chinese lunisolar table
   covers 1850-2150 with cycle era, leap month, and month-length data.
-  Validated by a 24,645-case conversion fixture and a 12,888-case PyICU
+  Validated by a 24,645-case conversion fixture and a 24,552-case PyICU
   formatting fixture.
 - CLDR 48 locale display names for 108 locales: language, script, region,
   and variant names, locale display composition, and likely-subtags
