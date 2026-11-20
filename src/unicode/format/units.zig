@@ -185,7 +185,26 @@ pub fn applyNumberAlloc(
     locale: []const u8,
     style: Style,
 ) error{ InvalidPattern, OutOfMemory }![]u8 {
-    const category = misc.pluralCategory(locale, plural_value);
+    return applyNumberCategoryAlloc(
+        allocator,
+        misc.pluralCategory(locale, plural_value),
+        number_text,
+        unit,
+        locale,
+        style,
+    );
+}
+
+/// Apply a unit pattern selected by an explicit plural category, used for
+/// ranges whose category comes from CLDR plural ranges.
+pub fn applyNumberCategoryAlloc(
+    allocator: std.mem.Allocator,
+    category: plural.Category,
+    number_text: []const u8,
+    unit: Unit,
+    locale: []const u8,
+    style: Style,
+) error{ InvalidPattern, OutOfMemory }![]u8 {
     var pattern: []const u8 = "";
     if (localeRecord(locale)) |index| {
         pattern = patternAt(index, unit, style, category);

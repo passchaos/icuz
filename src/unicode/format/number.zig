@@ -7,6 +7,7 @@ const plural = @import("plurals.zig");
 const misc = @import("misc.zig");
 const numbering_systems = @import("numbering_systems.zig");
 const units = @import("units.zig");
+const plural_ranges = @import("plural_ranges.zig");
 const properties = @import("../properties.zig");
 
 pub const cldr_version = "48";
@@ -374,6 +375,43 @@ pub fn formatRangeAlloc(
     const range = rangeDataFor(locale_name);
     const number_options = options.number;
 
+    // A unit range uses one unit pattern selected by the CLDR plural range
+    // category (for example "1-2 days" rather than "1 day - 2 days").
+    if (number_options.unit_id) |unit_id| {
+        const unit = units.unitFromId(unit_id) orelse return error.InvalidPattern;
+        if (unit != .percent and unit != .permille) {
+            var inner = options;
+            inner.number.unit_id = null;
+            const numeric = try formatRangeAlloc(
+                allocator,
+                first,
+                second,
+                locale_name,
+                inner,
+            );
+            defer allocator.free(numeric);
+            const category = if (first == second)
+                rangePluralCategory(locale_name, first, number_options)
+            else
+                plural_ranges.select(
+                    locale_name,
+                    rangePluralCategory(locale_name, first, number_options),
+                    rangePluralCategory(locale_name, second, number_options),
+                );
+            return units.applyNumberCategoryAlloc(
+                allocator,
+                category,
+                numeric,
+                unit,
+                locale_name,
+                switch (number_options.unit_style) {
+                    .long => .long,
+                    .short => .short,
+                },
+            );
+        }
+    }
+
     if (first == second) {
         switch (options.identity) {
             .single_value, .approximately_or_single_value => {
@@ -493,6 +531,19 @@ pub fn formatRangeAlloc(
     try output.appendSlice(allocator, right);
     if (collapsed) try output.appendSlice(allocator, outer_suffix);
     return output.toOwnedSlice(allocator);
+}
+
+fn rangePluralCategory(
+    locale_name: []const u8,
+    value: f64,
+    options: Options,
+) plural.Category {
+    // Match the compact rounding used for unit plural selection.
+    const plural_value = if (options.style == .compact and @abs(value) >= 10)
+        roundHalfEven(value, 0)
+    else
+        value;
+    return misc.pluralCategory(locale_name, plural_value);
 }
 
 /// Format a floating-point value for one locale.
@@ -3169,6 +3220,50 @@ test "number skeleton conformance" {
         case_count,
     });
     try testing.expect(failures == 0);
+}
+
+test "unit number ranges use plural range categories" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const cases = [_]struct {
+        locale: []const u8,
+        first: f64,
+        second: f64,
+        expected: []const u8,
+    }{
+        .{ .locale = "en", .first = 1, .second = 2, .expected = "1\u{2013}2 days" },
+        .{ .locale = "de", .first = 1, .second = 2, .expected = "1\u{2013}2 Tage" },
+        .{ .locale = "ru", .first = 1, .second = 2, .expected = "1\u{2013}2 \u{0434}\u{043d}\u{044f}" },
+        .{ .locale = "ru", .first = 2, .second = 5, .expected = "2\u{2013}5 \u{0434}\u{043d}\u{0435}\u{0439}" },
+        .{ .locale = "ru", .first = 5, .second = 1, .expected = "5\u{2013}1 \u{0434}\u{0435}\u{043d}\u{044c}" },
+        .{ .locale = "fr", .first = 1, .second = 2, .expected = "1\u{2013}2\u{00a0}jours" },
+    };
+    for (cases) |case| {
+        const text = try formatRangeAlloc(
+            allocator,
+            case.first,
+            case.second,
+            case.locale,
+            .{ .number = .{
+                .unit_id = "duration-day",
+                .unit_style = .long,
+            } },
+        );
+        defer allocator.free(text);
+        try testing.expectEqualStrings(case.expected, text);
+    }
+    const single = try formatRangeAlloc(
+        allocator,
+        1,
+        1,
+        "en",
+        .{ .number = .{
+            .unit_id = "duration-day",
+            .unit_style = .long,
+        } },
+    );
+    defer allocator.free(single);
+    try testing.expectEqualStrings("1 day", single);
 }
 
 test "number range conformance" {

@@ -107,7 +107,9 @@ need without pulling in a font or layout engine.
   skeletons including compact units and ICU's compact plural-operand
   rounding). Number range formatting (`formatRangeAlloc`)
   follows ICU's range infixes, identity fallbacks, approximately markers,
-  and affix-collapse heuristics for 87 locales. Currency output is
+  affix-collapse heuristics for 87 locales, and unit ranges that share one
+  unit pattern selected by the CLDR plural range category (for example
+  Russian `1–2 дня`, `2–5 дней`). Currency output is
   validated against a 1,080-case PyICU fixture, skeleton output against a
   2,520-case ICU C API fixture, and ranges against a 460-case ICU C API
   fixture. Localized number parsing (`parseFloat`, `parseFloatPrefix`,
