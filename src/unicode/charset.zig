@@ -18,6 +18,7 @@ const cjk = @import("charset/cjk.zig");
 const iso2022jp = @import("charset/iso2022jp.zig");
 const utf7 = @import("charset/utf7.zig");
 const hz = @import("charset/hz.zig");
+const scsu = @import("charset/scsu.zig");
 
 pub const DecodeResult = types.DecodeResult;
 pub const EncodeResult = types.EncodeResult;
@@ -30,6 +31,7 @@ pub const Encoding = enum {
     utf32_be,
     utf7,
     hz,
+    scsu,
     ascii,
     latin1,
     ibm866,
@@ -81,6 +83,7 @@ pub fn encodingName(encoding: Encoding) []const u8 {
         .utf32_be => "UTF-32BE",
         .utf7 => "UTF-7",
         .hz => "HZ",
+        .scsu => "SCSU",
         .ascii => "US-ASCII",
         .latin1 => "ISO-8859-1",
         .ibm866 => "IBM866",
@@ -140,6 +143,7 @@ pub fn maxCharSize(encoding: Encoding) u8 {
         .gbk, .gb18030, .x_user_defined => 4,
         .utf7, .iso_2022_jp => 8,
         .hz => 4,
+        .scsu => 6,
     };
 }
 
@@ -201,6 +205,7 @@ const aliases = [_]Alias{
     .{ .name = "csunicode11utf7", .encoding = .utf7 },
     .{ .name = "hz", .encoding = .hz },
     .{ .name = "hzgb2312", .encoding = .hz },
+    .{ .name = "scsu", .encoding = .scsu },
 
     .{ .name = "ascii", .encoding = .ascii },
     .{ .name = "usascii", .encoding = .ascii },
@@ -441,6 +446,7 @@ pub const Decoder = struct {
     state: iso2022jp.State = .{},
     utf7_state: utf7.State = .{},
     hz_state: hz.State = .{},
+    scsu_state: scsu.State = .{},
 
     pub fn init(encoding: Encoding) Decoder {
         return .{ .encoding = encoding };
@@ -456,6 +462,7 @@ pub const Decoder = struct {
             .utf32_be => utf32Next(input, index, .big),
             .utf7 => utf7.next(&self.utf7_state, input, index),
             .hz => hz.next(&self.hz_state, input, index),
+            .scsu => scsu.next(&self.scsu_state, input, index),
             .ascii => asciiNext(input, index),
             .latin1 => latin1Next(input, index),
             .x_user_defined => xUserDefinedNext(input, index),
@@ -477,6 +484,7 @@ pub const Encoder = struct {
     state: iso2022jp.State = .{},
     utf7_state: utf7.State = .{},
     hz_state: hz.State = .{},
+    scsu_state: scsu.State = .{},
 
     pub fn init(encoding: Encoding) Encoder {
         return .{ .encoding = encoding };
@@ -491,6 +499,7 @@ pub const Encoder = struct {
             .utf32_be => utf32Encode(codepoint, out, .big),
             .utf7 => utf7.encode(&self.utf7_state, codepoint, out),
             .hz => hz.encode(&self.hz_state, codepoint, out),
+            .scsu => scsu.encode(&self.scsu_state, codepoint, out),
             .ascii => if (codepoint < 0x80)
                 writeByte(codepoint, out)
             else
@@ -517,6 +526,7 @@ pub const Encoder = struct {
         return switch (self.encoding) {
             .utf7 => utf7.flush(&self.utf7_state, out),
             .hz => hz.flush(&self.hz_state, out),
+            .scsu => scsu.flush(&self.scsu_state, out),
             .iso_2022_jp => iso2022jp.flush(&self.state, out),
             else => 0,
         };
@@ -1735,17 +1745,43 @@ test "UTF-7 and HZ conversion" {
     try testing.expectEqual(@as(u8, 4), maxCharSize(.hz));
 }
 
-test "ICU UTF-7 and HZ conformance fixture" {
+test "SCSU conversion" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
-    const fixture = @embedFile("charset/utf7_hz_conformance.bin");
+
+    const cases = [_][]const u8{
+        "Hello, World!",
+        "Привет",
+        "日本語テスト",
+        "😀😁😂",
+        "€£¥",
+        "\x00\t\n\r",
+        "→←↑↓",
+        "𝕳𝖊𝖑𝖑𝖔",
+    };
+    for (cases) |text| {
+        const encoded = try encodeAlloc(allocator, text, .scsu, .{});
+        defer allocator.free(encoded);
+        const decoded = try decodeAlloc(allocator, encoded, .scsu, .{});
+        defer allocator.free(decoded);
+        try testing.expectEqualStrings(text, decoded);
+    }
+    try testing.expectEqualStrings("SCSU", encodingName(.scsu));
+    try testing.expectEqual(@as(?Encoding, .scsu), fromLabel("SCSU"));
+    try testing.expectEqual(@as(u8, 6), maxCharSize(.scsu));
+}
+
+test "ICU UTF-7, HZ, and SCSU conformance fixture" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("charset/stateful_conformance.bin");
 
     try testing.expect(fixture.len >= 12);
     try testing.expectEqualStrings("CJGP", fixture[0..4]);
     try testing.expectEqual(@as(u8, 1), fixture[4]);
     const record_count = std.mem.readInt(u32, fixture[8..12], .little);
 
-    const encodings = [_]Encoding{ .utf7, .hz };
+    const encodings = [_]Encoding{ .utf7, .hz, .scsu };
     var cursor: usize = 12;
     var failures: usize = 0;
     var record_index: usize = 0;
@@ -1876,7 +1912,7 @@ test "ICU UTF-7 and HZ conformance fixture" {
     try testing.expectEqual(fixture.len, cursor);
     try testing.expectEqual(@as(usize, 0), failures);
     std.debug.print(
-        "UTF-7/HZ conformance: {d} records passed\n",
+        "stateful charset conformance: {d} records passed\n",
         .{record_count},
     );
 }

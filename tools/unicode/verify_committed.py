@@ -453,7 +453,7 @@ BLOBS = (
     Blob("src/unicode/resource/res_conformance.bin", b"CJGM", 1, "33a2b3b780fb3ce50df8476d0654366fd603301eeb42dadc4da2edc24f3febb6", version=(0, 0, 0)),
     Blob("src/unicode/resource/dat_conformance.bin", b"CJGN", 1, "3b37ef6070872e1ab0cac30b0be987e9192ad2351f44ef7f5d8f4bc803077331", version=(0, 0, 0)),
     Blob("src/unicode/format/decimal_conformance.bin", b"CJGO", 1, "1588fa94b4da9a3f350d583a4ff62896abe1847a1f31b537ac338d3dc0c573e4", version=(0, 0, 0)),
-    Blob("src/unicode/charset/utf7_hz_conformance.bin", b"CJGP", 1, "72237b68828dd4adc76b95239dbe24e4711cbe9609ded1091d265b5dc9dd87c5", version=(0, 0, 0)),
+    Blob("src/unicode/charset/stateful_conformance.bin", b"CJGP", 1, "59bb98283aea8f060de5f3119ffa4477cc2d706fee67f60584dc87f19b2877aa", version=(0, 0, 0)),
 )
 
 GENERATORS = {
@@ -479,7 +479,7 @@ GENERATORS = {
     "tools/unicode/resource/generate_conformance.cpp": "670771aeaa5d450866285ed5f4f520a8a330d9daa584b7490f183d5f16595c59",
     "tools/unicode/resource/generate_dat_conformance.cpp": "32c2610961d40e2e9328731dbd80a314823333b35ded83af7986fa0bff0e650d",
     "tools/unicode/format/generate_decimal_conformance.cpp": "3b5f0c4111546a84752b8170099ef0409525c7d92d1f12d352168d593cf628c3",
-    "tools/unicode/charset/generate_utf7_hz_conformance.cpp": "634de85299baa599f4e75a1668d481baec3ee28a06fd7915996000bbfb1d5a89",
+    "tools/unicode/charset/generate_stateful_conformance.cpp": "72d880f6b497111d9b64589ee91b5898196d7d5939787b0cc1fce509b2c264fe",
     "tools/unicode/resource/generate_fixtures.sh": "0192498b15e091adad4c099264eec11176d7c213d160feabd03c46b39a867dc5",
     "tools/generate_canonical_decomposition.py": "450c932dbd278208bccd3ab8bb26f04f1b18a96051fc03944393f5d73e3ad6d8",
     "tools/generate_nonspacing_marks.py": "12d45f34ce2891ccf1b342bc8f44c6fe32e15e019d7a41489d8036dee9f8555c",
