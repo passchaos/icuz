@@ -646,6 +646,56 @@ pub fn daysFromDate(calendar: Calendar, date: Date) ?i64 {
     return daysFromGregorian(gregorian_year, date.month, date.day);
 }
 
+/// Inverse conversion for calendars without a closed-form Gregorian mapping.
+///
+/// `hint` is a nearby day (normally the calendar's current day). The year is
+/// located by binary search, then the month and day are scanned within that
+/// year. Returns null when the requested fields do not exist (for example a
+/// non-leap month in a lunisolar calendar).
+pub fn daysFromDateNear(
+    calendar: Calendar,
+    date: Date,
+    hint: i64,
+) ?i64 {
+    if (daysFromDate(calendar, date)) |exact| return exact;
+
+    const current = fromDays(calendar, hint);
+    const estimate = hint + @as(i64, date.year - current.year) * 365;
+    var low = estimate - 2000;
+    var high = estimate + 2000;
+    if (fromDays(calendar, low).year >= date.year) {
+        low -= 20000;
+    }
+    if (fromDays(calendar, high).year < date.year) {
+        high += 20000;
+    }
+    while (low < high) {
+        const middle = low + @divFloor(high - low, 2);
+        if (fromDays(calendar, middle).year < date.year) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    var day = low;
+    var scanned: usize = 0;
+    while (scanned < 420) : (scanned += 1) {
+        const candidate = fromDays(calendar, day);
+        if (candidate.year != date.year) break;
+        if (candidate.era == date.era and
+            candidate.month == date.month and
+            candidate.day == 1 and
+            candidate.leap_month == date.leap_month)
+        {
+            // ICU's set is lenient: a day beyond the month length rolls into
+            // the following month.
+            return day + @as(i64, date.day) - 1;
+        }
+        day += 1;
+    }
+    return null;
+}
+
 fn expectDate(days: i64, calendar: Calendar, expected: Date) !void {
     const actual = fromDays(calendar, days);
     try std.testing.expectEqual(expected.era, actual.era);

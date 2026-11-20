@@ -213,8 +213,10 @@ need without pulling in a font or layout engine.
 - ICU `ucal`-compatible mutable calendar (`Calendar`): timezone-aware
   millisecond state, field get/set, `add`/`roll`, era/year/month/date and
   clock fields, DST-aware zone and DST offsets, and Gregorian, Buddhist,
-  Japanese, ROC, and ISO-8601 systems, validated by a 36-case ICU 78
-  differential fixture.
+  Japanese, ROC, ISO-8601, Islamic-umalqura, Persian, Indian, Coptic, and
+  Ethiopic systems, validated by an 81-case ICU 78 differential fixture.
+  Hebrew and Chinese mutation is limited to calendars whose month numbering
+  matches ICU's `ucal` slots.
 - ICU `DateTimePatternGenerator` helpers: pattern-to-skeleton conversion
   (`datePatternSkeletonAlloc`), base-skeleton reduction
   (`dateBaseSkeletonAlloc`), and skeleton-driven field replacement

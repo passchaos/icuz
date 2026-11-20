@@ -118,26 +118,40 @@ pub const Calendar = struct {
     }
 
     fn supportsMutation(self: Calendar) bool {
+        _ = self;
+        return true;
+    }
+
+    fn daysFor(
+        self: Calendar,
+        date: systems.Date,
+        hint: i64,
+    ) ?i64 {
+        return systems.daysFromDateNear(self.system, date, hint);
+    }
+
+    fn monthsInYear(self: Calendar, date: systems.Date) i64 {
         return switch (self.system) {
-            .gregorian, .iso8601, .buddhist, .roc, .japanese => true,
-            else => false,
+            .coptic, .ethiopic, .ethiopic_amete_alem => 13,
+            .hebrew, .chinese => if (date.leap_year) 13 else 12,
+            else => 12,
         };
     }
 
-    fn daysFor(self: Calendar, date: systems.Date) ?i64 {
-        return systems.daysFromDate(self.system, date);
-    }
-
-    fn monthLength(self: Calendar, date: systems.Date) ?i64 {
+    fn monthLength(
+        self: Calendar,
+        date: systems.Date,
+        hint: i64,
+    ) ?i64 {
         const first = self.daysFor(.{
             .era = date.era,
             .year = date.year,
             .month = date.month,
             .day = 1,
-        }) orelse return null;
+        }, hint) orelse return null;
         var year = date.year;
         var month: i32 = @as(i32, date.month) + 1;
-        if (month > 12) {
+        if (month > self.monthsInYear(date)) {
             month = 1;
             year += 1;
         }
@@ -146,7 +160,7 @@ pub const Calendar = struct {
             .year = year,
             .month = @intCast(month),
             .day = 1,
-        }) orelse return null;
+        }, hint) orelse return null;
         return next - first;
     }
 
@@ -207,12 +221,21 @@ pub const Calendar = struct {
                 const standard = self.standardOffset(unix_seconds);
                 break :blk (local.offset.seconds - standard) * 1000;
             },
-            .extended_year => blk: {
-                const gregorian = systems.fromDays(.gregorian, local.days);
-                break :blk if (gregorian.era == 0)
-                    1 - gregorian.year
-                else
-                    gregorian.year;
+            .extended_year => switch (self.system) {
+                .gregorian,
+                .iso8601,
+                .buddhist,
+                .japanese,
+                .roc,
+                .chinese,
+                => blk: {
+                    const gregorian = systems.fromDays(.gregorian, local.days);
+                    break :blk if (gregorian.era == 0)
+                        1 - gregorian.year
+                    else
+                        gregorian.year;
+                },
+                else => date.year,
             },
             .julian_day => @intCast(local.days + 2440588),
             .milliseconds_in_day => @intCast(local.milliseconds_of_day),
@@ -241,12 +264,13 @@ pub const Calendar = struct {
             .month => {
                 var year = date.year;
                 var month: i32 = value + 1;
-                while (month > 12) {
-                    month -= 12;
+                const months: i32 = @intCast(self.monthsInYear(date));
+                while (month > months) {
+                    month -= months;
                     year += 1;
                 }
                 while (month < 1) {
-                    month += 12;
+                    month += months;
                     year -= 1;
                 }
                 date.year = year;
@@ -258,7 +282,7 @@ pub const Calendar = struct {
                     .year = date.year,
                     .month = date.month,
                     .day = 1,
-                }) orelse return error.Unsupported;
+                }, local.days) orelse return error.Unsupported;
                 self.setLocal(first + value - 1, milliseconds_of_day);
                 return;
             },
@@ -298,7 +322,8 @@ pub const Calendar = struct {
             else => return error.Unsupported,
         }
 
-        const days = self.daysFor(date) orelse return error.Unsupported;
+        const days = self.daysFor(date, local.days) orelse
+            return error.Unsupported;
         self.setLocal(days, milliseconds_of_day);
     }
 
@@ -314,20 +339,23 @@ pub const Calendar = struct {
             .era => return error.Unsupported,
             .year => {
                 date.year += amount;
-                if (self.monthLength(date)) |length| {
+                if (self.monthLength(date, local.days)) |length| {
                     if (date.day > length) date.day = @intCast(length);
                 }
-                days = self.daysFor(date) orelse return error.Unsupported;
+                days = self.daysFor(date, local.days) orelse
+                    return error.Unsupported;
             },
             .month => {
-                const total: i64 = @as(i64, date.year) * 12 +
+                const months = self.monthsInYear(date);
+                const total: i64 = @as(i64, date.year) * months +
                     (date.month - 1) + amount;
-                date.year = @intCast(@divFloor(total, 12));
-                date.month = @intCast(@mod(total, 12) + 1);
-                if (self.monthLength(date)) |length| {
+                date.year = @intCast(@divFloor(total, months));
+                date.month = @intCast(@mod(total, months) + 1);
+                if (self.monthLength(date, local.days)) |length| {
                     if (date.day > length) date.day = @intCast(length);
                 }
-                days = self.daysFor(date) orelse return error.Unsupported;
+                days = self.daysFor(date, local.days) orelse
+                    return error.Unsupported;
             },
             .date, .day_of_year, .day_of_week, .dow_local => {
                 days += @as(i64, amount);
@@ -356,21 +384,24 @@ pub const Calendar = struct {
 
         switch (field) {
             .month => {
-                const month = @mod(@as(i64, date.month) - 1 + amount, 12) + 1;
+                const months = self.monthsInYear(date);
+                const month = @mod(@as(i64, date.month) - 1 + amount, months) + 1;
                 var rolled = date;
                 rolled.month = @intCast(month);
-                if (self.monthLength(rolled)) |length| {
+                if (self.monthLength(rolled, local.days)) |length| {
                     if (rolled.day > length) rolled.day = @intCast(length);
                 }
-                days = self.daysFor(rolled) orelse return error.Unsupported;
+                days = self.daysFor(rolled, local.days) orelse
+                    return error.Unsupported;
             },
             .date => {
-                const length = self.monthLength(date) orelse
+                const length = self.monthLength(date, local.days) orelse
                     return error.Unsupported;
                 const day = @mod(@as(i64, date.day) - 1 + amount, length) + 1;
                 var rolled = date;
                 rolled.day = @intCast(day);
-                days = self.daysFor(rolled) orelse return error.Unsupported;
+                days = self.daysFor(rolled, local.days) orelse
+                    return error.Unsupported;
             },
             .hour, .hour_of_day => {
                 const hour = @mod(
@@ -530,6 +561,13 @@ test "ICU mutable calendar conformance fixture" {
                 1 => .buddhist,
                 2 => .japanese,
                 3 => .roc,
+                4 => .islamic_umalqura,
+                5 => .persian,
+                6 => .hebrew,
+                7 => .indian,
+                8 => .coptic,
+                9 => .ethiopic,
+                10 => .chinese,
                 else => return error.InvalidFixture,
             },
             zone,
@@ -576,9 +614,27 @@ test "ICU mutable calendar conformance fixture" {
             const field = fieldFromByte(field_byte) orelse
                 return error.InvalidFixture;
             switch (opcode) {
-                0 => calendar.set(field, amount) catch return error.InvalidFixture,
-                1 => calendar.add(field, amount) catch return error.InvalidFixture,
-                2 => calendar.roll(field, amount) catch return error.InvalidFixture,
+                0 => calendar.set(field, amount) catch |err| {
+                    std.debug.print(
+                        "calendar set failed: case {d} op {d} field {s} amount {d} err {s}\n",
+                        .{ case_index, op_index, @tagName(field), amount, @errorName(err) },
+                    );
+                    return error.InvalidFixture;
+                },
+                1 => calendar.add(field, amount) catch |err| {
+                    std.debug.print(
+                        "calendar add failed: case {d} op {d} field {s} amount {d} err {s}\n",
+                        .{ case_index, op_index, @tagName(field), amount, @errorName(err) },
+                    );
+                    return error.InvalidFixture;
+                },
+                2 => calendar.roll(field, amount) catch |err| {
+                    std.debug.print(
+                        "calendar roll failed: case {d} op {d} field {s} amount {d} err {s}\n",
+                        .{ case_index, op_index, @tagName(field), amount, @errorName(err) },
+                    );
+                    return error.InvalidFixture;
+                },
                 else => return error.InvalidFixture,
             }
             if (calendar.getMillis() != expected_millis) {

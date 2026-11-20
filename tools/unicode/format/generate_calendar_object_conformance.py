@@ -43,11 +43,26 @@ SYSTEMS = (
     (1, "th_TH@calendar=buddhist"),
     (2, "ja_JP@calendar=japanese"),
     (3, "zh_TW@calendar=roc"),
+    (4, "en_US@calendar=islamic-umalqura"),
+    (5, "fa_IR@calendar=persian"),
+    (7, "hi_IN@calendar=indian"),
+    (8, "ar_EG@calendar=coptic"),
+    (9, "am_ET@calendar=ethiopic"),
 )
 ZONES = ("UTC", "America/New_York", "Asia/Tokyo")
 INITIAL_MILLIS = (100_000_000_000, 1_600_000_000_000, 1_700_000_000_000)
 FIELDS = (0, 1, 2, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22)
-SET_YEAR = {0: 2021, 1: 2564, 2: 45, 3: 110}
+SET_YEAR = {
+    0: 2021,
+    1: 2564,
+    2: 45,
+    3: 110,
+    4: 1445,
+    5: 1402,
+    7: 1945,
+    8: 1740,
+    9: 2016,
+}
 OPS = (
     (0, 2, 4),
     (0, 5, 29),
@@ -195,7 +210,9 @@ def main() -> int:
                     raise SystemExit("ucal_setMillis failed")
                 initial_values = fields(calendar)
                 ops = []
-                script = ((0, 1, SET_YEAR[system]),) + OPS
+                script = OPS
+                if system in SET_YEAR:
+                    script = ((0, 1, SET_YEAR[system]),) + OPS
                 for opcode, field, amount in script:
                     if opcode == 0:
                         ucal_set(calendar, field, amount)
