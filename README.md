@@ -112,7 +112,8 @@ need without pulling in a font or layout engine.
   digits/rounding (`currencyCashFractionDigits`, `currencyCashRounding`),
   localized currency symbols/names (`currencySymbol`, `currencyName`),
   region/locale currency codes (`currencyCodeForRegion`,
-  `currencyCodeForLocale`), accounting
+  `currencyCodeForLocale`), cash rounding via `NumberOptions.cash`,
+  accounting
   parentheses, short/long
   compact notation that keeps at least two significant digits of the scaled
   mantissa (1200 becomes `1.2K`) and selects plurals from the visible fraction

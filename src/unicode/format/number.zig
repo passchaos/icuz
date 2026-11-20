@@ -35,6 +35,8 @@ pub const Options = struct {
     currency: ?[]const u8 = null,
     currency_display: CurrencyDisplay = .symbol,
     accounting: bool = false,
+    /// Use the currency's CLDR cash digits and cash rounding increment.
+    cash: bool = false,
     min_fraction_digits: ?u8 = null,
     max_fraction_digits: ?u8 = null,
     use_grouping: bool = true,
@@ -819,11 +821,23 @@ fn formatStandardAlloc(
         if (options.min_fraction_digits == null) min_fraction = 0;
         if (options.max_fraction_digits == null) max_fraction = 6;
     }
+    var rounding_mantissa = options.rounding_increment_mantissa;
+    var rounding_magnitude = options.rounding_increment_magnitude;
     if (options.style == .currency) {
         const code = options.currency orelse return error.MissingCurrency;
-        const digits = currencyDigits(code);
+        const digits = if (options.cash)
+            currencyCashDigits(code)
+        else
+            currencyDigits(code);
         if (options.min_fraction_digits == null) min_fraction = digits;
         if (options.max_fraction_digits == null) max_fraction = digits;
+        if (options.cash and rounding_mantissa == 0) {
+            const cash_round = currencyCashRounding(code);
+            if (cash_round != 0) {
+                rounding_mantissa = cash_round;
+                rounding_magnitude = -@as(i32, digits);
+            }
+        }
     }
     if (min_fraction > max_fraction) max_fraction = min_fraction;
     if (max_fraction > 9) max_fraction = 9;
@@ -839,21 +853,21 @@ fn formatStandardAlloc(
         @as(f64, @floatFromInt(pattern.multiplier));
 
     var rounded_magnitude = roundHalfEven(magnitude, max_fraction);
-    if (options.rounding_increment_mantissa != 0) {
+    if (rounding_mantissa != 0) {
         const increment = @as(f64, @floatFromInt(
-            options.rounding_increment_mantissa,
+            rounding_mantissa,
         )) * std.math.pow(
             f64,
             10.0,
-            @floatFromInt(options.rounding_increment_magnitude),
+            @floatFromInt(rounding_magnitude),
         );
         const steps = roundHalfEven(magnitude / increment, 0);
         rounded_magnitude = steps * increment;
-        const fraction: u8 = if (options.rounding_increment_magnitude >= 0)
+        const fraction: u8 = if (rounding_magnitude >= 0)
             0
         else
             @intCast(@min(
-                -options.rounding_increment_magnitude,
+                -rounding_magnitude,
                 9,
             ));
         min_fraction = fraction;
@@ -1869,6 +1883,14 @@ fn appendCodepoint(
 
 fn currencyDigits(code: []const u8) u8 {
     return currencies.fractionDigits(code);
+}
+
+fn currencyCashDigits(code: []const u8) u8 {
+    return currencies.cashFractionDigits(code);
+}
+
+fn currencyCashRounding(code: []const u8) u8 {
+    return currencies.cashRounding(code);
 }
 
 fn currencyEntry(locale: *const data.Locale, code: []const u8) ?currencies.Entry {
@@ -3904,3 +3926,31 @@ test "compact plural exponent operand" {
     );
 }
 
+
+test "currency cash rounding" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const regular = try formatAlloc(allocator, 1.23, "de", .{
+        .style = .currency,
+        .currency = "CHF",
+    });
+    defer allocator.free(regular);
+    try testing.expectEqualStrings("1,23\u{00a0}CHF", regular);
+
+    const cash = try formatAlloc(allocator, 1.23, "de", .{
+        .style = .currency,
+        .currency = "CHF",
+        .cash = true,
+    });
+    defer allocator.free(cash);
+    try testing.expectEqualStrings("1,25\u{00a0}CHF", cash);
+
+    const norwegian = try formatAlloc(allocator, 12.6, "nb", .{
+        .style = .currency,
+        .currency = "NOK",
+        .cash = true,
+    });
+    defer allocator.free(norwegian);
+    try testing.expectEqualStrings("13\u{00a0}kr", norwegian);
+}
