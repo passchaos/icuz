@@ -10,6 +10,7 @@ const properties = @import("properties.zig");
 const aliases = @import("properties/aliases.zig");
 const script = @import("script/root.zig");
 const script_extensions = @import("script_extensions/root.zig");
+const case_mapping = @import("case/root.zig");
 
 pub const Error = error{ InvalidPattern, OutOfMemory };
 
@@ -233,6 +234,171 @@ pub const Set = struct {
             self.allocator.free(self.strings.items[index]);
             _ = self.strings.orderedRemove(index);
         }
+    }
+
+    pub const CaseClosure = enum {
+        /// Add simple case variants and full case-folded strings.
+        case_insensitive,
+        /// Add only simple (one-to-one) case variants.
+        simple_case_insensitive,
+        /// Add the lower/upper/title/fold mappings of the set's elements.
+        add_case_mappings,
+    };
+
+    /// Apply ICU-style case closure to this set.
+    pub fn closeOver(self: *Set, closure: CaseClosure) !void {
+        const allocator = self.allocator;
+        var original = try self.clone(allocator);
+        defer original.deinit();
+
+        if (closure == .add_case_mappings) {
+            for (original.ranges.items) |range| {
+                var codepoint: u32 = range.first;
+                while (codepoint <= @as(u32, range.last)) : (codepoint += 1) {
+                    const cp: u21 = @intCast(codepoint);
+                    try self.addMappedCodepointAlloc(cp, .lower);
+                    try self.addMappedCodepointAlloc(cp, .upper);
+                    try self.addMappedCodepointAlloc(cp, .title);
+                    try self.addMappedCodepointAlloc(cp, .fold);
+                }
+            }
+            for (original.strings.items) |text| {
+                try self.addMappedStringAlloc(text, .lower);
+                try self.addMappedStringAlloc(text, .upper);
+                try self.addMappedStringAlloc(text, .title);
+                const folded = try case_mapping.foldAlloc(allocator, text);
+                defer allocator.free(folded);
+                try self.addString(folded);
+            }
+            return;
+        }
+
+        // Case-insensitive closure: find every cased scalar whose case
+        // variants intersect the original set. Iterating cased scalars makes
+        // the closure symmetric without a reverse case-mapping table.
+        var codepoint: u32 = 0;
+        while (codepoint <= 0x10FFFF) : (codepoint += 1) {
+            const cp: u21 = @intCast(codepoint);
+            if (!properties.isCased(cp)) continue;
+            const lower = case_mapping.simpleLower(cp);
+            const upper = case_mapping.simpleUpper(cp);
+            const title = case_mapping.simpleTitle(cp);
+            const fold = case_mapping.simpleFold(cp);
+            const matches = original.contains(cp) or
+                original.contains(lower) or
+                original.contains(upper) or
+                original.contains(title) or
+                original.contains(fold);
+            if (!matches) continue;
+            try self.add(cp);
+            try self.add(lower);
+            try self.add(upper);
+            try self.add(title);
+            try self.add(fold);
+            if (closure == .case_insensitive) {
+                if (case_mapping.fullFold(cp)) |folded| {
+                    try self.addMappedSequence(folded);
+                }
+            }
+        }
+
+        if (closure == .case_insensitive) {
+            for (original.strings.items) |text| {
+                const folded = try case_mapping.foldAlloc(allocator, text);
+                defer allocator.free(folded);
+                try self.addString(folded);
+            }
+        }
+    }
+
+    fn addMappedCodepointAlloc(
+        self: *Set,
+        codepoint: u21,
+        kind: enum { lower, upper, title, fold },
+    ) !void {
+        var buffer: [4]u8 = undefined;
+        const length = std.unicode.utf8Encode(codepoint, &buffer) catch return;
+        const mapped = switch (kind) {
+            .lower => try case_mapping.fullLowerAlloc(
+                self.allocator,
+                buffer[0..length],
+                .{},
+            ),
+            .upper => try case_mapping.fullUpperAlloc(
+                self.allocator,
+                buffer[0..length],
+                .{},
+            ),
+            .title => try case_mapping.fullTitleAlloc(
+                self.allocator,
+                buffer[0..length],
+                .{},
+            ),
+            .fold => try case_mapping.foldAlloc(
+                self.allocator,
+                buffer[0..length],
+            ),
+        };
+        defer self.allocator.free(mapped);
+        try self.addMappedUtf8(mapped);
+    }
+
+    fn addMappedUtf8(self: *Set, text: []const u8) !void {
+        if (text.len == 0) return;
+        const length = std.unicode.utf8ByteSequenceLength(text[0]) catch {
+            try self.addString(text);
+            return;
+        };
+        const first = std.unicode.utf8Decode(text[0..length]) catch {
+            try self.addString(text);
+            return;
+        };
+        if (length == text.len) {
+            try self.add(first);
+        } else {
+            try self.addString(text);
+        }
+    }
+
+    fn addMappedSequence(self: *Set, codepoints: []const u21) !void {
+        if (codepoints.len <= 1) {
+            if (codepoints.len == 1) try self.add(codepoints[0]);
+            return;
+        }
+        var buffer: [64]u8 = undefined;
+        var length: usize = 0;
+        for (codepoints) |cp| {
+            const encoded = std.unicode.utf8Encode(cp, buffer[length..][0..4]) catch
+                return;
+            length += encoded;
+        }
+        try self.addString(buffer[0..length]);
+    }
+
+    fn addMappedStringAlloc(
+        self: *Set,
+        text: []const u8,
+        kind: enum { lower, upper, title },
+    ) !void {
+        const mapped = switch (kind) {
+            .lower => try case_mapping.fullLowerAlloc(
+                self.allocator,
+                text,
+                .{},
+            ),
+            .upper => try case_mapping.fullUpperAlloc(
+                self.allocator,
+                text,
+                .{},
+            ),
+            .title => try case_mapping.fullTitleAlloc(
+                self.allocator,
+                text,
+                .{},
+            ),
+        };
+        defer self.allocator.free(mapped);
+        try self.addMappedUtf8(mapped);
     }
 
     pub fn remove(self: *Set, codepoint: u21) !void {
@@ -1265,6 +1431,51 @@ test "set string elements" {
     var round_trip = try parse(allocator, rendered);
     defer round_trip.deinit();
     try testing.expect(set.eql(round_trip));
+}
+
+test "set case closure" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var simple = try parse(allocator, "[a]");
+    defer simple.deinit();
+    try simple.closeOver(.simple_case_insensitive);
+    try testing.expect(simple.contains('a'));
+    try testing.expect(simple.contains('A'));
+
+    var kelvin = try parse(allocator, "[k]");
+    defer kelvin.deinit();
+    try kelvin.closeOver(.simple_case_insensitive);
+    try testing.expect(kelvin.contains('K'));
+    try testing.expect(kelvin.contains(0x212a));
+
+    var long_s = try parse(allocator, "[\u{017F}]");
+    defer long_s.deinit();
+    try long_s.closeOver(.simple_case_insensitive);
+    try testing.expect(long_s.contains('s'));
+    try testing.expect(long_s.contains('S'));
+
+    var sharp = try parse(allocator, "[\u{00DF}]");
+    defer sharp.deinit();
+    try sharp.closeOver(.case_insensitive);
+    try testing.expect(sharp.containsString("ss"));
+    try testing.expect(sharp.contains(0x1e9e));
+
+    var mapped = try parse(allocator, "[\u{00DF}]");
+    defer mapped.deinit();
+    try mapped.closeOver(.add_case_mappings);
+    try testing.expect(mapped.containsString("SS"));
+    try testing.expect(mapped.containsString("ss"));
+
+    var idempotent = try parse(allocator, "[a]");
+    defer idempotent.deinit();
+    try idempotent.closeOver(.case_insensitive);
+    const first = try idempotent.toPatternAlloc(allocator);
+    defer allocator.free(first);
+    try idempotent.closeOver(.case_insensitive);
+    const second = try idempotent.toPatternAlloc(allocator);
+    defer allocator.free(second);
+    try testing.expectEqualStrings(first, second);
 }
 
 test "set algebra conformance" {

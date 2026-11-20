@@ -52,8 +52,10 @@ need without pulling in a font or layout engine.
 - Character names and aliases, including algorithmic CJK/Tangut/Egyptian/
   Khitan/Nushu names and UAX #44 loose name lookup.
 - UnicodeSet range/property construction, multi-code-point string elements
-  (`{abc}`, `addString`, `containsString`), union/intersection/difference/
-  complement, `containsAll`/`containsNone`/`containsSome`, pattern
+  (`{abc}`, `addString`, `containsString`), case closure (`closeOver` with
+  simple/full case-insensitive and add-case-mappings modes),
+  union/intersection/difference/complement,
+  `containsAll`/`containsNone`/`containsSome`, pattern
   round-tripping, and a practical `\p{...}`/`[a-z]` pattern parser with
   binary, general-category, script, script-extension, `Age`, and
   `Numeric_Type` properties, validated by a 610-case PyICU range
