@@ -109,6 +109,7 @@ fn normalizeFusedInto(
     var engine = SegmentEngine(Utf8Sink){
         .allocator = allocator,
         .sink = .{ .list = output, .allocator = allocator },
+        .form = form,
         .compatibility = compatibility,
         .compose = form == .nfc or form == .nfkc,
     };
@@ -348,14 +349,6 @@ const CodepointSink = struct {
     ) error{OutOfMemory}!void {
         try self.list.append(self.allocator, codepoint);
     }
-
-    fn appendAsciiCodepoints(
-        self: *CodepointSink,
-        codepoints: []const u21,
-    ) error{OutOfMemory}!void {
-        try self.list.ensureUnusedCapacity(self.allocator, codepoints.len);
-        for (codepoints) |codepoint| self.list.appendAssumeCapacity(codepoint);
-    }
 };
 
 const Utf8Sink = struct {
@@ -404,6 +397,7 @@ fn SegmentEngine(comptime Sink: type) type {
         /// Starter that may still receive combining marks; written to the
         /// output only once the next starter proves that it has none.
         pending: ?u21 = null,
+        form: Form,
         compatibility: bool,
         compose: bool,
 
@@ -414,11 +408,9 @@ fn SegmentEngine(comptime Sink: type) type {
         }
 
         fn feed(self: *Self, codepoint: u21) error{OutOfMemory}!void {
-            // Scalars on a simple page have no decomposition, combining class
-            // 0, and cannot compose with a previous starter.
-            if (codepoint >= 0x80 and
-                data.isSimplePage(codepoint, self.compatibility))
-            {
+            // Inert scalars have no decomposition, combining class 0, and
+            // cannot compose with a previous starter.
+            if (codepoint >= 0x80 and inert.isInert(codepoint, self.form)) {
                 try self.settle();
                 self.pending = codepoint;
                 return;
@@ -432,12 +424,7 @@ fn SegmentEngine(comptime Sink: type) type {
                 // previous character. Spacing marks such as U+0DCF have
                 // combining class 0 but are composition seconds, so they stay
                 // inside the segment.
-                const starter = if (part < 0x80)
-                    true
-                else
-                    combining_class.forCodepoint(part) == 0 and
-                        !data.isCompositionSecond(part) and
-                        !isHangulVOrT(part);
+                const starter = part < 0x80 or inert.isInert(part, self.form);
                 if (starter) {
                     try self.settle();
                     self.pending = part;
@@ -486,23 +473,27 @@ pub fn normalizeCodepointsInto(
     var engine = SegmentEngine(CodepointSink){
         .allocator = allocator,
         .sink = .{ .list = output, .allocator = allocator },
+        .form = form,
         .compatibility = form == .nfkc or form == .nfkd,
         .compose = form == .nfc or form == .nfkc,
     };
     defer engine.deinit();
     var index: usize = 0;
     while (index < codepoints.len) {
-        // Bulk-copy ASCII starters; only the final one may still receive
+        // Bulk-copy inert starters; only the final one may still receive
         // combining marks, so it stays pending.
         const run_start = index;
-        while (index < codepoints.len and codepoints[index] < 0x80) {
+        while (index < codepoints.len and
+            (codepoints[index] < 0x80 or
+                inert.isInert(codepoints[index], form)))
+        {
             index += 1;
         }
         if (index > run_start) {
             try engine.settle();
             const run = codepoints[run_start..index];
             if (run.len > 1) {
-                try engine.sink.appendAsciiCodepoints(run[0 .. run.len - 1]);
+                try engine.sink.appendCodepoints(run[0 .. run.len - 1]);
             }
             engine.pending = run[run.len - 1];
             continue;
@@ -827,6 +818,7 @@ fn normalizeChangedFormInto(
     var engine = SegmentEngine(Utf8Sink){
         .allocator = allocator,
         .sink = .{ .list = output, .allocator = allocator },
+        .form = form,
         .compatibility = form == .nfkc or form == .nfkd,
         .compose = form == .nfc or form == .nfkc,
     };
