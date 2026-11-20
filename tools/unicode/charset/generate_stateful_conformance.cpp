@@ -1,4 +1,4 @@
-// Generate the ICU UTF-7, HZ, SCSU, and BOCU-1 conformance fixture.
+// Generate the ICU stateful charset conformance fixture.
 //
 // Build with ICU 78 headers and libicuuc, for example:
 //   clang++ -std=c++17 -I $ICU/icu4c/source/common \
@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    const char* converter_names[] = {"UTF-7", "HZ", "SCSU", "BOCU-1"};
+    const char* converter_names[] = {"UTF-7", "HZ", "SCSU", "BOCU-1", "ISO-2022-KR"};
     const char* utf7_inputs[] = {
         "Hello, World!",
         "Hi Mom -\u263a-!",
@@ -98,6 +98,19 @@ int main(int argc, char** argv) {
         "\u4e2d\u534e\u4eba\u6c11\u5171\u548c\u56fd\u6c49\u5b57\u6d4b\u8bd5\u65e5\u672c\u8a9e",
         "\u041f\u0440\u0438\u0432\u0435\u0442, \u4e16\u754c! \U0001F600",
     };
+    const char* iso2022kr_inputs[] = {
+        "Hello",
+        "\ud55c\uad6d\uc5b4",
+        "Hello \ud55c\uad6d",
+        "A",
+        "",
+        "\uc11c\uc6b8\ud2b9\ubcc4\uc2dc",
+        "\ub300\ud55c\ubbfc\uad6d",
+        "\ud55c\uae00 \ud14c\uc2a4\ud2b8",
+        "ABC \ud55c\uae00 123",
+        "\uac00\ub098\ub2e4\ub77c\ub9c8\ubc14\uc0ac",
+        "\uc548\ub155\ud558\uc138\uc694",
+    };
     const char* hz_inputs[] = {
         "Hello",
         "\u4e2d\u56fd",
@@ -115,7 +128,7 @@ int main(int argc, char** argv) {
 
     std::vector<uint8_t> records;
     uint32_t record_count = 0;
-    for (uint8_t converter_index = 0; converter_index < 4; converter_index++) {
+    for (uint8_t converter_index = 0; converter_index < 5; converter_index++) {
         UErrorCode status = U_ZERO_ERROR;
         UConverter* converter = ucnv_open(
             converter_names[converter_index],
@@ -128,14 +141,20 @@ int main(int argc, char** argv) {
             ? utf7_inputs
             : (converter_index == 1
                 ? hz_inputs
-                : (converter_index == 2 ? scsu_inputs : bocu1_inputs));
+                : (converter_index == 2
+                    ? scsu_inputs
+                    : (converter_index == 3
+                        ? bocu1_inputs
+                        : iso2022kr_inputs)));
         const size_t input_count = converter_index == 0
             ? sizeof(utf7_inputs) / sizeof(utf7_inputs[0])
             : (converter_index == 1
                 ? sizeof(hz_inputs) / sizeof(hz_inputs[0])
                 : (converter_index == 2
                     ? sizeof(scsu_inputs) / sizeof(scsu_inputs[0])
-                    : sizeof(bocu1_inputs) / sizeof(bocu1_inputs[0])));
+                    : (converter_index == 3
+                        ? sizeof(bocu1_inputs) / sizeof(bocu1_inputs[0])
+                        : sizeof(iso2022kr_inputs) / sizeof(iso2022kr_inputs[0]))));
         for (size_t input_index = 0; input_index < input_count; input_index++) {
             const UnicodeString text = UnicodeString::fromUTF8(inputs[input_index]);
 

@@ -20,6 +20,7 @@ const utf7 = @import("charset/utf7.zig");
 const hz = @import("charset/hz.zig");
 const scsu = @import("charset/scsu.zig");
 const bocu1 = @import("charset/bocu1.zig");
+const iso2022kr = @import("charset/iso2022kr.zig");
 
 pub const DecodeResult = types.DecodeResult;
 pub const EncodeResult = types.EncodeResult;
@@ -34,6 +35,7 @@ pub const Encoding = enum {
     hz,
     scsu,
     bocu1,
+    iso_2022_kr,
     ascii,
     latin1,
     ibm866,
@@ -118,6 +120,7 @@ pub fn encodingName(encoding: Encoding) []const u8 {
         .hz => "HZ",
         .scsu => "SCSU",
         .bocu1 => "BOCU-1",
+        .iso_2022_kr => "ISO-2022-KR",
         .ascii => "US-ASCII",
         .latin1 => "ISO-8859-1",
         .ibm866 => "IBM866",
@@ -177,7 +180,7 @@ pub fn maxCharSize(encoding: Encoding) u8 {
         .big5, .shift_jis, .euc_kr => 2,
         .euc_jp => 3,
         .gbk, .gb18030, .x_user_defined => 4,
-        .utf7, .iso_2022_jp => 8,
+        .utf7, .iso_2022_jp, .iso_2022_kr => 8,
         .hz => 4,
         .scsu => 6,
         .bocu1 => 4,
@@ -245,6 +248,8 @@ const base_aliases = [_]Alias{
     .{ .name = "hzgb2312", .encoding = .hz },
     .{ .name = "scsu", .encoding = .scsu },
     .{ .name = "bocu1", .encoding = .bocu1 },
+    .{ .name = "iso2022kr", .encoding = .iso_2022_kr },
+    .{ .name = "csiso2022kr", .encoding = .iso_2022_kr },
 
     .{ .name = "ascii", .encoding = .ascii },
     .{ .name = "usascii", .encoding = .ascii },
@@ -553,6 +558,7 @@ pub const Decoder = struct {
     hz_state: hz.State = .{},
     scsu_state: scsu.State = .{},
     bocu1_state: bocu1.State = .{},
+    iso2022kr_state: iso2022kr.State = .{},
 
     pub fn init(encoding: Encoding) Decoder {
         return .{ .encoding = encoding };
@@ -570,6 +576,7 @@ pub const Decoder = struct {
             .hz => hz.next(&self.hz_state, input, index),
             .scsu => scsu.next(&self.scsu_state, input, index),
             .bocu1 => bocu1.next(&self.bocu1_state, input, index),
+            .iso_2022_kr => iso2022kr.next(&self.iso2022kr_state, input, index),
             .ascii => asciiNext(input, index),
             .latin1 => latin1Next(input, index),
             .x_user_defined => xUserDefinedNext(input, index),
@@ -593,6 +600,7 @@ pub const Encoder = struct {
     hz_state: hz.State = .{},
     scsu_state: scsu.State = .{},
     bocu1_state: bocu1.State = .{},
+    iso2022kr_state: iso2022kr.State = .{},
 
     pub fn init(encoding: Encoding) Encoder {
         return .{ .encoding = encoding };
@@ -609,6 +617,7 @@ pub const Encoder = struct {
             .hz => hz.encode(&self.hz_state, codepoint, out),
             .scsu => scsu.encode(&self.scsu_state, codepoint, out),
             .bocu1 => bocu1.encode(&self.bocu1_state, codepoint, out),
+            .iso_2022_kr => iso2022kr.encode(&self.iso2022kr_state, codepoint, out),
             .ascii => if (codepoint < 0x80)
                 writeByte(codepoint, out)
             else
@@ -637,6 +646,7 @@ pub const Encoder = struct {
             .hz => hz.flush(&self.hz_state, out),
             .scsu => scsu.flush(&self.scsu_state, out),
             .bocu1 => bocu1.flush(&self.bocu1_state, out),
+            .iso_2022_kr => iso2022kr.flush(&self.iso2022kr_state, out),
             .iso_2022_jp => iso2022jp.flush(&self.state, out),
             else => 0,
         };
@@ -1933,7 +1943,43 @@ test "BOCU-1 conversion" {
     try testing.expectEqual(@as(u8, 4), maxCharSize(.bocu1));
 }
 
-test "ICU UTF-7, HZ, SCSU, and BOCU-1 conformance fixture" {
+test "ISO-2022-KR conversion" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const cases = [_][]const u8{
+        "Hello",
+        "한국어",
+        "Hello 한국",
+        "A",
+        "",
+    };
+    for (cases) |text| {
+        const encoded = try encodeAlloc(allocator, text, .iso_2022_kr, .{});
+        defer allocator.free(encoded);
+        const decoded = try decodeAlloc(allocator, encoded, .iso_2022_kr, .{});
+        defer allocator.free(decoded);
+        try testing.expectEqualStrings(text, decoded);
+    }
+    const korean = try encodeAlloc(allocator, "한국어", .iso_2022_kr, .{});
+    defer allocator.free(korean);
+    try testing.expectEqualSlices(
+        u8,
+        &[_]u8{
+            0x1B, 0x24, 0x29, 0x43, 0x0E,
+            0x47, 0x51, 0x31, 0x39, 0x3E, 0x6E, 0x0F,
+        },
+        korean,
+    );
+    try testing.expectEqualStrings("ISO-2022-KR", encodingName(.iso_2022_kr));
+    try testing.expectEqual(
+        @as(?Encoding, .iso_2022_kr),
+        fromLabel("ISO-2022-KR"),
+    );
+    try testing.expectEqual(@as(u8, 8), maxCharSize(.iso_2022_kr));
+}
+
+test "ICU stateful charset conformance fixture" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
     const fixture = @embedFile("charset/stateful_conformance.bin");
@@ -1943,7 +1989,7 @@ test "ICU UTF-7, HZ, SCSU, and BOCU-1 conformance fixture" {
     try testing.expectEqual(@as(u8, 1), fixture[4]);
     const record_count = std.mem.readInt(u32, fixture[8..12], .little);
 
-    const encodings = [_]Encoding{ .utf7, .hz, .scsu, .bocu1 };
+    const encodings = [_]Encoding{ .utf7, .hz, .scsu, .bocu1, .iso_2022_kr };
     var cursor: usize = 12;
     var failures: usize = 0;
     var record_index: usize = 0;
@@ -1990,7 +2036,8 @@ test "ICU UTF-7, HZ, SCSU, and BOCU-1 conformance fixture" {
                     continue;
                 };
                 defer allocator.free(actual);
-                if (encoding == .utf7 or encoding == .bocu1) {
+                if (encoding == .utf7 or encoding == .bocu1 or
+                    encoding == .iso_2022_kr) {
                     if (!std.mem.eql(u8, actual, expected)) {
                         failures += 1;
                         if (failures <= 10) {
