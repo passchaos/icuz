@@ -1838,6 +1838,27 @@ fn normalizeNfdLatinInto(
     var pending: ?u21 = null;
 
     for (codepoints) |codepoint| {
+        // ASCII is a starter with no decomposition; skip the decomposition
+        // lookup for the common prose case.
+        if (codepoint < 0x80) {
+            if (segment_len > 0) {
+                normalization.canonicalOrder(segment[0..segment_len]);
+                if (length + segment_len > buffer.len) return null;
+                @memcpy(
+                    buffer[length..][0..segment_len],
+                    segment[0..segment_len],
+                );
+                length += segment_len;
+                segment_len = 0;
+            }
+            if (pending) |previous| {
+                if (length == buffer.len) return null;
+                buffer[length] = previous;
+                length += 1;
+            }
+            pending = codepoint;
+            continue;
+        }
         var parts: [64]u21 = undefined;
         const count = normalization.decomposeInto(&parts, codepoint, false);
         for (parts[0..count]) |part| {

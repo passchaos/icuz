@@ -221,29 +221,41 @@ fn asciiBreaksAt(text: []const u8, offset: usize) ?bool {
     return true;
 }
 
+const ascii_word_anchors = blk: {
+    var table = [_]bool{false} ** 128;
+    for ('0'..'9' + 1) |byte| table[byte] = true;
+    for ('A'..'Z' + 1) |byte| table[byte] = true;
+    for ('a'..'z' + 1) |byte| table[byte] = true;
+    table['_'] = true;
+    break :blk table;
+};
+
 fn asciiIsWordAnchor(byte: u8) bool {
-    return switch (byte) {
-        '0'...'9', 'A'...'Z', 'a'...'z', '_' => true,
-        else => false,
-    };
+    return ascii_word_anchors[byte];
 }
 
+const ascii_classes = blk: {
+    var table = [_]Class{.other} ** 128;
+    table['\r'] = .cr;
+    table['\n'] = .lf;
+    table[0x0b] = .newline;
+    table[0x0c] = .newline;
+    table[' '] = .wseg_space;
+    table['"'] = .double_quote;
+    table['\''] = .single_quote;
+    table[','] = .mid_num;
+    table[';'] = .mid_num;
+    table['.'] = .mid_num_let;
+    table[':'] = .mid_letter;
+    for ('0'..'9' + 1) |byte| table[byte] = .numeric;
+    for ('A'..'Z' + 1) |byte| table[byte] = .a_letter;
+    for ('a'..'z' + 1) |byte| table[byte] = .a_letter;
+    table['_'] = .extend_num_let;
+    break :blk table;
+};
+
 fn asciiClass(byte: u8) Class {
-    return switch (byte) {
-        '\r' => .cr,
-        '\n' => .lf,
-        0x0b, 0x0c => .newline,
-        ' ' => .wseg_space,
-        '"' => .double_quote,
-        '\'' => .single_quote,
-        ',', ';' => .mid_num,
-        '.' => .mid_num_let,
-        ':' => .mid_letter,
-        '0'...'9' => .numeric,
-        'A'...'Z', 'a'...'z' => .a_letter,
-        '_' => .extend_num_let,
-        else => .other,
-    };
+    return ascii_classes[byte];
 }
 
 pub fn segments(text: []const u8) Error!Iterator {

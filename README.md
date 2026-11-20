@@ -425,7 +425,11 @@ code points below U+1000, so Latin and other early-script rules resolve
 without a search, and a 256-entry atomic cache of the first rule for recently
 matched code points; above U+1000, rule records carry their first code point
 inline so binary-search probes are a single load. Collation elements start in
-a stack buffer, so typical sort keys allocate only the returned key. Charset
+a stack buffer, so typical sort keys allocate only the returned key, and the
+NFD pass over Latin text handles ASCII without a decomposition lookup.
+UAX #29 word segmentation classifies ASCII bytes through compile-time class
+and word-anchor tables, so prose runs skip the general property lookup.
+Charset
 reverse indexes carry compile-time page indexes and a split layout (sorted
 `u32` code points, then parallel `u16` pointers), so DBCS encoders
 binary-search only one 256-code-point page; hot stateless conversion pairs
