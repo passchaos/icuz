@@ -161,7 +161,7 @@ fn localeAt(index: usize) LocaleRecord {
     };
 }
 
-fn ruleAt(index: usize) Rule {
+pub fn ruleAt(index: usize) Rule {
     const base = rule_offset + index * 16;
     return .{
         .sequence_offset = readU32(base),
@@ -364,6 +364,9 @@ fn stripExtensions(locale: []const u8) []const u8 {
 pub const PageIndex = struct {
     rules: [0x1100]u16,
     direct: [direct_limit]u16,
+    /// Latin code points below 0x370: 0 = no tailoring, 1 = contraction or
+    /// multiple rules, otherwise the single-code-point rule index + 2.
+    single_rules: [0x370]u32,
     cache: [256]std.atomic.Value(u64),
 };
 
@@ -396,6 +399,7 @@ var index_slot_next = std.atomic.Value(usize).init(0);
 fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
     @memset(&pages.rules, 0);
     @memset(&pages.direct, direct_absent);
+    @memset(&pages.single_rules, 0);
     for (&pages.cache) |*entry| entry.* = std.atomic.Value(u64).init(0);
     var rule_index: usize = 0;
     const end: usize = tailoring.rule_count;
@@ -409,13 +413,23 @@ fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
         pages.rules[page] = @intCast(rule_index);
     }
     for (0..end) |index| {
-        const first = ruleAt(tailoring.rule_start + index).first;
+        const rule = ruleAt(tailoring.rule_start + index);
+        const first = rule.first;
         if (first >= direct_limit) break;
         if (pages.direct[first] == direct_absent) {
             const page = @as(usize, first) >> 8;
             pages.direct[first] = @intCast(
                 index - pages.rules[page],
             );
+        }
+        if (first < pages.single_rules.len) {
+            if (rule.sequence_len != 1 or pages.single_rules[first] != 0) {
+                // A contraction or a second rule for the same first code
+                // point needs the full matcher.
+                pages.single_rules[first] = 1;
+            } else {
+                pages.single_rules[first] = @intCast(index + 2);
+            }
         }
     }
 }

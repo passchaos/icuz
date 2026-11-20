@@ -1683,6 +1683,37 @@ fn appendTailoredLatinSortKey(
     var index: usize = 0;
     while (index < source.len) {
         const codepoint = source[index];
+        if (pages) |page_index| {
+            if (codepoint < latin_limit) {
+                const direct = page_index.single_rules[codepoint];
+                if (direct >= 2) {
+                    const rule = tailorings.ruleAt(
+                        tailoring.rule_start + direct - 2,
+                    );
+                    var element_index: usize = 0;
+                    while (element_index < rule.ce_count) : (element_index += 1) {
+                        const element = tailorings.elementAt(rule, element_index);
+                        try ces.append(allocator, .{
+                            .primary = element.primary,
+                            .secondary = element.secondary,
+                            .tertiary = element.tertiary,
+                        });
+                    }
+                    index += 1;
+                    continue;
+                }
+                if (direct == 0) {
+                    const entry = latin_elements.table[codepoint];
+                    for (entry.elements[0..entry.count]) |element| {
+                        try ces.append(allocator, element);
+                    }
+                    index += 1;
+                    continue;
+                }
+                // direct == 1: a contraction or multiple rules; use the
+                // general matcher below.
+            }
+        }
         if (tailorings.couldMatch(pages, codepoint)) {
             if (tailorings.match(tailoring, pages, source, index)) |matched| {
                 const rule = matched.rule;
