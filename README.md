@@ -407,11 +407,13 @@ need without pulling in a font or layout engine.
   storage with native indexes, backward boundary snapping on
   `setNativeIndex`, `next`/`previous`/`moveIndex32`, and range extraction,
   validated by a 30-case ICU 78 differential fixture.
-- ICU `.res` resource bundles (`ResourceBundle`): format versions 1.0-3.x,
-  16-bit tables/arrays, String-v2 suffix sharing, binary and integer-vector
-  resources, aliases, pool-bundle key/string sharing, and `/`-separated path
-  lookup. Validated against ICU `ures_openDirect` traces for standalone and
-  pooled root/en/en_US bundles.
+- ICU `.res` resource bundles (`ResourceBundle`, `BundleSet`): format
+  versions 1.0-3.x, 16-bit tables/arrays, String-v2 suffix sharing, binary
+  and integer-vector resources, aliases, pool-bundle key/string sharing, and
+  `/`-separated path lookup. `BundleSet` adds `ures_open`-style locale
+  fallback (`en_US` -> `en` -> root), per-path fallback, `noFallback`, and
+  cross-bundle aliases. Validated against ICU `ures_openDirect` and
+  `ures_open` traces for standalone, pooled, and fallback lookups.
 - UTF-16 validation, iteration, and UTF-8/UTF-16 conversion helpers.
 - Charset conversion for UTF-8/16/32, ASCII, Latin-1, 28 legacy single-byte
   encodings, GBK/GB18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, and EUC-KR,

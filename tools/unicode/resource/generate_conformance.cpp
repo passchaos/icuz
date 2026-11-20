@@ -281,9 +281,11 @@ static void emitTableKeys(
 struct BundleSpec {
     uint8_t index;
     const char* locale;
+    bool direct;
     bool root_values;
     bool en_values;
     bool en_us_values;
+    bool alias_values;
 };
 
 static uint16_t getU16(const std::vector<uint8_t>& data, size_t offset) {
@@ -358,18 +360,23 @@ int main(int argc, char** argv) {
     const char* directory = argv[1];
 
     const BundleSpec specs[] = {
-        {0, "", true, false, false},
-        {1, "en", false, true, false},
-        {2, "en_US", false, false, true},
-        {3, "pooled_root", true, false, false},
-        {4, "pooled_en", false, true, false},
-        {5, "pooled_en_US", false, false, true},
+        {0, "", true, true, false, false, false},
+        {1, "en", true, false, true, false, false},
+        {2, "en_US", true, false, false, true, false},
+        {3, "pooled_root", true, true, false, false, false},
+        {4, "pooled_en", true, false, true, false, false},
+        {5, "pooled_en_US", true, false, false, true, false},
+        {6, "en_US", false, false, false, false, true},
+        {7, "en", false, false, false, false, true},
+        {8, "", false, false, false, false, true},
     };
 
     std::vector<uint8_t> records;
     for (const BundleSpec& spec : specs) {
         UErrorCode status = U_ZERO_ERROR;
-        UResourceBundle* bundle = ures_openDirect(directory, spec.locale, &status);
+        UResourceBundle* bundle = spec.direct
+            ? ures_openDirect(directory, spec.locale, &status)
+            : ures_open(directory, spec.locale, &status);
         if (U_FAILURE(status) || bundle == nullptr) {
             std::fprintf(
                 stderr,
@@ -403,6 +410,19 @@ int main(int argc, char** argv) {
         if (spec.en_us_values) {
             emitString(records, spec.index, bundle, "greeting");
             emitString(records, spec.index, bundle, "shared");
+        }
+        if (spec.alias_values) {
+            emitString(records, spec.index, bundle, "aliasClient");
+            emitString(records, spec.index, bundle, "aliasChain");
+            emitString(records, spec.index, bundle, "bundleAlias");
+            emitString(records, spec.index, bundle, "directAlias");
+            emitString(records, spec.index, bundle, "nestedAlias");
+            emitString(records, spec.index, bundle, "crossRoot");
+            emitInt(records, spec.index, bundle, "enCountAlias");
+            emitString(records, spec.index, bundle, "greeting");
+            emitString(records, spec.index, bundle, "extra");
+            emitString(records, spec.index, bundle, "nested/deeper/inner");
+            emitInt(records, spec.index, bundle, "count");
         }
         ures_close(bundle);
     }

@@ -59,6 +59,7 @@ const locale_metadata_mod = @import("./locale/metadata.zig");
 const transliterate_mod = @import("./transliterate.zig");
 const shape_mod = @import("./shape/root.zig");
 const resource_mod = @import("./resource/res.zig");
+const bundle_set_mod = @import("./resource/bundle_set.zig");
 const properties = @import("./properties.zig");
 const scalar_value = @import("./scalar/root.zig");
 const scalar_cursor = @import("./scalar/cursor.zig");
@@ -555,6 +556,8 @@ pub const ResourceValue = resource_mod.Value;
 pub const ResourceTable = resource_mod.Table;
 pub const ResourceArray = resource_mod.Array;
 pub const ResourceIntVectorRef = resource_mod.IntVectorRef;
+pub const BundleSet = bundle_set_mod.BundleSet;
+pub const BundleSource = bundle_set_mod.Source;
 
 pub const CharsetEncoding = charset_mod.Encoding;
 pub const CharsetErrorMode = charset_mod.ErrorMode;
@@ -874,6 +877,7 @@ test {
     _ = message2_mod;
     _ = choice_mod;
     _ = resource_mod;
+    _ = bundle_set_mod;
     _ = charset_mod;
     _ = locale_mod;
     _ = locale_mod.matcher;

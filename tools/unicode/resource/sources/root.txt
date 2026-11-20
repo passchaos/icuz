@@ -16,4 +16,9 @@ root {
     aliasClient:alias { "/LOCALE/aliasTarget" }
     unicode { "\u00e9\u65e5\U0001F600" }
     shared { "common value" }
+    bundleAlias:alias { "en/greeting" }
+    aliasChain:alias { "en/aliasClient" }
+    directAlias:alias { "en/extra" }
+    nestedAlias:alias { "en/aliasTarget" }
+    enCountAlias:alias { "en/count" }
 }

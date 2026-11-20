@@ -2,4 +2,7 @@ en {
     greeting { "hi" }
     extra { "english only" }
     shared { "common value" }
+    aliasTarget { "english aliased" }
+    aliasClient:alias { "/LOCALE/aliasTarget" }
+    crossRoot:alias { "root/aliasTarget" }
 }
