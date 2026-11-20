@@ -23,7 +23,7 @@ const strings_offset = entry_offset + @as(usize, entry_count) * 32;
 
 comptime {
     if (blob.len < header_len or !std.mem.eql(u8, blob[0..4], "CJGD") or
-        blob[4] != 1)
+        blob[4] != 2)
     {
         @compileError("invalid currency data");
     }
@@ -72,6 +72,20 @@ fn codeIndex(code: []const u8) ?usize {
 pub fn fractionDigits(code: []const u8) u8 {
     const index = codeIndex(code) orelse return 2;
     return blob[code_offset + index * 8 + 4];
+}
+
+/// CLDR cash fraction digits for a currency code (defaults to the regular
+/// fraction digits).
+pub fn cashFractionDigits(code: []const u8) u8 {
+    const index = codeIndex(code) orelse return 2;
+    return blob[code_offset + index * 8 + 5];
+}
+
+/// CLDR cash rounding increment for a currency code, in the smallest cash
+/// fraction unit (for example 5 for CHF, 50 for DKK; 0 means no increment).
+pub fn cashRounding(code: []const u8) u8 {
+    const index = codeIndex(code) orelse return 0;
+    return blob[code_offset + index * 8 + 6];
 }
 
 fn localeId(index: usize) []const u8 {
@@ -190,6 +204,12 @@ test "currency data" {
     try testing.expectEqual(@as(u8, 2), fractionDigits("USD"));
     try testing.expectEqual(@as(u8, 0), fractionDigits("JPY"));
     try testing.expectEqual(@as(u8, 3), fractionDigits("BHD"));
+    try testing.expectEqual(@as(u8, 2), cashFractionDigits("CHF"));
+    try testing.expectEqual(@as(u8, 5), cashRounding("CHF"));
+    try testing.expectEqual(@as(u8, 0), cashFractionDigits("NOK"));
+    try testing.expectEqual(@as(u8, 0), cashRounding("NOK"));
+    try testing.expectEqual(@as(u8, 50), cashRounding("DKK"));
+    try testing.expectEqual(@as(u8, 0), cashRounding("USD"));
     const usd = find("en", "USD").?;
     try testing.expectEqualStrings("$", usd.symbol);
     try testing.expectEqualStrings("US dollars", usd.names[5]);

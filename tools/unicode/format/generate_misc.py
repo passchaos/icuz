@@ -339,15 +339,26 @@ def resolve_units(locale_data, parent_data, root_data, units):
     return result
 
 
-def parse_currency_fraction_digits(archive: zipfile.ZipFile) -> dict[str, int]:
+def parse_currency_fractions(
+    archive: zipfile.ZipFile,
+) -> dict[str, tuple[int, int, int]]:
+    """Return code -> (digits, cash_digits, cash_rounding)."""
     text = archive.read("common/supplemental/supplementalData.xml").decode("utf-8")
     root = ET.fromstring(text)
-    result: dict[str, int] = {}
+    result: dict[str, tuple[int, int, int]] = {}
     for info in root.findall(".//currencyData/fractions/info"):
         code = info.get("iso4217")
-        digits = info.get("digits")
-        if code and digits and code not in result:
-            result[code] = int(digits)
+        if not code or code in result:
+            continue
+        try:
+            digits = int(info.get("digits", "2"))
+            cash_digits = int(info.get("cashDigits", digits))
+            cash_rounding = int(
+                info.get("cashRounding", info.get("rounding", "0"))
+            )
+        except ValueError:
+            continue
+        result[code] = (digits, cash_digits, cash_rounding)
     return result
 
 
@@ -372,7 +383,7 @@ def resolve_currencies(locale_data, parent_data, root_data, codes):
     return result
 
 
-def render_currencies(compiled, fraction_digits, codes) -> bytes:
+def render_currencies(compiled, fractions, codes) -> bytes:
     strings = bytearray(b"\x00")
     offsets: dict[str, int] = {"": 0}
 
@@ -391,10 +402,13 @@ def render_currencies(compiled, fraction_digits, codes) -> bytes:
     code_index = {}
     for index, code in enumerate(codes):
         code_index[code] = index
+        digits, cash_digits, cash_rounding = fractions.get(code, (2, 2, 0))
         code_bytes += struct.pack(
-            "<IB3x",
+            "<IBBBx",
             intern(code),
-            fraction_digits.get(code, 2),
+            digits,
+            cash_digits,
+            cash_rounding,
         )
 
     entry_bytes = bytearray()
@@ -426,7 +440,7 @@ def render_currencies(compiled, fraction_digits, codes) -> bytes:
     header = bytearray(b"CJGD")
     header += struct.pack(
         "<B3xHHIII",
-        1,
+        2,
         len(compiled),
         len(codes),
         entry_count,
@@ -720,7 +734,7 @@ def main() -> int:
     (out_dir / "currencies_data.bin").write_bytes(
         render_currencies(
             compiled,
-            parse_currency_fraction_digits(archive),
+            parse_currency_fractions(archive),
             currency_codes,
         )
     )
