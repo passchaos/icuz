@@ -533,6 +533,162 @@ fn resolveExplicit(types: []Class, levels: []u8, base_level: u8) void {
     }
 }
 
+/// Assign ICU-compatible levels to characters removed by X9 so callers can
+/// reorder the original text, including embedding controls. `levels` must
+/// already contain the resolved levels from `resolve`; only the removed
+/// entries are replaced. ICU gives embedding controls the previous character
+/// level and then propagates each BN from the next character.
+pub fn assignDisplayLevels(
+    classes: []const Class,
+    levels: []u8,
+    base_level: u8,
+) void {
+    var stack: [max_explicit_level + 2]StackEntry = undefined;
+    var depth: usize = 1;
+    stack[0] = .{ .level = base_level, .override = .neutral, .isolate = false };
+    var embedding: u8 = base_level;
+    var previous: u8 = base_level;
+    var overflow_isolates: usize = 0;
+    var overflow_embeddings: usize = 0;
+    var valid_isolates: usize = 0;
+
+    for (classes, 0..) |class, index| {
+        switch (class) {
+            .lre, .rle, .lro, .rlo => {
+                levels[index] = previous;
+                const new_level = if (class == .lre or class == .lro)
+                    nextEven(embedding)
+                else
+                    nextOdd(embedding);
+                if (new_level <= max_explicit_level and
+                    overflow_isolates == 0 and overflow_embeddings == 0)
+                {
+                    embedding = new_level;
+                    stack[depth] = .{
+                        .level = new_level,
+                        .override = .neutral,
+                        .isolate = false,
+                    };
+                    depth += 1;
+                } else if (overflow_isolates == 0) {
+                    overflow_embeddings += 1;
+                }
+            },
+            .pdf => {
+                levels[index] = previous;
+                if (overflow_isolates != 0) {
+                    // PDF inside an overflow isolate has no effect.
+                } else if (overflow_embeddings != 0) {
+                    overflow_embeddings -= 1;
+                } else if (depth > 1 and !stack[depth - 1].isolate) {
+                    depth -= 1;
+                    embedding = stack[depth].level;
+                }
+            },
+            .bn => levels[index] = previous,
+            .lri, .rli, .fsi => {
+                const isolate_class: Class = if (class == .fsi)
+                    if (firstStrongUntilPdi(classes[index + 1 ..]) == 1)
+                        .rli
+                    else
+                        .lri
+                else
+                    class;
+                previous = embedding;
+                const new_level = if (isolate_class == .rli)
+                    nextOdd(embedding)
+                else
+                    nextEven(embedding);
+                if (new_level <= max_explicit_level and
+                    overflow_isolates == 0 and overflow_embeddings == 0)
+                {
+                    valid_isolates += 1;
+                    embedding = new_level;
+                    stack[depth] = .{
+                        .level = new_level,
+                        .override = .neutral,
+                        .isolate = true,
+                    };
+                    depth += 1;
+                } else {
+                    overflow_isolates += 1;
+                }
+            },
+            .pdi => {
+                if (overflow_isolates != 0) {
+                    overflow_isolates -= 1;
+                } else if (valid_isolates != 0) {
+                    overflow_embeddings = 0;
+                    while (depth > 1 and !stack[depth - 1].isolate) depth -= 1;
+                    if (depth > 1) depth -= 1;
+                    valid_isolates -= 1;
+                }
+                embedding = stack[depth - 1].level;
+                previous = embedding;
+            },
+            .b => {
+                depth = 1;
+                overflow_isolates = 0;
+                overflow_embeddings = 0;
+                valid_isolates = 0;
+                embedding = base_level;
+                previous = base_level;
+            },
+            else => previous = embedding,
+        }
+    }
+
+    adjustRemovedLevels(classes, levels, base_level);
+}
+
+fn isMaskWs(value: Class) bool {
+    return switch (value) {
+        .b,
+        .s,
+        .ws,
+        .bn,
+        .lre,
+        .rle,
+        .lro,
+        .rlo,
+        .pdf,
+        .lri,
+        .rli,
+        .fsi,
+        .pdi,
+        => true,
+        else => false,
+    };
+}
+
+/// ICU's `adjustWSLevels` for the characters removed by X9: trailing
+/// whitespace/controls reset to the paragraph level, and remaining controls
+/// inherit the level of the next character until a paragraph separator.
+fn adjustRemovedLevels(
+    classes: []const Class,
+    levels: []u8,
+    base_level: u8,
+) void {
+    var index = classes.len;
+    while (index > 0) {
+        while (index > 0) {
+            index -= 1;
+            if (!isMaskWs(classes[index])) break;
+            levels[index] = base_level;
+        }
+        while (index > 0) {
+            index -= 1;
+            const class = classes[index];
+            if (isRemovedByX9(class)) {
+                levels[index] = levels[index + 1];
+            } else if (class == .b or class == .s) {
+                levels[index] = base_level;
+                break;
+            }
+        }
+    }
+}
+
 fn resolveWeak(types: []Class, sos: Class, eos: Class) void {
     var previous = sos;
     var previous_strong = sos;

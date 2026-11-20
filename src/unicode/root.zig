@@ -137,6 +137,7 @@ pub const BidiBaseDirection = bidi_paragraph.BaseDirection;
 pub const BidiParagraph = bidi_paragraph.Paragraph;
 pub const BidiRangeMode = bidi_paragraph.RangeMode;
 pub const BidiRange = bidi_paragraph.Range;
+pub const BidiReorderOptions = bidi_paragraph.ReorderOptions;
 pub const bidi_unicode_version = bidi_paragraph.unicode_version;
 
 pub const JoiningType = joining.Type;

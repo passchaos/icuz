@@ -9,6 +9,7 @@ const std = @import("std");
 
 const property_data = @import("data.zig");
 const resolver = @import("resolver.zig");
+const properties = @import("../properties.zig");
 
 pub const unicode_version = property_data.unicode_version;
 pub const Class = property_data.Class;
@@ -293,6 +294,108 @@ pub const Paragraph = struct {
             mirroredCodepoint(codepoint)
         else
             codepoint;
+    }
+
+    /// ICU `ubidi_writeReordered` options.
+    pub const ReorderOptions = struct {
+        /// Mirror characters whose level is odd.
+        mirroring: bool = false,
+        /// Remove bidi controls (LRM/RLM, embeddings, isolates, ZWNJ/ZWJ).
+        remove_controls: bool = false,
+        /// Keep combining marks after their base character in RTL runs.
+        keep_base_combining: bool = false,
+        /// Reverse the reordered output (visual RTL instead of visual LTR).
+        output_reverse: bool = false,
+    };
+
+    /// Reorder `text` (the paragraph's original UTF-8) into visual order,
+    /// matching ICU's `ubidi_writeReordered`. Embedding controls and other
+    /// X9-removed characters participate in the reordering, as in ICU.
+    pub fn reorderAlloc(
+        self: Paragraph,
+        allocator: std.mem.Allocator,
+        text: []const u8,
+        options: ReorderOptions,
+    ) error{ InvalidUtf8, OutOfMemory }![]u8 {
+        const display_levels = try allocator.dupe(u8, self.levels);
+        defer allocator.free(display_levels);
+        resolver.assignDisplayLevels(
+            self.classes,
+            display_levels,
+            self.base_level,
+        );
+
+        const count = self.scalars.len;
+        const order = try allocator.alloc(usize, count);
+        defer allocator.free(order);
+        for (order, 0..) |*value, index| value.* = index;
+        reorderVisual(order, display_levels, 0);
+
+        // Units are scalars, or base+mark clusters when keeping combining
+        // marks. Output reversal flips unit order, never a cluster's interior.
+        var units = std.ArrayList(usize).empty;
+        defer units.deinit(allocator);
+        if (options.keep_base_combining) {
+            const cluster_start = try allocator.alloc(usize, count);
+            defer allocator.free(cluster_start);
+            const emitted = try allocator.alloc(bool, count);
+            defer allocator.free(emitted);
+            @memset(emitted, false);
+            var current: usize = 0;
+            for (self.scalars, 0..) |scalar, index| {
+                if (index == 0 or !isCombiningMark(scalar.codepoint)) {
+                    current = index;
+                }
+                cluster_start[index] = current;
+            }
+            for (order) |index| {
+                const start = cluster_start[index];
+                if (emitted[start]) continue;
+                emitted[start] = true;
+                try units.append(allocator, start);
+            }
+        } else {
+            try units.appendSlice(allocator, order);
+        }
+
+        var output = std.ArrayList(u8).empty;
+        errdefer output.deinit(allocator);
+        try output.ensureTotalCapacity(allocator, text.len);
+
+        var position: usize = 0;
+        while (position < units.items.len) : (position += 1) {
+            const index = if (options.output_reverse)
+                units.items[units.items.len - 1 - position]
+            else
+                units.items[position];
+            try appendScalar(
+                self.scalars,
+                allocator,
+                text,
+                &output,
+                index,
+                display_levels[index],
+                options,
+                true,
+            );
+            if (!options.keep_base_combining) continue;
+            var next = index + 1;
+            while (next < count and
+                isCombiningMark(self.scalars[next].codepoint)) : (next += 1)
+            {
+                try appendScalar(
+                    self.scalars,
+                    allocator,
+                    text,
+                    &output,
+                    next,
+                    display_levels[next],
+                    options,
+                    false,
+                );
+            }
+        }
+        return output.toOwnedSlice(allocator);
     }
 
     fn inheritedLevel(self: Paragraph, scalar_index: usize) u8 {
@@ -693,6 +796,47 @@ fn reorderVisual(
     }
 }
 
+fn isCombiningMark(codepoint: u21) bool {
+    return switch (properties.category(codepoint)) {
+        .Mn, .Mc, .Me => true,
+        else => false,
+    };
+}
+
+fn isBidiControl(codepoint: u21) bool {
+    return codepoint == 0x200C or codepoint == 0x200D or
+        codepoint == 0x200E or codepoint == 0x200F or
+        (codepoint >= 0x202A and codepoint <= 0x202E) or
+        (codepoint >= 0x2066 and codepoint <= 0x2069);
+}
+
+fn appendScalar(
+    scalars: []const Scalar,
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    output: *std.ArrayList(u8),
+    index: usize,
+    level: u8,
+    options: Paragraph.ReorderOptions,
+    allow_mirror: bool,
+) error{ InvalidUtf8, OutOfMemory }!void {
+    const scalar = scalars[index];
+    if (options.remove_controls and isBidiControl(scalar.codepoint)) return;
+    if (options.mirroring and allow_mirror and level & 1 != 0) {
+        const mirrored = mirroredCodepoint(scalar.codepoint);
+        if (mirrored != scalar.codepoint) {
+            var buffer: [4]u8 = undefined;
+            const length = std.unicode.utf8Encode(mirrored, &buffer) catch
+                return error.InvalidUtf8;
+            try output.appendSlice(allocator, buffer[0..length]);
+            return;
+        }
+    }
+    const end = scalar.byte_start + scalar.byte_len;
+    if (end > text.len) return error.InvalidUtf8;
+    try output.appendSlice(allocator, text[scalar.byte_start..end]);
+}
+
 fn isRemovedByX9(value: Class) bool {
     return switch (value) {
         .rle, .lre, .rlo, .lro, .pdf, .bn => true,
@@ -955,4 +1099,71 @@ test "combined line transaction matches separate levels and order" {
     );
     try std.testing.expectEqualSlices(u8, expected_levels, levels.items);
     try std.testing.expectEqualSlices(usize, expected_order, order.items);
+}
+
+test "ICU writeReordered conformance fixture" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("reorder_conformance.bin");
+
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJRD", fixture[0..4]);
+    try testing.expectEqual(@as(u8, 1), fixture[4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var index: usize = 0;
+    while (index < case_count) : (index += 1) {
+        const base_level = fixture[cursor];
+        const option_bits = fixture[cursor + 1];
+        const input_len = std.mem.readInt(
+            u16,
+            fixture[cursor + 2 ..][0..2],
+            .little,
+        );
+        const output_len = std.mem.readInt(
+            u16,
+            fixture[cursor + 4 ..][0..2],
+            .little,
+        );
+        cursor += 6;
+        const input = fixture[cursor..][0..input_len];
+        cursor += input_len;
+        const expected = fixture[cursor..][0..output_len];
+        cursor += output_len;
+
+        var paragraph = try resolve(
+            allocator,
+            input,
+            if (base_level == 0) .ltr else .rtl,
+        );
+        defer paragraph.deinit();
+        const actual = try paragraph.reorderAlloc(
+            allocator,
+            input,
+            .{
+                .mirroring = option_bits & 2 != 0,
+                .remove_controls = option_bits & 8 != 0,
+                .keep_base_combining = option_bits & 1 != 0,
+                .output_reverse = option_bits & 16 != 0,
+            },
+        );
+        defer allocator.free(actual);
+        if (!std.mem.eql(u8, actual, expected)) {
+            failures += 1;
+            if (failures <= 10) {
+                std.debug.print(
+                    "reorder mismatch: {s} base={d} options={x} got={s} want={s}\n",
+                    .{ input, base_level, option_bits, actual, expected },
+                );
+            }
+        }
+    }
+    try testing.expectEqual(fixture.len, cursor);
+    try testing.expectEqual(@as(usize, 0), failures);
+    std.debug.print(
+        "bidi reorder conformance: {}/{} passed\n",
+        .{ case_count - failures, case_count },
+    );
 }

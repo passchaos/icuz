@@ -20,6 +20,10 @@ need without pulling in a font or layout engine.
   right-to-left script detection (`scriptIsRightToLeft`) and locale-level
   checks (`localeIsRightToLeft`, `Locale.isRightToLeft`) that follow likely
   subtags (for example `pa-PK` resolves to Arabic script).
+  `BidiParagraph.reorderAlloc` reproduces ICU `ubidi_writeReordered` for
+  logical-to-visual output, including mirroring, bidi-control removal,
+  base-combining preservation, output reversal, and explicit embedding
+  controls, validated by a 900-case ICU 78 differential fixture.
 - UAX #14 line-break opportunities.
 - UAX #15 normalization: NFC, NFD, NFKC, and NFKD, with `normalizeFormInto`,
   `spanQuickCheckYes`, code-point and UTF-16 forms, and a memory-bounded

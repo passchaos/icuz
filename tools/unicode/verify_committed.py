@@ -37,6 +37,7 @@ class GeneratedText:
 
 BLOBS = (
     Blob("src/unicode/bidi/conformance.bin", b"CJBT", 1, "40d4b9145779f8aad815e1f5ea5201ccd9cc5daeb73c8bf73b06c6f1c76d9a26"),
+    Blob("src/unicode/bidi/reorder_conformance.bin", b"CJRD", 1, "849e5808b9dc45372dea3552a9c8bed83489765d79bee240029679837ae3384d", version=(0, 0, 0)),
     Blob("src/unicode/normalization/boundary_data.bin", b"CJNB", 1, "45ae76d3e8268dcb286471ab3e8ae951c77b0bf9fa4905ef7d424eca0208e7c7"),
     Blob("src/unicode/shape/conformance.bin", b"CJSH", 1, "aa14145e977197c683e9991d8caa238ed13084008e42e5dfb71be238762a4ef2"),
     Blob("src/unicode/bidi/data.bin", b"CJB1", 1, "9e9f9937100d6019f7308743916c3606bdb31c9cc4f142eb605becf45a210c3f"),
@@ -449,6 +450,7 @@ GENERATORS = {
     "tools/unicode/spoof/generate_conformance.py": "b1bd9eaced6f6b97e9ecd669f5037938b21c4268a1a5dd72db1909cf779761b5",
     "tools/unicode/spoof/generate_identifier_status.py": "d19db85b91e1933c0841ff7846b2d2e644fd78621eaccf6e5f81f8f07134b4f9",
     "tools/unicode/spoof/generate_check_conformance.py": "449b8efaae526738dc4388775b66f0b93f6d66545537cba44a5b20b3254d378d",
+    "tools/unicode/bidi/generate_reorder_conformance.py": "e9850f69e21e8ec27e2e4fe142f50939c96564ad572dd6587be683da23b9857d",
     "tools/unicode/locale/generate_aliases.py": "455b791991d1b9a81a44ba7d84ff893ca26fb344c9816ffc5ca1085dda9ff625",
     "tools/unicode/format/generate_person_names.py": "cd7b44a5e613d06f21319e7cfc27c94093687acdb8bd9b4193091b7db9ee6771",
     "tools/unicode/format/generate_alphabetic_index.py": "8b04cee5bfe54bbfb05e0750adab2e81607057fc225c0c37ddfcc3fe61514d06",
@@ -1577,6 +1579,13 @@ def check_layout(blob: Blob, data: bytes) -> None:
             for _ in range(group_count):
                 expected_len, param_count = struct.unpack_from("<HH", data, offset)
                 offset += 4 + expected_len + param_count * 4
+        assert offset == len(data)
+    elif magic == b"CJRD":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            input_len, output_len = struct.unpack_from("<HH", data, offset + 2)
+            offset += 6 + input_len + output_len
         assert offset == len(data)
     else:
         assert len(data) >= (20 if magic == b"CJBT" else 12)
