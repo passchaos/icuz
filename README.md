@@ -382,6 +382,9 @@ need without pulling in a font or layout engine.
   number/date arguments, and quoting. `ChoiceFormat` provides ICU range
   patterns with `<`/`#`/`≤` selectors, infinity limits, `setChoices`, and
   longest-match parsing, validated by an ICU 78 differential fixture.
+  Standalone `SelectFormat` and `PluralFormat` classes support keyword
+  branches, `offset:`, exact `=N` values, CLDR plural categories, and `#`
+  substitution, validated by a 78-record ICU differential fixture.
 - Unicode MessageFormat 2 core subset: `.input`/`.local` declarations, quoted
   patterns, `.match` matchers with multiple selectors, expressions with
   literal/variable/function operands and options, `:string`, `:number`,

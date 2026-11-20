@@ -453,6 +453,7 @@ BLOBS = (
     Blob("src/unicode/resource/res_conformance.bin", b"CJGM", 1, "33a2b3b780fb3ce50df8476d0654366fd603301eeb42dadc4da2edc24f3febb6", version=(0, 0, 0)),
     Blob("src/unicode/resource/dat_conformance.bin", b"CJGN", 1, "3b37ef6070872e1ab0cac30b0be987e9192ad2351f44ef7f5d8f4bc803077331", version=(0, 0, 0)),
     Blob("src/unicode/format/decimal_conformance.bin", b"CJGO", 1, "1588fa94b4da9a3f350d583a4ff62896abe1847a1f31b537ac338d3dc0c573e4", version=(0, 0, 0)),
+    Blob("src/unicode/format/plural_select_conformance.bin", b"CJGW", 1, "4096840604457d131933cd3c6177e75004eae7d15b7a4615c972ced58f54d0c1", version=(0, 0, 0)),
     Blob("src/unicode/charset/stateful_conformance.bin", b"CJGP", 1, "7821b0c64aff244ce6694cb1e5f242e8a9e57cb3dec6d28663df9164d52135ca", version=(0, 0, 0)),
     Blob("src/unicode/charset/ibm_pages.bin", b"CJGQ", 1, "d8e840575bbaf6036af580a8a9eff5e22374634fdaa62af8b05370e7024189b0", version=(0, 0, 0)),
     Blob("src/unicode/charset/hkscs.bin", b"CJGS", 1, "b31b7bdbb3eee866e9ad0f0af2c4e8a095d47d65487b8f1815d804567d3862b7", version=(0, 0, 0)),
@@ -482,6 +483,7 @@ GENERATORS = {
     "tools/unicode/resource/generate_conformance.cpp": "670771aeaa5d450866285ed5f4f520a8a330d9daa584b7490f183d5f16595c59",
     "tools/unicode/resource/generate_dat_conformance.cpp": "32c2610961d40e2e9328731dbd80a314823333b35ded83af7986fa0bff0e650d",
     "tools/unicode/format/generate_decimal_conformance.cpp": "3b5f0c4111546a84752b8170099ef0409525c7d92d1f12d352168d593cf628c3",
+    "tools/unicode/format/generate_plural_select_conformance.cpp": "e7a6807a3126dca7844e407cc65dbc0d5afb1b5e0f350a915d7bbf2e9b862d76",
     "tools/unicode/charset/generate_stateful_conformance.cpp": "9fef3a2ce07061aa5f62ababa6ea1b71ada4fb4f145b723ded1b320e980b8615",
     "tools/unicode/charset/generate_ibm_pages.cpp": "8308ebb48529f6934cccddcf6fdbf86720a953cc61bcf7de021438c49d7d3500",
     "tools/unicode/charset/generate_hkscs.cpp": "49d5b58699b87396cbb4d12b558b850fcaffcb7adc0fa13493fe4d979d728a36",
@@ -1079,6 +1081,25 @@ def check_layout(blob: Blob, data: bytes) -> None:
         offset = 16 + plane_count * plane_size * 4
         reverse_count = struct.unpack_from("<I", data, offset)[0]
         offset += 4 + reverse_count * 8
+        assert offset == len(data)
+    elif magic == b"CJGW":
+        record_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(record_count):
+            kind = data[offset]
+            offset += 1
+            if kind == 0:
+                offset += 1
+                key_len = struct.unpack_from("<H", data, offset)[0]
+                offset += 2 + key_len * 2
+                message_len = struct.unpack_from("<H", data, offset)[0]
+                offset += 2 + message_len * 2
+            elif kind == 1:
+                offset += 2 + 8
+                message_len = struct.unpack_from("<H", data, offset)[0]
+                offset += 2 + message_len * 2
+            else:
+                raise AssertionError("invalid plural/select record")
         assert offset == len(data)
     elif magic == b"CJUC":
         case_count = struct.unpack_from("<I", data, 8)[0]
