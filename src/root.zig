@@ -32,6 +32,7 @@ pub const units = @import("unicode/format/units.zig");
 pub const charset = @import("unicode/charset.zig");
 pub const transliterate = @import("unicode/transliterate.zig");
 pub const shape = @import("unicode/shape/root.zig");
+pub const pattern_generator = @import("unicode/format/pattern_generator.zig");
 pub const break_rules = @import("unicode/break_rules.zig");
 pub const bidi = @import("unicode/bidi/paragraph.zig");
 pub const script = @import("unicode/script/root.zig");

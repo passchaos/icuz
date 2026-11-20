@@ -384,6 +384,7 @@ pub const formatDatePatternFieldsAlloc = dates_mod.formatPatternFieldsAlloc;
 pub const datePatternSkeletonAlloc = pattern_generator_mod.skeletonForPatternAlloc;
 pub const dateBaseSkeletonAlloc = pattern_generator_mod.baseSkeletonAlloc;
 pub const replaceDateFieldTypesAlloc = pattern_generator_mod.replaceFieldTypesAlloc;
+pub const replaceDateFieldTypesWithHourAlloc = pattern_generator_mod.replaceFieldTypesWithHourAlloc;
 pub const dateTimeFromUnixSeconds = dates_mod.fromUnixSeconds;
 pub const dateTimeFromUnixSecondsInZone =
     dates_mod.dateTimeFromUnixSecondsInZone;
