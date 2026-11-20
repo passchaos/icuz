@@ -490,7 +490,7 @@ GENERATORS = {
     "tools/unicode/format/generate_dates.py": "b2dde11d124e83060c4372e431b222f3ae08770694f6d6673f40e0b5f4e58775",
     "tools/unicode/format/generate_interval_skeleton_conformance.py": "3733e4ee24ea0d32bde4a35475b0c65c28d634fff77a89ab20413631b5d5bddc",
     "tools/unicode/format/generate_date_skeleton_conformance.py": "0180072157ba234dea9af11cd401695cace6e6d399792743a76ace27c24b8246",
-    "tools/unicode/format/generate_misc.py": "79f957dbabcdf1af40fed601d47ef28118ba41eafd5ff354c4764e827735833f",
+    "tools/unicode/format/generate_misc.py": "aa7225b74d3db31dee44d5b811565826fe7258b7aae44fb905e24d5db537613b",
     "tools/unicode/format/generate_weekend.py": "070f632b8a485a9ca9b5ef3399bfc193b0daeaf96bedf6dd8726d7bbec83e472",
     "tools/unicode/format/generate_week.py": "0b50f890c53513a78eb93c5e59af694fc953461ff276cbf27e15dedb74d4b7f9",
     "tools/unicode/format/generate_gender.py": "06d218aa5dadc26674d72085c4b803a4badc5663dcf07cd17aa98bc9be5caba1",
@@ -657,6 +657,11 @@ GENERATED_TEXT = (
         "src/unicode/format/gender_data.zig",
         "tools/unicode/format/generate_gender.py",
         "94138331b3fea06e6d3976c617bcbdc9a3529bc62de39bb9e576c73b547bc90d",
+    ),
+    GeneratedText(
+        "src/unicode/format/currency_regions.zig",
+        "tools/unicode/format/generate_misc.py",
+        "100da7ead6a46a05d78db016e05af76eda1a9355f716c0fe989dac6517d63b4c",
     ),
     GeneratedText(
         "src/unicode/format/plural_ranges_data.zig",

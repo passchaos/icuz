@@ -5,6 +5,8 @@
 
 const std = @import("std");
 const plural = @import("plurals.zig");
+const likely_subtags = @import("likely_subtags.zig");
+const region_data = @import("currency_regions.zig");
 
 const blob = @embedFile("currencies_data.bin");
 
@@ -134,6 +136,30 @@ pub fn find(locale_name: []const u8, code: []const u8) ?Entry {
     return lookup(locale_name, code);
 }
 
+/// CLDR currency code for an ISO 3166 region, such as "USD" for "US".
+pub fn codeForRegion(region: []const u8) ?[]const u8 {
+    var low: usize = 0;
+    var high = region_data.regions.len;
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        const entry = region_data.regions[middle];
+        switch (std.mem.order(u8, entry.id, region)) {
+            .lt => low = middle + 1,
+            .gt => high = middle,
+            .eq => return entry.code,
+        }
+    }
+    return null;
+}
+
+/// CLDR currency code for a locale's region, such as "USD" for "en" and
+/// "GBP" for "en-GB".
+pub fn codeForLocale(locale_name: []const u8) ?[]const u8 {
+    const region = likely_subtags.regionForLocale(locale_name) orelse
+        return null;
+    return codeForRegion(region);
+}
+
 /// Localized currency symbol, falling back to the ISO code when the locale
 /// has no symbol for it.
 pub fn symbol(locale_name: []const u8, code: []const u8) []const u8 {
@@ -181,4 +207,11 @@ test "currency data" {
         "afghani afghan",
         name("fr", "AFN", .one),
     );
+    try testing.expectEqualStrings("USD", codeForRegion("US").?);
+    try testing.expectEqualStrings("GBP", codeForRegion("GB").?);
+    try testing.expectEqualStrings("CNY", codeForRegion("CN").?);
+    try testing.expect(codeForRegion("QQ") == null);
+    try testing.expectEqualStrings("USD", codeForLocale("en").?);
+    try testing.expectEqualStrings("GBP", codeForLocale("en-GB").?);
+    try testing.expectEqualStrings("TWD", codeForLocale("zh-Hant-TW").?);
 }
