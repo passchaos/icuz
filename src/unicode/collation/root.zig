@@ -248,12 +248,13 @@ pub fn collationElementsAlloc(
     text: []const u8,
     options: Options,
 ) error{ InvalidUtf8, OutOfMemory }![]CollationElement {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
     var codepoints = std.ArrayList(u21).empty;
     defer codepoints.deinit(allocator);
     try codepoints.ensureTotalCapacity(allocator, text.len);
     var cursor: usize = 0;
-    while (scalar.decodeValid(text, cursor)) |decoded| {
+    while (cursor < text.len) {
+        const decoded = scalar.decodeValidating(text, cursor) orelse
+            return error.InvalidUtf8;
         try codepoints.append(allocator, decoded.codepoint);
         cursor = decoded.next;
     }
@@ -525,15 +526,16 @@ fn sortKeyUtf8Resolved(
     tailoring_pages: ?*tailorings.PageIndex,
     output: *std.ArrayList(u32),
 ) error{ InvalidUtf8, OutOfMemory }!void {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
-
     // Most callers sort short labels and keys; decode those into a stack
-    // buffer so a sort key costs one allocation instead of two.
+    // buffer so a sort key costs one allocation instead of two. Validation is
+    // fused into the decode so mixed text pays one pass instead of two.
     var stack_codepoints: [512]u21 = undefined;
     if (text.len <= stack_codepoints.len) {
         var count: usize = 0;
         var cursor: usize = 0;
-        while (scalar.decodeValid(text, cursor)) |decoded| {
+        while (cursor < text.len) {
+            const decoded = scalar.decodeValidating(text, cursor) orelse
+                return error.InvalidUtf8;
             stack_codepoints[count] = decoded.codepoint;
             count += 1;
             cursor = decoded.next;
@@ -553,7 +555,9 @@ fn sortKeyUtf8Resolved(
     try codepoints.ensureTotalCapacity(allocator, text.len);
 
     var cursor: usize = 0;
-    while (scalar.decodeValid(text, cursor)) |decoded| {
+    while (cursor < text.len) {
+        const decoded = scalar.decodeValidating(text, cursor) orelse
+            return error.InvalidUtf8;
         try codepoints.append(allocator, decoded.codepoint);
         cursor = decoded.next;
     }

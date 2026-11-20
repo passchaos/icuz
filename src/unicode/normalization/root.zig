@@ -494,7 +494,12 @@ pub fn isNormalizedCodepoints(
     var starter: ?u21 = null;
     var previous_input_class: u8 = 0;
     for (codepoints) |codepoint| {
-        if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
+        if (codepoint < 0x80) {
+            starter = codepoint;
+            previous_input_class = 0;
+            continue;
+        }
+        if (data.isSimplePage(codepoint, compatibility)) {
             starter = codepoint;
             previous_input_class = 0;
             continue;
@@ -552,6 +557,11 @@ pub fn isNormalizedUtf16(
     var previous_input_class: u8 = 0;
     var iterator = utf16.Iterator{ .units = units };
     while (iterator.next()) |codepoint| {
+        if (codepoint < 0x80) {
+            starter = codepoint;
+            previous_input_class = 0;
+            continue;
+        }
         const quick_check = data.quickCheck(codepoint, form);
         if (quick_check == .no) return false;
         const current_class = combining_class.forCodepoint(codepoint);
