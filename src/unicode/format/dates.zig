@@ -1981,6 +1981,195 @@ fn civilFromDays(days: i64) CivilDate {
     };
 }
 
+/// ICU `UDateFormatSymbolType` values backed by the Gregorian data.
+pub const DateSymbolType = enum(u8) {
+    eras = 0,
+    months = 1,
+    short_months = 2,
+    weekdays = 3,
+    short_weekdays = 4,
+    am_pms = 5,
+    era_names = 7,
+    narrow_months = 8,
+    narrow_weekdays = 9,
+    standalone_months = 10,
+    standalone_short_months = 11,
+    standalone_narrow_months = 12,
+    standalone_weekdays = 13,
+    standalone_short_weekdays = 14,
+    standalone_narrow_weekdays = 15,
+    quarters = 16,
+    short_quarters = 17,
+    standalone_quarters = 18,
+    standalone_short_quarters = 19,
+    shorter_weekdays = 20,
+    standalone_shorter_weekdays = 21,
+};
+
+pub fn dateSymbolTypeFromInt(value: u8) ?DateSymbolType {
+    return switch (value) {
+        0 => .eras,
+        1 => .months,
+        2 => .short_months,
+        3 => .weekdays,
+        4 => .short_weekdays,
+        5 => .am_pms,
+        7 => .era_names,
+        8 => .narrow_months,
+        9 => .narrow_weekdays,
+        10 => .standalone_months,
+        11 => .standalone_short_months,
+        12 => .standalone_narrow_months,
+        13 => .standalone_weekdays,
+        14 => .standalone_short_weekdays,
+        15 => .standalone_narrow_weekdays,
+        16 => .quarters,
+        17 => .short_quarters,
+        18 => .standalone_quarters,
+        19 => .standalone_short_quarters,
+        20 => .shorter_weekdays,
+        21 => .standalone_shorter_weekdays,
+        else => null,
+    };
+}
+
+fn twoSymbolsAt(
+    values: *const [2][]const u8,
+    index: usize,
+) ?[]const u8 {
+    return if (index < 2) values[index] else null;
+}
+
+fn monthSymbolAt(
+    values: *const [12][]const u8,
+    index: usize,
+) ?[]const u8 {
+    return if (index < 12) values[index] else null;
+}
+
+fn quarterSymbolAt(
+    values: *const [4][]const u8,
+    index: usize,
+) ?[]const u8 {
+    return if (index < 4) values[index] else null;
+}
+
+/// ICU indexes weekdays with a leading empty entry (Sunday = 1).
+fn weekdaySymbolAt(
+    values: *const [7][]const u8,
+    index: usize,
+) ?[]const u8 {
+    if (index == 0) return "";
+    if (index > 7) return null;
+    return values[index - 1];
+}
+
+/// ICU `udat_countSymbols` for the supported Gregorian symbol types.
+pub fn dateSymbolCount(symbol: DateSymbolType) usize {
+    return switch (symbol) {
+        .eras, .era_names, .am_pms => 2,
+        .months,
+        .short_months,
+        .narrow_months,
+        .standalone_months,
+        .standalone_short_months,
+        .standalone_narrow_months,
+        => 12,
+        .weekdays,
+        .short_weekdays,
+        .narrow_weekdays,
+        .shorter_weekdays,
+        .standalone_weekdays,
+        .standalone_short_weekdays,
+        .standalone_narrow_weekdays,
+        .standalone_shorter_weekdays,
+        => 8,
+        .quarters,
+        .short_quarters,
+        .standalone_quarters,
+        .standalone_short_quarters,
+        => 4,
+    };
+}
+
+/// ICU `udat_getSymbols` for the supported Gregorian symbol types.
+pub fn dateSymbolAt(
+    locale_name: []const u8,
+    symbol: DateSymbolType,
+    index: usize,
+) ?[]const u8 {
+    const entry = findLocale(locale_name) orelse
+        findLocale("en") orelse return null;
+    return switch (symbol) {
+        .eras => twoSymbolsAt(&entry.era_abbreviated, index),
+        .era_names => twoSymbolsAt(&entry.era_wide, index),
+        .am_pms => switch (index) {
+            0 => entry.am_abbreviated,
+            1 => entry.pm_abbreviated,
+            else => null,
+        },
+        .months => monthSymbolAt(&entry.months_wide, index),
+        .short_months => monthSymbolAt(&entry.months_abbreviated, index),
+        .narrow_months => monthSymbolAt(&entry.months_narrow, index),
+        .standalone_months => monthSymbolAt(
+            &entry.months_standalone_wide,
+            index,
+        ),
+        .standalone_short_months => monthSymbolAt(
+            &entry.months_standalone_abbreviated,
+            index,
+        ),
+        .standalone_narrow_months => monthSymbolAt(
+            &entry.months_standalone_narrow,
+            index,
+        ),
+        .weekdays => weekdaySymbolAt(&entry.days_wide, index),
+        .short_weekdays => weekdaySymbolAt(&entry.days_abbreviated, index),
+        .narrow_weekdays => weekdaySymbolAt(&entry.days_narrow, index),
+        .shorter_weekdays => weekdaySymbolAt(&entry.days_short, index),
+        .standalone_weekdays => weekdaySymbolAt(
+            &entry.days_standalone_wide,
+            index,
+        ),
+        .standalone_short_weekdays => weekdaySymbolAt(
+            &entry.days_standalone_abbreviated,
+            index,
+        ),
+        .standalone_narrow_weekdays => weekdaySymbolAt(
+            &entry.days_standalone_narrow,
+            index,
+        ),
+        .standalone_shorter_weekdays => weekdaySymbolAt(
+            &entry.days_standalone_short,
+            index,
+        ),
+        .quarters => quarterSymbolAt(&entry.quarters_wide, index),
+        .short_quarters => quarterSymbolAt(&entry.quarters_abbreviated, index),
+        .standalone_quarters => quarterSymbolAt(
+            &entry.quarters_standalone_wide,
+            index,
+        ),
+        .standalone_short_quarters => quarterSymbolAt(
+            &entry.quarters_standalone_abbreviated,
+            index,
+        ),
+    };
+}
+
+/// CLDR first day of the week for the locale's region (0 = Sunday).
+pub fn dateFirstDayOfWeek(locale_name: []const u8) ?u8 {
+    const entry = findLocale(locale_name) orelse
+        findLocale("en") orelse return null;
+    return entry.first_day_of_week;
+}
+
+/// CLDR minimal days in the first week for the locale's region.
+pub fn dateMinimalDaysInFirstWeek(locale_name: []const u8) ?u8 {
+    const entry = findLocale(locale_name) orelse
+        findLocale("en") orelse return null;
+    return entry.minimal_days;
+}
+
 fn findLocale(locale: []const u8) ?*const data.Locale {
     if (lookup(locale)) |result| return result;
 
@@ -3961,4 +4150,109 @@ test "deprecated lowercase l month field" {
     };
     const parsed = parsePattern("18 November", "d llll", "en", defaults).?;
     try testing.expectEqual(@as(u8, 11), parsed.month);
+}
+
+test "date symbols" {
+    const testing = @import("std").testing;
+
+    try testing.expectEqual(@as(usize, 12), dateSymbolCount(.months));
+    try testing.expectEqual(@as(usize, 8), dateSymbolCount(.weekdays));
+    try testing.expectEqualStrings(
+        "January",
+        dateSymbolAt("en", .months, 0).?,
+    );
+    try testing.expectEqualStrings(
+        "Jan",
+        dateSymbolAt("en", .short_months, 0).?,
+    );
+    try testing.expectEqualStrings(
+        "Sunday",
+        dateSymbolAt("en", .weekdays, 1).?,
+    );
+    try testing.expectEqualStrings("", dateSymbolAt("en", .weekdays, 0).?);
+    try testing.expectEqualStrings("BC", dateSymbolAt("en", .eras, 0).?);
+    try testing.expectEqualStrings(
+        "Before Christ",
+        dateSymbolAt("en", .era_names, 0).?,
+    );
+    try testing.expectEqualStrings("AM", dateSymbolAt("en", .am_pms, 0).?);
+    try testing.expectEqualStrings(
+        "Q1",
+        dateSymbolAt("en", .short_quarters, 0).?,
+    );
+    try testing.expectEqualStrings(
+        "1月",
+        dateSymbolAt("ja", .months, 0).?,
+    );
+    try testing.expectEqual(@as(?[]const u8, null), dateSymbolAt(
+        "en",
+        .months,
+        12,
+    ));
+    try testing.expectEqual(@as(u8, 0), dateFirstDayOfWeek("en").?);
+    try testing.expectEqual(@as(u8, 1), dateMinimalDaysInFirstWeek("en").?);
+}
+
+test "ICU date symbols conformance fixture" {
+    const testing = @import("std").testing;
+    const fixture = @embedFile("date_symbols_conformance.bin");
+
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJYS", fixture[0..4]);
+    try testing.expectEqual(@as(u8, 1), fixture[4]);
+    const record_count = std.mem.readInt(u32, fixture[8..12], .little);
+
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var record_index: usize = 0;
+    while (record_index < record_count) : (record_index += 1) {
+        const type_value = fixture[cursor];
+        const locale_len = std.mem.readInt(
+            u16,
+            fixture[cursor + 1 ..][0..2],
+            .little,
+        );
+        const count = fixture[cursor + 3];
+        cursor += 4;
+        const locale = fixture[cursor..][0..locale_len];
+        cursor += locale_len;
+        const symbol = dateSymbolTypeFromInt(type_value) orelse
+            return error.InvalidFixture;
+        if (dateSymbolCount(symbol) != count) {
+            failures += 1;
+            if (failures <= 10) {
+                std.debug.print(
+                    "date symbol count mismatch: {s} type {d} got {d} want {d}\n",
+                    .{ locale, type_value, dateSymbolCount(symbol), count },
+                );
+            }
+        }
+        var value_index: usize = 0;
+        while (value_index < count) : (value_index += 1) {
+            const value_len = std.mem.readInt(
+                u16,
+                fixture[cursor..][0..2],
+                .little,
+            );
+            cursor += 2;
+            const expected = fixture[cursor..][0..value_len];
+            cursor += value_len;
+            const actual = dateSymbolAt(locale, symbol, value_index) orelse "";
+            if (!std.mem.eql(u8, actual, expected)) {
+                failures += 1;
+                if (failures <= 10) {
+                    std.debug.print(
+                        "date symbol mismatch: {s} type {d} index {d} got {s} want {s}\n",
+                        .{ locale, type_value, value_index, actual, expected },
+                    );
+                }
+            }
+        }
+    }
+    try testing.expectEqual(fixture.len, cursor);
+    try testing.expectEqual(@as(usize, 0), failures);
+    std.debug.print(
+        "date symbol conformance: {}/{} records passed\n",
+        .{ record_count - failures, record_count },
+    );
 }

@@ -199,7 +199,12 @@ need without pulling in a font or layout engine.
   parsing fixture across 30 locales and eight patterns. Calendar arithmetic (`addDays`, `addMonths`,
   `addYears`, `fieldDifference`) matches ICU's clamping and whole-field
   semantics, and `formatPatternFieldsAlloc` reports the byte range of every
-  expanded pattern field for editor-style highlighting.
+  expanded pattern field for editor-style highlighting. ICU
+  `udat_getSymbols`-compatible accessors (`dateSymbolAt`,
+  `dateSymbolCount`, `dateFirstDayOfWeek`, `dateMinimalDaysInFirstWeek`)
+  expose era, month, weekday, quarter, and AM/PM names in wide,
+  abbreviated, narrow, short, and stand-alone forms, validated by a
+  2,251-record ICU 78 differential fixture.
 - ICU `DateTimePatternGenerator` helpers: pattern-to-skeleton conversion
   (`datePatternSkeletonAlloc`), base-skeleton reduction
   (`dateBaseSkeletonAlloc`), and skeleton-driven field replacement
