@@ -30,7 +30,8 @@ need without pulling in a font or layout engine.
 - Simple lower/upper/title mappings, full case folding, and full
   lower/upper/title mappings with `Final_Sigma`, Turkic, and Lithuanian
   context rules. The `Edits` recorder (`fullLowerWithEditsAlloc`,
-  `fullUpperWithEditsAlloc`, `fullTitleWithEditsAlloc`) tracks unchanged and
+  `fullUpperWithEditsAlloc`, `fullTitleWithEditsAlloc`,
+  `caseFoldWithEditsAlloc`) tracks unchanged and
   replaced source spans and maps source/destination indices like ICU's
   `CaseMap` with `Edits`.
 - UAX #24 script runs.

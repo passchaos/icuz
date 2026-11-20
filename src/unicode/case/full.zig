@@ -100,6 +100,46 @@ pub fn fullTitleWithEditsAlloc(
     return titleAlloc(allocator, text, options, edits);
 }
 
+/// Case-fold UTF-8 text with edit tracking, like ICU's `CaseMap.fold`.
+pub fn foldWithEditsAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    edits: *Edits,
+) Error![]u8 {
+    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    edits.clearRetainingCapacity();
+
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try output.ensureTotalCapacity(allocator, text.len);
+
+    var encoded: [4]u8 = undefined;
+    var index: usize = 0;
+    while (index < text.len) {
+        const decoded = scalar.decodeValid(text, index) orelse unreachable;
+        const before = output.items.len;
+        if (data.fullFold(decoded.codepoint)) |components| {
+            for (components) |component| {
+                const length = std.unicode.utf8Encode(component, &encoded) catch
+                    unreachable;
+                try output.appendSlice(allocator, encoded[0..length]);
+            }
+        } else {
+            const length = std.unicode.utf8Encode(decoded.codepoint, &encoded) catch
+                unreachable;
+            try output.appendSlice(allocator, encoded[0..length]);
+        }
+        try recordEdit(
+            edits,
+            text[index..decoded.next],
+            index,
+            output.items[before..],
+        );
+        index = decoded.next;
+    }
+    return output.toOwnedSlice(allocator);
+}
+
 fn titleAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -650,4 +690,21 @@ test "case mapping with edits" {
     defer allocator.free(title);
     try testing.expectEqualStrings("Hello World", title);
     try testing.expectEqual(@as(usize, 2), title_edits.changeCount());
+
+    var fold_edits = Edits.init(allocator);
+    defer fold_edits.deinit();
+    const folded = try foldWithEditsAlloc(
+        allocator,
+        "Stra\u{00df}e \u{0130}",
+        &fold_edits,
+    );
+    defer allocator.free(folded);
+    try testing.expectEqualStrings("strasse i\u{0307}", folded);
+    try testing.expect(fold_edits.hasChanges());
+    try testing.expectEqual(@as(usize, 3), fold_edits.changeCount());
+    try testing.expectEqual(@as(usize, 4), fold_edits.mapIndex(4));
+    try testing.expectEqual(@as(usize, 6), fold_edits.mapIndex(6));
+    try testing.expectEqual(@as(usize, 8), fold_edits.mapIndex(8));
+    try testing.expectEqual(@as(usize, 8), fold_edits.mapIndex(9));
+    try testing.expectEqual(@as(usize, 11), fold_edits.mapIndex(10));
 }

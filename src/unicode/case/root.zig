@@ -19,6 +19,7 @@ pub const Edits = full.Edits;
 pub const fullLowerWithEditsAlloc = full.fullLowerWithEditsAlloc;
 pub const fullUpperWithEditsAlloc = full.fullUpperWithEditsAlloc;
 pub const fullTitleWithEditsAlloc = full.fullTitleWithEditsAlloc;
+pub const foldWithEditsAlloc = full.foldWithEditsAlloc;
 
 /// Simple lowercase mapping. ASCII is handled arithmetically so prose case
 /// conversion does not enter the generated record search.
