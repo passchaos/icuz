@@ -73,6 +73,7 @@ BLOBS = (
     Blob("src/unicode/format/range_data.bin", b"CJRG", 1, "a5e9485b2b8200d3258293607be56daa70fd5c10075b15f5c6438c6b2515860b", version=(0, 0, 0)),
     Blob("src/unicode/format/range_conformance.bin", b"CJRF", 1, "6d64ac9237c6affd6b89b6fa8c6c02fcdc004c021d40a698a03ad514f02a4f00", version=(0, 0, 0)),
     Blob("src/unicode/format/date_skeleton_conformance.bin", b"CJGJ", 1, "9a6cb48a94cf098650f61c027aceaf19a03b901b8d3114266ac29743012caeef", version=(0, 0, 0)),
+    Blob("src/unicode/format/pattern_generator_conformance.bin", b"CJPG", 1, "b7d0cdd34f42c9195d9c3edd1ad74180255e5e59e1d4fe3d25e6e618124d749b", version=(0, 0, 0)),
     Blob("src/unicode/format/units_data.bin", b"CJUN", 2, "4a30edfebb6f605d57500c31830f3cd747edfc2c69549ee92e9f7982e0ae015f", version=(0, 0, 0)),
     Blob("src/unicode/format/unit_conformance.bin", b"CJU1", 1, "f260532a091a6fd0990f664f8afcd6a5fb3785e46bb0b52dd6a8f2fc12c265fa", version=(0, 0, 0)),
     Blob("src/unicode/format/calendar_format_conformance.bin", b"CJKF", 1, "ffa627f64f42870b6d2ba203ff8abb707c7124360d910bab7f93cd41808d305f", version=(0, 0, 0)),
@@ -500,6 +501,7 @@ GENERATORS = {
     "tools/unicode/format/generate_plural_ranges.py": "acf5a3784e9d0d4e74bde3c673c79c47a517e1998fde8d0c6052b75bf3ded5ad",
     "tools/unicode/format/generate_currency_conformance.py": "d84c2f318fc73ea144d594c5ab4d53063497d2e2d6c739973bc9decef2f3d812",
     "tools/unicode/format/generate_skeleton_conformance.py": "4264dac5089dee143a010f8da9751414e4a5417a77df7c1faaf6621ca45faba6",
+    "tools/unicode/format/generate_pattern_generator_conformance.py": "5bbf7ecb066d2af55751f8ce5c55fbba952bb2e5f1d31db88ebf13a28e76b652",
     "tools/unicode/format/generate_range_data.py": "6ddfef0c1ac66116face084b102961335619f6368df19f88eea5bc8d283629c0",
     "tools/unicode/format/generate_range_conformance.py": "2a0a099ce326f2d06a3f707ca02f071544262551fdd9a41aab8561b3ca1c91f4",
     "tools/unicode/format/generate_unit_conformance.py": "7a1aca3892b688d6bce1c8a6f1a1d7af789e69f12f0ab18305ea5127949e8eb5",
@@ -703,7 +705,16 @@ def check_page_table(data: bytes, width: int) -> None:
 
 def check_layout(blob: Blob, data: bytes) -> None:
     magic = blob.magic
-    if magic == b"CJSH":
+    if magic == b"CJPG":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            first_len, second_len, expected_len = struct.unpack_from(
+                "<HHH", data, offset + 1
+            )
+            offset += 7 + first_len + second_len + expected_len
+        assert offset == len(data)
+    elif magic == b"CJSH":
         case_count = struct.unpack_from("<I", data, 8)[0]
         offset = 12
         for _ in range(case_count):

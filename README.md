@@ -179,6 +179,13 @@ need without pulling in a font or layout engine.
   `addYears`, `fieldDifference`) matches ICU's clamping and whole-field
   semantics, and `formatPatternFieldsAlloc` reports the byte range of every
   expanded pattern field for editor-style highlighting.
+- ICU `DateTimePatternGenerator` helpers: pattern-to-skeleton conversion
+  (`datePatternSkeletonAlloc`), base-skeleton reduction
+  (`dateBaseSkeletonAlloc`), and skeleton-driven field replacement
+  (`replaceDateFieldTypesAlloc`, with a locale hour-cycle override), including
+  quoted literals, canonical field ordering, duplicate-field resolution,
+  minute-plus-fraction second insertion, and 12/24-hour day-period rules.
+  Validated by a 1,885-case PyICU fixture.
 - Non-Gregorian calendar conversion and formatting for Buddhist, Japanese,
   ROC, Islamic civil/tbla/umalqura, Hebrew, Chinese, Persian, Indian,
   Coptic, Ethiopic, Ethiopic Amete Alem, and ISO-8601 calendars, following

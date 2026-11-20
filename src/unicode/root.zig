@@ -29,6 +29,7 @@ const idna_mod = @import("./idna.zig");
 const plural_mod = @import("./format/plurals.zig");
 const number_mod = @import("./format/number.zig");
 const dates_mod = @import("./format/dates.zig");
+const pattern_generator_mod = @import("./format/pattern_generator.zig");
 const currencies_mod = @import("./format/currencies.zig");
 const week_mod = @import("./format/week.zig");
 const gender_mod = @import("./format/gender.zig");
@@ -380,6 +381,9 @@ pub const formatDateTimeAlloc = dates_mod.formatDateTimeAlloc;
 pub const formatDatePatternAlloc = dates_mod.formatPatternAlloc;
 pub const DateFieldPosition = dates_mod.DateFieldPosition;
 pub const formatDatePatternFieldsAlloc = dates_mod.formatPatternFieldsAlloc;
+pub const datePatternSkeletonAlloc = pattern_generator_mod.skeletonForPatternAlloc;
+pub const dateBaseSkeletonAlloc = pattern_generator_mod.baseSkeletonAlloc;
+pub const replaceDateFieldTypesAlloc = pattern_generator_mod.replaceFieldTypesAlloc;
 pub const dateTimeFromUnixSeconds = dates_mod.fromUnixSeconds;
 pub const dateTimeFromUnixSecondsInZone =
     dates_mod.dateTimeFromUnixSecondsInZone;
@@ -753,6 +757,7 @@ test {
     _ = locale_mod.matcher;
     _ = transliterate_mod;
     _ = shape_mod;
+    _ = pattern_generator_mod;
     _ = list_mod;
     _ = relative_mod;
     _ = units_mod;
