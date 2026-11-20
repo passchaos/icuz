@@ -76,11 +76,17 @@ pub const Program = struct {
     folded: []u21,
     counter_count: u16,
     progress_count: u16,
+    /// ASCII bytes that can begin a non-empty match, or null when no safe
+    /// prefilter can be derived.
+    first_byte_bitmap: ?[4]u64,
+    /// Exact literal prefix required at the start of every match.
+    literal_prefix: ?[]u8,
 
     pub fn deinit(self: *Program, allocator: std.mem.Allocator) void {
         allocator.free(self.insts);
         allocator.free(self.exact);
         allocator.free(self.folded);
+        if (self.literal_prefix) |prefix| allocator.free(prefix);
     }
 };
 
@@ -98,12 +104,18 @@ pub fn compile(allocator: std.mem.Allocator, parsed: *const parser.Parsed) Error
     _ = try compiler.emit(.{ .save_end = 0 });
     _ = try compiler.emit(.match);
 
+    const first_byte_bitmap = compiler.computeFirstByteBitmap();
+    const literal_prefix = try compiler.computeLiteralPrefix();
+    errdefer if (literal_prefix) |prefix| allocator.free(prefix);
+
     return .{
         .insts = try compiler.insts.toOwnedSlice(allocator),
         .exact = try compiler.exact.toOwnedSlice(allocator),
         .folded = try compiler.folded.toOwnedSlice(allocator),
         .counter_count = compiler.counter_count,
         .progress_count = compiler.progress_count,
+        .first_byte_bitmap = first_byte_bitmap,
+        .literal_prefix = literal_prefix,
     };
 }
 
@@ -321,6 +333,116 @@ const Compiler = struct {
             .min_len = bounds.min,
             .max_len = bounds.max orelse 0,
         } });
+    }
+
+    fn computeFirstByteBitmap(self: *Compiler) ?[4]u64 {
+        return self.firstBytes(0, 0) catch null;
+    }
+
+    fn firstBytes(self: *Compiler, pc: u32, depth: u32) Error!?[4]u64 {
+        if (depth > 64 or pc >= self.insts.items.len) return null;
+        return switch (self.insts.items[pc]) {
+            .char => |codepoint| blk: {
+                if (codepoint > 0x7f) break :blk null;
+                var bits = [_]u64{0} ** 4;
+                bits[codepoint >> 6] |= @as(u64, 1) << @intCast(codepoint & 63);
+                break :blk bits;
+            },
+            .string => |ref| blk: {
+                if (ref.len == 0 or self.exact.items[ref.offset] >= 0x80) break :blk null;
+                var bits = [_]u64{0} ** 4;
+                const byte = self.exact.items[ref.offset];
+                bits[byte >> 6] |= @as(u64, 1) << @intCast(byte & 63);
+                break :blk bits;
+            },
+            .set => |index| blk: {
+                const set = self.parsed.sets[index];
+                var bits = [_]u64{0} ** 4;
+                var ranges = set.rangeIterator();
+                while (ranges.next()) |range| {
+                    if (range.last > 0x7f) break :blk null;
+                    var codepoint: u32 = range.first;
+                    while (codepoint <= range.last) : (codepoint += 1) {
+                        bits[codepoint >> 6] |= @as(u64, 1) << @intCast(codepoint & 63);
+                    }
+                }
+                break :blk bits;
+            },
+            .split => |split| blk: {
+                const first = try self.firstBytes(split.first, depth + 1) orelse break :blk null;
+                const second = try self.firstBytes(split.second, depth + 1) orelse break :blk null;
+                var bits = first;
+                for (&bits, second) |*word, other| word.* |= other;
+                break :blk bits;
+            },
+            .jmp => |target| self.firstBytes(target, depth + 1),
+            .repeat_decide => |decide| blk: {
+                if (decide.min > 0) break :blk try self.firstBytes(decide.body, depth + 1);
+                const body = try self.firstBytes(decide.body, depth + 1) orelse break :blk null;
+                const exit = try self.firstBytes(decide.exit, depth + 1) orelse break :blk null;
+                var bits = body;
+                for (&bits, exit) |*word, other| word.* |= other;
+                break :blk bits;
+            },
+            .progress_check_exit => |check| blk: {
+                const exit = try self.firstBytes(check.exit, depth + 1) orelse break :blk null;
+                const next = try self.firstBytes(pc + 1, depth + 1) orelse break :blk null;
+                var bits = exit;
+                for (&bits, next) |*word, other| word.* |= other;
+                break :blk bits;
+            },
+            .save_start,
+            .save_end,
+            .atomic_start,
+            .atomic_end,
+            .repeat_init,
+            .repeat_inc,
+            .progress_save,
+            .anchor,
+            => self.firstBytes(pc + 1, depth + 1),
+            .look => |look| self.firstBytes(look.after, depth + 1),
+            .any,
+            .char_ci,
+            .string_ci,
+            .backref,
+            .grapheme,
+            .linebreak,
+            .match,
+            .look_match,
+            => null,
+        };
+    }
+
+    fn computeLiteralPrefix(self: *Compiler) Error!?[]u8 {
+        var prefix = std.ArrayList(u8).empty;
+        errdefer prefix.deinit(self.allocator);
+        var pc: u32 = 0;
+        var steps: u32 = 0;
+        while (steps < 256 and pc < self.insts.items.len) : (steps += 1) {
+            switch (self.insts.items[pc]) {
+                .save_start, .save_end, .atomic_start, .atomic_end, .anchor => pc += 1,
+                .char => |codepoint| {
+                    var buffer: [4]u8 = undefined;
+                    const length = std.unicode.utf8Encode(codepoint, &buffer) catch break;
+                    try prefix.appendSlice(self.allocator, buffer[0..length]);
+                    pc += 1;
+                },
+                .string => |ref| {
+                    try prefix.appendSlice(
+                        self.allocator,
+                        self.exact.items[ref.offset..][0..ref.len],
+                    );
+                    pc += 1;
+                },
+                else => break,
+            }
+        }
+        if (prefix.items.len < 2) {
+            prefix.deinit(self.allocator);
+            return null;
+        }
+        const owned = try prefix.toOwnedSlice(self.allocator);
+        return owned;
     }
 
     fn emitLiteral(self: *Compiler, text: []const u8, case_insensitive: bool) Error!void {

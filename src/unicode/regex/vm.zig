@@ -57,6 +57,8 @@ pub const Runner = struct {
     word_set: *const set_mod.Set,
     flags: parser.Flags,
     text: []const u8,
+    first_byte_bitmap: ?[4]u64,
+    literal_prefix: ?[]const u8,
 
     region_start: usize,
     region_end: usize,
@@ -98,6 +100,8 @@ pub const Runner = struct {
         flags: parser.Flags,
         text: []const u8,
         group_count: u16,
+        first_byte_bitmap: ?[4]u64,
+        literal_prefix: ?[]const u8,
         options: Options,
     ) error{OutOfMemory}!Runner {
         const capture_slots = (@as(usize, group_count) + 1) * 2;
@@ -117,6 +121,8 @@ pub const Runner = struct {
             .word_set = word_set,
             .flags = flags,
             .text = text,
+            .first_byte_bitmap = first_byte_bitmap,
+            .literal_prefix = literal_prefix,
             .region_start = 0,
             .region_end = text.len,
             .anchor_start = 0,

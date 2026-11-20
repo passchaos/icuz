@@ -39,6 +39,13 @@ pub const time_scale = @import("unicode/format/time_scale.zig");
 pub const regex = @import("unicode/regex/root.zig");
 pub const region = @import("unicode/locale/region.zig");
 pub const locale_data = @import("unicode/locale/data.zig");
+
+pub const Regex = regex.Regex;
+pub const RegexMatcher = regex.Matcher;
+pub const RegexFlags = regex.Flags;
+pub const Region = region.Region;
+pub const RegionType = region.RegionType;
+pub const LocaleData = locale_data.LocaleData;
 pub const calendar_preferences = @import("unicode/format/calendar_preferences.zig");
 pub const break_rules = @import("unicode/break_rules.zig");
 pub const bidi = @import("unicode/bidi/paragraph.zig");

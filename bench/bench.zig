@@ -280,6 +280,35 @@ fn benchNormalizationCodepoints(
     reportBytes(name, rounds * bytes, best);
 }
 
+fn benchRegex(
+    name: []const u8,
+    pattern: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    var regex = icuz.Regex.compileAlloc(allocator, pattern, .{}) catch return;
+    defer regex.deinit();
+    var matcher = regex.matcher(text) catch return;
+    defer matcher.deinit();
+
+    const rounds = 200;
+    var matches: usize = 0;
+    const start = now();
+    for (0..rounds) |_| {
+        matcher.reset(text) catch return;
+        while (matcher.find() catch return) {
+            matches += 1;
+        }
+    }
+    const elapsed: u64 = @intCast(now() - start);
+    std.debug.print("{s:<32} {d:>8.3} us/scan ({d} matches)\n", .{
+        name,
+        @as(f64, @floatFromInt(elapsed)) / @as(f64, rounds) / 1000.0,
+        matches,
+    });
+    sink +%= matches;
+}
+
 fn benchCase(name: []const u8, text: []const u8, allocator: std.mem.Allocator) void {
     var best: u64 = std.math.maxInt(u64);
     const trials = 5;
@@ -1108,6 +1137,26 @@ pub fn main() !void {
     benchRelative(allocator);
     benchUnits(allocator);
     benchDate(allocator);
+
+    std.debug.print("\n-- regular expressions --\n", .{});
+    benchRegex(
+        "literal find",
+        "needle",
+        "some text before needle and after needle " ** 8,
+        allocator,
+    );
+    benchRegex(
+        "class find",
+        "[0-9]{3}-[0-9]{4}",
+        "call 555-1234 or 555-9876 for details " ** 8,
+        allocator,
+    );
+    benchRegex(
+        "case-insensitive find",
+        "(?i)needle",
+        "some text before Needle and after NEEDLE " ** 8,
+        allocator,
+    );
 
     std.debug.print("\n-- segmentation --\n", .{});
     benchGraphemes("grapheme ASCII", ascii_runtime);

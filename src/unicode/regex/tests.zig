@@ -476,3 +476,22 @@ test "regex literal flag" {
     defer m.deinit();
     try std.testing.expect(try m.matches());
 }
+
+test "regex find prefilters" {
+    try expectFind("abc", "xxabcxx", 2, 5);
+    try expectFind("[0-9]+", "ab123cd", 2, 5);
+    try expectFind("abc|def", "xxdef", 2, 5);
+    try expectFind("^abc", "abc", 0, 3);
+    try expectNoFind("^abc", "xabc");
+    try expectFind("abc", "abcabc", 0, 3);
+    try expectFind("a*", "ba", 0, 0);
+
+    var re = try compile("abc");
+    defer re.deinit();
+    var m = try re.matcher("abcabc");
+    defer m.deinit();
+    try std.testing.expect(try m.find());
+    try std.testing.expectEqual(@as(?usize, 0), m.start(0));
+    try std.testing.expect(try m.find());
+    try std.testing.expectEqual(@as(?usize, 3), m.start(0));
+}
