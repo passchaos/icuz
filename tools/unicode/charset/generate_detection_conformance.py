@@ -61,11 +61,7 @@ def main() -> int:
     for text in SAMPLES:
         detector = icu.CharsetDetector()
         detector.setText(text)
-        matches = tuple(
-            match
-            for match in detector.detectAll()
-            if not match.getName().startswith(("IBM420", "IBM424"))
-        )
+        matches = tuple(detector.detectAll())
         cases.append((text, matches))
     blob = bytearray(b"CJSD")
     blob += struct.pack("<B3xI", 1, len(cases))

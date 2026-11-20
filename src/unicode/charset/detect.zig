@@ -18,7 +18,7 @@ pub const Options = struct {
     /// Remove HTML/XML markup before detection, like ICU's input filter.
     strip_tags: bool = false,
     /// Include ICU's legacy IBM420/IBM424 recognizers (disabled by default).
-    legacy_recognizers: bool = false,
+    legacy_recognizers: bool = true,
 };
 
 pub const Error = error{OutOfMemory};
@@ -493,8 +493,9 @@ fn matchSbcsIbm420(input: *const Input, ngrams: []const i32) i32 {
     var ignore_space = false;
     for (input.bytes) |byte| {
         if (byte == 0) break;
-        var mapped = tables.unshapeMap_IBM420[byte];
-        if (isLamAlef(byte) != 0) mapped = 0xb1;
+        var unshaped = tables.unshapeMap_IBM420[byte];
+        if (isLamAlef(byte) != 0) unshaped = 0xb1;
+        const mapped = char_map[unshaped];
         if (mapped != 0) {
             if (!(mapped == 0x20 and ignore_space)) {
                 ngram = ((ngram << 8) + mapped) & 0xffffff;

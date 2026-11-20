@@ -336,9 +336,9 @@ need without pulling in a font or layout engine.
 - ICU-compatible charset detection (`detectCharset`, `detectCharsetsAlloc`):
   UTF-8, UTF-16/32 (BE/LE), ISO-8859-1/2/5/6/7/8/8-I/9, windows-1250/1251/
   1252/1253/1254/1255/1256, KOI8-R, Shift_JIS, GB18030, EUC-JP, EUC-KR,
-  Big5, and ISO-2022-JP/KR/CN, with HTML/XML input filtering and ICU's
-  confidence ordering, validated by a 37-case PyICU differential fixture.
-  The legacy IBM420/IBM424 recognizers are not yet ported.
+  Big5, ISO-2022-JP/KR/CN, and the legacy IBM420/IBM424 Arabic/Hebrew
+  recognizers, with HTML/XML input filtering and ICU's confidence ordering,
+  validated by a 37-case PyICU differential fixture.
 - CLDR 48 transliteration for Latin-ASCII (NFD, mark removal, NFC, 844 mapping
   rules), Fullwidth-Halfwidth, Halfwidth-Fullwidth, Georgian-Latin,
   Georgian-Latin-BGN (1981), Hebrew-Latin-BGN, Russian-Latin-BGN,
