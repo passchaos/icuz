@@ -490,6 +490,7 @@ GENERATORS = {
     "tools/unicode/format/generate_interval_skeleton_conformance.py": "3733e4ee24ea0d32bde4a35475b0c65c28d634fff77a89ab20413631b5d5bddc",
     "tools/unicode/format/generate_date_skeleton_conformance.py": "0180072157ba234dea9af11cd401695cace6e6d399792743a76ace27c24b8246",
     "tools/unicode/format/generate_misc.py": "6f811f84eb654ea301ead14d178f9ef74b5f31d75c00e4a958ee887b60380af5",
+    "tools/unicode/format/generate_weekend.py": "070f632b8a485a9ca9b5ef3399bfc193b0daeaf96bedf6dd8726d7bbec83e472",
     "tools/unicode/format/generate_currency_conformance.py": "d84c2f318fc73ea144d594c5ab4d53063497d2e2d6c739973bc9decef2f3d812",
     "tools/unicode/format/generate_skeleton_conformance.py": "aee73b644c32b78c3b67e183187021a7805d72a26f609b45a91daed0023bbfa0",
     "tools/unicode/format/generate_range_data.py": "6ddfef0c1ac66116face084b102961335619f6368df19f88eea5bc8d283629c0",
@@ -626,6 +627,11 @@ GENERATED_TEXT = (
         "src/unicode/locale/matcher_data.zig",
         "tools/unicode/locale/generate_matcher.py",
         "bd7e88838403175906dda8460a099f88b4f4479b326d0e3f6d20306f904fde7b",
+    ),
+    GeneratedText(
+        "src/unicode/format/weekend_data.zig",
+        "tools/unicode/format/generate_weekend.py",
+        "f2d02a7ada2c4dda4a661a89402a000ae7943a50491867dc4ad1eac357f88cc8",
     ),
 )
 SOURCE_SHA = re.compile(r"^// Source SHA-256: ([0-9a-f]{64})$", re.MULTILINE)

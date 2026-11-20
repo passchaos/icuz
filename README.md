@@ -205,6 +205,9 @@ need without pulling in a font or layout engine.
   including legacy links such as `US/Pacific` and `Asia/Kolkata` and the
   `001` world region, matching ICU's `getCanonicalID`, `getIanaID`, and
   `getRegion`.
+- CLDR 48 weekend start/end data (`weekendForRegion`, `isWeekend`): 18
+  regions with explicit rules plus the world Saturday-Sunday default,
+  including single-day weekends such as IR and IN.
 - CLDR 48 list formatting for 87 locales, including and/or and unit list
   styles with narrow/short variants.
 - CLDR 48 relative time for 87 locales, including yesterday/today/tomorrow

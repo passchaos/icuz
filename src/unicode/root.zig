@@ -314,6 +314,9 @@ pub const ianaTimeZoneId = timezone_mod.canonical.ianaId;
 pub const timeZoneRegion = timezone_mod.canonical.regionForZone;
 
 pub const DateTime = dates_mod.DateTime;
+pub const Weekend = dates_mod.weekend.Weekend;
+pub const weekendForRegion = dates_mod.weekend.weekendForRegion;
+pub const isWeekend = dates_mod.weekend.isWeekend;
 pub const DateStyle = dates_mod.Style;
 pub const DateParseDefaults = dates_mod.ParseDefaults;
 pub const CalendarField = dates_mod.CalendarField;
@@ -647,6 +650,7 @@ test {
     _ = plural_mod;
     _ = number_mod;
     _ = dates_mod;
+    _ = dates_mod.weekend;
     _ = rbnf_mod;
     _ = timezone_mod;
     _ = timezone_mod.windows;

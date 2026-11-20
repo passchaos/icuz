@@ -10,6 +10,7 @@ const misc = @import("misc.zig");
 const numbering_systems = @import("numbering_systems.zig");
 
 pub const cldr_version = "48";
+pub const weekend = @import("weekend.zig");
 
 pub const Style = enum { full, long, medium, short };
 
