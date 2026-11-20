@@ -433,6 +433,13 @@ both fall back to the generic converter on any error.
 Transliteration passes precompute their literal-entry bounds and store a
 parallel `u32` first-code-point array, so per-character rule lookup
 binary-searches a compact array instead of decoding 34-byte entry records.
+Passes without insertion, cursor-repositioning, or captured-context rules
+stream into a fresh output buffer instead of shifting the remaining input,
+keeping expanding mappings linear. Filtered transforms resolve each pass's
+range and streamability once and reuse it for every input run, and run the
+whole text in one compound when the unfiltered characters are ASCII
+boundaries and every rule source and context stays inside the filter set
+(the cached safety decision avoids rescanning the rule table per word).
 Latin-ASCII skips rule matching entirely when accent stripping leaves pure
 ASCII text, and root collation emits its three levels directly while
 scanning, with a precomputed ASCII element table for mixed-script keys.

@@ -323,6 +323,39 @@ fn setContains(set_index: u32, codepoint: u21) bool {
     return false;
 }
 
+/// True when every codepoint of `set_index` is also in `other_index`.
+fn setSubset(set_index: u32, other_index: u32) bool {
+    if (set_index == 0) return true;
+    if (other_index == 0) return false;
+    const record = set_offset + @as(usize, set_index) * 8;
+    const other_record = set_offset + @as(usize, other_index) * 8;
+    const offset = readU32(record);
+    const count = readU32(record + 4);
+    const other_offset = readU32(other_record);
+    const other_count = readU32(other_record + 4);
+    var other: u32 = 0;
+    var index: u32 = 0;
+    while (index < count) : (index += 1) {
+        const base = range_offset + (@as(usize, offset) + index) * 8;
+        const start = readU32(base);
+        const end = readU32(base + 4);
+        while (other < other_count) {
+            const other_base =
+                range_offset + (@as(usize, other_offset) + other) * 8;
+            const other_start = readU32(other_base);
+            const other_end = readU32(other_base + 4);
+            if (other_end < start) {
+                other += 1;
+                continue;
+            }
+            if (other_start <= start and end <= other_end) break;
+            return false;
+        }
+        if (other == other_count) return false;
+    }
+    return true;
+}
+
 const ContextElement = struct {
     set_index: u32,
     flags: u32,
@@ -454,6 +487,107 @@ fn contextMatches(
     return true;
 }
 
+/// A filtered-normalization transform can run over the whole text in one
+/// pass when its unfiltered characters are normalization-inert boundaries
+/// (ASCII) and every rule source and context is confined to the filter set.
+/// Then a match can never observe text outside a filtered run, so the
+/// whole-text result equals ICU's per-run compound without one setup pass
+/// per word.
+fn wholeTextRulesSafe(transform_index: usize) bool {
+    const cached = whole_text_cache[transform_index].load(.acquire);
+    if (cached != 0) return cached == 1;
+    const safe = computeWholeTextRulesSafe(transform_index);
+    whole_text_cache[transform_index].store(if (safe) 1 else 2, .release);
+    return safe;
+}
+
+fn computeWholeTextRulesSafe(transform_index: usize) bool {
+    const record = transformAt(transform_index);
+    if (record.filter_set == 0) return false;
+    if (record.pre_normalization == 0 or record.pre_normalization > 4) {
+        return false;
+    }
+    if (record.final_case != 0 or record.post_normalization != 0) {
+        return false;
+    }
+    const start = @as(usize, record.entry_start);
+    const end = start + record.entry_count;
+    var entry_index = start;
+    while (entry_index < end) : (entry_index += 1) {
+        const entry = entryAt(entry_index);
+        // Insertions, captured-context targets, and negated sources can
+        // match or rewrite text that is not in the filter set.
+        if (entry.flags & 1 != 0) return false;
+        if (entry.kind != 0) return false;
+        if (entry.flags & 64 != 0 or entry.flags & 128 != 0) return false;
+        if (entry.flags & 4 != 0 or entry.flags & 8 != 0) {
+            // Repeated or collapse source: the class must stay in-filter.
+            if (!setSubset(entry.source_offset, record.filter_set)) {
+                return false;
+            }
+        } else {
+            if (entry.source_len == 0) return false;
+            for (0..@as(usize, entry.source_len)) |offset| {
+                if (!setContains(
+                    record.filter_set,
+                    sourceCodepoint(entry, offset),
+                )) {
+                    return false;
+                }
+            }
+        }
+        if (!contextWithinFilter(entry.before_context, record.filter_set)) {
+            return false;
+        }
+        if (!contextWithinFilter(entry.after_context, record.filter_set)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+fn contextWithinFilter(context_index: u32, filter_set: u32) bool {
+    if (context_index == 0) return true;
+    const record = context_offset + @as(usize, context_index) * 8;
+    const offset = readU32(record);
+    const count = readU32(record + 4);
+    var index: usize = 0;
+    while (index < count) : (index += 1) {
+        const element = contextElementAt(@as(usize, offset) + index);
+        // Negated elements and boundary anchors observe text outside the
+        // filtered run, so only plain in-filter classes are safe.
+        if (element.flags & (1 | 4 | 32) != 0) return false;
+        if (!setSubset(element.set_index, filter_set)) return false;
+    }
+    return true;
+}
+
+/// True when the text's unfiltered characters are all ASCII. ASCII is
+/// stable under every normalization form and cannot take part in a canonical
+/// composition, so it blocks normalization across filtered-run boundaries.
+fn onlyAsciiOutsideFilter(text: []const u8, filter_set: u32) bool {
+    var index: usize = 0;
+    while (index < text.len) {
+        const byte = text[index];
+        if (byte < 0x80) {
+            index += 1;
+            continue;
+        }
+        const length = std.unicode.utf8ByteSequenceLength(byte) catch
+            return false;
+        if (index + length > text.len) return false;
+        const codepoint = std.unicode.utf8Decode(
+            text[index..][0..length],
+        ) catch return false;
+        if (!setContains(filter_set, codepoint)) return false;
+        index += length;
+    }
+    return true;
+}
+
+var whole_text_cache =
+    [_]std.atomic.Value(u8){std.atomic.Value(u8).init(0)} ** transform_count;
+
 const EntryRange = struct {
     start: usize,
     end: usize,
@@ -527,68 +661,17 @@ fn transformPassRange(transform_index: usize, pass_index: u8) EntryRange {
     };
 }
 
-fn hasInsertions(range: EntryRange) bool {
+/// A pass can be applied to a separate output buffer when no rule needs to
+/// see its own replacement (cursor repositioning or insertion) or rewrites
+/// the source through a captured-context target.
+fn canStreamPass(range: EntryRange) bool {
     var index = range.start;
     while (index < range.end) : (index += 1) {
-        const flags = entryAt(index).flags;
-        if (flags & 1 != 0) return true;
-        if (flags & 205 == 0) break;
+        const entry = entryAt(index);
+        if (entry.kind != 0) return false;
+        if (entry.flags & (1 | 2 | 16) != 0) return false;
     }
-    return false;
-}
-
-/// Apply the pass's empty-source rules before its mapping rules. The inserted
-/// text is visible to later rules through the growing output buffer.
-fn applyInsertions(
-    allocator: std.mem.Allocator,
-    codepoints: []const u21,
-    range: EntryRange,
-) Error!std.ArrayList(u21) {
-    var output = std.ArrayList(u21).empty;
-    errdefer output.deinit(allocator);
-    var index: usize = 0;
-    while (index <= codepoints.len) {
-        var attempts: usize = 0;
-        while (attempts < 8) : (attempts += 1) {
-            var matched = false;
-            var entry_index = range.start;
-            while (entry_index < range.end) : (entry_index += 1) {
-                const entry = entryAt(entry_index);
-                if (entry.flags & 205 == 0) break;
-                if (entry.flags & 1 == 0) continue;
-                if (!contextMatches(
-                    entry.before_context,
-                    output.items,
-                    output.items.len,
-                    false,
-                )) {
-                    continue;
-                }
-                if (!contextMatches(
-                    entry.after_context,
-                    codepoints,
-                    index,
-                    true,
-                )) {
-                    continue;
-                }
-                var offset: usize = 0;
-                while (offset < entry.target_len) : (offset += 1) {
-                    try output.append(
-                        allocator,
-                        targetCodepoint(entry, offset),
-                    );
-                }
-                matched = true;
-                break;
-            }
-            if (!matched) break;
-        }
-        if (index == codepoints.len) break;
-        try output.append(allocator, codepoints[index]);
-        index += 1;
-    }
-    return output;
+    return true;
 }
 
 fn findMatchInRange(
@@ -894,12 +977,78 @@ fn halfwidthKatakanaAlloc(
     return output.toOwnedSlice(allocator);
 }
 
-fn applyPassAlloc(
+/// Apply a pass into a fresh output buffer. Unlike the in-place path this
+/// never shifts the remaining input, so expanding mappings stay linear.
+/// Contexts see the same bytes as the in-place pass: `before` is the
+/// transformed prefix and `after` is untouched input.
+fn applyPassStreamingAlloc(
     allocator: std.mem.Allocator,
     codepoints: []const u21,
     range: EntryRange,
     filter_set: u32,
 ) Error!std.ArrayList(u21) {
+    var output = std.ArrayList(u21).empty;
+    errdefer output.deinit(allocator);
+    try output.ensureTotalCapacity(
+        allocator,
+        codepoints.len + codepoints.len / 2 + 16,
+    );
+    var index: usize = 0;
+    var steps: usize = 0;
+    const max_steps = codepoints.len * 16 + 1024;
+    while (index < codepoints.len) {
+        steps += 1;
+        if (steps > max_steps) break;
+        if (findMatchInRange(range, codepoints, index, output.items, filter_set)) |entry| {
+            if (entry.flags & 128 != 0) {
+                // Repeated negated class: the sentinel is replaced by the
+                // matched input run.
+                for (0..@as(usize, entry.target_len)) |offset| {
+                    const codepoint = targetCodepoint(entry, offset);
+                    if (codepoint == 0x110000) {
+                        for (0..@as(usize, entry.repeat_len)) |run_index| {
+                            try output.append(
+                                allocator,
+                                codepoints[
+                                    index + entry.repeat_start + run_index
+                                ],
+                            );
+                        }
+                    } else {
+                        try output.append(allocator, codepoint);
+                    }
+                }
+            } else if (entry.flags & 8 != 0) {
+                for (0..@as(usize, entry.target_len)) |offset| {
+                    try output.append(allocator, codepoints[index + offset]);
+                }
+            } else {
+                for (0..@as(usize, entry.target_len)) |offset| {
+                    try output.append(
+                        allocator,
+                        targetCodepoint(entry, offset),
+                    );
+                }
+            }
+            index += entry.source_len;
+        } else {
+            try output.append(allocator, codepoints[index]);
+            index += 1;
+        }
+    }
+    return output;
+}
+
+fn applyPassAlloc(
+    allocator: std.mem.Allocator,
+    codepoints: []const u21,
+    range: EntryRange,
+    filter_set: u32,
+    streamable: bool,
+) Error!std.ArrayList(u21) {
+    if (codepoints.len >= 8 and streamable) {
+        return applyPassStreamingAlloc(allocator, codepoints, range, filter_set);
+    }
     // Apply the pass in place so a rule whose output cursor is at the start
     // of the replacement (`|` in ICU rule syntax) rescans that replacement.
     var work = std.ArrayList(u21).empty;
@@ -1117,6 +1266,7 @@ fn applyStepOperationAlloc(
                 range.start,
                 range.count,
                 0,
+                null,
             );
             defer final.deinit(allocator);
             break :blk try encodeCodepointsAlloc(allocator, final.items);
@@ -1384,6 +1534,14 @@ fn casedListAlloc(
     return decodeAlloc(allocator, cased);
 }
 
+/// Per-pass lookup data that does not depend on the input text. Filtered
+/// transforms reuse one setup across every run instead of rescanning the
+/// rule table per word.
+const PassSetup = struct {
+    range: EntryRange,
+    streamable: bool,
+};
+
 /// Run every pass of a transform over `codepoints`, returning the final
 /// codepoint sequence. `filter_set` restricts which codepoints may start a
 /// match; only the first pass consults it.
@@ -1401,10 +1559,13 @@ fn runPassesAlloc(
         0,
         @max(record.pass_count, 1),
         filter_set,
+        null,
     );
 }
 
-/// Run passes `[start_pass, start_pass + count)` of a transform.
+/// Run passes `[start_pass, start_pass + count)` of a transform. `setup`
+/// supplies precomputed pass ranges and streamability when the caller runs
+/// several filtered input runs over the same transform.
 fn runPassesRangeAlloc(
     allocator: std.mem.Allocator,
     codepoints: []const u21,
@@ -1412,6 +1573,7 @@ fn runPassesRangeAlloc(
     start_pass: usize,
     count: usize,
     filter_set: u32,
+    setup: ?[]const PassSetup,
 ) Error!std.ArrayList(u21) {
     const record = transformAt(transform_index);
     const pass_end = start_pass + count;
@@ -1419,7 +1581,10 @@ fn runPassesRangeAlloc(
     // filter belongs to the first pass that actually contains rules.
     const first_pass: usize = blk: {
         for (start_pass..pass_end) |pass| {
-            const range = transformPassRange(transform_index, @intCast(pass));
+            const range = if (setup) |value|
+                value[pass].range
+            else
+                transformPassRange(transform_index, @intCast(pass));
             if (range.end > range.start) break :blk pass;
         }
         break :blk start_pass;
@@ -1453,13 +1618,21 @@ fn runPassesRangeAlloc(
             pass_output = list;
             current = list.items;
         }
-        const range = transformPassRange(transform_index, @intCast(pass));
+        const range = if (setup) |value|
+            value[pass].range
+        else
+            transformPassRange(transform_index, @intCast(pass));
         if (range.end == range.start) continue;
+        const streamable = if (setup) |value|
+            value[pass].streamable
+        else
+            canStreamPass(range);
         const next = try applyPassAlloc(
             allocator,
             current,
             range,
             if (pass == first_pass) filter_set else 0,
+            streamable,
         );
         if (pass_output) |*value| value.deinit(allocator);
         pass_output = next;
@@ -1523,6 +1696,7 @@ fn filteredRunCodepointsAlloc(
     codepoints: []const u21,
     record: TransformRecord,
     transform_index: usize,
+    setup: ?[]const PassSetup,
 ) Error!std.ArrayList(u21) {
     var input = codepoints;
     var normalized: ?[]u21 = null;
@@ -1535,7 +1709,15 @@ fn filteredRunCodepointsAlloc(
         );
         if (normalized) |value| input = value;
     }
-    return runPassesAlloc(allocator, input, transform_index, 0);
+    return runPassesRangeAlloc(
+        allocator,
+        input,
+        transform_index,
+        0,
+        @max(record.pass_count, 1),
+        0,
+        setup,
+    );
 }
 
 /// Reverse transforms use an input-side global filter. ICU splits the input
@@ -1553,6 +1735,22 @@ fn filteredTableCoreAlloc(
     // where words are separate runs.
     var codepoints = try decodeAlloc(allocator, text);
     defer codepoints.deinit(allocator);
+
+    // The rule table does not depend on the run, so resolve each pass once
+    // instead of rescanning it for every word.
+    var setup_storage: [16]PassSetup = undefined;
+    var setup: ?[]const PassSetup = null;
+    const pass_count = @max(record.pass_count, 1);
+    if (pass_count <= setup_storage.len) {
+        for (0..pass_count) |pass| {
+            const range = transformPassRange(transform_index, @intCast(pass));
+            setup_storage[pass] = .{
+                .range = range,
+                .streamable = range.end > range.start and canStreamPass(range),
+            };
+        }
+        setup = setup_storage[0..pass_count];
+    }
 
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
@@ -1578,6 +1776,7 @@ fn filteredTableCoreAlloc(
                 codepoints.items[start..index],
                 record,
                 transform_index,
+                setup,
             );
             defer run.deinit(allocator);
             if (record.final_case != 0 or record.post_normalization != 0) {
@@ -1606,7 +1805,13 @@ fn tableCoreAlloc(
 ) Error![]u8 {
     const record = transformAt(transform_index);
     if (record.filtered_normalization) {
-        return filteredTableCoreAlloc(allocator, text, transform_index);
+        // Short inputs cannot amortize the rule scan; keep the per-run path.
+        if (text.len < 128 or
+            !wholeTextRulesSafe(transform_index) or
+            !onlyAsciiOutsideFilter(text, record.filter_set))
+        {
+            return filteredTableCoreAlloc(allocator, text, transform_index);
+        }
     }
     var normalized: ?[]u8 = null;
     var source = text;
