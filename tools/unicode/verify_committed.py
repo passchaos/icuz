@@ -76,6 +76,7 @@ BLOBS = (
     Blob("src/unicode/format/range_conformance.bin", b"CJRF", 1, "f6c7cc59f644dc4f9289f1fab0aff214eb6169bda13f61073f256008f8e58ae2", version=(0, 0, 0)),
     Blob("src/unicode/format/date_skeleton_conformance.bin", b"CJGJ", 1, "eeb4b07b3793144097b2d85ed12681668844b0f1e6b6da8f5d9ef2a2dccbd971", version=(0, 0, 0)),
     Blob("src/unicode/format/pattern_generator_conformance.bin", b"CJPG", 1, "b7d0cdd34f42c9195d9c3edd1ad74180255e5e59e1d4fe3d25e6e618124d749b", version=(0, 0, 0)),
+    Blob("src/unicode/format/time_scale_conformance.bin", b"CJTS", 1, "6c7adfa084590f939cd4847f40561e32963b12e4ff88020645564cd42011941f", version=(0, 0, 0)),
     Blob("src/unicode/format/units_data.bin", b"CJUN", 2, "3ff2588f561f47ce80c707960d8580e535b33ce7516488433e4ebc19f5e0eb6f", version=(0, 0, 0)),
     Blob("src/unicode/format/unit_conformance.bin", b"CJU1", 1, "53270b0acc7cf590569c5599a791d37717f358c0da37975b9c56ea7efc113726", version=(0, 0, 0)),
     Blob("src/unicode/format/calendar_format_conformance.bin", b"CJKF", 1, "359f58a047c022b4539fae6e6db8bb135add91f748398cda9005908b353386c7", version=(0, 0, 0)),
@@ -506,6 +507,7 @@ GENERATORS = {
     "tools/unicode/format/generate_currency_conformance.py": "1ab29428cff9dc81a434bcf09cb653491c14c1a27dc12387162d57d4389c3f60",
     "tools/unicode/format/generate_skeleton_conformance.py": "a618b91fd3d1b3aa69a84ed3dfef569b393804c2875b81d48d9e705148769eeb",
     "tools/unicode/format/generate_pattern_generator_conformance.py": "5bbf7ecb066d2af55751f8ce5c55fbba952bb2e5f1d31db88ebf13a28e76b652",
+    "tools/unicode/format/generate_time_scale_conformance.py": "e99b20830fb40f2daf22e54690ac6660bf8424e80f6689f599735157d8c05774",
     "tools/unicode/format/generate_range_data.py": "5a2a37e0ae47a1c91483c42ab8c9481947af518b1eb9943918ce9101788c0286",
     "tools/unicode/format/generate_range_conformance.py": "aa423e4f5f3e63035455398ad926104c203e6e90f332350d08369e62e8c4bf6b",
     "tools/unicode/format/generate_unit_conformance.py": "4227b3b9e7528c778a7a19dc0ed6b063cd39d9787f1962da419fb6a4300080a8",
@@ -721,7 +723,10 @@ def check_page_table(data: bytes, width: int) -> None:
 
 def check_layout(blob: Blob, data: bytes) -> None:
     magic = blob.magic
-    if magic == b"CJSD":
+    if magic == b"CJTS":
+        count = struct.unpack_from("<I", data, 8)[0]
+        assert 12 + count * 20 == len(data)
+    elif magic == b"CJSD":
         case_count = struct.unpack_from("<I", data, 8)[0]
         offset = 12
         for _ in range(case_count):

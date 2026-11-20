@@ -266,6 +266,11 @@ need without pulling in a font or layout engine.
   width adjustment, date-once time-range composition, and fallback
   formatting, validated by a 9,361-case PyICU fixture across 23 skeletons
   and 20 locales.
+- ICU time scale conversions (`timeScaleFromInt64`, `timeScaleToInt64`,
+  `timeScaleValue`): Java/Unix/ICU4C milliseconds, Windows FILETIME, .NET
+  ticks, old/new Mac seconds, Excel/DB2 days, and Unix microseconds, with
+  ICU's overflow and negative-rounding semantics, validated by a 172-case
+  ICU 78 differential fixture.
 - IANA tzdata 2026e time zones for 597 IDs, including backward link names,
   with transition-based UTC offset and daylight resolution from 1970 through
   2100, local/UTC conversion, zone-aware Unix timestamp formatting,

@@ -31,6 +31,7 @@ const plural_mod = @import("./format/plurals.zig");
 const number_mod = @import("./format/number.zig");
 const dates_mod = @import("./format/dates.zig");
 const pattern_generator_mod = @import("./format/pattern_generator.zig");
+const time_scale_mod = @import("./format/time_scale.zig");
 const calendar_preferences_mod = @import("./format/calendar_preferences.zig");
 const currencies_mod = @import("./format/currencies.zig");
 const week_mod = @import("./format/week.zig");
@@ -361,6 +362,11 @@ pub const canonicalTimeZoneId = timezone_mod.canonical.canonicalId;
 pub const ianaTimeZoneId = timezone_mod.canonical.ianaId;
 pub const timeZoneRegion = timezone_mod.canonical.regionForZone;
 
+pub const TimeScale = time_scale_mod.Scale;
+pub const TimeScaleValue = time_scale_mod.Value;
+pub const timeScaleValue = time_scale_mod.value;
+pub const timeScaleFromInt64 = time_scale_mod.fromInt64;
+pub const timeScaleToInt64 = time_scale_mod.toInt64;
 pub const DateTime = dates_mod.DateTime;
 pub const Weekend = dates_mod.weekend.Weekend;
 pub const weekendForRegion = dates_mod.weekend.weekendForRegion;
@@ -776,6 +782,7 @@ test {
     _ = pattern_generator_mod;
     _ = normalization_boundary;
     _ = charset_detect;
+    _ = time_scale_mod;
     _ = calendar_preferences_mod;
     _ = list_mod;
     _ = relative_mod;
