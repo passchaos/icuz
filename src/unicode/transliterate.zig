@@ -293,6 +293,18 @@ fn setContains(set_index: u32, codepoint: u21) bool {
     const record = set_offset + @as(usize, set_index) * 8;
     const offset = readU32(record);
     const count = readU32(record + 4);
+    // Context and filter sets are often tiny; a linear scan avoids the
+    // binary-search bookkeeping for them.
+    if (count <= 8) {
+        var index: usize = 0;
+        while (index < count) : (index += 1) {
+            const base = range_offset + (@as(usize, offset) + index) * 8;
+            const start = readU32(base);
+            if (codepoint < start) return false;
+            if (codepoint <= readU32(base + 4)) return true;
+        }
+        return false;
+    }
     var low: usize = 0;
     var high: usize = count;
     while (low < high) {
