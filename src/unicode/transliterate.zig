@@ -6,6 +6,7 @@
 //! then map); Fullwidth-Halfwidth and its inverse use longest-match mapping.
 
 const std = @import("std");
+const scalar = @import("scalar/root.zig");
 const normalization = @import("normalization/root.zig");
 const properties = @import("properties.zig");
 const script = @import("script/root.zig");
@@ -917,13 +918,10 @@ fn decodeAlloc(
     errdefer codepoints.deinit(allocator);
     var index: usize = 0;
     while (index < text.len) {
-        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+        const decoded = scalar.decodeValidating(text, index) orelse
             return error.InvalidUtf8;
-        if (index + length > text.len) return error.InvalidUtf8;
-        const codepoint = std.unicode.utf8Decode(text[index..][0..length]) catch
-            return error.InvalidUtf8;
-        try codepoints.append(allocator, codepoint);
-        index += length;
+        try codepoints.append(allocator, decoded.codepoint);
+        index = decoded.next;
     }
     return codepoints;
 }

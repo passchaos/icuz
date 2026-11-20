@@ -8,6 +8,7 @@
 //! perform display-specific or language-specific reordering.
 
 const std = @import("std");
+const scalar = @import("../scalar/root.zig");
 const combining_class = @import("../canonical/combining_class.zig");
 const decomposition = @import("../canonical/decomposition.zig");
 const data = @import("data.zig");
@@ -114,13 +115,10 @@ fn normalizeFusedInto(
             continue;
         }
         const start = index;
-        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+        const decoded = scalar.decodeValidating(text, index) orelse
             return error.InvalidUtf8;
-        if (index + length > text.len) return error.InvalidUtf8;
-        const codepoint = std.unicode.utf8Decode(
-            text[index..][0..length],
-        ) catch return error.InvalidUtf8;
-        index += length;
+        const codepoint = decoded.codepoint;
+        index = decoded.next;
         if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
             starter = codepoint;
             starter_offset = start;
@@ -669,14 +667,10 @@ fn normalizeSegmentInto(
             engine.pending = run[run.len - 1];
             continue;
         }
-        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+        const decoded = scalar.decodeValidating(text, index) orelse
             return error.InvalidUtf8;
-        if (index + length > text.len) return error.InvalidUtf8;
-        const codepoint = std.unicode.utf8Decode(
-            text[index..][0..length],
-        ) catch return error.InvalidUtf8;
-        index += length;
-        try engine.feed(codepoint);
+        index = decoded.next;
+        try engine.feed(decoded.codepoint);
     }
     try engine.flush();
 }
@@ -702,12 +696,10 @@ fn normalizeSegmentFastAt(
     var index = start;
     var first = true;
     while (index < text.len) {
-        const sequence_len = std.unicode.utf8ByteSequenceLength(text[index]) catch
+        const decoded = scalar.decodeValidating(text, index) orelse
             return error.InvalidUtf8;
-        if (index + sequence_len > text.len) return error.InvalidUtf8;
-        const codepoint = std.unicode.utf8Decode(
-            text[index..][0..sequence_len],
-        ) catch return error.InvalidUtf8;
+        const codepoint = decoded.codepoint;
+        const sequence_len = decoded.next - index;
         if (!first) {
             const class = combining_class.forCodepoint(codepoint);
             if (class == 0 and !data.isCompositionSecond(codepoint) and
@@ -852,13 +844,9 @@ fn isNormalizedFormUnchecked(text: []const u8, form: Form) bool {
             index = end;
             continue;
         }
-        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
-            return false;
-        if (index + length > text.len) return false;
-        const codepoint = std.unicode.utf8Decode(
-            text[index..][0..length],
-        ) catch return false;
-        index += length;
+        const decoded = scalar.decodeValidating(text, index) orelse return false;
+        const codepoint = decoded.codepoint;
+        index = decoded.next;
         if (data.isSimplePage(codepoint, compatibility)) {
             starter = codepoint;
             previous_input_class = 0;
@@ -917,13 +905,9 @@ fn spanQuickCheckYesUnchecked(text: []const u8, form: Form) usize {
             continue;
         }
         const start = index;
-        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
-            return text.len;
-        if (index + length > text.len) return text.len;
-        const codepoint = std.unicode.utf8Decode(
-            text[index..][0..length],
-        ) catch return text.len;
-        index += length;
+        const decoded = scalar.decodeValidating(text, index) orelse return text.len;
+        const codepoint = decoded.codepoint;
+        index = decoded.next;
         if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
             starter = codepoint;
             starter_offset = start;
@@ -959,12 +943,9 @@ fn segmentEnd(text: []const u8, index: usize) usize {
     var cursor = index;
     var first = true;
     while (cursor < text.len) {
-        const length = std.unicode.utf8ByteSequenceLength(text[cursor]) catch
-            return text.len;
-        if (cursor + length > text.len) return text.len;
-        const codepoint = std.unicode.utf8Decode(
-            text[cursor..][0..length],
-        ) catch return text.len;
+        const decoded = scalar.decodeValidating(text, cursor) orelse return text.len;
+        const codepoint = decoded.codepoint;
+        const length = decoded.next - cursor;
         if (!first and combining_class.forCodepoint(codepoint) == 0 and
             !data.isCompositionSecond(codepoint) and
             !isHangulVOrT(codepoint))
@@ -1552,3 +1533,4 @@ test "Unicode 17 NFC normalization conformance" {
     }
     try std.testing.expectEqual(conformance.len, fixture_offset);
 }
+
