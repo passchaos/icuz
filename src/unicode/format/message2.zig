@@ -5,9 +5,10 @@
 //! `:string`, `:number`, `:integer`, `:offset`, `:currency`, `:date`,
 //! `:time`, and `:datetime` functions, numeric and plural selection, and
 //! attribute parsing
-//! (attributes are ignored). Markup parses and formats as an empty string,
-//! matching the spec's default string representation. Date selection and
-//! custom functions are rejected.
+//! (attributes are ignored). Markup parses with its tag, options, and
+//! attributes; it formats as an empty string by default, matching the spec's
+//! plain-text representation, and a registry markup handler can emit tags.
+//! Date selection is rejected.
 //!
 //! The parsed `Message` borrows the input text and owns only its AST
 //! arrays; keep the message string alive while the message is used.
@@ -85,9 +86,25 @@ pub const Handler = struct {
     ) FormatError!MatchScore = null,
 };
 
+/// Custom markup handler. Without one, markup formats as an empty string,
+/// matching the spec's default plain-text representation.
+pub const MarkupHandler = struct {
+    context: ?*anyopaque = null,
+    emit: ?*const fn (
+        ?*anyopaque,
+        std.mem.Allocator,
+        MarkupKind,
+        []const u8,
+        []const ResolvedOption,
+        []const ResolvedOption,
+        *std.ArrayList(u8),
+    ) FormatError!void = null,
+};
+
 /// Custom function registry. Built-in function names take precedence.
 pub const Registry = struct {
     entries: []const Entry = &.{},
+    markup: MarkupHandler = .{},
 
     pub const Entry = struct {
         name: []const u8,
@@ -125,8 +142,18 @@ pub const Part = union(enum) {
     /// Raw text; escape sequences are resolved when formatting.
     text: []const u8,
     expression: Expression,
-    /// Markup formats as an empty string in plain-text output.
-    markup,
+    markup: Markup,
+};
+
+pub const MarkupKind = enum { open, close, standalone };
+
+/// Markup element. It formats as an empty string unless the registry supplies
+/// a markup handler.
+pub const Markup = struct {
+    kind: MarkupKind,
+    name: []const u8,
+    options: []const Option = &.{},
+    attributes: []const Option = &.{},
 };
 
 pub const Expression = struct {
@@ -445,8 +472,8 @@ const Parser = struct {
                     (self.text[self.index + 1] == '#' or
                         self.text[self.index + 1] == '/'))
                 {
-                    try self.parseMarkup();
-                    try parts.append(self.allocator, .markup);
+                    const markup = try self.parseMarkup();
+                    try parts.append(self.allocator, .{ .markup = markup });
                     text_start = self.index;
                     continue;
                 }
@@ -471,16 +498,29 @@ const Parser = struct {
         return .{ .parts = try parts.toOwnedSlice(self.allocator) };
     }
 
-    fn parseMarkup(self: *Parser) ParseError!void {
+    fn parseMarkup(self: *Parser) ParseError!Markup {
         self.index += 1; // '{'
         self.skipO();
         if (self.eof()) return error.SyntaxError;
-        if (self.text[self.index] == '#' or self.text[self.index] == '/') {
-            self.index += 1;
-        } else {
+        const kind: MarkupKind = if (self.text[self.index] == '#')
+            .open
+        else if (self.text[self.index] == '/')
+            .close
+        else
             return error.SyntaxError;
+        self.index += 1;
+        const name = try self.parseIdentifier();
+        var options = std.ArrayList(Option).empty;
+        var attributes = std.ArrayList(Option).empty;
+        var result = Markup{ .kind = kind, .name = name };
+        if (kind == .close) {
+            self.skipO();
+            if (self.eof() or self.text[self.index] != '}') {
+                return error.SyntaxError;
+            }
+            self.index += 1;
+            return result;
         }
-        _ = try self.parseIdentifier();
         while (true) {
             const save = self.index;
             if (!self.skipS()) break;
@@ -492,7 +532,7 @@ const Parser = struct {
                 self.index = save;
                 break;
             }
-            _ = try self.parseOption();
+            try options.append(self.allocator, try self.parseOption());
         }
         while (true) {
             const save = self.index;
@@ -501,15 +541,21 @@ const Parser = struct {
                 self.index = save;
                 break;
             }
-            try self.parseAttribute();
+            try attributes.append(self.allocator, try self.parseAttribute());
         }
         self.skipO();
-        if (!self.eof() and self.text[self.index] == '/') self.index += 1;
+        if (!self.eof() and self.text[self.index] == '/') {
+            result.kind = .standalone;
+            self.index += 1;
+        }
         self.skipO();
         if (self.eof() or self.text[self.index] != '}') {
             return error.SyntaxError;
         }
         self.index += 1;
+        result.options = try options.toOwnedSlice(self.allocator);
+        result.attributes = try attributes.toOwnedSlice(self.allocator);
+        return result;
     }
 
     fn parseExpression(self: *Parser) ParseError!Expression {
@@ -558,7 +604,7 @@ const Parser = struct {
                 self.index = save;
                 break;
             }
-            try self.parseAttribute();
+            _ = try self.parseAttribute();
         }
         self.skipO();
         if (self.eof() or self.text[self.index] != '}') {
@@ -620,23 +666,28 @@ const Parser = struct {
         return .{ .name = name, .value = value };
     }
 
-    fn parseAttribute(self: *Parser) ParseError!void {
+    fn parseAttribute(self: *Parser) ParseError!Option {
         self.index += 1; // '@'
-        _ = try self.parseIdentifier();
+        const name = try self.parseIdentifier();
         const save = self.index;
         self.skipO();
         if (self.eof() or self.text[self.index] != '=') {
             self.index = save;
-            return;
+            return .{ .name = name, .value = .{ .literal = "" } };
         }
         self.index += 1;
         self.skipO();
         if (self.eof()) return error.SyntaxError;
-        if (self.text[self.index] == '|') {
-            _ = try self.parseQuotedLiteral();
-            return;
-        }
-        if (self.parseUnquotedLiteral() == null) return error.SyntaxError;
+        const value: OptionValue = if (self.text[self.index] == '$')
+            .{ .variable = try self.parseVariable() }
+        else if (self.text[self.index] == '|')
+            .{ .literal = try self.parseQuotedLiteral() }
+        else blk: {
+            const literal = self.parseUnquotedLiteral() orelse
+                return error.SyntaxError;
+            break :blk .{ .literal = literal };
+        };
+        return .{ .name = name, .value = value };
     }
 
     fn parseVariable(self: *Parser) ParseError![]const u8 {
@@ -1077,9 +1128,74 @@ fn formatPattern(
                 expression,
                 output,
             ),
-            .markup => {},
+            .markup => |markup| try formatMarkup(context, markup, output),
         }
     }
+}
+
+fn formatMarkup(
+    context: *Context,
+    markup: Markup,
+    output: *std.ArrayList(u8),
+) FormatError!void {
+    const handler = context.registry.markup;
+    const emit = handler.emit orelse return;
+    var options = std.ArrayList(ResolvedOption).empty;
+    defer options.deinit(context.allocator);
+    for (markup.options) |option| {
+        try options.append(
+            context.allocator,
+            try resolveMarkupOption(context, option),
+        );
+    }
+    var attributes = std.ArrayList(ResolvedOption).empty;
+    defer attributes.deinit(context.allocator);
+    for (markup.attributes) |attribute| {
+        try attributes.append(
+            context.allocator,
+            try resolveMarkupOption(context, attribute),
+        );
+    }
+    try emit(
+        handler.context,
+        context.allocator,
+        markup.kind,
+        markup.name,
+        options.items,
+        attributes.items,
+        output,
+    );
+}
+
+fn resolveMarkupOption(
+    context: *Context,
+    option: Option,
+) FormatError!ResolvedOption {
+    const text = switch (option.value) {
+        .literal => |raw| try context.unescape(raw),
+        .variable => |name| blk: {
+            const resolved = context.resolveVariable(name) orelse
+                return error.UnresolvedVariable;
+            switch (resolved.value) {
+                .string => |value| break :blk value,
+                .number => |number_value| {
+                    const printed = try std.fmt.allocPrint(
+                        context.allocator,
+                        "{d}",
+                        .{number_value},
+                    );
+                    errdefer context.allocator.free(printed);
+                    try context.owned.append(context.allocator, printed);
+                    return .{ .name = option.name, .value = printed };
+                },
+                .date => return error.BadOption,
+            }
+        },
+    };
+    const copy = try context.allocator.dupe(u8, text);
+    errdefer context.allocator.free(copy);
+    try context.owned.append(context.allocator, copy);
+    return .{ .name = option.name, .value = copy };
 }
 
 fn appendUnescaped(
@@ -2206,5 +2322,81 @@ test "message format 2 custom functions" {
             error.UnsupportedFunction,
             formatAlloc(allocator, &message, "en", &inputs),
         );
+    }
+}
+
+
+fn markupEmit(
+    _: ?*anyopaque,
+    allocator: std.mem.Allocator,
+    kind: MarkupKind,
+    name: []const u8,
+    options: []const ResolvedOption,
+    attributes: []const ResolvedOption,
+    output: *std.ArrayList(u8),
+) FormatError!void {
+    try output.append(allocator, '<');
+    if (kind == .close) try output.append(allocator, '/');
+    try output.appendSlice(allocator, name);
+    for (options) |option| {
+        try output.append(allocator, ' ');
+        try output.appendSlice(allocator, option.name);
+        try output.append(allocator, '=');
+        try output.appendSlice(allocator, option.value);
+    }
+    for (attributes) |attribute| {
+        try output.append(allocator, ' ');
+        try output.appendSlice(allocator, attribute.name);
+        try output.append(allocator, '=');
+        try output.appendSlice(allocator, attribute.value);
+    }
+    if (kind == .standalone) try output.append(allocator, '/');
+    try output.append(allocator, '>');
+}
+
+test "message format 2 markup handlers" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const registry = Registry{ .markup = .{ .emit = markupEmit } };
+
+    {
+        var message = try parse(allocator, "{{Hello {#b}world{/b}!}}");
+        defer message.deinit();
+        const text = try formatAllocWithRegistry(
+            allocator,
+            &message,
+            "en",
+            &.{},
+            &registry,
+        );
+        defer allocator.free(text);
+        try testing.expectEqualStrings("Hello <b>world</b>!", text);
+    }
+    {
+        var message = try parse(
+            allocator,
+            ".input {$src}\n{{{#img src=$src @alt=pic /}}}",
+        );
+        defer message.deinit();
+        const inputs = [_]Input{
+            .{ .name = "src", .value = .{ .string = "a.png" } },
+        };
+        const text = try formatAllocWithRegistry(
+            allocator,
+            &message,
+            "en",
+            &inputs,
+            &registry,
+        );
+        defer allocator.free(text);
+        try testing.expectEqualStrings("<img src=a.png alt=pic/>", text);
+    }
+    {
+        // Without a handler, markup produces no output.
+        var message = try parse(allocator, "{{a{#b}c{/b}d}}");
+        defer message.deinit();
+        const text = try formatAlloc(allocator, &message, "en", &.{});
+        defer allocator.free(text);
+        try testing.expectEqualStrings("acd", text);
     }
 }
