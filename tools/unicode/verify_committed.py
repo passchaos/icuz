@@ -56,7 +56,7 @@ BLOBS = (
     Blob("src/unicode/break/conformance.bin", b"CJGF", 1, "5e7119dc378412e1c6b0bf58b1cc826e38aebb39773c361141737a3709c60077", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_data.bin", b"CJRB", 1, "9a88f134d56db6e730bc7ef2fcc69ad271923321b22bdcaf041a74e0266db4f2", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_conformance.bin", b"CJRN", 1, "d78e610b755b158f8ebc761255cd8da9ac5ce1ee210e6cfcae3e7678b079cb7c", version=(48, 0, 0)),
-    Blob("src/unicode/timezone/data.bin", b"CJTZ", 1, "4c81cc79c040fab030e585bf0b1e3a518e96f8a99052f5a7579cb55ce289539f", version=(0, 0, 0)),
+    Blob("src/unicode/timezone/data.bin", b"CJTZ", 2, "d425cb0d476b14e88a20e60bc2688023c8b3d90cfe07fa2663b420503266e4dc", version=(0, 0, 0)),
     Blob("src/unicode/timezone/conformance.bin", b"CJTQ", 1, "2d7379dfa94750ba19d77d7e188b8d34d44500ece9226a0858fa91a1311604cd", version=(5, 0, 0)),
     Blob("src/unicode/timezone/names_data.bin", b"CJZN", 1, "f6775424c8f20db4bef870228b1868125a48a376103bf316ed0b77463732bcd9", version=(0, 0, 0)),
     Blob("src/unicode/timezone/names_conformance.bin", b"CJZQ", 1, "801b1ce02aec9068b9582e7aa1629774592d676e2ccabf8dbb2bc0639c716ded", version=(0, 0, 0)),
@@ -495,7 +495,7 @@ GENERATORS = {
     "tools/unicode/format/generate_numbers.py": "18b24834ac3d99cdfbeb57f552c165db83e91b61f71c2d68442805276ee0e892",
     "tools/unicode/format/generate_rbnf.py": "cd753dffa9ddb38c91108522bb7cfe652cbcd7f7ad2f11eecf4836d417a6ea1e",
     "tools/unicode/format/generate_rbnf_conformance.py": "6daafcf47dffc85a56f00e49a6b07bfb9b8d62e332bd8aa8c8a5bb7b3b729c6b",
-    "tools/unicode/timezone/generate_data.py": "a944faa2995e1452a0ab5a998cf45a8e6962f12218a789b9dc9def8b9e465a01",
+    "tools/unicode/timezone/generate_data.py": "521947f7cca1dcf417fdb76ae06a096ab787750d75f0ac3b5812ac98a58dab9b",
     "tools/unicode/timezone/generate_conformance.py": "e33e364b94ce4af82a99830f155c627bf167990453e1ecb4201eaf86ce131279",
     "tools/unicode/timezone/generate_names.py": "249f9c204402c2a8d26fe1872b1b4890bac0c132404390d7cb2101e29aa7b75c",
     "tools/unicode/timezone/generate_names_conformance.py": "5970a09cac923ca5ea06d0c5e7bf286ec071b2115db26357d755931c0a066846",
@@ -1346,7 +1346,7 @@ def check_layout(blob: Blob, data: bytes) -> None:
         assert (
             28
             + zone_count * 12
-            + transition_count * 12
+            + transition_count * 16
             + abbreviation_count * 6
             + string_len
             == len(data)

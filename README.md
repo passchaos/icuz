@@ -322,8 +322,8 @@ need without pulling in a font or layout engine.
   ICU's overflow and negative-rounding semantics, validated by a 172-case
   ICU 78 differential fixture.
 - IANA tzdata 2026e time zones for 597 IDs, including backward link names,
-  with transition-based UTC offset and daylight resolution from 1970 through
-  2100, local/UTC conversion, zone-aware Unix timestamp formatting,
+  with 64-bit transition-based UTC offset and daylight resolution from 1850
+  through 2100, local/UTC conversion, zone-aware Unix timestamp formatting,
   next/previous transition lookup (`timeZoneNextTransition`,
   `timeZonePreviousTransition`), and local-time resolution
   (`timeZoneOffsetFromLocal`) that distinguishes DST gaps from overlaps and

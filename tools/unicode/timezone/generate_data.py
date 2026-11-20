@@ -5,7 +5,7 @@ Usage:
     generate_data.py tzdata_dir out_dir
 
 `tzdata_dir` is an extracted IANA tzdata release (for example 2026e). The
-generator compiles it with `zic` into TZif files covering 1970 through 2100,
+generator compiles it with `zic` into TZif files covering 1850 through 2100,
 parses those files, and emits a deduplicated `CJTZ` v1 blob. `zic` must be in
 PATH (macOS ships it at /usr/sbin/zic).
 
@@ -34,7 +34,7 @@ ZIC_SOURCES = (
     "backward",
 )
 
-RANGE_LO = 0  # 1970-01-01T00:00:00Z
+RANGE_LO = -3786825600  # 1850-01-01T00:00:00Z
 RANGE_HI = 4102444800  # 2100-01-01T00:00:00Z
 
 FLAG_DAYLIGHT = 1
@@ -189,10 +189,10 @@ def render(zone_payloads: dict[str, bytes], tzdata_version: str) -> bytes:
             transitions = clamp_transitions(transitions)
             range_index = len(ranges)
             payload_key[digest] = range_index
-            first = len(transition_bytes) // 12
+            first = len(transition_bytes) // 16
             for time, offset, abbreviation, daylight in transitions:
                 transition_bytes += struct.pack(
-                    "<IiHBB",
+                    "<qiHBB",
                     time,
                     offset,
                     abbr(abbreviation),
@@ -223,10 +223,10 @@ def render(zone_payloads: dict[str, bytes], tzdata_version: str) -> bytes:
     header = bytearray(b"CJTZ")
     header += struct.pack(
         "<B3xHHII B3x I",
-        1,
+        2,
         len(zones),
         len(abbreviations),
-        len(transition_bytes) // 12,
+        len(transition_bytes) // 16,
         tzdata_offset,
         tzdata_len,
         len(strings),
