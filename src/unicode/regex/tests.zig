@@ -533,3 +533,43 @@ test "regex whole-literal fast path" {
     defer std.testing.allocator.free(replaced);
     try std.testing.expectEqualStrings("x x", replaced);
 }
+
+test "regex literal alternation fast path" {
+    var re = try compile("foo|bar");
+    defer re.deinit();
+
+    var m = try re.matcher("xx bar foo");
+    defer m.deinit();
+    try std.testing.expect(try m.find());
+    try std.testing.expectEqual(@as(?usize, 3), m.start(0));
+    try std.testing.expectEqual(@as(?usize, 6), m.end(0));
+    try std.testing.expect(try m.find());
+    try std.testing.expectEqual(@as(?usize, 7), m.start(0));
+
+    var exact = try re.matcher("foo");
+    defer exact.deinit();
+    try std.testing.expect(try exact.matches());
+
+    var prefix = try re.matcher("foobar");
+    defer prefix.deinit();
+    try std.testing.expect(try prefix.lookingAt());
+    try std.testing.expectEqual(@as(?usize, 3), prefix.end(0));
+
+    var short = try compile("a|ab");
+    defer short.deinit();
+    var sm = try short.matcher("ab");
+    defer sm.deinit();
+    try std.testing.expect(try sm.find());
+    try std.testing.expectEqual(@as(?usize, 1), sm.end(0));
+
+    var long = try compile("ab|a");
+    defer long.deinit();
+    var lm = try long.matcher("ab");
+    defer lm.deinit();
+    try std.testing.expect(try lm.find());
+    try std.testing.expectEqual(@as(?usize, 2), lm.end(0));
+
+    const replaced = try re.replaceAllAlloc(std.testing.allocator, "foo bar", "x");
+    defer std.testing.allocator.free(replaced);
+    try std.testing.expectEqualStrings("x x", replaced);
+}

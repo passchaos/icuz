@@ -396,6 +396,7 @@ pub const Matcher = struct {
             regex.program.literal_prefix,
             regex.program.required_literal,
             regex.program.full_literal,
+            regex.program.literal_alternatives,
             .{
                 .transparent_bounds = options.transparent_bounds,
                 .anchoring_bounds = options.anchoring_bounds,

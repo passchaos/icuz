@@ -1163,6 +1163,12 @@ pub fn main() !void {
         "some text without the required token " ** 8,
         allocator,
     );
+    benchRegex(
+        "literal alternation find",
+        "needle|pin",
+        "some text with needle or pin in it " ** 8,
+        allocator,
+    );
 
     std.debug.print("\n-- segmentation --\n", .{});
     benchGraphemes("grapheme ASCII", ascii_runtime);

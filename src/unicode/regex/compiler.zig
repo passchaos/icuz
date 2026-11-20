@@ -38,6 +38,11 @@ pub const LookInfo = struct {
     max_len: u32,
 };
 
+pub const LiteralAlt = struct {
+    offset: u32,
+    len: u32,
+};
+
 pub const BackrefInfo = struct {
     group: u16,
     case_insensitive: bool,
@@ -85,6 +90,8 @@ pub const Program = struct {
     required_literal: ?[]u8,
     /// Exact literal covering the whole pattern, when no VM is needed.
     full_literal: ?[]u8,
+    /// Exact literal alternatives, when the whole pattern is `a|b|c`.
+    literal_alternatives: ?[]LiteralAlt,
 
     pub fn deinit(self: *Program, allocator: std.mem.Allocator) void {
         allocator.free(self.insts);
@@ -93,6 +100,7 @@ pub const Program = struct {
         if (self.literal_prefix) |prefix| allocator.free(prefix);
         if (self.required_literal) |literal| allocator.free(literal);
         if (self.full_literal) |literal| allocator.free(literal);
+        if (self.literal_alternatives) |alternatives| allocator.free(alternatives);
     }
 };
 
@@ -117,6 +125,8 @@ pub fn compile(allocator: std.mem.Allocator, parsed: *const parser.Parsed) Error
     errdefer if (required_literal) |literal| allocator.free(literal);
     const full_literal = try compiler.computeFullLiteral();
     errdefer if (full_literal) |literal| allocator.free(literal);
+    const literal_alternatives = try compiler.computeLiteralAlternatives();
+    errdefer if (literal_alternatives) |alternatives| allocator.free(alternatives);
 
     return .{
         .insts = try compiler.insts.toOwnedSlice(allocator),
@@ -128,6 +138,7 @@ pub fn compile(allocator: std.mem.Allocator, parsed: *const parser.Parsed) Error
         .literal_prefix = literal_prefix,
         .required_literal = required_literal,
         .full_literal = full_literal,
+        .literal_alternatives = literal_alternatives,
     };
 }
 
@@ -454,6 +465,41 @@ const Compiler = struct {
             return null;
         }
         const owned = try prefix.toOwnedSlice(self.allocator);
+        return owned;
+    }
+
+    fn computeLiteralAlternatives(self: *Compiler) Error!?[]LiteralAlt {
+        const children = switch (self.parsed.root.*) {
+            .alternate => |alternatives| alternatives,
+            else => return null,
+        };
+        if (children.len < 2) return null;
+
+        var alternatives = std.ArrayList(LiteralAlt).empty;
+        errdefer alternatives.deinit(self.allocator);
+        for (children) |child| {
+            const text = switch (child.*) {
+                .literal => |literal| if (literal.case_insensitive)
+                    null
+                else
+                    literal.text,
+                else => null,
+            } orelse {
+                alternatives.deinit(self.allocator);
+                return null;
+            };
+            if (text.len == 0) {
+                alternatives.deinit(self.allocator);
+                return null;
+            }
+            const offset: u32 = @intCast(self.exact.items.len);
+            try self.exact.appendSlice(self.allocator, text);
+            try alternatives.append(self.allocator, .{
+                .offset = offset,
+                .len = @intCast(text.len),
+            });
+        }
+        const owned = try alternatives.toOwnedSlice(self.allocator);
         return owned;
     }
 
