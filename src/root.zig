@@ -39,6 +39,7 @@ pub const time_scale = @import("unicode/format/time_scale.zig");
 pub const regex = @import("unicode/regex/root.zig");
 pub const region = @import("unicode/locale/region.zig");
 pub const locale_data = @import("unicode/locale/data.zig");
+pub const locale_metadata = @import("unicode/locale/metadata.zig");
 pub const charset_selector = @import("unicode/charset/selector.zig");
 pub const char_iterator = @import("unicode/char_iterator.zig");
 

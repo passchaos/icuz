@@ -49,6 +49,7 @@ const charset_selector_mod = @import("./charset/selector.zig");
 const locale_mod = @import("./locale.zig");
 const region_mod = @import("./locale/region.zig");
 const locale_data_mod = @import("./locale/data.zig");
+const locale_metadata_mod = @import("./locale/metadata.zig");
 const transliterate_mod = @import("./transliterate.zig");
 const shape_mod = @import("./shape/root.zig");
 const properties = @import("./properties.zig");
@@ -401,6 +402,12 @@ pub const localeExemplarSetAlloc = locale_data_mod.exemplarSetAlloc;
 pub const localeMeasurementSystem = locale_data_mod.measurementSystem;
 pub const localePaperSize = locale_data_mod.paperSize;
 pub const localeCldrVersion = locale_data_mod.cldr_version;
+
+pub const LocaleOrientation = locale_metadata_mod.Orientation;
+pub const localeCharacterOrientation = locale_metadata_mod.characterOrientation;
+pub const localeLineOrientation = locale_metadata_mod.lineOrientation;
+pub const localeIso3Language = locale_metadata_mod.iso3Language;
+pub const localeIso3Country = locale_metadata_mod.iso3Country;
 
 pub const ConverterSelector = charset_selector_mod.ConverterSelector;
 pub const ConverterSelectorMode = charset_selector_mod.UnicodeSetMode;
@@ -816,6 +823,7 @@ test {
     _ = locale_mod.matcher;
     _ = region_mod;
     _ = locale_data_mod;
+    _ = locale_metadata_mod;
     _ = charset_selector_mod;
     _ = char_iterator_mod;
     _ = transliterate_mod;

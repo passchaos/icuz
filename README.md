@@ -229,6 +229,9 @@ need without pulling in a font or layout engine.
   locale display patterns and separators, region-based measurement systems,
   and A4/US-Letter paper sizes, validated by a 936-case ICU 78 differential
   fixture.
+- ICU `uloc` metadata helpers: character/line orientation and ISO 639-2 /
+  ISO 3166 alpha-3 language and country codes (`localeIso3Language`,
+  `localeIso3Country`), validated by an 86-case ICU 78 differential fixture.
 - BCP 47 locale tag canonicalization (`canonicalizeLocaleAlloc`): case and
   separator normalization, CLDR 48 language, script, territory, and variant
   alias rules with multi-field replacements, wildcard and chained aliases,

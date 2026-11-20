@@ -82,6 +82,7 @@ BLOBS = (
     Blob("src/unicode/locale/region_conformance.bin", b"CJRC", 1, "36379213b86fef1c5bc816efb7f8f6bbd642b64fa873474e78bd1180e0870668", version=(0, 0, 0)),
     Blob("src/unicode/locale/data.bin", b"CJL0", 1, "74c094e62619193564e6c511d9ba7095abe4fe7b63bee5e178c37fed7dff5a1e", version=(48, 0, 0)),
     Blob("src/unicode/locale/data_conformance.bin", b"CJL3", 1, "1b77b67170de1dbe6816d3cd64cec4b44c2415112444ace9289b9bc2a46eebcf", version=(0, 0, 0)),
+    Blob("src/unicode/locale/metadata_conformance.bin", b"CJL4", 1, "f791f26da7be37865e01caa4d5d5b0ffbe3bb6315774414897aa01668599bc9a", version=(0, 0, 0)),
     Blob("src/unicode/regex/conformance.bin", b"CJRX", 1, "d812ea80da5992706de6149927f68a1cac27052e0894acac84fb1297f277d891", version=(0, 0, 0)),
     Blob("src/unicode/format/units_data.bin", b"CJUN", 2, "3ff2588f561f47ce80c707960d8580e535b33ce7516488433e4ebc19f5e0eb6f", version=(0, 0, 0)),
     Blob("src/unicode/format/unit_conformance.bin", b"CJU1", 1, "53270b0acc7cf590569c5599a791d37717f358c0da37975b9c56ea7efc113726", version=(0, 0, 0)),
@@ -519,6 +520,8 @@ GENERATORS = {
     "tools/unicode/locale/generate_region_conformance.py": "bf7ef75ea790ef67d71b3ac6ef67c527fb7660f956ab2f536e3f16c6f2d3dee3",
     "tools/unicode/locale/generate_locale_data.py": "7f2965710c46e4efc6f32241016e574d285f3a5182faea1892a8a937cb8836ec",
     "tools/unicode/locale/generate_locale_data_conformance.py": "5d67c402b048eb2ddda67becde84a0dd9949466e4c6fb3a75cdc91e25f3f53cb",
+    "tools/unicode/locale/generate_iso3.py": "e108da525df3e446360c16bd73dc84de7335274d3d02a087f81a1b59fc61c405",
+    "tools/unicode/locale/generate_metadata_conformance.py": "a47b95480c5807efc29a2b4b6aa223ca4d46380227880b276f9503567b770300",
     "tools/unicode/format/generate_range_data.py": "5a2a37e0ae47a1c91483c42ab8c9481947af518b1eb9943918ce9101788c0286",
     "tools/unicode/format/generate_range_conformance.py": "aa423e4f5f3e63035455398ad926104c203e6e90f332350d08369e62e8c4bf6b",
     "tools/unicode/format/generate_unit_conformance.py": "4227b3b9e7528c778a7a19dc0ed6b063cd39d9787f1962da419fb6a4300080a8",
@@ -713,6 +716,11 @@ GENERATED_TEXT = (
         "src/unicode/charset/detect_tables.zig",
         "tools/unicode/charset/generate_detection_tables.py",
         "12b362510e550c61e801da7dcf723d13ad2bcef0f3e8923cf6502e8dde0ff991",
+    ),
+    GeneratedText(
+        "src/unicode/locale/iso3_data.zig",
+        "tools/unicode/locale/generate_iso3.py",
+        "b2e4ef84739332a3a75c177e7dc642977f9c627b353cc6f656575d097d86bf40",
     ),
 )
 SOURCE_SHA = re.compile(r"^// Source SHA-256: ([0-9a-f]{64})$", re.MULTILINE)
@@ -1069,6 +1077,17 @@ def check_layout(blob: Blob, data: bytes) -> None:
             for _ in range(selected_count):
                 length = struct.unpack_from("<H", data, offset)[0]
                 offset += 2 + length
+        assert offset == len(data)
+    elif magic == b"CJL4":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            length = struct.unpack_from("<H", data, offset)[0]
+            offset += 2 + length + 2
+            length = struct.unpack_from("<H", data, offset)[0]
+            offset += 2 + length
+            length = struct.unpack_from("<H", data, offset)[0]
+            offset += 2 + length
         assert offset == len(data)
     elif magic == b"CJL0":
         locale_count = struct.unpack_from("<I", data, 8)[0]
