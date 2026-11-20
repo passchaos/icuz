@@ -185,7 +185,11 @@ need without pulling in a font or layout engine.
   `formatNumberFieldsAlloc` reports sign, integer groups, grouping separators,
   decimal separator, fraction, currency, and percent spans for editor-style
   highlighting; `formatNumberSkeletonFieldsAlloc` does the same for skeletons
-  and shifts the spans into unit patterns.
+  and shifts the spans into unit patterns. `DecimalFormat` compiles ICU
+  pattern strings (`#,##0.00`, `positive;negative`, `%`/`‰`, `¤`, quoted
+  affixes, grouping sizes, and minimum integer digits) for formatting and
+  prefix parsing, validated by an 870-record ICU 78 differential fixture
+  across en/de/fr.
 - CLDR 48 Gregorian date/time formatting for 108 locales, including localized
   month/day names, date/time styles, custom patterns, ICU date/time
   skeletons (`yMMMd`, `Hm`, combined date+time skeletons) resolved from

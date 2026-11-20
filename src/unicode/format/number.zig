@@ -224,6 +224,10 @@ fn buildAffixTextAlloc(
         percent_symbol,
         null,
         prefix,
+
+        true,
+
+        true,
     );
     return output.toOwnedSlice(allocator);
 }
@@ -691,6 +695,7 @@ pub fn formatAlloc(
             locale_name,
             &options,
             null,
+            null,
         ),
     };
 }
@@ -714,6 +719,7 @@ pub fn formatFieldsAlloc(
             locale_name,
             &options,
             fields,
+            null,
         ),
         .scientific, .compact => formatAlloc(
             allocator,
@@ -789,6 +795,7 @@ fn formatStandardAlloc(
     locale_name: []const u8,
     options: *const Options,
     fields: ?*std.ArrayList(NumberFieldPosition),
+    pattern_override: ?[]const u8,
 ) Error![]u8 {
     var locale_storage: data.Locale = undefined;
     const locale = resolveLocale(locale_name, options, &locale_storage);
@@ -811,7 +818,7 @@ fn formatStandardAlloc(
             options.currency_display,
         );
     }
-    const pattern_text = switch (options.style) {
+    const pattern_text = pattern_override orelse switch (options.style) {
         .decimal => locale.decimal_pattern,
         .percent => locale.percent_pattern,
         .currency => currencyPatternText(locale, options, currency_display_text),
@@ -823,14 +830,109 @@ fn formatStandardAlloc(
         pattern.multiplier = 1;
     }
 
+    const percent_symbol = if (options.permille)
+        "\u{2030}"
+    else
+        locale.percent;
     if (std.math.isNan(value)) {
-        return allocator.dupe(u8, locale.nan);
+        var output = std.ArrayList(u8).empty;
+        errdefer output.deinit(allocator);
+        try appendAffix(
+            allocator,
+            &output,
+            pattern.positive_prefix,
+            locale,
+            currency_display_text,
+            percent_symbol,
+            fields,
+            true,
+
+            pattern.auto_currency_spacing,
+
+            false,
+        );
+        try output.appendSlice(allocator, locale.nan);
+        try appendAffix(
+            allocator,
+            &output,
+            pattern.positive_suffix,
+            locale,
+            currency_display_text,
+            percent_symbol,
+            fields,
+            false,
+
+            pattern.auto_currency_spacing,
+
+            true,
+        );
+        return output.toOwnedSlice(allocator);
     }
     if (std.math.isInf(value)) {
         var output = std.ArrayList(u8).empty;
         errdefer output.deinit(allocator);
-        if (value < 0) try output.appendSlice(allocator, locale.minus);
+        const negative = value < 0;
+        const use_negative_pattern = negative and pattern.has_negative;
+        if (use_negative_pattern) {
+            try appendAffix(
+                allocator,
+                &output,
+                pattern.negative_prefix,
+                locale,
+                currency_display_text,
+                percent_symbol,
+                fields,
+                true,
+
+                pattern.auto_currency_spacing,
+
+                false,
+            );
+        } else {
+            if (negative) {
+                const start = output.items.len;
+                try output.appendSlice(allocator, locale.minus);
+                try recordField(
+                    allocator,
+                    fields,
+                    .sign,
+                    start,
+                    output.items.len,
+                );
+            }
+            try appendAffix(
+                allocator,
+                &output,
+                pattern.positive_prefix,
+                locale,
+                currency_display_text,
+                percent_symbol,
+                fields,
+                true,
+
+                pattern.auto_currency_spacing,
+
+                false,
+            );
+        }
         try output.appendSlice(allocator, locale.infinity);
+        try appendAffix(
+            allocator,
+            &output,
+            if (use_negative_pattern)
+                pattern.negative_suffix
+            else
+                pattern.positive_suffix,
+            locale,
+            currency_display_text,
+            percent_symbol,
+            fields,
+            false,
+
+            pattern.auto_currency_spacing,
+
+            true,
+        );
         return output.toOwnedSlice(allocator);
     }
 
@@ -845,7 +947,7 @@ fn formatStandardAlloc(
     }
     var rounding_mantissa = options.rounding_increment_mantissa;
     var rounding_magnitude = options.rounding_increment_magnitude;
-    if (options.style == .currency) {
+    if (options.style == .currency and pattern_override == null) {
         const code = options.currency orelse return error.MissingCurrency;
         const digits = if (options.cash)
             currencyCashDigits(code)
@@ -973,6 +1075,85 @@ fn formatStandardAlloc(
         if (options.permille) "\u{2030}" else locale.percent,
         fields,
     );
+}
+
+/// Localized symbols needed to build DecimalFormat affixes.
+pub const Symbols = struct {
+    decimal: []const u8,
+    group: []const u8,
+    percent: []const u8,
+    minus: []const u8,
+    plus: []const u8,
+    nan: []const u8,
+    infinity: []const u8,
+};
+
+pub fn symbolsFor(locale_name: []const u8, options: Options) Symbols {
+    var storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &options, &storage);
+    return .{
+        .decimal = locale.decimal,
+        .group = locale.group,
+        .percent = locale.percent,
+        .minus = locale.minus,
+        .plus = locale.plus,
+        .nan = locale.nan,
+        .infinity = locale.infinity,
+    };
+}
+
+pub fn currencySymbolFor(
+    locale_name: []const u8,
+    code: []const u8,
+) []const u8 {
+    var storage: data.Locale = undefined;
+    const options = Options{};
+    const locale = resolveLocale(locale_name, &options, &storage);
+    return currencyDisplayText(locale, code, .symbol);
+}
+
+/// Formats a value with an explicit ICU DecimalFormat pattern.
+pub fn formatPatternAlloc(
+    allocator: std.mem.Allocator,
+    value: f64,
+    locale_name: []const u8,
+    pattern_text: []const u8,
+    options: Options,
+) Error![]u8 {
+    return formatStandardAlloc(
+        allocator,
+        value,
+        locale_name,
+        &options,
+        null,
+        pattern_text,
+    );
+}
+
+/// Returns whether `pattern` is a supported ICU DecimalFormat pattern.
+pub fn validatePattern(pattern: []const u8) bool {
+    var in_quote = false;
+    var index: usize = 0;
+    while (index < pattern.len) : (index += 1) {
+        const byte = pattern[index];
+        if (byte == '\'') {
+            if (index + 1 < pattern.len and pattern[index + 1] == '\'') {
+                index += 1;
+                continue;
+            }
+            in_quote = !in_quote;
+            continue;
+        }
+        if (in_quote) continue;
+        if (byte == 'E' or byte == 'e' or byte == '@') return false;
+    }
+    return parsePattern(pattern) != null;
+}
+
+/// Returns the pattern's minimum integer digit count.
+pub fn patternIntegerMinDigits(pattern: []const u8) ?u8 {
+    const parsed = parsePattern(pattern) orelse return null;
+    return parsed.integer_min;
 }
 
 /// Format an integer value for one locale.
@@ -1496,6 +1677,7 @@ fn formatScientificAlloc(
             .rounding_mode = options.rounding_mode,
         },
         null,
+        null,
     );
     defer allocator.free(mantissa_text);
 
@@ -1768,6 +1950,7 @@ fn formatCompactAlloc(
             .use_grouping = false,
         },
         null,
+        null,
     );
     defer allocator.free(scaled_text);
 
@@ -1888,6 +2071,10 @@ fn wrapCurrencyAlloc(
             locale.percent,
             null,
             true,
+
+            pattern.auto_currency_spacing,
+
+            true,
         );
     } else {
         if (negative) {
@@ -1907,6 +2094,10 @@ fn wrapCurrencyAlloc(
             locale.percent,
             null,
             true,
+
+            pattern.auto_currency_spacing,
+
+            true,
         );
     }
     try output.appendSlice(allocator, number_text);
@@ -1920,6 +2111,10 @@ fn wrapCurrencyAlloc(
             locale.percent,
             null,
             false,
+
+            pattern.auto_currency_spacing,
+
+            true,
         );
     } else {
         try appendAffix(
@@ -1931,6 +2126,10 @@ fn wrapCurrencyAlloc(
             locale.percent,
             null,
             false,
+
+            pattern.auto_currency_spacing,
+
+            true,
         );
     }
     return output.toOwnedSlice(allocator);
@@ -1957,6 +2156,7 @@ fn compactFallback(
         locale_name,
         &fallback_options,
         null,
+        null,
     );
 }
 
@@ -1973,6 +2173,7 @@ fn decimalFallback(
         value,
         locale_name,
         &fallback_options,
+        null,
         null,
     );
 }
@@ -2097,6 +2298,7 @@ fn formatCurrencyNameAlloc(
             .max_fraction_digits = fraction_digits,
             .use_grouping = options.use_grouping,
         },
+        null,
         null,
     );
     defer allocator.free(formatted);
@@ -2232,6 +2434,10 @@ fn formatParts(
             percent_symbol,
             fields,
             true,
+
+            pattern.auto_currency_spacing,
+
+            true,
         );
     } else {
         if (negative) {
@@ -2252,6 +2458,10 @@ fn formatParts(
             currency_display,
             percent_symbol,
             fields,
+            true,
+
+            pattern.auto_currency_spacing,
+
             true,
         );
     }
@@ -2300,6 +2510,10 @@ fn formatParts(
             percent_symbol,
             fields,
             false,
+
+            pattern.auto_currency_spacing,
+
+            true,
         );
     } else {
         try appendAffix(
@@ -2311,6 +2525,10 @@ fn formatParts(
             percent_symbol,
             fields,
             false,
+
+            pattern.auto_currency_spacing,
+
+            true,
         );
     }
     return output.toOwnedSlice(allocator);
@@ -2328,6 +2546,7 @@ const Pattern = struct {
     group_primary: u8,
     group_secondary: u8,
     multiplier: u16,
+    auto_currency_spacing: bool = true,
 };
 
 const Subpattern = struct {
@@ -2742,6 +2961,8 @@ fn appendAffix(
     percent_symbol: []const u8,
     fields: ?*std.ArrayList(NumberFieldPosition),
     prefix: bool,
+    auto_currency_spacing: bool,
+    number_starts_with_digit: bool,
 ) Error!void {
     var in_quote = false;
     var index: usize = 0;
@@ -2759,7 +2980,8 @@ fn appendAffix(
         if (!in_quote and byte == 0xc2 and index + 1 < affix.len and
             affix[index + 1] == 0xa4)
         {
-            if (!prefix and needsCurrencySpaceAfterNumber(output.items) and
+            if (auto_currency_spacing and !prefix and
+                needsCurrencySpaceAfterNumber(output.items) and
                 needsCurrencySpaceBeforeSymbol(currency_display))
             {
                 try output.appendSlice(allocator, "\u{00a0}");
@@ -2779,7 +3001,9 @@ fn appendAffix(
             {
                 next_index += 2;
             }
-            if (prefix and !affixHasContentAfter(affix, next_index) and
+            if (auto_currency_spacing and prefix and
+                number_starts_with_digit and
+                !affixHasContentAfter(affix, next_index) and
                 needsCurrencySpaceBeforeSymbol(currency_display))
             {
                 try output.appendSlice(allocator, "\u{00a0}");
@@ -2972,11 +3196,9 @@ pub fn parseFloatPrefix(
     const start = cursor.index;
 
     if (cursor.match(locale.nan)) {
-        cursor.skipSpace();
         return .{ .value = std.math.nan(f64), .end = cursor.index };
     }
     if (cursor.match(locale.infinity)) {
-        cursor.skipSpace();
         return .{ .value = std.math.inf(f64), .end = cursor.index };
     }
     cursor.index = start;
@@ -4080,7 +4302,6 @@ test "narrow unit skeleton" {
     try testing.expectEqualStrings("5m", reversed);
 }
 
-
 test "compact ranges keep significant digits" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
@@ -4095,7 +4316,6 @@ test "compact ranges keep significant digits" {
     defer allocator.free(text);
     try testing.expectEqualStrings("1.2K \u{2013} 1.5K", text);
 }
-
 
 test "compact plural exponent operand" {
     const testing = @import("std").testing;
@@ -4113,7 +4333,6 @@ test "compact plural exponent operand" {
         compactCategory("es", 2, 0, 0, 0, .half_even),
     );
 }
-
 
 test "currency cash rounding" {
     const testing = @import("std").testing;
@@ -4177,7 +4396,6 @@ test "number skeleton rounding modes" {
         try testing.expectEqualStrings(case.expected, text);
     }
 }
-
 
 test "rounding mode unnecessary rejects inexact values" {
     const testing = @import("std").testing;

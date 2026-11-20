@@ -452,6 +452,7 @@ BLOBS = (
     Blob("src/unicode/format/date_parse_conformance.bin", b"CJXD", 1, "882b2ba49d502d56232c3e5fbcfa14c5173c45be8515e9ef7945519ac5584031", version=(0, 0, 0)),
     Blob("src/unicode/resource/res_conformance.bin", b"CJGM", 1, "33a2b3b780fb3ce50df8476d0654366fd603301eeb42dadc4da2edc24f3febb6", version=(0, 0, 0)),
     Blob("src/unicode/resource/dat_conformance.bin", b"CJGN", 1, "3b37ef6070872e1ab0cac30b0be987e9192ad2351f44ef7f5d8f4bc803077331", version=(0, 0, 0)),
+    Blob("src/unicode/format/decimal_conformance.bin", b"CJGO", 1, "1588fa94b4da9a3f350d583a4ff62896abe1847a1f31b537ac338d3dc0c573e4", version=(0, 0, 0)),
 )
 
 GENERATORS = {
@@ -476,6 +477,7 @@ GENERATORS = {
     "tools/unicode/format/generate_choice_conformance.cpp": "463a3b485ea30a01ef3c74c775cf0191d79554092ad3bea853525cbc7c014556",
     "tools/unicode/resource/generate_conformance.cpp": "670771aeaa5d450866285ed5f4f520a8a330d9daa584b7490f183d5f16595c59",
     "tools/unicode/resource/generate_dat_conformance.cpp": "32c2610961d40e2e9328731dbd80a314823333b35ded83af7986fa0bff0e650d",
+    "tools/unicode/format/generate_decimal_conformance.cpp": "3b5f0c4111546a84752b8170099ef0409525c7d92d1f12d352168d593cf628c3",
     "tools/unicode/resource/generate_fixtures.sh": "0192498b15e091adad4c099264eec11176d7c213d160feabd03c46b39a867dc5",
     "tools/generate_canonical_decomposition.py": "450c932dbd278208bccd3ab8bb26f04f1b18a96051fc03944393f5d73e3ad6d8",
     "tools/generate_nonspacing_marks.py": "12d45f34ce2891ccf1b342bc8f44c6fe32e15e019d7a41489d8036dee9f8555c",
@@ -1012,6 +1014,23 @@ def check_layout(blob: Blob, data: bytes) -> None:
                 offset += 4
             else:
                 raise AssertionError("invalid data package record")
+        assert offset == len(data)
+    elif magic == b"CJGO":
+        record_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(record_count):
+            kind = data[offset + 2]
+            offset += 3
+            if kind == 0:
+                offset += 8
+                length = struct.unpack_from("<H", data, offset)[0]
+                offset += 2 + length * 2
+            elif kind == 1:
+                length = struct.unpack_from("<H", data, offset)[0]
+                offset += 2 + length * 2
+                offset += 1 + 8 + 4
+            else:
+                raise AssertionError("invalid decimal conformance record")
         assert offset == len(data)
     elif magic == b"CJUC":
         case_count = struct.unpack_from("<I", data, 8)[0]
