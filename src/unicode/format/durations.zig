@@ -206,6 +206,81 @@ fn formatUnits(
     });
 }
 
+/// Duration broken into individual calendar and clock units.
+pub const Duration = struct {
+    years: f64 = 0,
+    months: f64 = 0,
+    weeks: f64 = 0,
+    days: f64 = 0,
+    hours: f64 = 0,
+    minutes: f64 = 0,
+    seconds: f64 = 0,
+    milliseconds: f64 = 0,
+    microseconds: f64 = 0,
+    nanoseconds: f64 = 0,
+};
+
+/// Format a multi-unit duration. Numeric style falls back to short units for
+/// calendar units; the numeric `h:mm:ss` patterns only cover clock units.
+pub fn formatDurationUnitsAlloc(
+    allocator: std.mem.Allocator,
+    duration: Duration,
+    locale_name: []const u8,
+    style: Style,
+) ![]u8 {
+    const values = [_]struct { value: f64, unit: units.Unit }{
+        .{ .value = duration.years, .unit = .year },
+        .{ .value = duration.months, .unit = .month },
+        .{ .value = duration.weeks, .unit = .week },
+        .{ .value = duration.days, .unit = .day },
+        .{ .value = duration.hours, .unit = .hour },
+        .{ .value = duration.minutes, .unit = .minute },
+        .{ .value = duration.seconds, .unit = .second },
+        .{ .value = duration.milliseconds, .unit = .millisecond },
+        .{ .value = duration.microseconds, .unit = .microsecond },
+        .{ .value = duration.nanoseconds, .unit = .nanosecond },
+    };
+    const unit_style: units.Style = switch (style) {
+        .long => .long,
+        .short => .short,
+        .narrow => .short,
+        .numeric => .short,
+    };
+    var items: [values.len][]u8 = undefined;
+    var count: usize = 0;
+    defer for (items[0..count]) |item| allocator.free(item);
+    for (values) |entry| {
+        if (entry.value == 0) continue;
+        items[count] = try units.formatAlloc(
+            allocator,
+            entry.value,
+            entry.unit,
+            locale_name,
+            .{ .style = unit_style },
+        );
+        count += 1;
+    }
+    if (count == 0) {
+        items[0] = try units.formatAlloc(
+            allocator,
+            0,
+            .second,
+            locale_name,
+            .{ .style = unit_style },
+        );
+        count = 1;
+    }
+    const list_style: list.Style = switch (style) {
+        .long => .unit,
+        .short => .unit_short,
+        .narrow => .unit_narrow,
+        .numeric => .unit_short,
+    };
+    return list.formatAlloc(allocator, items[0..count], locale_name, .{
+        .style = list_style,
+    });
+}
+
 /// Format a duration in seconds with CLDR duration patterns.
 pub fn formatDurationAlloc(
     allocator: std.mem.Allocator,
@@ -319,4 +394,46 @@ test "duration conformance" {
     }
     std.debug.print("duration conformance: {d}/{d} passed\n", .{ total - failures, total });
     try testing.expect(failures == 0);
+}
+
+test "multi-unit duration formatting" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const long = try formatDurationUnitsAlloc(
+        allocator,
+        .{ .days = 1, .hours = 2, .minutes = 3 },
+        "en",
+        .long,
+    );
+    defer allocator.free(long);
+    try testing.expectEqualStrings("1 day, 2 hours, 3 minutes", long);
+    const short = try formatDurationUnitsAlloc(
+        allocator,
+        .{ .days = 1, .hours = 2, .minutes = 3 },
+        "en",
+        .short,
+    );
+    defer allocator.free(short);
+    try testing.expectEqualStrings("1 day, 2 hr, 3 min", short);
+    const de = try formatDurationUnitsAlloc(
+        allocator,
+        .{ .days = 1, .hours = 2, .minutes = 3 },
+        "de",
+        .long,
+    );
+    defer allocator.free(de);
+    try testing.expectEqualStrings("1 Tag, 2 Stunden, 3 Minuten", de);
+    const zero = try formatDurationUnitsAlloc(allocator, .{}, "en", .long);
+    defer allocator.free(zero);
+    try testing.expectEqualStrings("0 seconds", zero);
+
+    const calendar = try formatDurationUnitsAlloc(
+        allocator,
+        .{ .years = 1, .months = 2, .days = 3 },
+        "en",
+        .long,
+    );
+    defer allocator.free(calendar);
+    try testing.expectEqualStrings("1 year, 2 months, 3 days", calendar);
 }

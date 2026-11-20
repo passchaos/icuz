@@ -200,7 +200,10 @@ need without pulling in a font or layout engine.
 - CLDR 48 duration formatting for 87 locales with long, short, narrow, and
   numeric styles: locale-specific numeric patterns (h:mm:ss, m:ss, and
   overrides) plus unit and unit-list composition for hours, minutes, and
-  seconds with plural selection. Validated by a 312-case PyICU fixture.
+  seconds with plural selection. `formatDurationUnitsAlloc` accepts a
+  `Duration` with years through nanoseconds and composes every non-zero unit
+  through the locale's unit and unit-list patterns. Validated by a 312-case
+  PyICU fixture.
 - CLDR 48 date and time interval formatting for 87 locales, using ICU's
   repeated-field pattern splitting, greatest-difference selection,
   single-date collapse, hour-cycle-aware time skeletons, and locale

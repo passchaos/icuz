@@ -3388,3 +3388,4 @@ test "case level collation" {
         try compare(allocator, "a b", "aB", shifted),
     );
 }
+
