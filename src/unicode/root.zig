@@ -851,6 +851,7 @@ test {
     _ = canonical_combining_class;
     _ = canonical_decomposition;
     _ = normalization;
+    _ = @import("./normalization/inert.zig");
     _ = @import("./normalization/casefold.zig");
     _ = case_mod;
     _ = name_mod;

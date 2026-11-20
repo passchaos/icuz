@@ -12,6 +12,7 @@ const scalar = @import("../scalar/root.zig");
 const combining_class = @import("../canonical/combining_class.zig");
 const decomposition = @import("../canonical/decomposition.zig");
 const data = @import("data.zig");
+const inert = @import("inert.zig");
 const utf16 = @import("../utf16.zig");
 
 const conformance = @embedFile("conformance.bin");
@@ -148,7 +149,7 @@ fn normalizeFusedInto(
             return error.InvalidUtf8;
         const codepoint = decoded.codepoint;
         index = decoded.next;
-        if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
+        if (codepoint >= 0x80 and inert.isInert(codepoint, form)) {
             starter = codepoint;
             starter_offset = start;
             previous_input_class = 0;
@@ -980,7 +981,6 @@ fn spanQuickCheckYesImpl(
     const ascii_end = asciiPrefixLen(text);
     if (ascii_end == text.len) return text.len;
 
-    const compatibility = form == .nfkc or form == .nfkd;
     var starter_offset: usize = if (ascii_end > 0) ascii_end - 1 else 0;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
@@ -1021,7 +1021,7 @@ fn spanQuickCheckYesImpl(
         };
         const codepoint = decoded.codepoint;
         index = decoded.next;
-        if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
+        if (codepoint >= 0x80 and inert.isInert(codepoint, form)) {
             starter = codepoint;
             starter_offset = start;
             previous_input_class = 0;

@@ -1,0 +1,147 @@
+//! Per-code-point normalization inertness tables, one per form.
+//!
+//! `data.isSimplePage` handles whole pages that are inert for a form. This
+//! table covers the remaining pages so ordinary letters in mixed-script text
+//! (Hebrew, Arabic, Devanagari, emoji, and so on) can skip the quick-check,
+//! combining-class, and composition lookups during a normalization scan.
+//!
+//! Inertness is form specific: `é` is inert under NFC/NFKC but must decompose
+//! under NFD/NFKD, and `™` is inert under NFC/NFD but not under NFKC/NFKD.
+
+const std = @import("std");
+const data = @import("data.zig");
+const combining_class = @import("../canonical/combining_class.zig");
+
+const form_count = 4;
+const page_count = 0x1100;
+
+fn isCompat(form: data.Form) bool {
+    return form == .nfkc or form == .nfkd;
+}
+
+/// True when every scalar on `page` is inert for `form`.
+fn pageFullyInert(page: u21, form: data.Form) bool {
+    return data.isSimplePage(page, isCompat(form));
+}
+
+/// True when `codepoint` is unchanged by `form` and cannot compose with a
+/// preceding starter.
+///
+/// Quick_Check=Maybe is exactly the set of scalars that can compose with a
+/// previous starter, so requiring `yes` covers composition seconds (including
+/// algorithmic Hangul jamo) without a separate table.
+fn codepointInert(codepoint: u21, form: data.Form) bool {
+    if (data.quickCheck(codepoint, form) != .yes) return false;
+    return combining_class.forCodepoint(codepoint) == 0;
+}
+
+const Layout = struct {
+    counts: [form_count]u16,
+    offsets: [form_count]u16,
+    total_slots: u16,
+};
+
+fn computeLayout() Layout {
+    @setEvalBranchQuota(2_000_000);
+    var counts = [_]u16{0} ** form_count;
+    for (0..page_count) |page| {
+        const base: u21 = @intCast(page << 8);
+        for (0..form_count) |form_index| {
+            const form: data.Form = @enumFromInt(form_index);
+            if (pageFullyInert(base, form)) continue;
+            counts[form_index] += 1;
+        }
+    }
+    var offsets = [_]u16{0} ** form_count;
+    var total: u16 = 0;
+    for (0..form_count) |form_index| {
+        offsets[form_index] = total;
+        total += counts[form_index];
+    }
+    return .{ .counts = counts, .offsets = offsets, .total_slots = total };
+}
+
+const layout = computeLayout();
+const masks_len = @as(usize, layout.total_slots) * 32;
+
+fn buildSlots() [form_count][page_count]u16 {
+    @setEvalBranchQuota(20_000_000);
+    var table = [_][page_count]u16{[_]u16{0xFFFF} ** page_count} ** form_count;
+    var next = layout.offsets;
+    for (0..page_count) |page| {
+        const base: u21 = @intCast(page << 8);
+        for (0..form_count) |form_index| {
+            const form: data.Form = @enumFromInt(form_index);
+            if (pageFullyInert(base, form)) continue;
+            table[form_index][page] = next[form_index];
+            next[form_index] += 1;
+        }
+    }
+    return table;
+}
+
+fn buildMasks() [masks_len]u8 {
+    @setEvalBranchQuota(20_000_000);
+    var mask_data = [_]u8{0} ** masks_len;
+    var next = layout.offsets;
+    for (0..page_count) |page| {
+        const base: u21 = @intCast(page << 8);
+        for (0..form_count) |form_index| {
+            const form: data.Form = @enumFromInt(form_index);
+            if (pageFullyInert(base, form)) continue;
+            const slot: usize = next[form_index];
+            for (0..256) |low| {
+                const codepoint: u21 = base + @as(u21, @intCast(low));
+                if (codepoint > 0x10FFFF) break;
+                if (codepointInert(codepoint, form)) {
+                    mask_data[slot * 32 + low / 8] |=
+                        @as(u8, 1) << @intCast(low & 7);
+                }
+            }
+            next[form_index] += 1;
+        }
+    }
+    return mask_data;
+}
+
+const slots = buildSlots();
+const masks = buildMasks();
+
+/// True when `form` leaves the scalar unchanged and it cannot compose with a
+/// previous starter, so a normalization scan can treat it as a plain starter.
+pub inline fn isInert(codepoint: u21, form: data.Form) bool {
+    const form_index = @intFromEnum(form);
+    const slot = slots[form_index][codepoint >> 8];
+    if (slot == 0xFFFF) return true;
+    const base = @as(usize, slot) * 32;
+    return masks[base + ((codepoint & 0xff) >> 3)] &
+        (@as(u8, 1) << @intCast(codepoint & 7)) != 0;
+}
+
+test "inert tables follow each normalization form" {
+    const testing = @import("std").testing;
+    inline for ([_]data.Form{ .nfc, .nfd, .nfkc, .nfkd }) |form| {
+        try testing.expect(isInert('A', form));
+        try testing.expect(isInert(0x05D0, form)); // Hebrew alef
+        try testing.expect(isInert(0x0627, form)); // Arabic alef
+        try testing.expect(isInert(0x0915, form)); // Devanagari ka
+        try testing.expect(isInert(0x1F600, form)); // emoji
+        try testing.expect(!isInert(0x0301, form)); // combining acute
+    }
+    // Precomposed e-acute is stable under the composed forms only.
+    try testing.expect(isInert(0x00E9, .nfc));
+    try testing.expect(isInert(0x00E9, .nfkc));
+    try testing.expect(!isInert(0x00E9, .nfd));
+    try testing.expect(!isInert(0x00E9, .nfkd));
+    // Trade mark sign has a compatibility decomposition only.
+    try testing.expect(isInert(0x2122, .nfc));
+    try testing.expect(isInert(0x2122, .nfd));
+    try testing.expect(!isInert(0x2122, .nfkc));
+    try testing.expect(!isInert(0x2122, .nfkd));
+    // Hangul V jamo composes with a preceding L jamo.
+    try testing.expect(!isInert(0x1161, .nfc));
+    try testing.expect(isInert(0x1161, .nfd));
+    // Precomposed Hangul syllables decompose only under the decomposed forms.
+    try testing.expect(isInert(0xAC00, .nfc));
+    try testing.expect(!isInert(0xAC00, .nfd));
+}
