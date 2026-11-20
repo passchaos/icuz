@@ -46,7 +46,7 @@ BLOBS = (
     Blob("src/unicode/format/person_names_data.bin", b"CJPU", 1, "43f82b79e7e62717e4c0710fdad28f3a808f5b44851faec86d04fd7ef587551a", version=(48, 0, 0)),
     Blob("src/unicode/format/person_names_conformance.bin", b"CJPQ", 1, "57203fcef9f6ebcb2279810aef782336eb196fcd7eb16c9a3c74f976407c336a", version=(48, 0, 0)),
     Blob("src/unicode/format/alphabetic_index_data.bin", b"CJXA", 1, "d81c627ec71d66e78f4d8cd72c18edfea47643b7311c18acdff196866dc519c3", version=(48, 0, 0)),
-    Blob("src/unicode/set/conformance.bin", b"CJSU", 1, "ddb89617e85cdf3e162d5f59561aa53e40b0c7380e44b6a828e142b69caf472f", version=(0, 0, 0)),
+    Blob("src/unicode/set/conformance.bin", b"CJSU", 1, "91a539f3a91e5c65793aa5f5c5f8568d2a5cca7cfdb2a11950f5047dc24726da", version=(0, 0, 0)),
     Blob("src/unicode/break/conformance.bin", b"CJGF", 1, "5e7119dc378412e1c6b0bf58b1cc826e38aebb39773c361141737a3709c60077", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_data.bin", b"CJRB", 1, "9a88f134d56db6e730bc7ef2fcc69ad271923321b22bdcaf041a74e0266db4f2", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_conformance.bin", b"CJRN", 1, "d78e610b755b158f8ebc761255cd8da9ac5ce1ee210e6cfcae3e7678b079cb7c", version=(48, 0, 0)),
@@ -504,7 +504,8 @@ GENERATORS = {
     "tools/unicode/format/generate_range_conformance.py": "2a0a099ce326f2d06a3f707ca02f071544262551fdd9a41aab8561b3ca1c91f4",
     "tools/unicode/format/generate_unit_conformance.py": "7a1aca3892b688d6bce1c8a6f1a1d7af789e69f12f0ab18305ea5127949e8eb5",
     "tools/unicode/charset/generate_data.py": "5b13222d52bfaea336ef6fb3aac9b0d629411e62fb1173ae6bdd3ae9e059e594",
-    "tools/unicode/set/generate_conformance.py": "2aa1d6db18bcb6d0cb0f77c5ed449643089f158f33bc431bf89fcda932c42592",
+    "tools/unicode/set/generate_conformance.py": "b97a194a3698c9542d2323ffab4fc5e92a77588c16a4d897751e7c9b67c0adac",
+    "tools/unicode/properties/generate_extra.py": "e5c04b6ec00c689fbc7669b67e31206f677820af6a01ba22d8f6e98fdb9dc670",
     "tools/unicode/transliterate/generate_data.py": "6d8e406b3358b45511df4b9007c846ed394bc726c662dcbecfc5cd46ccf77aca",
     "tools/unicode/shape/generate_conformance.py": "a59dcddadd2f180e4c951c1ac630088d82396af6e171a36e955a66f0f2ad934e",
     "tools/unicode/transliterate/generate_pipeline_conformance.py": "982fe737c3d663f0d7e69715461cd6dbfa73c759a134c9abc67c98aa201e4bb6",
@@ -675,6 +676,11 @@ GENERATED_TEXT = (
         "src/unicode/format/plural_ranges_data.zig",
         "tools/unicode/format/generate_plural_ranges.py",
         "2b1e27bab856ef0bd239bdfcd7c6d85b0b6c54c54729950310de654311c578a0",
+    ),
+    GeneratedText(
+        "src/unicode/properties/extra_data.zig",
+        "tools/unicode/properties/generate_extra.py",
+        "5a46601a6658f8c346cc185caa9069398066b6bb43575bb4c2f5c84003baa5bc",
     ),
 )
 SOURCE_SHA = re.compile(r"^// Source SHA-256: ([0-9a-f]{64})$", re.MULTILINE)

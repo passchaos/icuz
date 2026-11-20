@@ -1144,6 +1144,22 @@ const Parser = struct {
     }
 };
 
+fn fromExtraRanges(
+    allocator: std.mem.Allocator,
+    ranges: []const properties.extra.Range,
+    value: u8,
+) Error!Set {
+    var set = Set.init(allocator);
+    errdefer set.deinit();
+    for (ranges) |range| {
+        if (range.value == value) {
+            try set.addRange(range.first, range.last);
+        }
+    }
+    try set.finalize();
+    return set;
+}
+
 fn propertySet(allocator: std.mem.Allocator, name: []const u8) Error!Set {
     if (std.mem.eql(u8, name, "Any")) return full(allocator);
     if (std.mem.eql(u8, name, "ASCII")) return fromRange(allocator, 0, 0x7f);
@@ -1189,6 +1205,67 @@ fn propertySet(allocator: std.mem.Allocator, name: []const u8) Error!Set {
             else
                 return error.InvalidPattern;
             return fromNumericType(allocator, kind);
+        }
+        if (std.mem.eql(u8, key, "blk") or
+            std.mem.eql(u8, key, "Block"))
+        {
+            if (properties.extra.isNoBlockName(value)) {
+                var set = try full(allocator);
+                errdefer set.deinit();
+                for (properties.extra.blocks) |block| {
+                    try set.removeRange(block.first, block.last);
+                }
+                try set.finalize();
+                return set;
+            }
+            const block = properties.extra.blockFromName(value) orelse
+                return error.InvalidPattern;
+            return fromRange(allocator, block.first, block.last);
+        }
+        if (std.mem.eql(u8, key, "lb") or
+            std.mem.eql(u8, key, "Line_Break"))
+        {
+            const class = properties.extra.lineBreakFromName(value) orelse
+                return error.InvalidPattern;
+            return fromExtraRanges(
+                allocator,
+                &properties.extra.line_break_ranges,
+                @intFromEnum(class),
+            );
+        }
+        if (std.mem.eql(u8, key, "wb") or
+            std.mem.eql(u8, key, "Word_Break"))
+        {
+            const class = properties.extra.wordBreakFromName(value) orelse
+                return error.InvalidPattern;
+            return fromExtraRanges(
+                allocator,
+                &properties.extra.word_break_ranges,
+                @intFromEnum(class),
+            );
+        }
+        if (std.mem.eql(u8, key, "sb") or
+            std.mem.eql(u8, key, "Sentence_Break"))
+        {
+            const class = properties.extra.sentenceBreakFromName(value) orelse
+                return error.InvalidPattern;
+            return fromExtraRanges(
+                allocator,
+                &properties.extra.sentence_break_ranges,
+                @intFromEnum(class),
+            );
+        }
+        if (std.mem.eql(u8, key, "GCB") or
+            std.mem.eql(u8, key, "gcb") or
+            std.mem.eql(u8, key, "Grapheme_Cluster_Break"))
+        {
+            const class = properties.extra.graphemeBreakFromName(value) orelse
+                return error.InvalidPattern;
+            return fromExtraRanges(
+                allocator,
+                &properties.extra.grapheme_break_ranges,
+                @intFromEnum(class),
+            );
         }
         return error.InvalidPattern;
     }

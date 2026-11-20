@@ -23,6 +23,14 @@ PATTERNS = (
     "[\\u0000-\\u007f]",
     "[]",
     "[\\p{Nd}]",
+    "[\\p{Block=Arabic}]",
+    "[\\p{blk=Basic_Latin}]",
+    "[\\p{Block=No_Block}]",
+    "[\\p{lb=AL}]",
+    "[\\p{Line_Break=AL}]",
+    "[\\p{wb=ALetter}]",
+    "[\\p{sb=ATerm}]",
+    "[\\p{GCB=Extend}]",
 )
 
 SAMPLES = (
@@ -52,6 +60,17 @@ SAMPLES = (
     0xAC00,
     0x1F600,
     0x10FFFF,
+    0x600,
+    0x627,
+    0x700,
+    0x2028,
+    0x200D,
+    0x301,
+    0x1F1E6,
+    0xE01,
+    0x1F3FB,
+    0x2060,
+    0x3000,
 )
 
 OP_UNION = 0

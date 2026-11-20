@@ -582,6 +582,17 @@ pub fn isRegionalIndicatorCodepoint(codepoint: u21) bool {
 }
 
 /// Return whether Unicode assigns General_Category=Nonspacing_Mark (Mn).
+pub const Block = properties.Block;
+pub const LineBreakProperty = properties.LineBreak;
+pub const WordBreakProperty = properties.WordBreak;
+pub const SentenceBreakProperty = properties.SentenceBreak;
+pub const GraphemeClusterBreakProperty = properties.GraphemeBreak;
+pub const blockForCodepoint = properties.blockForCodepoint;
+pub const blockFromName = properties.blockFromName;
+pub const lineBreakProperty = properties.lineBreakClass;
+pub const wordBreakProperty = properties.wordBreakClass;
+pub const sentenceBreakProperty = properties.sentenceBreakClass;
+pub const graphemeClusterBreakProperty = properties.graphemeBreakClass;
 pub const isNonspacingMarkCodepoint = properties.isNonspacingMark;
 
 pub fn isEmojiTagCodepoint(codepoint: u21) bool {

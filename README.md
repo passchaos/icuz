@@ -73,9 +73,13 @@ need without pulling in a font or layout engine.
   `addAll`/`retainAll`/`removeAll`) and `removeAllStrings`,
   `containsAll`/`containsNone`/`containsSome`, pattern
   round-tripping, and a practical `\p{...}`/`[a-z]` pattern parser with
-  binary, general-category, script, script-extension, `Age`, and
-  `Numeric_Type` properties, validated by a 610-case PyICU range
-  differential fixture.
+  binary, general-category, script, script-extension, `Age`,
+  `Numeric_Type`, `Block`, `Line_Break`, `Word_Break`, `Sentence_Break`,
+  and `Grapheme_Cluster_Break` properties, validated by a 1,962-case
+  PyICU range differential fixture. Block and break-property lookups are
+  also exposed directly (`blockForCodepoint`, `blockFromName`,
+  `lineBreakClass`, `wordBreakClass`, `sentenceBreakClass`,
+  `graphemeBreakClass`) with loose ICU-style name and alias matching.
 - CLDR 48 root collation (UCA 17.0.0) with NFD preprocessing, contiguous and
   discontiguous contractions, implicit weights, non-ignorable/shifted variable
   weighting, numeric collation (`a2` before `a10`, leading zeros ignored,
