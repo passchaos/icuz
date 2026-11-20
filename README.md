@@ -50,8 +50,10 @@ need without pulling in a font or layout engine.
   Khitan/Nushu names and UAX #44 loose name lookup.
 - UnicodeSet range/property construction, union/intersection/difference/
   complement, `containsAll`/`containsNone`/`containsSome`, pattern
-  round-tripping, and a practical `\p{...}`/`[a-z]` pattern parser,
-  validated by a 610-case PyICU range differential fixture.
+  round-tripping, and a practical `\p{...}`/`[a-z]` pattern parser with
+  binary, general-category, script, script-extension, `Age`, and
+  `Numeric_Type` properties, validated by a 610-case PyICU range
+  differential fixture.
 - CLDR 48 root collation (UCA 17.0.0) with NFD preprocessing, contiguous and
   discontiguous contractions, implicit weights, non-ignorable/shifted variable
   weighting, numeric collation (`a2` before `a10`, leading zeros ignored,

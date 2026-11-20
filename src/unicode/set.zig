@@ -776,6 +776,24 @@ fn propertySet(allocator: std.mem.Allocator, name: []const u8) Error!Set {
                 return error.InvalidPattern;
             return fromScriptExtensions(allocator, target);
         }
+        if (std.mem.eql(u8, key, "age") or std.mem.eql(u8, key, "Age")) {
+            const version = ageVersionFromAlias(value) orelse
+                return error.InvalidPattern;
+            return fromAgeVersion(allocator, version);
+        }
+        if (std.mem.eql(u8, key, "nt") or
+            std.mem.eql(u8, key, "Numeric_Type"))
+        {
+            const kind: properties.NumericType = if (std.ascii.eqlIgnoreCase(value, "decimal"))
+                .decimal
+            else if (std.ascii.eqlIgnoreCase(value, "digit"))
+                .digit
+            else if (std.ascii.eqlIgnoreCase(value, "numeric"))
+                .numeric
+            else
+                return error.InvalidPattern;
+            return fromNumericType(allocator, kind);
+        }
         return error.InvalidPattern;
     }
 
@@ -789,6 +807,61 @@ fn propertySet(allocator: std.mem.Allocator, name: []const u8) Error!Set {
         return fromScript(allocator, target);
     }
     return error.InvalidPattern;
+}
+
+fn ageVersionFromAlias(value: []const u8) ?u16 {
+    var text = value;
+    if (text.len != 0 and (text[0] == 'V' or text[0] == 'v')) {
+        text = text[1..];
+    }
+    var major: u16 = 0;
+    var minor: u16 = 0;
+    var seen_separator = false;
+    for (text) |byte| {
+        if (byte == '.' or byte == '_') {
+            seen_separator = true;
+            continue;
+        }
+        if (!std.ascii.isDigit(byte)) return null;
+        const digit: u16 = byte - '0';
+        if (seen_separator) {
+            minor = minor * 10 + digit;
+        } else {
+            major = major * 10 + digit;
+        }
+    }
+    if (major == 0 or major > 255 or minor > 255) return null;
+    return (major << 8) | minor;
+}
+
+pub fn fromNumericType(
+    allocator: std.mem.Allocator,
+    kind: properties.NumericType,
+) !Set {
+    var set = Set.init(allocator);
+    errdefer set.deinit();
+    for (0..properties.numeric.rangeCount()) |index| {
+        const range = properties.numeric.rangeAt(index);
+        if (range.kind != kind) continue;
+        try set.addRange(range.first, range.last);
+    }
+    try set.finalize();
+    return set;
+}
+
+pub fn fromAgeVersion(
+    allocator: std.mem.Allocator,
+    version: u16,
+) !Set {
+    var set = Set.init(allocator);
+    errdefer set.deinit();
+    for (0..properties.age.rangeCount()) |index| {
+        const range = properties.age.rangeAt(index);
+        if (range.version != version) continue;
+        try set.addRange(range.first, range.last);
+    }
+    try set.finalize();
+    return set;
 }
 
 test "set ranges, union, intersection, and complement" {
@@ -839,6 +912,31 @@ test "property-backed sets" {
     defer emoji.deinit();
     try testing.expect(emoji.contains(0x1f600));
     try testing.expect(!emoji.contains('A'));
+
+    var age_1_1 = try parse(allocator, "\\p{age=1.1}");
+    defer age_1_1.deinit();
+    try testing.expect(age_1_1.contains('A'));
+    try testing.expect(!age_1_1.contains(0x1fae8));
+
+    var age_15 = try parse(allocator, "\\p{Age=V15_0}");
+    defer age_15.deinit();
+    try testing.expect(age_15.contains(0x1fae8));
+    try testing.expect(!age_15.contains('A'));
+
+    var decimal = try parse(allocator, "\\p{nt=Decimal}");
+    defer decimal.deinit();
+    try testing.expect(decimal.contains('5'));
+    try testing.expect(!decimal.contains(0x00b2));
+
+    var digit = try parse(allocator, "\\p{Numeric_Type=Digit}");
+    defer digit.deinit();
+    try testing.expect(digit.contains(0x00b2));
+    try testing.expect(!digit.contains('5'));
+
+    var numeric = try parse(allocator, "\\p{nt=Numeric}");
+    defer numeric.deinit();
+    try testing.expect(numeric.contains(0x00bd));
+    try testing.expect(!numeric.contains('5'));
 }
 
 test "pattern parser" {

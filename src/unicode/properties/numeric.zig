@@ -72,6 +72,26 @@ fn find(codepoint: u21) ?Record {
     return null;
 }
 
+pub const Range = struct {
+    first: u21,
+    last: u21,
+    kind: NumericType,
+};
+
+pub fn rangeCount() usize {
+    return record_count;
+}
+
+/// Numeric range at `index`, in code-point order.
+pub fn rangeAt(index: usize) Range {
+    const record = recordAt(index);
+    return .{
+        .first = @intCast(record.first),
+        .last = @intCast(record.last),
+        .kind = record.kind,
+    };
+}
+
 /// Unicode's Numeric_Type property.
 pub fn numericType(codepoint: u21) NumericType {
     if (codepoint < 0x80) {

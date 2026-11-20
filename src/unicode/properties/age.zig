@@ -42,6 +42,26 @@ fn decodeVersion(version: u16) Age {
     return .{ .major = @intCast(version >> 8), .minor = @intCast(version & 0xFF) };
 }
 
+pub const Range = struct {
+    first: u21,
+    last: u21,
+    version: u16,
+};
+
+pub fn rangeCount() usize {
+    return record_count;
+}
+
+/// Age range at `index`, in code-point order.
+pub fn rangeAt(index: usize) Range {
+    const base = header_len + index * record_len;
+    return .{
+        .first = @intCast(readU32(base)),
+        .last = @intCast(readU32(base + 4)),
+        .version = readU16(base + 8),
+    };
+}
+
 /// Age of `codepoint`, or null when it is unassigned.
 pub fn age(codepoint: u21) ?Age {
     return decodeVersion(ageVersion(codepoint) orelse return null);
