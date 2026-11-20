@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const res = @import("res.zig");
+const data = @import("data.zig");
 
 pub const Error = res.Error;
 
@@ -49,6 +50,57 @@ pub const BundleSet = struct {
             initialized += 1;
         }
         return .{ .allocator = allocator, .entries = entries };
+    }
+
+    /// Builds a fallback set from every locale bundle in a `.dat` package.
+    pub fn initFromPackage(
+        allocator: std.mem.Allocator,
+        package: *const data.DataPackage,
+    ) !BundleSet {
+        var list = std.ArrayList(Entry).empty;
+        errdefer {
+            for (list.items) |entry| {
+                allocator.destroy(entry.bundle);
+                allocator.free(entry.locale);
+            }
+            list.deinit(allocator);
+        }
+        var index: usize = 0;
+        while (index < package.count()) : (index += 1) {
+            const name = package.nameAt(index) orelse continue;
+            const basename = entryBasename(name);
+            if (!std.mem.endsWith(u8, basename, ".res")) continue;
+            if (std.mem.eql(u8, basename, "pool.res") or
+                std.mem.eql(u8, basename, "res_index.res"))
+            {
+                continue;
+            }
+            const bundle = try allocator.create(res.ResourceBundle);
+            bundle.* = package.openBundleAt(index) catch |err| {
+                allocator.destroy(bundle);
+                return err;
+            };
+            const locale = if (std.mem.eql(u8, basename, "root.res"))
+                ""
+            else
+                basename[0 .. basename.len - 4];
+            const locale_copy = allocator.dupe(u8, locale) catch |err| {
+                allocator.destroy(bundle);
+                return err;
+            };
+            list.append(allocator, .{
+                .locale = locale_copy,
+                .bundle = bundle,
+            }) catch |err| {
+                allocator.free(locale_copy);
+                allocator.destroy(bundle);
+                return err;
+            };
+        }
+        return .{
+            .allocator = allocator,
+            .entries = try list.toOwnedSlice(allocator),
+        };
     }
 
     pub fn deinit(self: *BundleSet) void {
@@ -298,6 +350,11 @@ pub const BundleSet = struct {
     }
 };
 
+fn entryBasename(name: []const u8) []const u8 {
+    const slash = std.mem.lastIndexOfScalar(u8, name, '/') orelse return name;
+    return name[slash + 1 ..];
+}
+
 fn expectSetString(
     set: *const BundleSet,
     locale: []const u8,
@@ -501,5 +558,40 @@ test "ICU resource bundle set conformance fixture" {
     std.debug.print(
         "resource bundle set conformance: {d} records passed\n",
         .{compared},
+    );
+}
+
+test "bundle set from data package" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const bytes = @embedFile("fixtures/icudt_test.dat");
+    const package = try data.DataPackage.init(bytes);
+    var set = try BundleSet.initFromPackage(allocator, &package);
+    defer set.deinit();
+
+    try expectSetString(&set, "en_US", "greeting", "howdy", allocator);
+    try expectSetString(&set, "en_US", "extra", "english only", allocator);
+    try expectSetString(
+        &set,
+        "en_US",
+        "nested/deeper/inner",
+        "deep",
+        allocator,
+    );
+    try expectSetString(
+        &set,
+        "en_US",
+        "aliasClient",
+        "english aliased",
+        allocator,
+    );
+    try testing.expectEqual(@as(i32, 42), try set.getInt("en_US", "count"));
+    try expectSetString(&set, "fr", "greeting", "hello", allocator);
+    try expectSetString(
+        &set,
+        "pooled_root",
+        "shared",
+        "common value",
+        allocator,
     );
 }

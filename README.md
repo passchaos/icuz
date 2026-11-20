@@ -414,8 +414,9 @@ need without pulling in a font or layout engine.
   fallback (`en_US` -> `en` -> root), per-path fallback, `noFallback`, and
   cross-bundle aliases. `DataPackage` reads ICU `CmnD` `.dat` archives,
   locates items by full or package-relative name, and attaches pool bundles
-  automatically. Validated against ICU `ures_openDirect` and `ures_open`
-  traces for standalone, pooled, fallback, and packaged lookups.
+  automatically; `BundleSet.initFromPackage` composes locale fallback over a
+  package. Validated against ICU `ures_openDirect` and `ures_open` traces
+  for standalone, pooled, fallback, and packaged lookups.
 - UTF-16 validation, iteration, and UTF-8/UTF-16 conversion helpers.
 - Charset conversion for UTF-8/16/32, ASCII, Latin-1, 28 legacy single-byte
   encodings, GBK/GB18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, and EUC-KR,

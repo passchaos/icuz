@@ -196,15 +196,24 @@ pub const DataPackage = struct {
         self: *const DataPackage,
         name: []const u8,
     ) Error!res.ResourceBundle {
-        const item = self.find(name) orelse return error.NotFound;
+        const index = self.indexOfExact(name) orelse
+            self.findIndexBySuffix(name) orelse return error.NotFound;
+        return self.openBundleAt(index);
+    }
+
+    /// Opens the bundle at a TOC index, attaching its pool bundle when
+    /// required.
+    pub fn openBundleAt(
+        self: *const DataPackage,
+        index: usize,
+    ) Error!res.ResourceBundle {
+        const item = self.itemAt(index) orelse return error.NotFound;
         var bundle = try res.ResourceBundle.init(item);
         if (!bundle.uses_pool_bundle) return bundle;
 
-        const bundle_index = self.indexOfExact(name) orelse
-            self.findIndexBySuffix(name) orelse return error.NotFound;
         var pool_buffer: [512]u8 = undefined;
         var pool_item: ?[]const u8 = null;
-        if (self.poolNameFor(bundle_index, &pool_buffer)) |pool_name| {
+        if (self.poolNameFor(index, &pool_buffer)) |pool_name| {
             pool_item = self.find(pool_name);
         }
         if (pool_item == null) pool_item = self.find("pool.res");
