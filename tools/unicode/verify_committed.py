@@ -441,6 +441,7 @@ BLOBS = (
     Blob("src/unicode/spoof/conformance.bin", b"CJXS", 1, "3e4610a024b4a5e4d4e1608391978bd2b6d2df52d92266553ac6dc071ce9346e", version=(0, 0, 0)),
     Blob("src/unicode/spoof/identifier_status.bin", b"CJXI", 1, "35b83562901ffce3efa1431809e482ad29411a02ac17297bce678192a481a63d"),
     Blob("src/unicode/spoof/check_conformance.bin", b"CJSP", 1, "a2bda7612b6868728ab67ead8e9054564882d9c795766dc934e20906c1219f11", version=(0, 0, 0)),
+    Blob("src/unicode/text_conformance.bin", b"CJUT", 1, "6e7a35c76fbe9f483af39627b486127cd87bfb45b725d333d8c20815150cb9a4", version=(0, 0, 0)),
     Blob("src/unicode/format/parse_conformance.bin", b"CJXN", 1, "b0e146b50957aa4f34a916cb7cfa919eb83b7e719f8c92aa5b7c885e6a384629", version=(0, 0, 0)),
     Blob("src/unicode/format/date_parse_conformance.bin", b"CJXD", 1, "882b2ba49d502d56232c3e5fbcfa14c5173c45be8515e9ef7945519ac5584031", version=(0, 0, 0)),
 )
@@ -453,6 +454,7 @@ GENERATORS = {
     "tools/unicode/spoof/generate_check_conformance.py": "449b8efaae526738dc4388775b66f0b93f6d66545537cba44a5b20b3254d378d",
     "tools/unicode/bidi/generate_reorder_conformance.py": "e9850f69e21e8ec27e2e4fe142f50939c96564ad572dd6587be683da23b9857d",
     "tools/unicode/format/generate_date_symbols_conformance.py": "1dc212912e7896c1c51e85e75cfe3ef33272875406a707a6b569e76602e4820e",
+    "tools/unicode/text/generate_conformance.py": "ac0497c3336dd7f6546dd11062536763fa06e9728b85ac80549b89c70d52f89d",
     "tools/unicode/locale/generate_aliases.py": "455b791991d1b9a81a44ba7d84ff893ca26fb344c9816ffc5ca1085dda9ff625",
     "tools/unicode/format/generate_person_names.py": "cd7b44a5e613d06f21319e7cfc27c94093687acdb8bd9b4193091b7db9ee6771",
     "tools/unicode/format/generate_alphabetic_index.py": "8b04cee5bfe54bbfb05e0750adab2e81607057fc225c0c37ddfcc3fe61514d06",
@@ -1054,6 +1056,18 @@ def check_layout(blob: Blob, data: bytes) -> None:
             offset += 10 + input_len
             second_len = struct.unpack_from("<H", data, offset)[0]
             offset += 2 + second_len + 4
+        assert offset == len(data)
+    elif magic == b"CJUT":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            input_len = struct.unpack_from("<H", data, offset + 1)[0]
+            offset += 3 + input_len
+            op_count = struct.unpack_from("<I", data, offset)[0]
+            offset += 4
+            for _ in range(op_count):
+                extra_count = struct.unpack_from("<I", data, offset + 25)[0]
+                offset += 29 + extra_count * 4
         assert offset == len(data)
     elif magic == b"CJXN":
         case_count = struct.unpack_from("<I", data, 8)[0]

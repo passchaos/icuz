@@ -24,6 +24,7 @@ const set_mod = @import("./set.zig");
 const break_rules_mod = @import("./break_rules.zig");
 const utf16_mod = @import("./utf16.zig");
 const char_iterator_mod = @import("./char_iterator.zig");
+const text_mod = @import("./text.zig");
 const enumeration_mod = @import("./enumeration.zig");
 const field_iterator_mod = @import("./format/field_iterator.zig");
 const collation_mod = @import("./collation/root.zig");
@@ -245,6 +246,8 @@ pub const UnicodeSet = set_mod.Set;
 pub const UnicodeSetIterator = set_mod.Iterator;
 pub const CharIterator = char_iterator_mod.CharIterator;
 pub const CharIteratorOrigin = char_iterator_mod.Origin;
+pub const UText = text_mod.Text;
+pub const UTextKind = text_mod.Kind;
 
 pub const StringEnumeration = enumeration_mod.StringEnumeration;
 pub const NumberFieldIterator = field_iterator_mod.Iterator(number_mod.NumberFieldPosition);
@@ -845,6 +848,7 @@ test {
     _ = locale_metadata_mod;
     _ = charset_selector_mod;
     _ = char_iterator_mod;
+    _ = text_mod;
     _ = enumeration_mod;
     _ = field_iterator_mod;
     _ = transliterate_mod;
