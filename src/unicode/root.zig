@@ -217,6 +217,7 @@ pub const firstCharacterAlias = name_mod.firstAlias;
 pub const findCharacterByName = name_mod.findByName;
 
 pub const UnicodeSet = set_mod.Set;
+pub const UnicodeSetSpanCondition = set_mod.Set.SpanCondition;
 pub const UnicodeSetRange = set_mod.Range;
 pub const parseUnicodeSet = set_mod.parse;
 pub const unicodeSetFromProperty = set_mod.fromProperty;

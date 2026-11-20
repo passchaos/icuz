@@ -54,6 +54,7 @@ need without pulling in a font or layout engine.
 - UnicodeSet range/property construction, multi-code-point string elements
   (`{abc}`, `addString`, `containsString`), case closure (`closeOver` with
   simple/full case-insensitive and add-case-mappings modes),
+  ICU-style `span`/`spanBack` scanning with longest string-element matches,
   union/intersection/difference/complement,
   `containsAll`/`containsNone`/`containsSome`, pattern
   round-tripping, and a practical `\p{...}`/`[a-z]` pattern parser with

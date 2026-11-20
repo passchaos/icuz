@@ -605,6 +605,76 @@ pub const Set = struct {
         return result;
     }
 
+    pub const SpanCondition = enum { contained, not_contained };
+
+    /// Length of the prefix of `text` whose code points and strings are all
+    /// contained (or all not contained) in this set.
+    pub fn span(self: Set, text: []const u8, condition: SpanCondition) usize {
+        var index: usize = 0;
+        while (index < text.len) {
+            if (self.matchStringAt(text, index)) |length| {
+                if (condition == .not_contained) break;
+                index += length;
+                continue;
+            }
+            const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
+                break;
+            if (index + length > text.len) break;
+            const codepoint = std.unicode.utf8Decode(
+                text[index..][0..length],
+            ) catch break;
+            const contained = self.contains(codepoint);
+            if (condition == .contained and !contained) break;
+            if (condition == .not_contained and contained) break;
+            index += length;
+        }
+        return index;
+    }
+
+    /// Start offset of the suffix of `text` whose code points and strings are
+    /// all contained (or all not contained) in this set.
+    pub fn spanBack(self: Set, text: []const u8, condition: SpanCondition) usize {
+        var index = text.len;
+        while (index > 0) {
+            if (self.matchStringEndingAt(text, index)) |length| {
+                if (condition == .not_contained) break;
+                index -= length;
+                continue;
+            }
+            var start = index - 1;
+            while (start > 0 and (text[start] & 0xc0) == 0x80) start -= 1;
+            const codepoint = std.unicode.utf8Decode(text[start..index]) catch
+                break;
+            const contained = self.contains(codepoint);
+            if (condition == .contained and !contained) break;
+            if (condition == .not_contained and contained) break;
+            index = start;
+        }
+        return index;
+    }
+
+    fn matchStringAt(self: Set, text: []const u8, index: usize) ?usize {
+        var best: ?usize = null;
+        for (self.strings.items) |string| {
+            if (string.len > text.len - index) continue;
+            if (!std.mem.eql(u8, text[index..][0..string.len], string)) continue;
+            if (best == null or string.len > best.?) best = string.len;
+        }
+        return best;
+    }
+
+    fn matchStringEndingAt(self: Set, text: []const u8, index: usize) ?usize {
+        var best: ?usize = null;
+        for (self.strings.items) |string| {
+            if (string.len > index) continue;
+            if (!std.mem.eql(u8, text[index - string.len .. index], string)) {
+                continue;
+            }
+            if (best == null or string.len > best.?) best = string.len;
+        }
+        return best;
+    }
+
     pub fn rangeIterator(self: Set) RangeIterator {
         return .{ .ranges = self.ranges.items };
     }
@@ -1476,6 +1546,20 @@ test "set case closure" {
     const second = try idempotent.toPatternAlloc(allocator);
     defer allocator.free(second);
     try testing.expectEqualStrings(first, second);
+}
+
+test "set span" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var set = try parse(allocator, "[a-w{abc}]");
+    defer set.deinit();
+    try testing.expectEqual(@as(usize, 4), set.span("abcd", .contained));
+    try testing.expectEqual(@as(usize, 2), set.span("abx", .contained));
+    try testing.expectEqual(@as(usize, 3), set.span("123abc", .not_contained));
+    try testing.expectEqual(@as(usize, 1), set.spanBack("xabc", .contained));
+    try testing.expectEqual(@as(usize, 3), set.spanBack("abc1", .not_contained));
+    try testing.expectEqual(@as(usize, 2), set.spanBack("xxab", .contained));
 }
 
 test "set algebra conformance" {
