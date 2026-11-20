@@ -53,6 +53,16 @@ need without pulling in a font or layout engine.
   validated by a 25-case PyICU `RuleBasedBreakIterator` fixture.
 - UAX #50 vertical orientation.
 - Unicode 17 Arabic joining properties and the joining state machine.
+- ICU-compatible Arabic letter shaping (`shapeArabicAlloc`): the full
+  `U_SHAPE_*` option matrix, including isolated/initial/medial/final
+  presentation forms, Lam-Alef ligatures and their space placement,
+  tashkeel positioning/removal, seen-tail and yeh-hamza two-cell forms,
+  Arabic-Indic digit conversion with bidi context, visual-order processing,
+  presentation-form preservation, and aggregate tashkeel. Output matches
+  ICU's `u_shapeArabic` across a 44,412-case PyICU differential fixture.
+  Unlike ICU, a resize pass always returns the compacted length; ICU resets
+  the length to the source length when a later space-placement pass runs,
+  which can expose U+0000 padding slots.
 - Character names and aliases, including algorithmic CJK/Tangut/Egyptian/
   Khitan/Nushu names and UAX #44 loose name lookup.
 - UnicodeSet range/property construction, multi-code-point string elements

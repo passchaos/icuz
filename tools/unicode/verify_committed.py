@@ -37,6 +37,7 @@ class GeneratedText:
 
 BLOBS = (
     Blob("src/unicode/bidi/conformance.bin", b"CJBT", 1, "40d4b9145779f8aad815e1f5ea5201ccd9cc5daeb73c8bf73b06c6f1c76d9a26"),
+    Blob("src/unicode/shape/conformance.bin", b"CJSH", 1, "aa14145e977197c683e9991d8caa238ed13084008e42e5dfb71be238762a4ef2"),
     Blob("src/unicode/bidi/data.bin", b"CJB1", 1, "9e9f9937100d6019f7308743916c3606bdb31c9cc4f142eb605becf45a210c3f"),
     Blob("src/unicode/canonical/combining_class.bin", b"CJC1", 1, "336130546fc300108806f5ae23144cda93da13488a810946357304b5a12f5fcc"),
     Blob("src/unicode/charset/data.bin", b"CJCS", 2, "2f683ea3541100baa40ec047bf13e9af98e7a8337a6b981f97ea97208bfbc705"),
@@ -505,6 +506,7 @@ GENERATORS = {
     "tools/unicode/charset/generate_data.py": "5b13222d52bfaea336ef6fb3aac9b0d629411e62fb1173ae6bdd3ae9e059e594",
     "tools/unicode/set/generate_conformance.py": "2aa1d6db18bcb6d0cb0f77c5ed449643089f158f33bc431bf89fcda932c42592",
     "tools/unicode/transliterate/generate_data.py": "6d8e406b3358b45511df4b9007c846ed394bc726c662dcbecfc5cd46ccf77aca",
+    "tools/unicode/shape/generate_conformance.py": "a59dcddadd2f180e4c951c1ac630088d82396af6e171a36e955a66f0f2ad934e",
     "tools/unicode/transliterate/generate_pipeline_conformance.py": "982fe737c3d663f0d7e69715461cd6dbfa73c759a134c9abc67c98aa201e4bb6",
     "tools/unicode/break/generate_dictionaries.py": "bdbd4c4e9c999b4cea6a8924b08c72a49719c857e26dea82fc50940ee145e264",
     "tools/unicode/break/generate_conformance.py": "785d56bab3f388e70b5260ce03f198294fb82b68925c12ff4e571d705480bb8c",
@@ -695,7 +697,14 @@ def check_page_table(data: bytes, width: int) -> None:
 
 def check_layout(blob: Blob, data: bytes) -> None:
     magic = blob.magic
-    if magic == b"CJDB":
+    if magic == b"CJSH":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            input_len, expected_len = struct.unpack_from("<HH", data, offset + 4)
+            offset += 8 + input_len + expected_len
+        assert offset == len(data)
+    elif magic == b"CJDB":
         language_count = data[5]
         offset = 8 + language_count * 12
         for index in range(language_count):

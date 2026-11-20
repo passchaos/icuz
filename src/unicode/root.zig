@@ -40,6 +40,7 @@ const units_mod = @import("./format/units.zig");
 const charset_mod = @import("./charset.zig");
 const locale_mod = @import("./locale.zig");
 const transliterate_mod = @import("./transliterate.zig");
+const shape_mod = @import("./shape/root.zig");
 const properties = @import("./properties.zig");
 const scalar_value = @import("./scalar/root.zig");
 const scalar_cursor = @import("./scalar/cursor.zig");
@@ -454,6 +455,15 @@ pub const validateCharset = charset_mod.validate;
 pub const Transliteration = transliterate_mod.Transform;
 pub const transliterateAlloc = transliterate_mod.transliterateAlloc;
 
+pub const ShapeOptions = shape_mod.Options;
+pub const ShapeLetters = shape_mod.Letters;
+pub const ShapeTextDirection = shape_mod.TextDirection;
+pub const ShapeTashkeel = shape_mod.Tashkeel;
+pub const ShapeLamAlef = shape_mod.LamAlef;
+pub const ShapeDigits = shape_mod.Digits;
+pub const ShapeDigitType = shape_mod.DigitType;
+pub const shapeArabicAlloc = shape_mod.shapeArabicAlloc;
+
 pub const ListStyle = list_mod.Style;
 pub const Gender = gender_mod.Gender;
 pub const listGender = gender_mod.listGender;
@@ -731,6 +741,7 @@ test {
     _ = locale_mod;
     _ = locale_mod.matcher;
     _ = transliterate_mod;
+    _ = shape_mod;
     _ = list_mod;
     _ = relative_mod;
     _ = units_mod;
