@@ -439,6 +439,70 @@ pub fn formatRangeAlloc(
         }
     }
 
+    // Currency-name ranges share one name selected by the plural range
+    // category, like unit ranges.
+    if (number_options.style == .currency and
+        number_options.currency_display == .name and
+        first >= 0 and second >= 0)
+    {
+        const code = number_options.currency orelse return error.InvalidPattern;
+        var storage: data.Locale = undefined;
+        const locale = resolveLocale(locale_name, &number_options, &storage);
+        const fraction_digits = number_options.max_fraction_digits orelse
+            currencyDigits(code);
+        const min_fraction = number_options.min_fraction_digits orelse
+            fraction_digits;
+        var inner = options;
+        inner.number.style = .decimal;
+        inner.number.currency = null;
+        inner.number.min_fraction_digits = min_fraction;
+        inner.number.max_fraction_digits = fraction_digits;
+        const numeric = try formatRangeAlloc(
+            allocator,
+            first,
+            second,
+            locale_name,
+            inner,
+        );
+        defer allocator.free(numeric);
+        const start_category = compactCategory(
+            locale_name,
+            first,
+            fraction_digits,
+        );
+        const category = if (first == second)
+            start_category
+        else
+            plural_ranges.select(
+                locale_name,
+                start_category,
+                compactCategory(locale_name, second, fraction_digits),
+            );
+        var name: []const u8 = code;
+        if (currencyEntry(locale, code)) |entry| {
+            name = entry.names[@intFromEnum(category)];
+            if (name.len == 0) {
+                name = entry.names[@intFromEnum(plural.Category.other)];
+            }
+            if (name.len == 0) name = code;
+        }
+        var unit_pattern = locale.currency_unit_patterns[
+            @intFromEnum(category)
+        ];
+        if (unit_pattern.len == 0) {
+            unit_pattern = locale.currency_unit_patterns[
+                @intFromEnum(plural.Category.other)
+            ];
+        }
+        if (unit_pattern.len == 0) unit_pattern = "{0} {1}";
+        return replaceTwoPlaceholdersAlloc(
+            allocator,
+            unit_pattern,
+            numeric,
+            name,
+        );
+    }
+
     const first_text = try formatAlloc(
         allocator,
         first,
@@ -3264,6 +3328,35 @@ test "unit number ranges use plural range categories" {
     );
     defer allocator.free(single);
     try testing.expectEqualStrings("1 day", single);
+}
+
+test "currency name ranges use plural range categories" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const cases = [_]struct {
+        locale: []const u8,
+        expected: []const u8,
+    }{
+        .{ .locale = "en", .expected = "1.00\u{2013}2.00 US dollars" },
+        .{ .locale = "de", .expected = "1,00\u{2013}2,00 US-Dollar" },
+        .{ .locale = "ru", .expected = "1,00\u{2013}2,00 \u{0434}\u{043e}\u{043b}\u{043b}\u{0430}\u{0440}\u{0430} \u{0421}\u{0428}\u{0410}" },
+        .{ .locale = "fr", .expected = "1,00\u{2013}2,00 dollars des \u{00c9}tats-Unis" },
+    };
+    for (cases) |case| {
+        const text = try formatRangeAlloc(
+            allocator,
+            1,
+            2,
+            case.locale,
+            .{ .number = .{
+                .style = .currency,
+                .currency = "USD",
+                .currency_display = .name,
+            } },
+        );
+        defer allocator.free(text);
+        try testing.expectEqualStrings(case.expected, text);
+    }
 }
 
 test "number range conformance" {
