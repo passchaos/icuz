@@ -896,3 +896,749 @@ test "ICU UCharsTrie conformance fixture" {
         .{ case_count - failures, case_count },
     );
 }
+
+/// ICU `BytesTrie`-compatible reader for byte-keyed tries.
+pub const BytesTrie = struct {
+    bytes: []const u8,
+    pos: ?usize = null,
+    remaining_match_length: i32 = -1,
+
+    pub fn init(bytes: []const u8) BytesTrie {
+        return .{ .bytes = bytes };
+    }
+
+    pub fn reset(self: *BytesTrie) void {
+        self.pos = 0;
+        self.remaining_match_length = -1;
+    }
+
+    fn stop(self: *BytesTrie) void {
+        self.pos = null;
+    }
+
+    fn byteAt(self: *const BytesTrie, index: usize) ?i32 {
+        if (index >= self.bytes.len) return null;
+        return self.bytes[index];
+    }
+
+    fn readValue(bytes: []const u8, pos: usize, lead: i32) i32 {
+        var value: u32 = undefined;
+        if (lead < 0x51) {
+            value = @intCast(lead - 0x10);
+        } else if (lead < 0x6c) {
+            value = (@as(u32, @intCast(lead - 0x51)) << 8) | bytes[pos];
+        } else if (lead < 0x7e) {
+            value = (@as(u32, @intCast(lead - 0x6c)) << 16) |
+                (@as(u32, bytes[pos]) << 8) | bytes[pos + 1];
+        } else if (lead == 0x7e) {
+            value = (@as(u32, bytes[pos]) << 16) |
+                (@as(u32, bytes[pos + 1]) << 8) | bytes[pos + 2];
+        } else {
+            value = (@as(u32, bytes[pos]) << 24) |
+                (@as(u32, bytes[pos + 1]) << 16) |
+                (@as(u32, bytes[pos + 2]) << 8) | bytes[pos + 3];
+        }
+        return @bitCast(value);
+    }
+
+    fn skipValue(pos_start: usize, lead: i32) usize {
+        if (lead >= 0xa2) {
+            if (lead < 0xd8) return pos_start + 1;
+            if (lead < 0xfc) return pos_start + 2;
+            return pos_start + 3 + @as(usize, @intCast((lead >> 1) & 1));
+        }
+        return pos_start;
+    }
+
+    fn jumpByDelta(bytes: []const u8, pos_start: usize) ?usize {
+        if (pos_start >= bytes.len) return null;
+        var pos = pos_start;
+        var delta: u32 = bytes[pos];
+        pos += 1;
+        if (delta >= 0xc0) {
+            if (delta < 0xf0) {
+                if (pos >= bytes.len) return null;
+                delta = ((delta - 0xc0) << 8) | bytes[pos];
+                pos += 1;
+            } else if (delta < 0xfe) {
+                if (pos + 1 >= bytes.len) return null;
+                delta = ((delta - 0xf0) << 16) |
+                    (@as(u32, bytes[pos]) << 8) | bytes[pos + 1];
+                pos += 2;
+            } else if (delta == 0xfe) {
+                if (pos + 2 >= bytes.len) return null;
+                delta = (@as(u32, bytes[pos]) << 16) |
+                    (@as(u32, bytes[pos + 1]) << 8) | bytes[pos + 2];
+                pos += 3;
+            } else {
+                if (pos + 3 >= bytes.len) return null;
+                delta = (@as(u32, bytes[pos]) << 24) |
+                    (@as(u32, bytes[pos + 1]) << 16) |
+                    (@as(u32, bytes[pos + 2]) << 8) | bytes[pos + 3];
+                pos += 4;
+            }
+        }
+        const target = @as(i64, @intCast(pos)) + delta;
+        if (target < 0 or target > bytes.len) return null;
+        return @intCast(target);
+    }
+
+    fn skipDelta(bytes: []const u8, pos_start: usize) ?usize {
+        if (pos_start >= bytes.len) return null;
+        const delta = bytes[pos_start];
+        var pos = pos_start + 1;
+        if (delta >= 0xc0) {
+            if (delta < 0xf0) {
+                pos += 1;
+            } else if (delta < 0xfe) {
+                pos += 2;
+            } else {
+                pos += 3 + @as(usize, delta & 1);
+            }
+        }
+        if (pos > bytes.len) return null;
+        return pos;
+    }
+
+    fn valueResult(node: i32) Result {
+        return if (node & 1 != 0) .final_value else .intermediate_value;
+    }
+
+    fn branchNext(
+        self: *BytesTrie,
+        pos_start: usize,
+        length_input: i32,
+        in_byte: i32,
+    ) Result {
+        var pos = pos_start;
+        var length = length_input;
+        if (length == 0) {
+            const next_node = self.byteAt(pos) orelse {
+                self.stop();
+                return .no_match;
+            };
+            pos += 1;
+            length = next_node;
+        }
+        length += 1;
+        while (length > 5) {
+            const compare = self.byteAt(pos) orelse {
+                self.stop();
+                return .no_match;
+            };
+            pos += 1;
+            if (in_byte < compare) {
+                length >>= 1;
+                pos = jumpByDelta(self.bytes, pos) orelse {
+                    self.stop();
+                    return .no_match;
+                };
+            } else {
+                length = length - (length >> 1);
+                pos = skipDelta(self.bytes, pos) orelse {
+                    self.stop();
+                    return .no_match;
+                };
+            }
+        }
+        while (true) {
+            const key = self.byteAt(pos) orelse {
+                self.stop();
+                return .no_match;
+            };
+            pos += 1;
+            if (in_byte == key) {
+                const node = self.byteAt(pos) orelse {
+                    self.stop();
+                    return .no_match;
+                };
+                if (node & 1 != 0) {
+                    self.pos = pos;
+                    return .final_value;
+                }
+                pos += 1;
+                const lead = node >> 1;
+                const delta = readValue(self.bytes, pos, lead);
+                var payload: usize = 0;
+                if (lead >= 0x51) {
+                    if (lead < 0x6c) {
+                        payload = 1;
+                    } else if (lead < 0x7e) {
+                        payload = 2;
+                    } else if (lead == 0x7e) {
+                        payload = 3;
+                    } else {
+                        payload = 4;
+                    }
+                }
+                const target = @as(i64, @intCast(pos + payload)) + delta;
+                if (target < 0 or target > self.bytes.len) {
+                    self.stop();
+                    return .no_match;
+                }
+                pos = @intCast(target);
+                const next_node = self.byteAt(pos) orelse {
+                    self.stop();
+                    return .no_match;
+                };
+                self.pos = pos;
+                return if (next_node >= 0x20) valueResult(next_node) else .no_value;
+            }
+            length -= 1;
+            const lead = self.byteAt(pos) orelse {
+                self.stop();
+                return .no_match;
+            };
+            pos = skipValue(pos + 1, lead);
+            if (length <= 1) break;
+        }
+        const key = self.byteAt(pos) orelse {
+            self.stop();
+            return .no_match;
+        };
+        pos += 1;
+        if (in_byte == key) {
+            self.pos = pos;
+            const node = self.byteAt(pos) orelse {
+                self.stop();
+                return .no_match;
+            };
+            return if (node >= 0x20) valueResult(node) else .no_value;
+        }
+        self.stop();
+        return .no_match;
+    }
+
+    fn nextImpl(self: *BytesTrie, pos_start: usize, in_byte: i32) Result {
+        var pos = pos_start;
+        while (true) {
+            const node = self.byteAt(pos) orelse {
+                self.stop();
+                return .no_match;
+            };
+            pos += 1;
+            if (node < 0x10) {
+                return self.branchNext(pos, node, in_byte);
+            } else if (node < 0x20) {
+                const length = node - 0x10;
+                const expected = self.byteAt(pos) orelse {
+                    self.stop();
+                    return .no_match;
+                };
+                if (in_byte == expected) {
+                    pos += 1;
+                    self.remaining_match_length = length - 1;
+                    self.pos = pos;
+                    if (length - 1 < 0) {
+                        const next_node = self.byteAt(pos) orelse {
+                            self.stop();
+                            return .no_match;
+                        };
+                        return if (next_node >= 0x20)
+                            valueResult(next_node)
+                        else
+                            .no_value;
+                    }
+                    return .no_value;
+                }
+                break;
+            } else if (node & 1 != 0) {
+                break;
+            } else {
+                pos = skipValue(pos, node);
+            }
+        }
+        self.stop();
+        return .no_match;
+    }
+
+    fn normalizeByte(in_byte: i32) ?i32 {
+        var value = in_byte;
+        if (value < 0) value += 0x100;
+        if (value < 0 or value > 0xff) return null;
+        return value;
+    }
+
+    pub fn first(self: *BytesTrie, in_byte: i32) Result {
+        self.remaining_match_length = -1;
+        const value = normalizeByte(in_byte) orelse {
+            self.stop();
+            return .no_match;
+        };
+        return self.nextImpl(0, value);
+    }
+
+    pub fn next(self: *BytesTrie, in_byte: i32) Result {
+        const value = normalizeByte(in_byte) orelse {
+            self.stop();
+            return .no_match;
+        };
+        return self.nextRaw(value);
+    }
+
+    fn nextRaw(self: *BytesTrie, value: i32) Result {
+        var pos = self.pos orelse return .no_match;
+        var length = self.remaining_match_length;
+        if (length >= 0) {
+            const expected = self.byteAt(pos) orelse {
+                self.stop();
+                return .no_match;
+            };
+            pos += 1;
+            if (value == expected) {
+                length -= 1;
+                self.remaining_match_length = length;
+                self.pos = pos;
+                if (length < 0) {
+                    const node = self.byteAt(pos) orelse {
+                        self.stop();
+                        return .no_match;
+                    };
+                    return if (node >= 0x20)
+                        valueResult(node)
+                    else
+                        .no_value;
+                }
+                return .no_value;
+            }
+            self.stop();
+            return .no_match;
+        }
+        return self.nextImpl(pos, value);
+    }
+
+    pub fn current(self: *const BytesTrie) Result {
+        const pos = self.pos orelse return .no_match;
+        if (self.remaining_match_length < 0) {
+            const node = self.byteAt(pos) orelse return .no_match;
+            if (node >= 0x20) return valueResult(node);
+        }
+        return .no_value;
+    }
+
+    pub fn getValue(self: *const BytesTrie) i32 {
+        const pos = self.pos orelse return 0;
+        const lead = self.byteAt(pos) orelse return 0;
+        return readValue(self.bytes, pos + 1, lead >> 1);
+    }
+
+    /// ICU's byte-string traversal compares signed `char` values without
+    /// normalizing them, so bytes >= 0x80 do not match through this method.
+    pub fn nextString(self: *BytesTrie, text: []const u8) Result {
+        if (text.len == 0) return self.current();
+        var result = self.current();
+        for (text) |byte| {
+            if (!result.hasNext()) return .no_match;
+            result = self.nextRaw(@as(i8, @bitCast(byte)));
+        }
+        return result;
+    }
+};
+
+test "ICU BytesTrie conformance fixture" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("bytes_trie_conformance.bin");
+
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJY2", fixture[0..4]);
+    try testing.expectEqual(@as(u8, 1), fixture[4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var case_index: usize = 0;
+    while (case_index < case_count) : (case_index += 1) {
+        const option = fixture[cursor];
+        const byte_count = std.mem.readInt(
+            u16,
+            fixture[cursor + 1 ..][0..2],
+            .little,
+        );
+        cursor += 3;
+        const bytes = fixture[cursor..][0..byte_count];
+        cursor += byte_count;
+        const op_count = std.mem.readInt(
+            u16,
+            fixture[cursor..][0..2],
+            .little,
+        );
+        cursor += 2;
+
+        var trie = BytesTrie.init(bytes);
+        var op_index: usize = 0;
+        while (op_index < op_count) : (op_index += 1) {
+            const kind = fixture[cursor];
+            cursor += 1;
+            var byte: i32 = 0;
+            var text = std.ArrayList(u8).empty;
+            defer text.deinit(allocator);
+            if (kind == 0 or kind == 1) {
+                byte = fixture[cursor];
+                cursor += 1;
+            } else {
+                const length = std.mem.readInt(
+                    u16,
+                    fixture[cursor..][0..2],
+                    .little,
+                );
+                cursor += 2;
+                try text.appendSlice(allocator, fixture[cursor..][0..length]);
+                cursor += length;
+            }
+            const expected_result: Result = @enumFromInt(fixture[cursor]);
+            cursor += 1;
+            const expected_value = std.mem.readInt(
+                i32,
+                fixture[cursor..][0..4],
+                .little,
+            );
+            cursor += 4;
+
+            const actual = switch (kind) {
+                0 => blk: {
+                    trie.reset();
+                    break :blk trie.first(byte);
+                },
+                1 => trie.next(byte),
+                2 => blk: {
+                    trie.reset();
+                    break :blk trie.nextString(text.items);
+                },
+                else => return error.InvalidFixture,
+            };
+            if (actual != expected_result) {
+                failures += 1;
+                if (failures <= 10) {
+                    std.debug.print(
+                        "bytes trie result mismatch: case {d} option {d} op {d} kind {d} got {s} want {s}\n",
+                        .{
+                            case_index,
+                            option,
+                            op_index,
+                            kind,
+                            @tagName(actual),
+                            @tagName(expected_result),
+                        },
+                    );
+                }
+            } else if (actual.hasValue() and trie.getValue() != expected_value) {
+                failures += 1;
+                if (failures <= 10) {
+                    std.debug.print(
+                        "bytes trie value mismatch: case {d} op {d} got {d} want {d}\n",
+                        .{ case_index, op_index, trie.getValue(), expected_value },
+                    );
+                }
+            }
+        }
+    }
+    try testing.expectEqual(fixture.len, cursor);
+    try testing.expectEqual(@as(usize, 0), failures);
+    std.debug.print(
+        "BytesTrie conformance: {}/{} cases passed\n",
+        .{ case_count - failures, case_count },
+    );
+}
+
+/// ICU `BytesTrieBuilder`-compatible builder.
+pub const BytesTrieBuilder = struct {
+    allocator: std.mem.Allocator,
+    entries: std.ArrayList(Entry) = .empty,
+    bytes: std.ArrayList(u8) = .empty,
+
+    pub const Entry = struct {
+        units: []u8,
+        value: i32,
+    };
+
+    pub fn init(allocator: std.mem.Allocator) BytesTrieBuilder {
+        return .{ .allocator = allocator };
+    }
+
+    pub fn deinit(self: *BytesTrieBuilder) void {
+        for (self.entries.items) |entry| {
+            self.allocator.free(entry.units);
+        }
+        self.entries.deinit(self.allocator);
+        self.bytes.deinit(self.allocator);
+    }
+
+    pub fn add(
+        self: *BytesTrieBuilder,
+        text: []const u8,
+        value: i32,
+    ) !void {
+        for (self.entries.items) |entry| {
+            if (std.mem.eql(u8, entry.units, text)) {
+                return error.DuplicateKey;
+            }
+        }
+        const copy = try self.allocator.dupe(u8, text);
+        errdefer self.allocator.free(copy);
+        try self.entries.append(self.allocator, .{
+            .units = copy,
+            .value = value,
+        });
+    }
+
+    pub fn buildAlloc(self: *BytesTrieBuilder) ![]u8 {
+        std.sort.heap(Entry, self.entries.items, {}, entryLessThan);
+        if (self.entries.items.len == 0) {
+            return self.allocator.alloc(u8, 0);
+        }
+        self.bytes.clearRetainingCapacity();
+        _ = try self.writeNode(0, self.entries.items.len, 0, null);
+        return self.bytes.toOwnedSlice(self.allocator);
+    }
+
+    fn entryLessThan(_: void, a: Entry, b: Entry) bool {
+        return std.mem.order(u8, a.units, b.units) == .lt;
+    }
+
+    fn commonPrefix(
+        entries: []const Entry,
+        depth: usize,
+        cap: usize,
+    ) usize {
+        var max = cap;
+        for (entries) |entry| {
+            max = @min(max, entry.units.len - depth);
+        }
+        var length: usize = 0;
+        while (length < max) : (length += 1) {
+            const unit = entries[0].units[depth + length];
+            for (entries[1..]) |entry| {
+                if (entry.units[depth + length] != unit) return length;
+            }
+        }
+        return length;
+    }
+
+    fn writeValueBytes(self: *BytesTrieBuilder, value: i32) !void {
+        const bits: u32 = @bitCast(value);
+        try self.bytes.append(self.allocator, @intCast(bits >> 24));
+        try self.bytes.append(self.allocator, @intCast((bits >> 16) & 0xff));
+        try self.bytes.append(self.allocator, @intCast((bits >> 8) & 0xff));
+        try self.bytes.append(self.allocator, @intCast(bits & 0xff));
+    }
+
+    fn writeFinal(self: *BytesTrieBuilder, value: i32) !usize {
+        const start = self.bytes.items.len;
+        try self.bytes.append(self.allocator, 0xff);
+        try self.writeValueBytes(value);
+        return start;
+    }
+
+    fn writeIntermediate(self: *BytesTrieBuilder, value: i32) !void {
+        try self.bytes.append(self.allocator, 0xfe);
+        try self.writeValueBytes(value);
+    }
+
+    fn writeValueDeltaPlaceholder(self: *BytesTrieBuilder) !usize {
+        const start = self.bytes.items.len;
+        try self.bytes.appendSlice(self.allocator, &.{ 0xfe, 0, 0, 0, 0 });
+        return start;
+    }
+
+    fn writeBranchDeltaPlaceholder(self: *BytesTrieBuilder) !usize {
+        const start = self.bytes.items.len;
+        try self.bytes.appendSlice(self.allocator, &.{ 0xff, 0, 0, 0, 0 });
+        return start;
+    }
+
+    fn writeDeltaBytes(
+        self: *BytesTrieBuilder,
+        position: usize,
+        delta: u32,
+    ) void {
+        self.bytes.items[position + 1] = @intCast(delta >> 24);
+        self.bytes.items[position + 2] = @intCast((delta >> 16) & 0xff);
+        self.bytes.items[position + 3] = @intCast((delta >> 8) & 0xff);
+        self.bytes.items[position + 4] = @intCast(delta & 0xff);
+    }
+
+    /// Branch value deltas are measured from after the value payload.
+    fn patchValueDelta(
+        self: *BytesTrieBuilder,
+        position: usize,
+        target: usize,
+    ) void {
+        self.writeDeltaBytes(position, @intCast(target - (position + 5)));
+    }
+
+    /// Binary-branch deltas are measured from after the delta payload.
+    fn patchBranchDelta(
+        self: *BytesTrieBuilder,
+        position: usize,
+        target: usize,
+    ) void {
+        self.writeDeltaBytes(position, @intCast(target - (position + 5)));
+    }
+
+    fn writeNode(
+        self: *BytesTrieBuilder,
+        start: usize,
+        end: usize,
+        depth: usize,
+        value: ?i32,
+    ) error{ OutOfMemory, Unsupported }!usize {
+        var first = start;
+        var node_value = value;
+        if (first < end and self.entries.items[first].units.len == depth) {
+            node_value = self.entries.items[first].value;
+            first += 1;
+        }
+        if (first == end) {
+            return self.writeFinal(node_value orelse 0);
+        }
+
+        const entries = self.entries.items[first..end];
+        var group_starts = std.ArrayList(usize).empty;
+        defer group_starts.deinit(self.allocator);
+        try group_starts.append(self.allocator, first);
+        var index = first + 1;
+        while (index < end) : (index += 1) {
+            if (self.entries.items[index].units[depth] !=
+                self.entries.items[index - 1].units[depth])
+            {
+                try group_starts.append(self.allocator, index);
+            }
+        }
+        const group_count = group_starts.items.len;
+
+        var value_start: ?usize = null;
+        if (node_value) |current| {
+            value_start = self.bytes.items.len;
+            try self.writeIntermediate(current);
+        }
+
+        if (group_count == 1) {
+            const prefix_length = commonPrefix(entries, depth, 16);
+            const node_start = self.bytes.items.len;
+            try self.bytes.append(
+                self.allocator,
+                @intCast(0x10 + prefix_length - 1),
+            );
+            try self.bytes.appendSlice(
+                self.allocator,
+                entries[0].units[depth..][0..prefix_length],
+            );
+            _ = try self.writeNode(first, end, depth + prefix_length, null);
+            return value_start orelse node_start;
+        }
+
+        if (group_count > 256) return error.Unsupported;
+        const node_start = self.bytes.items.len;
+        if (group_count == 1) {
+            try self.bytes.append(self.allocator, 0);
+            try self.bytes.append(self.allocator, 0);
+        } else if (group_count <= 16) {
+            try self.bytes.append(self.allocator, @intCast(group_count - 1));
+        } else {
+            try self.bytes.append(self.allocator, 0);
+            try self.bytes.append(self.allocator, @intCast(group_count - 1));
+        }
+        try self.writeBranchData(group_starts.items, depth, end);
+        return value_start orelse node_start;
+    }
+
+    fn writeBranchData(
+        self: *BytesTrieBuilder,
+        group_starts: []const usize,
+        depth: usize,
+        end: usize,
+    ) error{ OutOfMemory, Unsupported }!void {
+        const group_count = group_starts.len;
+        if (group_count <= 5) {
+            var delta_positions = std.ArrayList(usize).empty;
+            defer delta_positions.deinit(self.allocator);
+            for (group_starts[0 .. group_count - 1]) |group_start| {
+                try self.bytes.append(
+                    self.allocator,
+                    self.entries.items[group_start].units[depth],
+                );
+                try delta_positions.append(
+                    self.allocator,
+                    try self.writeValueDeltaPlaceholder(),
+                );
+            }
+            const last_start = group_starts[group_count - 1];
+            try self.bytes.append(
+                self.allocator,
+                self.entries.items[last_start].units[depth],
+            );
+            _ = try self.writeNode(last_start, end, depth + 1, null);
+            for (
+                group_starts[0 .. group_count - 1],
+                delta_positions.items,
+                0..,
+            ) |group_start, delta_position, group_index| {
+                const next_start = group_starts[group_index + 1];
+                const target = try self.writeNode(
+                    group_start,
+                    next_start,
+                    depth + 1,
+                    null,
+                );
+                self.patchValueDelta(delta_position, target);
+            }
+            return;
+        }
+
+        const left = group_count / 2;
+        const right_start = group_starts[left];
+        try self.bytes.append(
+            self.allocator,
+            self.entries.items[right_start].units[depth],
+        );
+        const delta_position = try self.writeBranchDeltaPlaceholder();
+        try self.writeBranchData(group_starts[left..], depth, end);
+        const left_start = self.bytes.items.len;
+        try self.writeBranchData(group_starts[0..left], depth, right_start);
+        self.patchBranchDelta(delta_position, left_start);
+    }
+};
+
+test "BytesTrie builder" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var builder = BytesTrieBuilder.init(allocator);
+    defer builder.deinit();
+    try builder.add("a", 1);
+    try builder.add("ab", 2);
+    try builder.add("abc", 3);
+    try builder.add("b", 4);
+    try builder.add("ba", 5);
+    const bytes = try builder.buildAlloc();
+    defer allocator.free(bytes);
+    var trie = BytesTrie.init(bytes);
+    try testing.expectEqual(Result.intermediate_value, trie.first('a'));
+    try testing.expectEqual(@as(i32, 1), trie.getValue());
+    try testing.expectEqual(Result.intermediate_value, trie.next('b'));
+    try testing.expectEqual(@as(i32, 2), trie.getValue());
+    try testing.expectEqual(Result.final_value, trie.next('c'));
+    try testing.expectEqual(@as(i32, 3), trie.getValue());
+    try testing.expectEqual(Result.intermediate_value, trie.first('b'));
+    try testing.expectEqual(@as(i32, 4), trie.getValue());
+    try testing.expectEqual(Result.final_value, trie.next('a'));
+    try testing.expectEqual(@as(i32, 5), trie.getValue());
+    try testing.expectEqual(Result.no_match, trie.first('z'));
+
+    var wide = BytesTrieBuilder.init(allocator);
+    defer wide.deinit();
+    for (0..80) |i| {
+        const unit = [_]u8{@intCast(0x80 + i)};
+        try wide.add(&unit, @intCast(i));
+    }
+    const wide_bytes = try wide.buildAlloc();
+    defer allocator.free(wide_bytes);
+    var wide_trie = BytesTrie.init(wide_bytes);
+    for (0..80) |i| {
+        const result = wide_trie.first(@intCast(0x80 + i));
+        try testing.expect(result.hasValue());
+        try testing.expectEqual(@as(i32, @intCast(i)), wide_trie.getValue());
+    }
+    try testing.expectEqual(Result.no_match, wide_trie.first(0x80 + 80));
+}
