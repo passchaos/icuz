@@ -14,7 +14,12 @@ import os
 import struct
 import sys
 
-LOCALES = ("en", "fr", "de", "ja", "ar", "ru", "hi", "zh")
+LOCALES = (
+    "en", "fr", "de", "ja", "ar", "ru", "hi", "zh",
+    "ccp", "chr", "en-001", "eo", "ff", "fo",
+    "fr-BE", "ky", "lb", "nn", "no", "qu", "se", "su", "vec",
+    "yue", "yue-Hans",
+)
 
 SKELETONS = (
     ".00",
@@ -242,6 +247,14 @@ def main() -> int:
                 )
             )
 
+    encoded_cases = []
+    for case in cases:
+        try:
+            case[-1].encode("utf-8")
+        except UnicodeEncodeError:
+            continue
+        encoded_cases.append(case)
+    cases = encoded_cases
     blob = bytearray(b"CJRF")
     blob += struct.pack("<B3xI", 1, len(cases))
     for (
