@@ -884,11 +884,23 @@ pub fn spanQuickCheckYes(
     text: []const u8,
     form: Form,
 ) error{InvalidUtf8}!usize {
+    const span = try spanQuickCheckYesImpl(true, text, form);
+    // A full-length span proves the scan visited every scalar. Otherwise the
+    // scan stopped at the first change and the suffix is still unvalidated.
+    if (span == text.len) return span;
     if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
-    return spanQuickCheckYesUnchecked(text, form);
+    return span;
 }
 
 fn spanQuickCheckYesUnchecked(text: []const u8, form: Form) usize {
+    return spanQuickCheckYesImpl(false, text, form);
+}
+
+fn spanQuickCheckYesImpl(
+    comptime validating: bool,
+    text: []const u8,
+    form: Form,
+) if (validating) error{InvalidUtf8}!usize else usize {
     const ascii_end = asciiPrefixLen(text);
     if (ascii_end == text.len) return text.len;
 
@@ -908,7 +920,10 @@ fn spanQuickCheckYesUnchecked(text: []const u8, form: Form) usize {
             continue;
         }
         const start = index;
-        const decoded = scalar.decodeValidating(text, index) orelse return text.len;
+        const decoded = scalar.decodeValidating(text, index) orelse {
+            if (validating) return error.InvalidUtf8;
+            return text.len;
+        };
         const codepoint = decoded.codepoint;
         index = decoded.next;
         if (codepoint >= 0x80 and data.isSimplePage(codepoint, compatibility)) {
@@ -1378,6 +1393,15 @@ test "spanQuickCheckYes reports the first unstable offset" {
     try std.testing.expectEqual(
         @as(usize, 2),
         try spanQuickCheckYes("abc\u{0340}", .nfc),
+    );
+    // Invalid bytes after an early stop still surface as InvalidUtf8.
+    try std.testing.expectError(
+        error.InvalidUtf8,
+        spanQuickCheckYes("a\u{0301}\xff", .nfc),
+    );
+    try std.testing.expectError(
+        error.InvalidUtf8,
+        spanQuickCheckYes("\xff", .nfc),
     );
 }
 
