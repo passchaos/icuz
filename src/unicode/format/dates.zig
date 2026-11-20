@@ -385,7 +385,7 @@ fn numericTextMismatch(letter: u8, requested: u8, matched: u8) bool {
 /// Whether a field width selects the numeric (rather than textual) form.
 fn fieldIsNumeric(letter: u8, width: u8) bool {
     return switch (letter) {
-        'M', 'L' => width <= 2,
+        'M', 'L', 'l' => width <= 2,
         'd', 'y', 'Y', 'u', 'r', 'U', 'D', 'A', 'F', 'g' => true,
         else => false,
     };
@@ -1267,7 +1267,7 @@ fn appendField(
                 locale,
             );
         },
-        'M', 'L' => {
+        'M', 'L', 'l' => {
             const month = @min(@max(overrides.month orelse date_time.month, 1), 13);
             if (length <= 2) {
                 if (overrides.leap_month and overrides.leap_numeric.len != 0) {
@@ -1290,7 +1290,8 @@ fn appendField(
                     );
                 }
             } else {
-                const standalone = field == 'L' and overrides.months == null;
+                const standalone = (field == 'L' or field == 'l') and
+                    overrides.months == null;
                 const names: []const []const u8 = if (overrides.months) |months|
                     if (length == 3)
                         months.abbreviated[0..]
@@ -2255,7 +2256,7 @@ fn parsePatternField(
             }
             return true;
         },
-        'M', 'L' => {
+        'M', 'L', 'l' => {
             if (length <= 2) {
                 const value = parseDateNumber(locale, text, index, 2) orelse
                     return false;
@@ -3933,4 +3934,31 @@ test "A, F, and g pattern fields" {
     const mjd = try formatPatternAlloc(allocator, "g", epoch, "en", "UTC");
     defer allocator.free(mjd);
     try testing.expectEqualStrings("40587", mjd);
+}
+
+test "deprecated lowercase l month field" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const date = DateTime{
+        .year = 2026,
+        .month = 11,
+        .day = 18,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    };
+    const text = try formatPatternAlloc(allocator, "d llll", date, "en", "UTC");
+    defer allocator.free(text);
+    try testing.expectEqualStrings("18 November", text);
+    const defaults = ParseDefaults{
+        .year = 2026,
+        .month = 1,
+        .day = 1,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    };
+    const parsed = parsePattern("18 November", "d llll", "en", defaults).?;
+    try testing.expectEqual(@as(u8, 11), parsed.month);
 }
