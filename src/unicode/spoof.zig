@@ -11,6 +11,7 @@ const case = @import("case/root.zig");
 const properties = @import("properties.zig");
 const script = @import("script/root.zig");
 const script_extensions = @import("script_extensions/root.zig");
+const set_mod = @import("set.zig");
 
 const blob = @embedFile("spoof/confusables_data.bin");
 const conformance = @embedFile("spoof/conformance.bin");
@@ -52,7 +53,7 @@ comptime {
     }
 }
 
-pub const Error = error{ InvalidUtf8, OutOfMemory };
+pub const Error = error{ InvalidUtf8, InvalidState, OutOfMemory };
 
 fn readU32(offset: usize) u32 {
     return std.mem.readInt(u32, blob[offset..][0..4], .little);
@@ -150,14 +151,13 @@ pub const RestrictionLevel = enum {
 };
 
 const script_count = @typeInfo(script.Script).@"enum".fields.len;
-const ScriptSet = std.StaticBitSet(script_count + 4);
+const ScriptSet = std.StaticBitSet(script_count + 3);
 
 // UTS #39 augments script sets with the composite script codes Jpan, Kore,
-// Hanb, and Hntl, which are not Script property values.
+// and Hanb, which are not Script property values.
 const jpan_bit = script_count;
 const kore_bit = script_count + 1;
 const hanb_bit = script_count + 2;
-const hntl_bit = script_count + 3;
 
 fn augmentedScriptSet(codepoint: u21) ScriptSet {
     var set = ScriptSet.initEmpty();
@@ -174,7 +174,6 @@ fn augmentedScriptSet(codepoint: u21) ScriptSet {
     }
     if (set.isSet(@intFromEnum(script.Script.han))) {
         set.set(hanb_bit);
-        set.set(hntl_bit);
         set.set(jpan_bit);
         set.set(kore_bit);
     }
@@ -185,24 +184,8 @@ fn augmentedScriptSet(codepoint: u21) ScriptSet {
     }
     if (set.isSet(@intFromEnum(script.Script.hangul))) set.set(kore_bit);
     if (set.isSet(@intFromEnum(script.Script.bopomofo))) set.set(hanb_bit);
-    if (set.isSet(@intFromEnum(script.Script.latin))) set.set(hntl_bit);
     return set;
 }
-
-/// UAX #31 Table 5 recommended scripts.
-const recommended_scripts = blk: {
-    var set = ScriptSet.initEmpty();
-    const values = [_]script.Script{
-        .arabic,     .armenian,  .bengali,   .cyrillic, .devanagari,
-        .ethiopic,   .georgian,  .greek,     .gujarati, .gurmukhi,
-        .hangul,     .han,       .hebrew,    .hiragana, .katakana,
-        .kannada,    .khmer,     .lao,       .latin,    .malayalam,
-        .myanmar,    .odia,      .sinhala,   .tamil,    .telugu,
-        .thaana,     .thai,      .tibetan,
-    };
-    for (values) |value| set.set(@intFromEnum(value));
-    break :blk set;
-};
 
 fn decodeCodepoint(
     text: []const u8,
@@ -218,56 +201,80 @@ fn decodeCodepoint(
     return codepoint;
 }
 
-/// Compute the UTS #39 restriction level of an identifier.
-///
-/// The default identifier profile is Identifier_Status=Allowed, so strings
-/// containing disallowed characters (spaces, emoji, ...) are Unrestricted.
-/// Han combined with Latin resolves to a single script because both carry
-/// the Hntl composite script; ICU 78 classifies that combination as Highly
-/// Restrictive instead.
-pub fn restrictionLevel(text: []const u8) Error!RestrictionLevel {
-    if (text.len == 0) return .ascii_only;
+/// Characters accepted by a spoof checker's restriction-level and
+/// character-limit checks.
+pub const AllowedChars = union(enum) {
+    /// Every code point is allowed, ICU's default for `uspoof_open`.
+    all,
+    /// Only Identifier_Status=Allowed code points.
+    identifier_status,
+    /// An explicit UnicodeSet, as set by `uspoof_setAllowedChars`.
+    set: *const set_mod.Set,
+
+    pub fn contains(self: AllowedChars, codepoint: u21) bool {
+        return switch (self) {
+            .all => true,
+            .identifier_status => isAllowedIdentifier(codepoint),
+            .set => |value| value.contains(codepoint),
+        };
+    }
+};
+
+fn scriptSetsIntersect(a: ScriptSet, b: ScriptSet) bool {
+    var intersection = a;
+    intersection.setIntersection(b);
+    return !intersection.eql(ScriptSet.initEmpty());
+}
+
+fn computeRestrictionLevel(
+    text: []const u8,
+    allowed: AllowedChars,
+) Error!RestrictionLevel {
     var ascii = true;
     var resolved = ScriptSet.initFull();
     var resolved_without_latin = ScriptSet.initFull();
-    var all_kore = true;
-    var all_hanb = true;
-    var all_jpan = true;
     var has_without_latin = false;
 
     var cursor: usize = 0;
     while (cursor < text.len) {
         const codepoint = try decodeCodepoint(text, &cursor);
-        if (!isAllowedIdentifier(codepoint)) return .unrestricted;
+        if (!allowed.contains(codepoint)) return .unrestricted;
         if (codepoint > 0x7F) ascii = false;
         const set = augmentedScriptSet(codepoint);
         resolved.setIntersection(set);
         if (!set.isSet(@intFromEnum(script.Script.latin))) {
             has_without_latin = true;
             resolved_without_latin.setIntersection(set);
-            if (!set.isSet(kore_bit)) all_kore = false;
-            if (!set.isSet(hanb_bit)) all_hanb = false;
-            if (!set.isSet(jpan_bit)) all_jpan = false;
         }
     }
 
     if (ascii) return .ascii_only;
     if (!resolved.eql(ScriptSet.initEmpty())) return .single_script;
-    if (has_without_latin and (all_kore or all_hanb or all_jpan)) {
+    if (has_without_latin and
+        (resolved_without_latin.isSet(kore_bit) or
+            resolved_without_latin.isSet(hanb_bit) or
+            resolved_without_latin.isSet(jpan_bit)))
+    {
         return .highly_restrictive;
     }
-    if (has_without_latin) {
-        var index: usize = 0;
-        while (index < script_count) : (index += 1) {
-            if (!resolved_without_latin.isSet(index)) continue;
-            const value: script.Script = @enumFromInt(index);
-            if (value == .cyrillic or value == .greek) continue;
-            if (recommended_scripts.isSet(index)) {
-                return .moderately_restrictive;
-            }
-        }
+    if (has_without_latin and
+        !resolved_without_latin.isSet(@intFromEnum(script.Script.cyrillic)) and
+        !resolved_without_latin.isSet(@intFromEnum(script.Script.greek)) and
+        !resolved_without_latin.isSet(@intFromEnum(script.Script.cherokee)))
+    {
+        return .moderately_restrictive;
     }
     return .minimally_restrictive;
+}
+
+/// Compute the UTS #39 restriction level of an identifier.
+///
+/// The default identifier profile is Identifier_Status=Allowed, so strings
+/// containing disallowed characters (spaces, emoji, ...) are Unrestricted.
+/// ICU's checker defaults to allowing every code point instead; use
+/// `Checker` for that behavior.
+pub fn restrictionLevel(text: []const u8) Error!RestrictionLevel {
+    return computeRestrictionLevel(text, .identifier_status);
 }
 
 fn decimalDigitValue(codepoint: u21) ?u8 {
@@ -277,25 +284,21 @@ fn decimalDigitValue(codepoint: u21) ?u8 {
     return @intCast((@as(u32, codepoint) - @as(u32, zero)) % 10);
 }
 
-/// True when the string mixes decimal number systems or contains
-/// non-decimal numbers (UTS #39 mixed-number detection).
+/// True when the string mixes decimal number systems (UTS #39 section 5.3,
+/// matching ICU's `getNumerics`: only Numeric_Type=Decimal characters are
+/// counted).
 pub fn hasMixedNumbers(text: []const u8) Error!bool {
     var zero: ?u21 = null;
     var cursor: usize = 0;
     while (cursor < text.len) {
         const codepoint = try decodeCodepoint(text, &cursor);
-        switch (properties.category(codepoint)) {
-            .Nd => {
-                const value = decimalDigitValue(codepoint) orelse continue;
-                const zero_codepoint: u21 = @intCast(codepoint - value);
-                if (zero) |existing| {
-                    if (existing != zero_codepoint) return true;
-                } else {
-                    zero = zero_codepoint;
-                }
-            },
-            .Nl, .No => return true,
-            else => {},
+        if (properties.category(codepoint) != .Nd) continue;
+        const value = decimalDigitValue(codepoint) orelse continue;
+        const zero_codepoint: u21 = @intCast(codepoint - value);
+        if (zero) |existing| {
+            if (existing != zero_codepoint) return true;
+        } else {
+            zero = zero_codepoint;
         }
     }
     return false;
@@ -313,6 +316,283 @@ pub fn isMixedScript(text: []const u8) Error!bool {
         seen = true;
     }
     return seen and resolved.eql(ScriptSet.initEmpty());
+}
+
+fn resolvedScriptSet(text: []const u8) Error!ScriptSet {
+    var resolved = ScriptSet.initFull();
+    var cursor: usize = 0;
+    while (cursor < text.len) {
+        const codepoint = try decodeCodepoint(text, &cursor);
+        resolved.setIntersection(augmentedScriptSet(codepoint));
+    }
+    return resolved;
+}
+
+/// ICU `uspoof` check bits.
+pub const Checks = struct {
+    pub const single_script_confusable: u32 = 0x1;
+    pub const mixed_script_confusable: u32 = 0x2;
+    pub const whole_script_confusable: u32 = 0x4;
+    pub const confusable: u32 = 0x7;
+    pub const restriction_level: u32 = 0x10;
+    pub const invisible: u32 = 0x20;
+    pub const char_limit: u32 = 0x40;
+    pub const mixed_numbers: u32 = 0x80;
+    pub const hidden_overlay: u32 = 0x100;
+    pub const all: u32 = 0xFFFF;
+    pub const aux_info: u32 = 0x40000000;
+};
+
+/// ICU `URestrictionLevel` flag values.
+pub fn restrictionLevelFlag(level: RestrictionLevel) u32 {
+    return switch (level) {
+        .ascii_only => 0x10000000,
+        .single_script => 0x20000000,
+        .highly_restrictive => 0x30000000,
+        .moderately_restrictive => 0x40000000,
+        .minimally_restrictive => 0x50000000,
+        .unrestricted => 0x60000000,
+    };
+}
+
+pub const CheckResult = struct {
+    /// Failure bits, excluding the AUX_INFO restriction-level bits.
+    checks: u32 = 0,
+    /// Populated when the restriction-level check is enabled.
+    restriction_level: ?RestrictionLevel = null,
+
+    /// ICU's combined bitmask: OR in the restriction level when
+    /// `Checks.aux_info` is enabled.
+    pub fn bitmask(self: CheckResult, enabled: u32) u32 {
+        if (enabled & Checks.aux_info != 0) {
+            if (self.restriction_level) |level| {
+                return self.checks | restrictionLevelFlag(level);
+            }
+        }
+        return self.checks;
+    }
+};
+
+/// ICU `USpoofChecker`-compatible configuration.
+pub const Checker = struct {
+    checks: u32 = Checks.all,
+    restriction_level: RestrictionLevel = .highly_restrictive,
+    allowed: AllowedChars = .all,
+
+    pub fn init() Checker {
+        return .{};
+    }
+
+    pub fn setChecks(self: *Checker, checks: u32) void {
+        self.checks = checks & (Checks.all | Checks.aux_info);
+    }
+
+    pub fn getChecks(self: *const Checker) u32 {
+        return self.checks;
+    }
+
+    /// Set the loosest accepted restriction level, enabling the check.
+    pub fn setRestrictionLevel(
+        self: *Checker,
+        level: RestrictionLevel,
+    ) void {
+        self.restriction_level = level;
+        self.checks |= Checks.restriction_level;
+    }
+
+    pub fn getRestrictionLevel(self: *const Checker) RestrictionLevel {
+        return self.restriction_level;
+    }
+
+    /// Restrict accepted characters to `chars`, enabling the char-limit
+    /// check. The set is borrowed and must outlive the checker's use.
+    pub fn setAllowedChars(self: *Checker, chars: *const set_mod.Set) void {
+        self.allowed = .{ .set = chars };
+        self.checks |= Checks.char_limit;
+    }
+
+    /// Run the enabled checks and return ICU's failure bitmask.
+    pub fn checkAlloc(
+        self: *const Checker,
+        allocator: std.mem.Allocator,
+        text: []const u8,
+    ) Error!u32 {
+        const result = try self.checkResultAlloc(allocator, text);
+        return result.bitmask(self.checks);
+    }
+
+    pub fn checkResultAlloc(
+        self: *const Checker,
+        allocator: std.mem.Allocator,
+        text: []const u8,
+    ) Error!CheckResult {
+        var result = CheckResult{};
+        if (self.checks & Checks.restriction_level != 0) {
+            const level = try computeRestrictionLevel(text, self.allowed);
+            if (@intFromEnum(level) > @intFromEnum(self.restriction_level)) {
+                result.checks |= Checks.restriction_level;
+            }
+            result.restriction_level = level;
+        }
+        if (self.checks & Checks.mixed_numbers != 0 and
+            try hasMixedNumbers(text))
+        {
+            result.checks |= Checks.mixed_numbers;
+        }
+        if (self.checks & Checks.hidden_overlay != 0 and
+            try hasHiddenOverlay(text))
+        {
+            result.checks |= Checks.hidden_overlay;
+        }
+        if (self.checks & Checks.char_limit != 0 and
+            !try self.allowsAll(text))
+        {
+            result.checks |= Checks.char_limit;
+        }
+        if (self.checks & Checks.invisible != 0 and
+            try hasInvisibleMarks(allocator, text))
+        {
+            result.checks |= Checks.invisible;
+        }
+        return result;
+    }
+
+    /// Classify two strings as ICU's `uspoof_areConfusableUTF8` does.
+    /// Returns a bitmask of `single_script_confusable`,
+    /// `mixed_script_confusable`, and `whole_script_confusable`, masked by
+    /// the enabled confusable checks. Returns `error.InvalidState` when no
+    /// confusable check is enabled.
+    pub fn areConfusableAlloc(
+        self: *const Checker,
+        allocator: std.mem.Allocator,
+        a: []const u8,
+        b: []const u8,
+        case_fold: bool,
+    ) Error!u32 {
+        if (self.checks & Checks.confusable == 0) return error.InvalidState;
+
+        var folded_a: ?[]u8 = null;
+        defer if (folded_a) |owned| allocator.free(owned);
+        var folded_b: ?[]u8 = null;
+        defer if (folded_b) |owned| allocator.free(owned);
+        var first = a;
+        var second = b;
+        if (case_fold) {
+            folded_a = try case.foldAlloc(allocator, a);
+            folded_b = try case.foldAlloc(allocator, b);
+            first = folded_a.?;
+            second = folded_b.?;
+        }
+
+        var skeleton_a = std.ArrayList(u21).empty;
+        defer skeleton_a.deinit(allocator);
+        var skeleton_b = std.ArrayList(u21).empty;
+        defer skeleton_b.deinit(allocator);
+        try skeletonCodepointsInto(allocator, first, &skeleton_a);
+        try skeletonCodepointsInto(allocator, second, &skeleton_b);
+        if (!std.mem.eql(u21, skeleton_a.items, skeleton_b.items)) return 0;
+
+        const resolved_a = try resolvedScriptSet(first);
+        const resolved_b = try resolvedScriptSet(second);
+        var result: u32 = 0;
+        if (scriptSetsIntersect(resolved_a, resolved_b)) {
+            result |= Checks.single_script_confusable;
+        } else {
+            result |= Checks.mixed_script_confusable;
+            if (!resolved_a.eql(ScriptSet.initEmpty()) and
+                !resolved_b.eql(ScriptSet.initEmpty()))
+            {
+                result |= Checks.whole_script_confusable;
+            }
+        }
+        return result & self.checks;
+    }
+
+    fn allowsAll(self: *const Checker, text: []const u8) Error!bool {
+        var cursor: usize = 0;
+        while (cursor < text.len) {
+            const codepoint = try decodeCodepoint(text, &cursor);
+            if (!self.allowed.contains(codepoint)) return false;
+        }
+        return true;
+    }
+};
+
+fn isIllegalDotLeadCharacterNoLookup(codepoint: u21) bool {
+    return codepoint == 'i' or codepoint == 'j' or codepoint == 0x0131 or
+        codepoint == 0x0237 or codepoint == 'l' or
+        properties.isSoftDotted(codepoint);
+}
+
+fn isIllegalDotLeadCharacter(codepoint: u21) bool {
+    if (isIllegalDotLeadCharacterNoLookup(codepoint)) return true;
+    var buffer: [max_mapping_length]u32 = undefined;
+    const target = mappingInto(codepoint, &buffer) orelse return false;
+    if (target.len == 0) return false;
+    const final: u21 = @intCast(target[target.len - 1]);
+    return final != codepoint and isIllegalDotLeadCharacterNoLookup(final);
+}
+
+/// True when the string contains a combining dot above after a character
+/// whose prototype is soft-dotted, ICU's hidden-overlay check.
+pub fn hasHiddenOverlay(text: []const u8) Error!bool {
+    var saw_lead = false;
+    var cursor: usize = 0;
+    while (cursor < text.len) {
+        const codepoint = try decodeCodepoint(text, &cursor);
+        if (saw_lead and codepoint == 0x0307) return true;
+        const combining_class = normalization.combiningClass(codepoint);
+        if (combining_class == 0 or combining_class == 230) {
+            saw_lead = isIllegalDotLeadCharacter(codepoint);
+        }
+    }
+    return false;
+}
+
+/// True when a combining sequence contains the same non-spacing mark twice,
+/// ICU's invisible-character check.
+pub fn hasInvisibleMarks(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+) Error!bool {
+    var decoded = std.ArrayList(u21).empty;
+    defer decoded.deinit(allocator);
+    try decodeUtf8(allocator, text, &decoded);
+    const decomposed = try normalization.normalizeCodepointsAlloc(
+        allocator,
+        decoded.items,
+        .nfd,
+    );
+    defer if (decomposed) |owned| allocator.free(owned);
+    const source = decomposed orelse decoded.items;
+
+    var first_mark: u21 = 0;
+    var have_multiple = false;
+    var seen = std.ArrayList(u21).empty;
+    defer seen.deinit(allocator);
+    for (source) |codepoint| {
+        if (properties.category(codepoint) != .Mn) {
+            first_mark = 0;
+            if (have_multiple) {
+                seen.clearRetainingCapacity();
+                have_multiple = false;
+            }
+            continue;
+        }
+        if (first_mark == 0) {
+            first_mark = codepoint;
+            continue;
+        }
+        if (!have_multiple) {
+            try seen.append(allocator, first_mark);
+            have_multiple = true;
+        }
+        if (std.mem.indexOfScalar(u21, seen.items, codepoint) != null) {
+            return true;
+        }
+        try seen.append(allocator, codepoint);
+    }
+    return false;
 }
 
 fn decodeUtf8(
@@ -520,9 +800,10 @@ test "restriction levels" {
         RestrictionLevel.single_script,
         try restrictionLevel("\u{d55c}\u{ad6d}\u{c5b4}"),
     );
-    // Han and Latin share Hntl, so Latin + Han stays single-script.
+    // Han resolves through Hanb/Jpan/Kore, so Latin + Han is Highly
+    // Restrictive, matching ICU.
     try testing.expectEqual(
-        RestrictionLevel.single_script,
+        RestrictionLevel.highly_restrictive,
         try restrictionLevel("abc\u{65e5}"),
     );
     try testing.expectEqual(
@@ -563,9 +844,180 @@ test "mixed number detection" {
     try testing.expect(!(try hasMixedNumbers("")));
     try testing.expect(!(try hasMixedNumbers("\u{0661}\u{0662}\u{0663}")));
     try testing.expect(try hasMixedNumbers("1\u{0662}"));
-    try testing.expect(try hasMixedNumbers("\u{2460}"));
-    try testing.expect(try hasMixedNumbers("\u{2167}"));
+    // ICU only counts Numeric_Type=Decimal characters.
+    try testing.expect(!(try hasMixedNumbers("\u{2460}")));
+    try testing.expect(!(try hasMixedNumbers("\u{2167}")));
     try testing.expectError(error.InvalidUtf8, hasMixedNumbers("\xff"));
+}
+
+test "USpoofChecker ICU conformance fixture" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const fixture = @embedFile("spoof/check_conformance.bin");
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJSP", fixture[0..4]);
+    try testing.expectEqual(@as(u8, 1), fixture[4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+
+    const levels = [_]RestrictionLevel{
+        .ascii_only,
+        .single_script,
+        .highly_restrictive,
+        .moderately_restrictive,
+        .minimally_restrictive,
+        .unrestricted,
+    };
+    const patterns = [_][]const u8{
+        "",
+        "[a-z]",
+        "[a-zA-Z0-9_]",
+        "[\\u0000-\\u007F]",
+    };
+    var allowed: [patterns.len]set_mod.Set = undefined;
+    var allowed_ready = [_]bool{false} ** patterns.len;
+    defer for (0..patterns.len) |index| {
+        if (allowed_ready[index]) allowed[index].deinit();
+    };
+    for (1..patterns.len) |index| {
+        allowed[index] = try set_mod.parse(allocator, patterns[index]);
+        allowed_ready[index] = true;
+    }
+
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var index: usize = 0;
+    while (index < case_count) : (index += 1) {
+        const kind = fixture[cursor];
+        const level_index = fixture[cursor + 1];
+        const allowed_index = fixture[cursor + 2];
+        const checks = std.mem.readInt(
+            u32,
+            fixture[cursor + 4 ..][0..4],
+            .little,
+        );
+        cursor += 8;
+        const first_len = std.mem.readInt(
+            u16,
+            fixture[cursor..][0..2],
+            .little,
+        );
+        cursor += 2;
+        const first = fixture[cursor..][0..first_len];
+        cursor += first_len;
+        const second_len = std.mem.readInt(
+            u16,
+            fixture[cursor..][0..2],
+            .little,
+        );
+        cursor += 2;
+        const second = fixture[cursor..][0..second_len];
+        cursor += second_len;
+        const expected = std.mem.readInt(
+            u32,
+            fixture[cursor..][0..4],
+            .little,
+        );
+        cursor += 4;
+
+        var checker = Checker.init();
+        if (allowed_index != 0) {
+            checker.setAllowedChars(&allowed[allowed_index]);
+        }
+        checker.setRestrictionLevel(levels[level_index]);
+        checker.setChecks(checks);
+
+        const actual = if (kind == 1)
+            try checker.areConfusableAlloc(allocator, first, second, false)
+        else
+            try checker.checkAlloc(allocator, first);
+        if (actual != expected) {
+            failures += 1;
+            if (failures <= 10) {
+                std.debug.print(
+                    "spoof check mismatch: {s} checks={x} got={x} want={x}\n",
+                    .{ first, checks, actual, expected },
+                );
+            }
+        }
+    }
+    try testing.expectEqual(fixture.len, cursor);
+    try testing.expectEqual(@as(usize, 0), failures);
+    std.debug.print(
+        "spoof checker conformance: {}/{} passed\n",
+        .{ case_count - failures, case_count },
+    );
+}
+
+test "spoof checker configuration" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var checker = Checker.init();
+    try testing.expectEqual(Checks.all, checker.getChecks());
+    try testing.expectEqual(
+        RestrictionLevel.highly_restrictive,
+        checker.getRestrictionLevel(),
+    );
+    try testing.expectEqual(@as(u32, 0), try checker.checkAlloc(allocator, "abc"));
+
+    checker.setChecks(Checks.mixed_numbers);
+    try testing.expectEqual(
+        Checks.mixed_numbers,
+        try checker.checkAlloc(allocator, "1\u{0662}"),
+    );
+    try testing.expectEqual(@as(u32, 0), try checker.checkAlloc(allocator, "abc"));
+
+    checker.setChecks(Checks.invisible);
+    try testing.expectEqual(
+        Checks.invisible,
+        try checker.checkAlloc(allocator, "a\u{0301}\u{0301}"),
+    );
+
+    checker.setChecks(Checks.hidden_overlay);
+    try testing.expectEqual(
+        Checks.hidden_overlay,
+        try checker.checkAlloc(allocator, "i\u{0307}"),
+    );
+
+    checker.setChecks(0);
+    try testing.expectError(
+        error.InvalidState,
+        checker.areConfusableAlloc(allocator, "a", "b", false),
+    );
+    checker.setChecks(Checks.confusable);
+    try testing.expectEqual(
+        Checks.single_script_confusable,
+        try checker.areConfusableAlloc(allocator, "paypal", "paypa1", false),
+    );
+    try testing.expectEqual(
+        Checks.mixed_script_confusable,
+        try checker.areConfusableAlloc(allocator, "paypal", "p\u{0430}ypal", false),
+    );
+    try testing.expectEqual(
+        @as(u32, 0),
+        try checker.areConfusableAlloc(allocator, "abc", "abd", false),
+    );
+
+    checker.setChecks(Checks.restriction_level | Checks.aux_info);
+    const result = try checker.checkResultAlloc(
+        allocator,
+        "\u{0421}\u{0456}\u{0433}\u{0441}\u{04c0}\u{0435}",
+    );
+    try testing.expectEqual(
+        RestrictionLevel.single_script,
+        result.restriction_level.?,
+    );
+    try testing.expectEqual(
+        @as(u32, 0x20000000),
+        result.bitmask(checker.checks),
+    );
+
+    checker.setRestrictionLevel(.single_script);
+    try testing.expectEqual(
+        Checks.restriction_level | Checks.aux_info,
+        try checker.checkAlloc(allocator, "abc\u{05d0}"),
+    );
 }
 
 test "UTS 39 skeleton conformance" {

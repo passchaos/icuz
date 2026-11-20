@@ -127,7 +127,12 @@ need without pulling in a font or layout engine.
   expose the Identifier_Status=Allowed set (1,649 ranges), and
   `restrictionLevel`/`isMixedScript` implement the six restriction levels
   over UTS #39 augmented script sets, and `hasMixedNumbers` detects mixed
-  decimal number systems and non-decimal numbers.
+  decimal number systems.
+- ICU `uspoof`-compatible checker (`SpoofChecker`): configurable check
+  bitmask, restriction-level thresholds, allowed-character sets,
+  invisible-character, hidden-overlay, mixed-number, and char-limit checks,
+  plus `areConfusable` bitmask classification (single/mixed/whole script),
+  validated by a 923-case ICU 78 differential fixture.
 - CLDR 48 cardinal plural rules for 224 locales and ordinal plural rules for
   110 locales, including both CLDR sample conformance fixtures, plus plural
   range selection (`pluralRangeCategory`) for 91 locales from
