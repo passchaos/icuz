@@ -471,6 +471,7 @@ pub fn formatRangeAlloc(
             locale_name,
             first,
             fraction_digits,
+            fraction_digits,
         );
         const category = if (first == second)
             start_category
@@ -478,7 +479,12 @@ pub fn formatRangeAlloc(
             plural_ranges.select(
                 locale_name,
                 start_category,
-                compactCategory(locale_name, second, fraction_digits),
+                compactCategory(
+                    locale_name,
+                    second,
+                    fraction_digits,
+                    fraction_digits,
+                ),
             );
         var name: []const u8 = code;
         if (currencyEntry(locale, code)) |entry| {
@@ -1492,6 +1498,7 @@ fn compactCategory(
     locale_name: []const u8,
     value: f64,
     fraction_digits: u8,
+    min_fraction: u8,
 ) plural.Category {
     const magnitude = @abs(value);
     const scale = pow10(fraction_digits);
@@ -1509,11 +1516,13 @@ fn compactCategory(
         trimmed /= 10;
         trimmed_digits -= 1;
     }
+    const visible_digits = @max(trimmed_digits, min_fraction);
     return plural.category(locale_name, .{
         .n = rounded,
         .i = integer_part,
-        .v = fraction_digits,
-        .w = trimmed_digits,
+        // Trailing zeros are visible down to the minimum fraction digits.
+        .v = @intCast(visible_digits),
+        .w = @intCast(trimmed_digits),
         .f = fraction_value,
         .t = trimmed,
         .e = 0,
@@ -1605,8 +1614,21 @@ fn formatCompactAlloc(
         options.max_fraction_digits == null)
     {
         fraction_digits = compactSkeletonDigits(scaled);
+    } else if (!options.skeleton and
+        options.min_fraction_digits == null and
+        options.max_fraction_digits == null)
+    {
+        // ICU's compact decimal style keeps at least two significant digits
+        // of the scaled mantissa: 1200 -> 1.2K, 12345 -> 12K, 123456 -> 123K.
+        const int_digits: u8 = @intCast(format_info.int_digits);
+        fraction_digits = if (int_digits < 2) 2 - int_digits else 0;
     }
-    const category = compactCategory(locale_name, scaled, fraction_digits);
+    const category = compactCategory(
+        locale_name,
+        scaled,
+        fraction_digits,
+        if (options.skeleton) 0 else format_info.fraction_digits,
+    );
     var pattern = entry.patterns[@intFromEnum(category)];
     if (pattern.len == 0) pattern = entry.patterns[@intFromEnum(plural.Category.other)];
     const info = parseCompactFormat(pattern) orelse {
@@ -1937,7 +1959,12 @@ fn formatCurrencyNameAlloc(
     );
     defer allocator.free(formatted);
 
-    const category = compactCategory(locale_name, magnitude, fraction_digits);
+    const category = compactCategory(
+        locale_name,
+        magnitude,
+        fraction_digits,
+        min_fraction,
+    );
     var name: []const u8 = code;
     if (currencyEntry(locale, code)) |entry| {
         name = entry.names[@intFromEnum(category)];
@@ -3242,7 +3269,7 @@ test "scientific and compact formatting" {
         .style = .compact,
     });
     defer allocator.free(compact);
-    try testing.expectEqualStrings("1K", compact);
+    try testing.expectEqualStrings("1.2K", compact);
 
     const compact_12k = try formatAlloc(allocator, 12345, "en", .{
         .style = .compact,
@@ -3260,14 +3287,14 @@ test "scientific and compact formatting" {
         .style = .compact,
     });
     defer allocator.free(compact_m);
-    try testing.expectEqualStrings("1M", compact_m);
+    try testing.expectEqualStrings("1.2M", compact_m);
 
     const compact_long = try formatAlloc(allocator, 1234, "en", .{
         .style = .compact,
         .compact_style = .long,
     });
     defer allocator.free(compact_long);
-    try testing.expectEqualStrings("1 thousand", compact_long);
+    try testing.expectEqualStrings("1.2 thousand", compact_long);
 
     const small_plain = try formatAlloc(allocator, 999, "en", .{
         .style = .compact,
@@ -3285,7 +3312,7 @@ test "scientific and compact formatting" {
         .style = .compact,
     });
     defer allocator.free(japanese_man);
-    try testing.expectEqualStrings("1万", japanese_man);
+    try testing.expectEqualStrings("1.2万", japanese_man);
 
     const french_mille = try formatAlloc(allocator, 1000, "fr", .{
         .style = .compact,
@@ -3829,3 +3856,20 @@ test "narrow unit skeleton" {
     defer allocator.free(reversed);
     try testing.expectEqualStrings("5m", reversed);
 }
+
+
+test "compact ranges keep significant digits" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const text = try formatRangeAlloc(
+        allocator,
+        1200,
+        1500,
+        "en",
+        .{ .number = .{ .style = .compact } },
+    );
+    defer allocator.free(text);
+    try testing.expectEqualStrings("1.2K \u{2013} 1.5K", text);
+}
+
