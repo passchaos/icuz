@@ -20,6 +20,7 @@ pub const Error = error{ InvalidUtf8, OutOfMemory };
 pub const QuickCheck = data.QuickCheck;
 pub const Form = data.Form;
 pub const nfkcCasefoldAlloc = @import("casefold.zig").nfkcCasefoldAlloc;
+pub const nfkcSimpleCasefoldAlloc = @import("casefold.zig").nfkcSimpleCasefoldAlloc;
 
 /// Return Unicode's per-scalar NFC_Quick_Check value.
 pub const quickCheckCodepoint = data.nfcQuickCheck;

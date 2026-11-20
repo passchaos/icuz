@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Generate the NFKC_Casefold mapping table.
+"""Generate the NFKC_Casefold and NFKC_Simple_Casefold mapping tables.
 
 Usage:
     generate_casefold.py DerivedNormalizationProps.txt out_dir
 
-Parses the derived `NFKC_CF` property and emits a `CJCF` v1 blob consumed by
-src/unicode/normalization/casefold.zig. Empty mappings (default-ignorable
-removals) are stored as ranges; other mappings share a code-point pool.
+Parses the derived `NFKC_CF` and `NFKC_SCF` properties and emits two `CJQF`
+v1 blobs consumed by src/unicode/normalization/casefold.zig. Empty mappings
+(default-ignorable removals) are stored as ranges; other mappings share a
+code-point pool.
 """
 
 from __future__ import annotations
@@ -21,28 +22,21 @@ DERIVED_NORMALIZATION_SHA256 = (
     "71fd6a206a2c0cdd41feb6b7f656aa31091db45e9cedc926985d718397f9e488"
 )
 
+PROPERTIES = (
+    ("NFKC_CF", "casefold_data.bin"),
+    ("NFKC_SCF", "casefold_simple_data.bin"),
+)
 
-def main() -> None:
-    if len(sys.argv) != 3:
-        raise SystemExit(__doc__)
-    source = Path(sys.argv[1])
-    out_dir = Path(sys.argv[2])
-    data = source.read_bytes()
-    actual = hashlib.sha256(data).hexdigest()
-    if actual != DERIVED_NORMALIZATION_SHA256:
-        raise SystemExit(
-            f"{source}: expected Unicode {'.'.join(map(str, UNICODE_VERSION))} "
-            f"SHA-256 {DERIVED_NORMALIZATION_SHA256}, found {actual}"
-        )
 
+def build(data: str, property_name: str) -> bytes:
     mappings: dict[int, tuple[int, ...]] = {}
     removals: list[tuple[int, int]] = []
-    for raw in data.decode("utf-8").splitlines():
+    for raw in data.splitlines():
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue
         fields = [field.strip() for field in line.split(";")]
-        if len(fields) < 3 or fields[1] != "NFKC_CF":
+        if len(fields) < 3 or fields[1] != property_name:
             continue
         span = fields[0].split("..")
         first = int(span[0], 16)
@@ -92,14 +86,30 @@ def main() -> None:
         blob += struct.pack("<II", first, last)
     for codepoint in pool:
         blob += struct.pack("<I", codepoint)
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "casefold_data.bin").write_bytes(blob)
     print(
-        f"wrote {out_dir / 'casefold_data.bin'}: "
-        f"{len(records)} mappings, {len(merged)} removal ranges, "
-        f"{len(pool)} pool code points"
+        f"{property_name}: {len(records)} mappings, {len(merged)} removal "
+        f"ranges, {len(pool)} pool code points"
     )
+    return bytes(blob)
+
+
+def main() -> None:
+    if len(sys.argv) != 3:
+        raise SystemExit(__doc__)
+    source = Path(sys.argv[1])
+    out_dir = Path(sys.argv[2])
+    data = source.read_bytes()
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != DERIVED_NORMALIZATION_SHA256:
+        raise SystemExit(
+            f"{source}: expected Unicode {'.'.join(map(str, UNICODE_VERSION))} "
+            f"SHA-256 {DERIVED_NORMALIZATION_SHA256}, found {actual}"
+        )
+    text = data.decode("utf-8")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for property_name, filename in PROPERTIES:
+        (out_dir / filename).write_bytes(build(text, property_name))
+        print(f"wrote {out_dir / filename}")
 
 
 if __name__ == "__main__":

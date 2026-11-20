@@ -182,6 +182,8 @@ pub const numericType = properties.numericType;
 pub const digitValue = properties.digitValue;
 pub const nfkcCasefoldAlloc =
     @import("./normalization/casefold.zig").nfkcCasefoldAlloc;
+pub const nfkcSimpleCasefoldAlloc =
+    @import("./normalization/casefold.zig").nfkcSimpleCasefoldAlloc;
 
 pub const simpleLower = case_mod.simpleLower;
 pub const simpleUpper = case_mod.simpleUpper;

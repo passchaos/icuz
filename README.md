@@ -21,9 +21,10 @@ need without pulling in a font or layout engine.
 - UAX #15 normalization: NFC, NFD, NFKC, and NFKD, with `normalizeFormInto`,
   `spanQuickCheckYes`, code-point and UTF-16 forms, and a memory-bounded
   streaming `Normalizer` for chunked input. NFKC_Casefold
-  (`nfkcCasefoldAlloc`) applies the derived NFKC_CF mapping and the
-  required final NFC pass, with an ASCII fast path and the complete
-  Unicode 17 mapping table.
+  (`nfkcCasefoldAlloc`) and NFKC_Simple_Casefold
+  (`nfkcSimpleCasefoldAlloc`) apply the derived NFKC_CF and NFKC_SCF
+  mappings and the required final NFC pass, with an ASCII fast path and the
+  complete Unicode 17 mapping tables.
 - Simple lower/upper/title mappings, full case folding, and full
   lower/upper/title mappings with `Final_Sigma`, Turkic, and Lithuanian
   context rules. The `Edits` recorder (`fullLowerWithEditsAlloc`,
