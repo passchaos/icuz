@@ -42,9 +42,16 @@ const Local = struct {
     offset: timezone.Offset,
 };
 
+pub const WeekData = struct {
+    /// ICU `UCAL_FIRST_DAY_OF_WEEK`: 1 = Sunday through 7 = Saturday.
+    first_day: u8 = 1,
+    minimal_days: u8 = 1,
+};
+
 pub const Calendar = struct {
     system: systems.Calendar,
     zone: timezone.Zone,
+    week: WeekData = .{},
     millis: i64 = 0,
 
     pub fn init(system: systems.Calendar, zone_id: []const u8) Error!Calendar {
@@ -65,6 +72,160 @@ pub const Calendar = struct {
 
     pub fn zoneId(self: Calendar) []const u8 {
         return self.zone.id;
+    }
+
+    pub fn setWeekData(
+        self: *Calendar,
+        first_day: u8,
+        minimal_days: u8,
+    ) void {
+        self.week = .{
+            .first_day = @min(@max(first_day, 1), 7),
+            .minimal_days = @min(@max(minimal_days, 1), 7),
+        };
+    }
+
+    fn absoluteDayOfWeek(days: i64) i32 {
+        return @intCast(@mod(days + 4, 7) + 1);
+    }
+
+    fn dayOfWeekLocal(self: Calendar, days: i64) i32 {
+        return @intCast(@mod(
+            absoluteDayOfWeek(days) - @as(i32, self.week.first_day) + 7,
+            7,
+        ) + 1);
+    }
+
+    fn weekOfMonth(
+        self: Calendar,
+        date: systems.Date,
+        hint: i64,
+    ) i32 {
+        const month_start = self.daysFor(.{
+            .era = date.era,
+            .year = date.year,
+            .month = date.month,
+            .day = 1,
+        }, hint) orelse return 0;
+        const offset = @mod(
+            absoluteDayOfWeek(month_start) -
+                @as(i32, self.week.first_day) + 7,
+            7,
+        );
+        var week = @divFloor(
+            @as(i64, date.day) - 1 + offset,
+            7,
+        ) + 1;
+        if (week == 1 and
+            7 - offset < @as(i32, self.week.minimal_days))
+        {
+            week = 0;
+        }
+        return @intCast(week);
+    }
+
+    fn gregorianExtendedYear(days: i64) i32 {
+        const gregorian = systems.fromDays(.gregorian, days);
+        return if (gregorian.era == 0) 1 - gregorian.year else gregorian.year;
+    }
+
+    fn yearOfWeek(self: Calendar, date: systems.Date, days: i64) i32 {
+        const info = self.weekOfYear(date, days);
+        return switch (self.system) {
+            .gregorian, .iso8601 => info.year,
+            .buddhist => info.year - 543,
+            .roc => if (date.era == 0)
+                1912 - info.year
+            else
+                1911 + info.year,
+            .japanese => blk: {
+                const start = systems.daysFromDate(.japanese, .{
+                    .era = date.era,
+                    .year = info.year,
+                    .month = 1,
+                    .day = 1,
+                }) orelse break :blk info.year;
+                break :blk systems.fromDays(.gregorian, start).year;
+            },
+            .chinese => gregorianExtendedYear(days),
+            else => info.year,
+        };
+    }
+
+    const WeekOfYear = struct { week: i32, year: i32 };
+
+    fn weekOfYear(
+        self: Calendar,
+        date: systems.Date,
+        hint: i64,
+    ) WeekOfYear {
+        const year_start = self.daysFor(.{
+            .era = date.era,
+            .year = date.year,
+            .month = 1,
+            .day = 1,
+        }, hint) orelse return .{ .week = 0, .year = date.year };
+        const offset = @mod(
+            absoluteDayOfWeek(year_start) -
+                @as(i32, self.week.first_day) + 7,
+            7,
+        );
+        var week1_start = year_start - offset;
+        if (7 - offset < @as(i32, self.week.minimal_days)) {
+            week1_start += 7;
+        }
+
+        if (self.daysFor(.{
+            .era = date.era,
+            .year = date.year + 1,
+            .month = 1,
+            .day = 1,
+        }, hint)) |next_start| {
+            const next_offset = @mod(
+                absoluteDayOfWeek(next_start) -
+                    @as(i32, self.week.first_day) + 7,
+                7,
+            );
+            var next_week1 = next_start - next_offset;
+            if (7 - next_offset < @as(i32, self.week.minimal_days)) {
+                next_week1 += 7;
+            }
+            if (hint >= next_week1) {
+                return .{ .week = 1, .year = date.year + 1 };
+            }
+        }
+
+        if (hint < week1_start) {
+            if (self.daysFor(.{
+                .era = date.era,
+                .year = date.year - 1,
+                .month = 1,
+                .day = 1,
+            }, hint)) |previous_start| {
+                const previous_offset = @mod(
+                    absoluteDayOfWeek(previous_start) -
+                        @as(i32, self.week.first_day) + 7,
+                    7,
+                );
+                var previous_week1 = previous_start - previous_offset;
+                if (7 - previous_offset <
+                    @as(i32, self.week.minimal_days))
+                {
+                    previous_week1 += 7;
+                }
+                return .{
+                    .week = @intCast(@divFloor(
+                        hint - previous_week1,
+                        7,
+                    ) + 1),
+                    .year = date.year - 1,
+                };
+            }
+        }
+        return .{
+            .week = @intCast(@divFloor(hint - week1_start, 7) + 1),
+            .year = date.year,
+        };
     }
 
     pub fn setMillis(self: *Calendar, millis: i64) void {
@@ -212,7 +373,15 @@ pub const Calendar = struct {
             },
             .date => date.day,
             .day_of_year => self.dayOfYear(local.days, date),
-            .day_of_week => @intCast(@mod(local.days + 4, 7) + 1),
+            .day_of_week => absoluteDayOfWeek(local.days),
+            .week_of_year => self.weekOfYear(date, local.days).week,
+            .week_of_month => self.weekOfMonth(date, local.days),
+            .day_of_week_in_month => @divTrunc(
+                @as(i32, date.day) - 1,
+                7,
+            ) + 1,
+            .year_woy => self.yearOfWeek(date, local.days),
+            .dow_local => self.dayOfWeekLocal(local.days),
             .am_pm => @intFromBool(hour_of_day >= 12),
             .hour => @mod(hour_of_day, 12),
             .hour_of_day => hour_of_day,
@@ -235,19 +404,12 @@ pub const Calendar = struct {
                 .japanese,
                 .roc,
                 .chinese,
-                => blk: {
-                    const gregorian = systems.fromDays(.gregorian, local.days);
-                    break :blk if (gregorian.era == 0)
-                        1 - gregorian.year
-                    else
-                        gregorian.year;
-                },
+                => gregorianExtendedYear(local.days),
                 else => date.year,
             },
             .julian_day => @intCast(local.days + 2440588),
             .milliseconds_in_day => @intCast(local.milliseconds_of_day),
             .is_leap_month => @intFromBool(date.leap_month),
-            else => 0,
         };
     }
 
@@ -499,9 +661,12 @@ const fixture_fields = [_]Field{
     .era,
     .year,
     .month,
+    .week_of_year,
+    .week_of_month,
     .date,
     .day_of_year,
     .day_of_week,
+    .day_of_week_in_month,
     .am_pm,
     .hour,
     .hour_of_day,
@@ -509,6 +674,8 @@ const fixture_fields = [_]Field{
     .second,
     .millisecond,
     .zone_offset,
+    .year_woy,
+    .dow_local,
     .extended_year,
     .julian_day,
     .milliseconds_in_day,
@@ -520,9 +687,12 @@ fn fieldFromByte(value: u8) ?Field {
         0 => .era,
         1 => .year,
         2 => .month,
+        3 => .week_of_year,
+        4 => .week_of_month,
         5 => .date,
         6 => .day_of_year,
         7 => .day_of_week,
+        8 => .day_of_week_in_month,
         9 => .am_pm,
         10 => .hour,
         11 => .hour_of_day,
@@ -530,6 +700,8 @@ fn fieldFromByte(value: u8) ?Field {
         13 => .second,
         14 => .millisecond,
         15 => .zone_offset,
+        17 => .year_woy,
+        18 => .dow_local,
         19 => .extended_year,
         20 => .julian_day,
         21 => .milliseconds_in_day,
@@ -556,12 +728,14 @@ test "ICU mutable calendar conformance fixture" {
         cursor += 2;
         const zone = fixture[cursor..][0..zone_len];
         cursor += zone_len;
+        const first_day = fixture[cursor];
+        const minimal_days = fixture[cursor + 1];
         const initial = std.mem.readInt(
             i64,
-            fixture[cursor..][0..8],
+            fixture[cursor + 2 ..][0..8],
             .little,
         );
-        cursor += 8;
+        cursor += 10;
         var calendar = Calendar.init(
             switch (system_byte) {
                 0 => .gregorian,
@@ -579,6 +753,7 @@ test "ICU mutable calendar conformance fixture" {
             },
             zone,
         ) catch return error.InvalidFixture;
+        calendar.setWeekData(first_day, minimal_days);
         calendar.setMillis(initial);
 
         var field_index: usize = 0;

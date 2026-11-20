@@ -53,7 +53,7 @@ SYSTEMS = (
 )
 ZONES = ("UTC", "America/New_York", "Asia/Tokyo")
 INITIAL_MILLIS = (100_000_000_000, 1_600_000_000_000, 1_700_000_000_000)
-FIELDS = (0, 1, 2, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22)
+FIELDS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22)
 SET_YEAR = {
     0: 2021,
     1: 2564,
@@ -155,6 +155,11 @@ def main() -> int:
         [VP, P],
     )
     ucal_get = bind("ucal_get", ctypes.c_int32, [VP, ctypes.c_int32, P])
+    ucal_get_attribute = bind(
+        "ucal_getAttribute",
+        ctypes.c_int32,
+        [VP, ctypes.c_int32, P],
+    )
     ucal_set = bind("ucal_set", None, [VP, ctypes.c_int32, ctypes.c_int32])
     ucal_add = bind(
         "ucal_add",
@@ -203,6 +208,19 @@ def main() -> int:
                 if status.value > 0 or not calendar:
                     raise SystemExit(f"ucal_open failed for {system}/{zone}")
                 status = ctypes.c_int(0)
+                first_day = ucal_get_attribute(
+                    calendar,
+                    1,
+                    ctypes.byref(status),
+                )
+                minimal_days = ucal_get_attribute(
+                    calendar,
+                    2,
+                    ctypes.byref(status),
+                )
+                if status.value > 0:
+                    raise SystemExit("ucal_getAttribute failed")
+                status = ctypes.c_int(0)
                 ucal_set_millis(
                     calendar,
                     ctypes.c_double(initial),
@@ -247,14 +265,30 @@ def main() -> int:
                     )
                 ucal_close(calendar)
                 records.append(
-                    (system, zone.encode("utf-8"), initial, initial_values, ops)
+                    (
+                        system,
+                        zone.encode("utf-8"),
+                        first_day,
+                        minimal_days,
+                        initial,
+                        initial_values,
+                        ops,
+                    )
                 )
 
     blob += struct.pack("<B3xI", FORMAT_VERSION, len(records))
-    for system, zone, initial, initial_values, ops in records:
+    for (
+        system,
+        zone,
+        first_day,
+        minimal_days,
+        initial,
+        initial_values,
+        ops,
+    ) in records:
         blob += struct.pack("<BB", system, len(zone))
         blob += zone
-        blob += struct.pack("<q", initial)
+        blob += struct.pack("<BBq", first_day, minimal_days, initial)
         for value in initial_values:
             blob += struct.pack("<i", value)
         blob += struct.pack("<B", len(ops))

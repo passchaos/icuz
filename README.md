@@ -214,9 +214,11 @@ need without pulling in a font or layout engine.
   millisecond state, field get/set, `add`/`roll`, era/year/month/date and
   clock fields, DST-aware zone and DST offsets, and Gregorian, Buddhist,
   Japanese, ROC, ISO-8601, Islamic-umalqura, Persian, Indian, Coptic, and
-  Ethiopic systems, validated by a 99-case ICU 78 differential fixture.
-  Hebrew and Chinese field reads are validated; their mutation is read-only
-  because their month-slot numbering differs from the CLDR-facing data.
+  Ethiopic systems, including locale week data (`week_of_year`,
+  `week_of_month`, `day_of_week_in_month`, `year_woy`, `dow_local`),
+  validated by a 99-case ICU 78 differential fixture. Hebrew and Chinese
+  field reads are validated; their mutation is read-only because their
+  month-slot numbering differs from the CLDR-facing data.
 - ICU `DateTimePatternGenerator` helpers: pattern-to-skeleton conversion
   (`datePatternSkeletonAlloc`), base-skeleton reduction
   (`dateBaseSkeletonAlloc`), and skeleton-driven field replacement
