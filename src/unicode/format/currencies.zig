@@ -144,6 +144,17 @@ fn lookup(locale_name: []const u8, code: []const u8) ?Entry {
     return null;
 }
 
+/// True when the locale has a currency record, even if it lacks a particular
+/// currency. ICU falls back to the ISO code for such locales instead of
+/// borrowing another locale's symbol.
+pub fn hasLocale(locale_name: []const u8) bool {
+    if (findLocaleRecord(locale_name) != null) return true;
+    if (std.mem.indexOfAny(u8, locale_name, "-_")) |position| {
+        return findLocaleRecord(locale_name[0..position]) != null;
+    }
+    return false;
+}
+
 /// Localized symbol and display names for a currency, or null when the
 /// locale has no data for it.
 pub fn find(locale_name: []const u8, code: []const u8) ?Entry {

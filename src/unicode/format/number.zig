@@ -1979,6 +1979,7 @@ fn currencyDisplayText(
         // locale's symbol.
         return code;
     }
+    if (currencies.hasLocale(locale.id)) return code;
     const fallback = currencySymbol(code);
     return if (fallback.len != 0) fallback else code;
 }

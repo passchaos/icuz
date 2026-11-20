@@ -102,6 +102,8 @@ DIGITS = {
     "arabext": "\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9",
     "deva": "\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f",
     "beng": "\u09e6\u09e7\u09e8\u09e9\u09ea\u09eb\u09ec\u09ed\u09ee\u09ef",
+    "cakm": "\U00011136\U00011137\U00011138\U00011139\U0001113a"
+        "\U0001113b\U0001113c\U0001113d\U0001113e\U0001113f",
 }
 
 
@@ -325,12 +327,16 @@ def numbers_dict(element) -> dict:
                 {},
             )
             for item in child:
+                if item.get("draft") == "unconfirmed":
+                    continue
                 if item.text is not None:
                     symbols[item.tag] = item.text
             continue
         formats = result.setdefault(tag, {}).setdefault(number_system, {})
         if tag == "currencyFormats":
             for item in child:
+                if item.get("draft") == "unconfirmed":
+                    continue
                 if item.tag == "unitPattern":
                     count = item.get("count", "other")
                     formats[f"unitPattern-count-{count}"] = item.text or ""
@@ -345,6 +351,8 @@ def numbers_dict(element) -> dict:
                         continue
                     for pattern in fmt:
                         if pattern.tag != "pattern":
+                            continue
+                        if pattern.get("draft") == "unconfirmed":
                             continue
                         if pattern.get("type") is not None or pattern.get("count") is not None:
                             continue
@@ -365,6 +373,8 @@ def numbers_dict(element) -> dict:
             for fmt in length:
                 for pattern in fmt:
                     if pattern.tag != "pattern":
+                        continue
+                    if pattern.get("draft") == "unconfirmed":
                         continue
                     pattern_type = pattern.get("type")
                     count = pattern.get("count")
@@ -433,6 +443,14 @@ def resolved_numbers(
     return merged
 
 
+def format_section(numbers: dict, key: str, numbering_system: str) -> dict:
+    sections = numbers.get(key, {})
+    value = sections.get(numbering_system)
+    if not value and numbering_system != "latn":
+        value = sections.get("latn")
+    return value or {}
+
+
 def parse_locale_xml(
     archive: zipfile.ZipFile,
     locale: str,
@@ -441,8 +459,8 @@ def parse_locale_xml(
 ) -> tuple[str, dict]:
     numbers = resolved_numbers(archive, locale, cache, merged_cache)
     numbering_system = numbers.get("defaultNumberingSystem", "latn")
-    symbols = numbers.get("symbols", {}).get(numbering_system, {})
-    decimal_formats = numbers.get("decimalFormats", {}).get(numbering_system, {})
+    symbols = format_section(numbers, "symbols", numbering_system)
+    decimal_formats = format_section(numbers, "decimalFormats", numbering_system)
     # Root aliases the compact long format to short (`alias source="locale"`),
     # so a locale without a real long section anywhere in its chain uses its
     # own resolved short patterns.
@@ -451,21 +469,22 @@ def parse_locale_xml(
         if name == "root":
             continue
         data = load_numbers(archive, name, cache)
-        if "long" in data.get("decimalFormats", {}).get(numbering_system, {}):
+        if "long" in format_section(data, "decimalFormats", numbering_system):
             has_long = True
             break
     if not has_long:
         decimal_formats = dict(decimal_formats)
         decimal_formats["long"] = decimal_formats.get("short", {})
     decimal_pattern = decimal_formats.get("standard", "#,##0.###")
-    percent_pattern = (
-        numbers.get("percentFormats", {})
-        .get(numbering_system, {})
-        .get("standard", "#,##0%")
-    )
-    currency_formats = numbers.get("currencyFormats", {}).get(
+    percent_pattern = format_section(
+        numbers,
+        "percentFormats",
         numbering_system,
-        {},
+    ).get("standard", "#,##0%")
+    currency_formats = format_section(
+        numbers,
+        "currencyFormats",
+        numbering_system,
     )
     currency_standard = currency_formats.get("standard", "\u00a4#,##0.00")
     currency_alpha = currency_formats.get(
@@ -494,11 +513,11 @@ def parse_locale_xml(
             or currency_formats.get("unitPattern-count-other")
             or "{0} {1}"
         )
-    scientific_pattern = (
-        numbers.get("scientificFormats", {})
-        .get(numbering_system, {})
-        .get("standard", "#E0")
-    )
+    scientific_pattern = format_section(
+        numbers,
+        "scientificFormats",
+        numbering_system,
+    ).get("standard", "#E0")
     digits = DIGITS.get(numbering_system, DIGITS["latn"])
     return locale, {
         "digits": digits,

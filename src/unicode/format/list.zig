@@ -180,3 +180,29 @@ test "list formatting covers additional locales" {
         try testing.expectEqualStrings(case.expected, result);
     }
 }
+
+test "expanded locale list formatting" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const cases = [_]struct {
+        locale: []const u8,
+        expected: []const u8,
+    }{
+        .{ .locale = "ff", .expected = "a, b, c" },
+        .{ .locale = "ak", .expected = "a, b, ne c" },
+        .{ .locale = "yue", .expected = "a、b同c" },
+        .{ .locale = "ccp", .expected = "a, b 𑄃𑄳𑄃 c" },
+        .{ .locale = "ky", .expected = "a, b жана c" },
+        .{ .locale = "lb", .expected = "a, b a(n) c" },
+    };
+    for (cases) |case| {
+        const text = try formatAlloc(
+            allocator,
+            &.{ "a", "b", "c" },
+            case.locale,
+            .{},
+        );
+        defer allocator.free(text);
+        try testing.expectEqualStrings(case.expected, text);
+    }
+}

@@ -18,32 +18,38 @@ CLDR_SHA256 = "06c7c698d6fd8d67cefac15a0206b0109b00e0ef1636f86f84449fa959561f74"
 CLDR_VERSION = 48
 
 LOCALES = (
-    "af", "am", "ar", "az", "be", "bg", "bn", "bs", "ca", "cs",
-    "cy", "da", "de", "de-AT", "de-CH", "el", "en", "en-AU", "en-CA",
-    "en-GB", "en-IN", "es", "es-419", "es-MX", "et", "eu", "fa", "fi",
-    "fil", "fr", "fr-CA", "ga", "gl", "gu", "he", "hi", "hr", "hu",
-    "hy", "id", "is", "it", "ja", "ka", "kk", "km", "kn", "ko", "lo",
-    "lt", "lv", "mk", "ml", "mn", "mr", "ms", "mt", "my", "nb", "ne",
-    "nl", "nl-BE", "pa", "pl", "ps", "pt", "pt-PT", "ro", "ru", "si",
-    "sk", "sl", "sq", "sr", "sv", "sw", "ta", "te", "th", "tr", "uk",
-    "ur", "uz", "vi", "zh", "zh-Hant", "zu",
+    "af", "ak", "am", "ar", "az", "be", "bg", "bn", "bs", "ca", "ccp",
+    "chr", "cs", "cy", "da", "de", "de-AT", "de-CH", "ee", "el", "en",
+    "en-001", "en-AU", "en-CA", "en-GB", "en-IN", "eo", "es", "es-419",
+    "es-MX", "et", "eu", "fa", "fa-AF", "ff", "fi", "fil", "fo", "fr",
+    "fr-BE", "fr-CA", "ga", "gl", "gu", "he", "hi", "hr", "hu",
+    "hy", "id", "is", "it", "ja", "ka", "kk", "km", "kn", "ko",
+    "ky", "lb", "lo", "lrc", "lt", "lv", "mk", "ml", "mn", "mr", "ms",
+    "mt", "my", "nb", "ne", "nl", "nl-BE", "nn", "no", "pa", "pl", "ps",
+    "pt", "pt-PT", "qu", "ro", "ru", "se", "si", "sk", "sl", "sq", "sr",
+    "su", "sv", "sw", "ta", "te", "th", "tr", "uk", "ur",
+    "uz", "vec", "vi", "yue", "yue-Hans", "zh", "zh-Hant", "zu",
 )
 
 PARENT = {
     "de-AT": "de",
     "de-CH": "de",
+    "en-001": "en",
     "en-AU": "en",
     "en-CA": "en",
     "en-GB": "en",
     "en-IN": "en",
     "es-419": "es",
     "es-MX": "es",
+    "fa-AF": "fa",
+    "fr-BE": "fr",
     "fr-CA": "fr",
     "nl-BE": "nl",
     "pt-PT": "pt",
+    "yue-Hans": "yue",
     "zh-Hant": "zh",
     "nb": "no",
-    "nb": "no",
+    "nn": "no",
 }
 
 LIST_STYLES = (
@@ -102,6 +108,10 @@ def checked_zip(path: Path) -> zipfile.ZipFile:
     return zipfile.ZipFile(path)
 
 
+def is_unconfirmed(element: ET.Element) -> bool:
+    return element.get("draft") == "unconfirmed"
+
+
 def parse_locale(archive: zipfile.ZipFile, locale: str) -> dict:
     filename = "common/main/" + locale.replace("-", "_") + ".xml"
     try:
@@ -125,6 +135,8 @@ def parse_locale(archive: zipfile.ZipFile, locale: str) -> dict:
         style = pattern.get("type", "standard")
         parts = {}
         for part in pattern.findall("listPatternPart"):
+            if is_unconfirmed(part):
+                continue
             kind = part.get("type")
             if kind and part.text:
                 parts[kind] = part.text
@@ -154,6 +166,8 @@ def parse_locale(archive: zipfile.ZipFile, locale: str) -> dict:
             "past": {},
         }
         for relative in field.findall("relative"):
+            if is_unconfirmed(relative):
+                continue
             kind = relative.get("type")
             if kind and relative.text:
                 entry["relative"][kind] = relative.text
@@ -162,6 +176,8 @@ def parse_locale(archive: zipfile.ZipFile, locale: str) -> dict:
             if direction not in ("future", "past"):
                 continue
             for pattern in relative_time.findall("relativeTimePattern"):
+                if is_unconfirmed(pattern):
+                    continue
                 category = pattern.get("count")
                 if category and pattern.text:
                     entry[direction][category] = pattern.text
@@ -177,7 +193,7 @@ def parse_locale(archive: zipfile.ZipFile, locale: str) -> dict:
                 continue
             patterns = {}
             for pattern in unit.findall("unitPattern"):
-                if pattern.get("case") is not None:
+                if is_unconfirmed(pattern) or pattern.get("case") is not None:
                     continue
                 category = pattern.get("count")
                 if category and pattern.text:
@@ -194,7 +210,7 @@ def parse_locale(archive: zipfile.ZipFile, locale: str) -> dict:
         # them (falling back to the ISO code) when no standard symbol exists.
         symbol = ""
         for symbol_element in currency.findall("symbol"):
-            if symbol_element.get("alt") is not None:
+            if is_unconfirmed(symbol_element) or symbol_element.get("alt") is not None:
                 continue
             if symbol_element.text:
                 symbol = symbol_element.text
@@ -202,7 +218,7 @@ def parse_locale(archive: zipfile.ZipFile, locale: str) -> dict:
         names: dict[str, str] = {}
         generic = None
         for display_name in currency.findall("displayName"):
-            if display_name.get("alt") is not None:
+            if is_unconfirmed(display_name) or display_name.get("alt") is not None:
                 continue
             count = display_name.get("count")
             text = display_name.text
