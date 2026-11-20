@@ -81,12 +81,15 @@ pub const Program = struct {
     first_byte_bitmap: ?[4]u64,
     /// Exact literal prefix required at the start of every match.
     literal_prefix: ?[]u8,
+    /// Exact literal substring that every match must contain.
+    required_literal: ?[]u8,
 
     pub fn deinit(self: *Program, allocator: std.mem.Allocator) void {
         allocator.free(self.insts);
         allocator.free(self.exact);
         allocator.free(self.folded);
         if (self.literal_prefix) |prefix| allocator.free(prefix);
+        if (self.required_literal) |literal| allocator.free(literal);
     }
 };
 
@@ -107,6 +110,8 @@ pub fn compile(allocator: std.mem.Allocator, parsed: *const parser.Parsed) Error
     const first_byte_bitmap = compiler.computeFirstByteBitmap();
     const literal_prefix = try compiler.computeLiteralPrefix();
     errdefer if (literal_prefix) |prefix| allocator.free(prefix);
+    const required_literal = try compiler.computeRequiredLiteral();
+    errdefer if (required_literal) |literal| allocator.free(literal);
 
     return .{
         .insts = try compiler.insts.toOwnedSlice(allocator),
@@ -116,6 +121,7 @@ pub fn compile(allocator: std.mem.Allocator, parsed: *const parser.Parsed) Error
         .progress_count = compiler.progress_count,
         .first_byte_bitmap = first_byte_bitmap,
         .literal_prefix = literal_prefix,
+        .required_literal = required_literal,
     };
 }
 
@@ -445,6 +451,72 @@ const Compiler = struct {
         return owned;
     }
 
+    fn computeRequiredLiteral(self: *Compiler) Error!?[]u8 {
+        const literal = self.requiredFromNode(self.parsed.root) orelse return null;
+        if (literal.len < 2) return null;
+        return try self.allocator.dupe(u8, literal);
+    }
+
+    fn requiredFromNode(self: *Compiler, node: *const parser.Node) ?[]const u8 {
+        return switch (node.*) {
+            .literal => |literal| if (literal.case_insensitive) null else literal.text,
+            .concat => |children| self.requiredFromConcat(children),
+            .alternate => |children| blk: {
+                if (children.len == 0) break :blk null;
+                const first = self.requiredFromNode(children[0]) orelse break :blk null;
+                for (children[1..]) |child| {
+                    const other = self.requiredFromNode(child) orelse break :blk null;
+                    if (!std.mem.eql(u8, first, other)) break :blk null;
+                }
+                break :blk first;
+            },
+            .repeat => |repeat| if (repeat.min > 0)
+                self.requiredFromNode(repeat.child)
+            else
+                null,
+            .capture => |capture| self.requiredFromNode(capture.child),
+            .atomic => |child| self.requiredFromNode(child),
+            .look => |look| if (look.positive)
+                self.requiredFromNode(look.child)
+            else
+                null,
+            else => null,
+        };
+    }
+
+    fn requiredFromConcat(self: *Compiler, children: []const *parser.Node) ?[]const u8 {
+        var best: ?[]const u8 = null;
+        var run: ?[]const u8 = null;
+        for (children) |child| {
+            if (std.meta.activeTag(child.*) == .literal and
+                !child.literal.case_insensitive)
+            {
+                const text = child.literal.text;
+                if (run) |active| {
+                    const end = @intFromPtr(active.ptr) + active.len;
+                    if (end == @intFromPtr(text.ptr)) {
+                        run = active.ptr[0 .. active.len + text.len];
+                    } else {
+                        best = longer(best, active);
+                        run = text;
+                    }
+                } else {
+                    run = text;
+                }
+            } else {
+                if (run) |active| {
+                    best = longer(best, active);
+                    run = null;
+                }
+                if (self.requiredFromNode(child)) |literal| {
+                    best = longer(best, literal);
+                }
+            }
+        }
+        if (run) |active| best = longer(best, active);
+        return best;
+    }
+
     fn emitLiteral(self: *Compiler, text: []const u8, case_insensitive: bool) Error!void {
         if (text.len == 0) return;
 
@@ -479,6 +551,13 @@ const Compiler = struct {
         } });
     }
 };
+
+fn longer(current: ?[]const u8, candidate: []const u8) ?[]const u8 {
+    if (current) |value| {
+        return if (candidate.len > value.len) candidate else value;
+    }
+    return candidate;
+}
 
 fn foldText(
     allocator: std.mem.Allocator,

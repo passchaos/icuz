@@ -59,6 +59,7 @@ pub const Runner = struct {
     text: []const u8,
     first_byte_bitmap: ?[4]u64,
     literal_prefix: ?[]const u8,
+    required_literal: ?[]const u8,
 
     region_start: usize,
     region_end: usize,
@@ -102,6 +103,7 @@ pub const Runner = struct {
         group_count: u16,
         first_byte_bitmap: ?[4]u64,
         literal_prefix: ?[]const u8,
+        required_literal: ?[]const u8,
         options: Options,
     ) error{OutOfMemory}!Runner {
         const capture_slots = (@as(usize, group_count) + 1) * 2;
@@ -123,6 +125,7 @@ pub const Runner = struct {
             .text = text,
             .first_byte_bitmap = first_byte_bitmap,
             .literal_prefix = literal_prefix,
+            .required_literal = required_literal,
             .region_start = 0,
             .region_end = text.len,
             .anchor_start = 0,
@@ -164,8 +167,8 @@ pub const Runner = struct {
     }
 
     pub fn setRegion(self: *Runner, start: usize, end: usize) void {
-        self.region_start = @min(start, self.text.len);
-        self.region_end = @min(end, self.text.len);
+        self.region_start = snapForward(self.text, @min(start, self.text.len));
+        self.region_end = snapBackward(self.text, @min(end, self.text.len));
         if (self.region_end < self.region_start) {
             self.region_end = self.region_start;
         }
@@ -269,16 +272,41 @@ pub const Runner = struct {
     fn searchFrom(self: *Runner, start: usize) Error!bool {
         self.beginOperation();
         self.exhausted = false;
-        var position = @max(start, self.region_start);
+        var position = snapForward(self.text, @max(start, self.region_start));
         position = @min(position, self.region_end);
+        const match_pc: u32 = @intCast(self.program.len - 1);
+
+        if (self.required_literal) |literal| {
+            const found = std.mem.indexOfPos(u8, self.text, position, literal);
+            if (found == null or found.? + literal.len > self.region_end) {
+                self.had_match = false;
+                self.exhausted = true;
+                return false;
+            }
+        }
+
+        if (self.literal_prefix) |prefix| {
+            var search = position;
+            while (search <= self.region_end) {
+                const found = std.mem.indexOfPos(u8, self.text, search, prefix) orelse break;
+                if (found + prefix.len > self.region_end) break;
+                if (try self.execRange(0, match_pc, found, null)) |end| {
+                    self.last_match_end = end;
+                    self.had_match = true;
+                    return true;
+                }
+                search = found + 1;
+            }
+            self.had_match = false;
+            self.exhausted = true;
+            return false;
+        }
+
         while (position <= self.region_end) {
-            const result = try self.execRange(
-                0,
-                @intCast(self.program.len - 1),
-                position,
-                null,
-            );
-            if (result) |end| {
+            if (self.first_byte_bitmap) |bits| {
+                if (!skipToCandidate(self.text, &position, self.region_end, bits)) break;
+            }
+            if (try self.execRange(0, match_pc, position, null)) |end| {
                 self.last_match_end = end;
                 self.had_match = true;
                 return true;
@@ -1057,6 +1085,40 @@ fn nextGraphemeBoundary(text: []const u8, pos: usize, limit: usize) usize {
         cursor = decoded.next;
     }
     return @min(cursor, limit);
+}
+
+fn skipToCandidate(
+    text: []const u8,
+    position: *usize,
+    limit: usize,
+    bits: [4]u64,
+) bool {
+    while (position.* < limit) {
+        const byte = text[position.*];
+        if (byte < 0x80) {
+            const bits_word = bits[byte >> 6];
+            if ((bits_word >> @intCast(byte & 63)) & 1 != 0) return true;
+            position.* += 1;
+        } else {
+            const decoded = nextScalar(text, position.*) orelse return false;
+            position.* = decoded.next;
+        }
+    }
+    return false;
+}
+
+fn snapForward(text: []const u8, position: usize) usize {
+    var cursor = @min(position, text.len);
+    while (cursor < text.len and (text[cursor] & 0xc0) == 0x80) : (cursor += 1) {}
+    return cursor;
+}
+
+fn snapBackward(text: []const u8, position: usize) usize {
+    var cursor = @min(position, text.len);
+    while (cursor > 0 and cursor < text.len and (text[cursor] & 0xc0) == 0x80) {
+        cursor -= 1;
+    }
+    return cursor;
 }
 
 pub fn isLineTerminator(codepoint: u21) bool {

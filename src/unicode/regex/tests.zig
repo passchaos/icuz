@@ -495,3 +495,14 @@ test "regex find prefilters" {
     try std.testing.expect(try m.find());
     try std.testing.expectEqual(@as(?usize, 3), m.start(0));
 }
+
+test "regex required-literal prefilter" {
+    try expectFind(".*needle", "xxneedlexx", 0, 8);
+    try expectNoFind(".*needle", "no match here");
+    try expectFind("(?:ab)+cd", "ababcd", 0, 6);
+    try expectNoFind("(?:ab)+cd", "abab");
+    try expectFind("(?=foo)foo", "foo", 0, 3);
+    try expectNoFind("(?=foo)foo", "bar");
+    try expectFind("a(bc)?d", "ad", 0, 2);
+    try expectFind("(?i)needle", "NEEDLE", 0, 6);
+}

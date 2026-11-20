@@ -1157,6 +1157,12 @@ pub fn main() !void {
         "some text before Needle and after NEEDLE " ** 8,
         allocator,
     );
+    benchRegex(
+        "required literal miss",
+        ".*needle",
+        "some text without the required token " ** 8,
+        allocator,
+    );
 
     std.debug.print("\n-- segmentation --\n", .{});
     benchGraphemes("grapheme ASCII", ascii_runtime);
