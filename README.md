@@ -155,7 +155,9 @@ need without pulling in a font or layout engine.
   alias rules with multi-field replacements, wildcard and chained aliases,
   and variant ordering, validated by the official 1,773-case CLDR
   canonicalization fixture. Extension and private-use subtags are preserved;
-  key/type aliases inside extensions are not applied.
+  key/type aliases inside extensions are not applied. A zero-allocation
+  `Locale` parser (`Locale.parse`) exposes the language, script, region,
+  variants, and `-u-` keyword values of a tag.
 - CLDR 48 language matching (`localeBestMatchAlloc`, `localeDistanceAlloc`,
   `localeIsMatchAlloc`): likely-subtag maximization, the 378 `languageMatch`
   rules with one-way fallbacks, region variables including macroregion

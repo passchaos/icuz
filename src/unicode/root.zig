@@ -370,6 +370,7 @@ pub const formatLocaleDisplayNameAlloc = display_names_mod.localeDisplayNameAllo
 pub const maximizeLocaleAlloc = likely_subtags_mod.maximizeAlloc;
 pub const minimizeLocaleAlloc = likely_subtags_mod.minimizeAlloc;
 pub const canonicalizeLocaleAlloc = locale_mod.canonicalizeAlloc;
+pub const Locale = locale_mod.Locale;
 pub const LocaleMatchOptions = locale_mod.matcher.Options;
 pub const localeBestMatchAlloc = locale_mod.bestMatchAlloc;
 pub const localeDistanceAlloc = locale_mod.localeDistanceAlloc;

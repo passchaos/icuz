@@ -217,7 +217,7 @@ fn hasVariant(tag: *const Tag, variant: []const u8) bool {
     return false;
 }
 
-fn parse(tag: []const u8) Error!Tag {
+fn parseTag(tag: []const u8) Error!Tag {
     var parsed = Tag{ .language = "", .script = "", .region = "" };
     var index: usize = 0;
     var first = true;
@@ -448,7 +448,7 @@ pub fn canonicalizeAlloc(
     if (tag.len == 0 or tag.len > 128) return error.InvalidLocale;
     var buffer: [128]u8 = undefined;
     @memcpy(buffer[0..tag.len], tag);
-    var parsed = try parse(buffer[0..tag.len]);
+    var parsed = try parseTag(buffer[0..tag.len]);
     lowerAscii(@constCast(parsed.language));
     if (parsed.script.len != 0) titleAscii(@constCast(parsed.script));
     if (parsed.region.len != 0) upperAscii(@constCast(parsed.region));
@@ -482,6 +482,119 @@ pub fn canonicalizeAlloc(
     }
     try appendLowered(allocator, &output, parsed.tail);
     return output.toOwnedSlice(allocator);
+}
+
+/// Parsed BCP 47 language tag. Every slice borrows from the input tag.
+pub const Locale = struct {
+    language: []const u8 = "",
+    script: []const u8 = "",
+    region: []const u8 = "",
+    variants: [max_variants][]const u8 = undefined,
+    variant_count: usize = 0,
+    /// Extension and private-use subtags starting at the first singleton.
+    tail: []const u8 = "",
+
+    pub fn parse(text: []const u8) Error!Locale {
+        const tag = try parseTag(text);
+        return .{
+            .language = tag.language,
+            .script = tag.script,
+            .region = tag.region,
+            .variants = tag.variants,
+            .variant_count = tag.variant_count,
+            .tail = tag.tail,
+        };
+    }
+
+    pub fn variantCount(self: Locale) usize {
+        return self.variant_count;
+    }
+
+    pub fn variantAt(self: Locale, index: usize) []const u8 {
+        return self.variants[index];
+    }
+
+    /// Value of a Unicode extension keyword, for example `nu` in
+    /// `en-US-u-nu-thai`. Only the `-u-` extension is searched.
+    pub fn keywordValue(self: Locale, key: []const u8) ?[]const u8 {
+        if (key.len != 2) return null;
+        const tail = self.tail;
+        var index: usize = 0;
+        while (index < tail.len) {
+            const start = index;
+            while (index < tail.len and tail[index] != '-') index += 1;
+            const singleton = tail[start..index];
+            if (index < tail.len) index += 1;
+            if (singleton.len != 1) continue;
+            const body_start = index;
+            var body_end = tail.len;
+            var probe = index;
+            while (probe < tail.len) {
+                const sub_start = probe;
+                while (probe < tail.len and tail[probe] != '-') probe += 1;
+                const subtag = tail[sub_start..probe];
+                if (probe < tail.len) probe += 1;
+                if (subtag.len == 1) {
+                    body_end = sub_start;
+                    break;
+                }
+            }
+            if (singleton[0] == 'u' or singleton[0] == 'U') {
+                var cursor = body_start;
+                while (cursor < body_end) {
+                    const key_start = cursor;
+                    while (cursor < body_end and tail[cursor] != '-') {
+                        cursor += 1;
+                    }
+                    const candidate = tail[key_start..cursor];
+                    if (cursor < body_end) cursor += 1;
+                    // Three-to-eight character subtags are attributes.
+                    if (candidate.len != 2) continue;
+                    const value_start = cursor;
+                    while (cursor < body_end and tail[cursor] != '-') {
+                        cursor += 1;
+                    }
+                    if (std.ascii.eqlIgnoreCase(candidate, key)) {
+                        return tail[value_start..cursor];
+                    }
+                }
+            }
+            index = body_end;
+        }
+        return null;
+    }
+};
+
+test "locale tag parsing" {
+    const testing = @import("std").testing;
+
+    const tag = try Locale.parse("zh-Hant-TW-u-nu-thai-ca-gregory");
+    try testing.expectEqualStrings("zh", tag.language);
+    try testing.expectEqualStrings("Hant", tag.script);
+    try testing.expectEqualStrings("TW", tag.region);
+    try testing.expectEqual(@as(usize, 0), tag.variantCount());
+    try testing.expectEqualStrings("thai", tag.keywordValue("nu").?);
+    try testing.expectEqualStrings("gregory", tag.keywordValue("ca").?);
+    try testing.expect(tag.keywordValue("co") == null);
+    try testing.expect(tag.keywordValue("number") == null);
+
+    const variant = try Locale.parse("de-DE-1996");
+    try testing.expectEqualStrings("DE", variant.region);
+    try testing.expectEqual(@as(usize, 1), variant.variantCount());
+    try testing.expectEqualStrings("1996", variant.variantAt(0));
+
+    const private_use = try Locale.parse("en-x-private");
+    try testing.expectEqualStrings("en", private_use.language);
+    try testing.expectEqualStrings("x-private", private_use.tail);
+    try testing.expect(private_use.keywordValue("nu") == null);
+
+    const simple = try Locale.parse("en");
+    try testing.expectEqualStrings("en", simple.language);
+    try testing.expectEqualStrings("", simple.script);
+    try testing.expectEqualStrings("", simple.region);
+
+    try testing.expectError(error.InvalidLocale, Locale.parse(""));
+    try testing.expectError(error.InvalidLocale, Locale.parse("123"));
 }
 
 test "locale canonicalization" {
