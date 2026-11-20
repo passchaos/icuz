@@ -1506,34 +1506,24 @@ fn applyFinalCaseAndNormalization(
 
 /// Run the whole compound (normalization, passes, final case/normalization)
 /// on a text run that is already known to be inside the filter.
-fn filteredTextRunAlloc(
+fn filteredRunCodepointsAlloc(
     allocator: std.mem.Allocator,
-    text: []const u8,
+    codepoints: []const u21,
     record: TransformRecord,
     transform_index: usize,
-) Error![]u8 {
-    var normalized: ?[]u8 = null;
+) Error!std.ArrayList(u21) {
+    var input = codepoints;
+    var normalized: ?[]u21 = null;
     defer if (normalized) |value| allocator.free(value);
-    var input: []const u8 = text;
     if (record.pre_normalization != 0) {
-        normalized = try normalization.normalizeFormAlloc(
+        normalized = try normalization.normalizeCodepointsAlloc(
             allocator,
-            text,
+            codepoints,
             normalizationFormFromId(record.pre_normalization),
         );
         if (normalized) |value| input = value;
     }
-    var run_codepoints = try decodeAlloc(allocator, input);
-    defer run_codepoints.deinit(allocator);
-    var final = try runPassesAlloc(
-        allocator,
-        run_codepoints.items,
-        transform_index,
-        0,
-    );
-    defer final.deinit(allocator);
-    const raw = try encodeCodepointsAlloc(allocator, final.items);
-    return applyFinalCaseAndNormalization(allocator, raw, record);
+    return runPassesAlloc(allocator, input, transform_index, 0);
 }
 
 /// Reverse transforms use an input-side global filter. ICU splits the input
@@ -1546,49 +1536,53 @@ fn filteredTableCoreAlloc(
     transform_index: usize,
 ) Error![]u8 {
     const record = transformAt(transform_index);
-    // Work on UTF-8 byte offsets: outside runs are copied as slices and
-    // inside runs feed the compound directly, avoiding a decode/encode
-    // round trip for the unfiltered text.
+    // Decode once and process filtered runs in code-point space; the old
+    // per-run UTF-8 round trip dominated transforms such as Russian-Latin-BGN
+    // where words are separate runs.
+    var codepoints = try decodeAlloc(allocator, text);
+    defer codepoints.deinit(allocator);
+
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
     var index: usize = 0;
-    while (index < text.len) {
-        const first_length = std.unicode.utf8ByteSequenceLength(text[index]) catch
-            return error.InvalidUtf8;
-        if (index + first_length > text.len) return error.InvalidUtf8;
-        const first = std.unicode.utf8Decode(text[index..][0..first_length]) catch
-            return error.InvalidUtf8;
-        const contained = setContains(record.filter_set, first);
+    while (index < codepoints.items.len) {
+        const contained = setContains(record.filter_set, codepoints.items[index]);
         const start = index;
-        index += first_length;
-        while (index < text.len) {
-            const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
-                return error.InvalidUtf8;
-            if (index + length > text.len) return error.InvalidUtf8;
-            const codepoint = std.unicode.utf8Decode(text[index..][0..length]) catch
-                return error.InvalidUtf8;
-            if (setContains(record.filter_set, codepoint) != contained) break;
-            index += length;
-        }
-        const run = text[start..index];
-        if (start == 0 and index == text.len) {
-            // The whole input is one run; skip the extra buffer copy.
-            if (!contained) return allocator.dupe(u8, text);
-            return filteredTextRunAlloc(allocator, text, record, transform_index);
+        index += 1;
+        while (index < codepoints.items.len and
+            setContains(record.filter_set, codepoints.items[index]) == contained)
+        {
+            index += 1;
         }
         if (!contained) {
-            try output.appendSlice(allocator, run);
+            for (codepoints.items[start..index]) |codepoint| {
+                try appendCodepoint(allocator, &output, codepoint);
+            }
             continue;
         }
-        const converted = try filteredTextRunAlloc(
-            allocator,
-            run,
-            record,
-            transform_index,
-        );
-        errdefer allocator.free(converted);
-        try output.appendSlice(allocator, converted);
-        allocator.free(converted);
+        {
+            var run = try filteredRunCodepointsAlloc(
+                allocator,
+                codepoints.items[start..index],
+                record,
+                transform_index,
+            );
+            defer run.deinit(allocator);
+            if (record.final_case != 0 or record.post_normalization != 0) {
+                const raw = try encodeCodepointsAlloc(allocator, run.items);
+                const converted = try applyFinalCaseAndNormalization(
+                    allocator,
+                    raw,
+                    record,
+                );
+                defer allocator.free(converted);
+                try output.appendSlice(allocator, converted);
+            } else {
+                for (run.items) |codepoint| {
+                    try appendCodepoint(allocator, &output, codepoint);
+                }
+            }
+        }
     }
     return output.toOwnedSlice(allocator);
 }
