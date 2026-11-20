@@ -386,7 +386,7 @@ fn numericTextMismatch(letter: u8, requested: u8, matched: u8) bool {
 fn fieldIsNumeric(letter: u8, width: u8) bool {
     return switch (letter) {
         'M', 'L' => width <= 2,
-        'd', 'y', 'Y', 'u', 'r', 'U', 'D' => true,
+        'd', 'y', 'Y', 'u', 'r', 'U', 'D', 'A', 'F', 'g' => true,
         else => false,
     };
 }
@@ -1568,6 +1568,41 @@ fn appendField(
             if (length >= 3) 3 else 1,
             locale,
         ),
+        'A' => {
+            const millis: u64 =
+                (@as(u64, date_time.hour) * 3600 +
+                    @as(u64, date_time.minute) * 60 +
+                    date_time.second) * 1000 +
+                date_time.nanosecond / 1_000_000;
+            try appendPaddedNumber(
+                allocator,
+                output,
+                millis,
+                @max(length, 1),
+                locale,
+            );
+        },
+        'F' => try appendPaddedNumber(
+            allocator,
+            output,
+            (@as(u64, date_time.day) - 1) / 7 + 1,
+            @max(length, 1),
+            locale,
+        ),
+        'g' => {
+            const days = daysFromCivil(
+                date_time.year,
+                date_time.month,
+                date_time.day,
+            );
+            try appendPaddedNumber(
+                allocator,
+                output,
+                @intCast(@max(days + 40587, 0)),
+                @max(length, 1),
+                locale,
+            );
+        },
         'Q', 'q' => {
             const quarter = ((overrides.month orelse date_time.month) - 1) / 3 + 1;
             if (length <= 2) {
@@ -3862,4 +3897,40 @@ test "J and C hour pattern fields" {
     try testing.expectEqual(@as(u8, 15), parsed_c.hour);
     const parsed_c_de = parsePattern("15", "C", "de", defaults).?;
     try testing.expectEqual(@as(u8, 15), parsed_c_de.hour);
+}
+
+test "A, F, and g pattern fields" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const date = DateTime{
+        .year = 2026,
+        .month = 1,
+        .day = 15,
+        .hour = 1,
+        .minute = 2,
+        .second = 3,
+        .nanosecond = 4_000_000,
+    };
+    const a = try formatPatternAlloc(allocator, "A", date, "en", "UTC");
+    defer allocator.free(a);
+    try testing.expectEqualStrings("3723004", a);
+    const f = try formatPatternAlloc(allocator, "F", date, "en", "UTC");
+    defer allocator.free(f);
+    try testing.expectEqualStrings("3", f);
+    const g = try formatPatternAlloc(allocator, "g", date, "en", "UTC");
+    defer allocator.free(g);
+    try testing.expectEqualStrings("61055", g);
+
+    const epoch = DateTime{
+        .year = 1970,
+        .month = 1,
+        .day = 1,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    };
+    const mjd = try formatPatternAlloc(allocator, "g", epoch, "en", "UTC");
+    defer allocator.free(mjd);
+    try testing.expectEqualStrings("40587", mjd);
 }
