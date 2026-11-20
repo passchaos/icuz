@@ -44,6 +44,7 @@ const relative_mod = @import("./format/relative.zig");
 const units_mod = @import("./format/units.zig");
 const charset_mod = @import("./charset.zig");
 const charset_detect = @import("./charset/detect.zig");
+const charset_selector_mod = @import("./charset/selector.zig");
 const locale_mod = @import("./locale.zig");
 const region_mod = @import("./locale/region.zig");
 const locale_data_mod = @import("./locale/data.zig");
@@ -396,6 +397,9 @@ pub const localeExemplarSetAlloc = locale_data_mod.exemplarSetAlloc;
 pub const localeMeasurementSystem = locale_data_mod.measurementSystem;
 pub const localePaperSize = locale_data_mod.paperSize;
 pub const localeCldrVersion = locale_data_mod.cldr_version;
+
+pub const ConverterSelector = charset_selector_mod.ConverterSelector;
+pub const ConverterSelectorMode = charset_selector_mod.UnicodeSetMode;
 pub const DateTime = dates_mod.DateTime;
 pub const Weekend = dates_mod.weekend.Weekend;
 pub const weekendForRegion = dates_mod.weekend.weekendForRegion;
@@ -808,6 +812,7 @@ test {
     _ = locale_mod.matcher;
     _ = region_mod;
     _ = locale_data_mod;
+    _ = charset_selector_mod;
     _ = transliterate_mod;
     _ = shape_mod;
     _ = pattern_generator_mod;

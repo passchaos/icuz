@@ -43,6 +43,7 @@ BLOBS = (
     Blob("src/unicode/canonical/combining_class.bin", b"CJC1", 1, "336130546fc300108806f5ae23144cda93da13488a810946357304b5a12f5fcc"),
     Blob("src/unicode/charset/data.bin", b"CJCS", 2, "2f683ea3541100baa40ec047bf13e9af98e7a8337a6b981f97ea97208bfbc705"),
     Blob("src/unicode/charset/detection_conformance.bin", b"CJSD", 1, "8f9a1075b81e9d43d659779121b85ea2f7dfc14c7cc025a9dba11dc86cce17c0", version=(0, 0, 0)),
+    Blob("src/unicode/charset/selector_conformance.bin", b"CJVS", 1, "ff51e4fd179e87b4b499939f4e14e5b2b080716efbfca03b7aee3e0fccbce69b", version=(0, 0, 0)),
     Blob("src/unicode/locale/aliases.bin", b"CJLX", 2, "21a2feec8619f2697a8359992932b061890e9a68702e4d365756554b14ab4edd", version=(48, 0, 0)),
     Blob("src/unicode/locale/canonicalization_conformance.bin", b"CJLY", 1, "8e3d48a4a16588dbccba978589282c08e04dbaa65cd57617ea0643ddd14eef3d", version=(48, 0, 0)),
     Blob("src/unicode/format/person_names_data.bin", b"CJPU", 1, "43f82b79e7e62717e4c0710fdad28f3a808f5b44851faec86d04fd7ef587551a", version=(48, 0, 0)),
@@ -523,6 +524,7 @@ GENERATORS = {
     "tools/unicode/format/generate_unit_conformance.py": "4227b3b9e7528c778a7a19dc0ed6b063cd39d9787f1962da419fb6a4300080a8",
     "tools/unicode/charset/generate_data.py": "5b13222d52bfaea336ef6fb3aac9b0d629411e62fb1173ae6bdd3ae9e059e594",
     "tools/unicode/charset/generate_detection_tables.py": "63be0281796f335f842aff1f8c448e0b48617d6be96de8d2b0b5a8b6016b952d",
+    "tools/unicode/charset/generate_selector_conformance.py": "d619ce40076e0cab6a7f98cfca5cb1a665d71d00bbc8d2dae548974c180d56a5",
     "tools/unicode/charset/generate_detection_conformance.py": "e0416aee24b6eb2ef7a625d53f10f1193bb54d5d3a3f0c40eb233b65d8334987",
     "tools/unicode/set/generate_conformance.py": "b97a194a3698c9542d2323ffab4fc5e92a77588c16a4d897751e7c9b67c0adac",
     "tools/unicode/properties/generate_extra.py": "e5c04b6ec00c689fbc7669b67e31206f677820af6a01ba22d8f6e98fdb9dc670",
@@ -1049,6 +1051,25 @@ def check_layout(blob: Blob, data: bytes) -> None:
             + ce_count * 16
             == len(data)
         )
+    elif magic == b"CJVS":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            converter_count = struct.unpack_from("<H", data, offset)[0]
+            offset += 2
+            for _ in range(converter_count):
+                length = struct.unpack_from("<H", data, offset)[0]
+                offset += 2 + length
+            length = struct.unpack_from("<H", data, offset)[0]
+            offset += 2 + length
+            length = struct.unpack_from("<H", data, offset)[0]
+            offset += 2 + length
+            selected_count = struct.unpack_from("<H", data, offset)[0]
+            offset += 2
+            for _ in range(selected_count):
+                length = struct.unpack_from("<H", data, offset)[0]
+                offset += 2 + length
+        assert offset == len(data)
     elif magic == b"CJL0":
         locale_count = struct.unpack_from("<I", data, 8)[0]
         string_len = struct.unpack_from("<I", data, 12)[0]
