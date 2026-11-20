@@ -75,7 +75,9 @@ need without pulling in a font or layout engine.
   ICU-style `span`/`spanBack` scanning with longest string-element matches,
   union/intersection/difference/complement (also exposed as
   `addAll`/`retainAll`/`removeAll`) and `removeAllStrings`,
-  `containsAll`/`containsNone`/`containsSome`, pattern
+  `containsAll`/`containsNone`/`containsSome`, an ICU-style
+  `UnicodeSetIterator` (code points in sorted order, then strings; range
+  iteration and `skipToStrings`), pattern
   round-tripping, and a practical `\p{...}`/`[a-z]` pattern parser with
   binary, general-category, script, script-extension, `Age`,
   `Numeric_Type`, `Block`, `Line_Break`, `Word_Break`, `Sentence_Break`,
