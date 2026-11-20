@@ -234,11 +234,26 @@ fn matchesMaximal(candidate: Parsed, maximal: Parts) bool {
         std.mem.eql(u8, parts.region, maximal.region);
 }
 
+pub const MinimizeOptions = struct {
+    /// Keep the script subtag when minimizing, matching ICU's
+    /// `ULOC_MINIMIZE_FAVOR_SCRIPT`.
+    favor_script: bool = false,
+};
+
 /// Minimize a locale by removing script and region subtags that likely
 /// subtags imply, matching ICU's `uloc_minimizeSubtags`.
 pub fn minimizeAlloc(
     allocator: std.mem.Allocator,
     locale: []const u8,
+) ![]u8 {
+    return minimizeWithOptionsAlloc(allocator, locale, .{});
+}
+
+/// Minimize a locale with explicit options.
+pub fn minimizeWithOptionsAlloc(
+    allocator: std.mem.Allocator,
+    locale: []const u8,
+    options: MinimizeOptions,
 ) ![]u8 {
     const parsed = parse(locale);
     const maximal = maximizeParts(parsed) orelse
@@ -250,27 +265,31 @@ pub fn minimizeAlloc(
         script = "";
         region = "";
     } else {
-        var minimized = false;
-        if (parsed.region.len != 0) {
+        const order = if (options.favor_script)
+            [2]u8{ 1, 0 }
+        else
+            [2]u8{ 0, 1 };
+        for (order) |kind| {
+            if (kind == 1) {
+                if (parsed.script.len == 0) continue;
+                const candidate = Parsed{
+                    .language = maximal.language,
+                    .script = parsed.script,
+                };
+                if (!matchesMaximal(candidate, maximal)) continue;
+                script = parsed.script;
+                region = "";
+                break;
+            }
+            if (parsed.region.len == 0) continue;
             const candidate = Parsed{
                 .language = maximal.language,
                 .region = parsed.region,
             };
-            if (matchesMaximal(candidate, maximal)) {
-                script = "";
-                region = parsed.region;
-                minimized = true;
-            }
-        }
-        if (!minimized and parsed.script.len != 0) {
-            const candidate = Parsed{
-                .language = maximal.language,
-                .script = parsed.script,
-            };
-            if (matchesMaximal(candidate, maximal)) {
-                script = parsed.script;
-                region = "";
-            }
+            if (!matchesMaximal(candidate, maximal)) continue;
+            script = "";
+            region = parsed.region;
+            break;
         }
     }
 
@@ -293,6 +312,23 @@ pub fn minimizeAlloc(
         try output.appendSlice(allocator, parsed.variants);
     }
     return output.toOwnedSlice(allocator);
+}
+
+test "minimize favors script" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const default = try minimizeAlloc(allocator, "zh-Hant-TW");
+    defer allocator.free(default);
+    try testing.expectEqualStrings("zh_TW", default);
+
+    const favor = try minimizeWithOptionsAlloc(
+        allocator,
+        "zh-Hant-TW",
+        .{ .favor_script = true },
+    );
+    defer allocator.free(favor);
+    try testing.expectEqualStrings("zh_Hant", favor);
 }
 
 test "likely subtags" {

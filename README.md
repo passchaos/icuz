@@ -158,7 +158,8 @@ need without pulling in a font or layout engine.
   formatting fixture.
 - CLDR 48 locale display names for 87 locales: language, script, region,
   and variant names, locale display composition, and likely-subtags
-  maximization and minimization, validated by 329 display-name and 48
+  maximization and minimization (including ICU's favor-script minimization),
+  validated by 329 display-name and 48
   likely-subtag PyICU conformance cases.
 - BCP 47 locale tag canonicalization (`canonicalizeLocaleAlloc`): case and
   separator normalization, CLDR 48 language, script, territory, and variant
@@ -244,7 +245,8 @@ need without pulling in a font or layout engine.
   (`weekOfMonthForRegion`) calculations using the region's first-day and
   minimal-days rules.
 - CLDR 48 list formatting for 87 locales, including and/or and unit list
-  styles with narrow/short variants.
+  styles with narrow/short variants. `listGender` implements the CLDR
+  neutral, mixed-neutral, and male-tainting list-gender rules.
 - CLDR 48 relative time for 87 locales, including yesterday/today/tomorrow
   text and future/past plural patterns.
 - CLDR 48 unit formatting for 87 locales and all 231 CLDR units across

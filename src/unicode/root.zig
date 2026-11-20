@@ -30,6 +30,7 @@ const plural_mod = @import("./format/plurals.zig");
 const number_mod = @import("./format/number.zig");
 const dates_mod = @import("./format/dates.zig");
 const week_mod = @import("./format/week.zig");
+const gender_mod = @import("./format/gender.zig");
 const message_mod = @import("./format/message.zig");
 const message2_mod = @import("./format/message2.zig");
 const list_mod = @import("./format/list.zig");
@@ -388,6 +389,9 @@ pub const displayName = display_names_mod.name;
 pub const formatLocaleDisplayNameAlloc = display_names_mod.localeDisplayNameAlloc;
 pub const maximizeLocaleAlloc = likely_subtags_mod.maximizeAlloc;
 pub const minimizeLocaleAlloc = likely_subtags_mod.minimizeAlloc;
+pub const MinimizeOptions = likely_subtags_mod.MinimizeOptions;
+pub const minimizeLocaleWithOptionsAlloc =
+    likely_subtags_mod.minimizeWithOptionsAlloc;
 pub const canonicalizeLocaleAlloc = locale_mod.canonicalizeAlloc;
 pub const Locale = locale_mod.Locale;
 pub const LocaleMatchOptions = locale_mod.matcher.Options;
@@ -434,6 +438,8 @@ pub const Transliteration = transliterate_mod.Transform;
 pub const transliterateAlloc = transliterate_mod.transliterateAlloc;
 
 pub const ListStyle = list_mod.Style;
+pub const Gender = gender_mod.Gender;
+pub const listGender = gender_mod.listGender;
 pub const ListOptions = list_mod.Options;
 pub const formatListAlloc = list_mod.formatAlloc;
 
@@ -687,6 +693,7 @@ test {
     _ = dates_mod.weekend;
     _ = @import("./format/week.zig");
     _ = @import("./format/day_periods.zig");
+    _ = @import("./format/gender.zig");
     _ = rbnf_mod;
     _ = timezone_mod;
     _ = timezone_mod.windows;
