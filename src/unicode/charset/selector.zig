@@ -18,6 +18,7 @@ pub const Error = error{
     UnknownEncoding,
     InvalidUtf8,
     InvalidUtf16,
+    InvalidSerialized,
     OutOfMemory,
 };
 
@@ -74,6 +75,93 @@ pub const ConverterSelector = struct {
 
     pub fn converterNames(self: *const ConverterSelector) []const []const u8 {
         return self.names;
+    }
+
+    /// Serialize the selector into an icuz-owned, versioned format.
+    pub fn serializeAlloc(
+        self: *const ConverterSelector,
+        allocator: std.mem.Allocator,
+    ) Error![]u8 {
+        var output = std.ArrayList(u8).empty;
+        errdefer output.deinit(allocator);
+
+        try output.appendSlice(allocator, "CJSS");
+        try output.appendSlice(allocator, &.{ 1, 0, 0, 0 });
+        try appendU16(allocator, &output, @intCast(self.names.len));
+        try output.append(allocator, @intFromEnum(self.mode));
+        try output.append(allocator, 0);
+        const range_count: u32 = if (self.excluded) |set| @intCast(set.rangeIterator().ranges.len) else 0;
+        const string_count: u32 = if (self.excluded) |set| @intCast(set.stringCount()) else 0;
+        try appendU32(allocator, &output, range_count);
+        try appendU32(allocator, &output, string_count);
+
+        for (self.names) |name| {
+            try appendU16(allocator, &output, @intCast(name.len));
+            try output.appendSlice(allocator, name);
+        }
+        if (self.excluded) |set| {
+            var ranges = set.rangeIterator();
+            while (ranges.next()) |range| {
+                try appendU32(allocator, &output, range.first);
+                try appendU32(allocator, &output, range.last);
+            }
+            var index: usize = 0;
+            while (index < set.stringCount()) : (index += 1) {
+                const text = set.stringAt(index);
+                try appendU16(allocator, &output, @intCast(text.len));
+                try output.appendSlice(allocator, text);
+            }
+        }
+        return output.toOwnedSlice(allocator);
+    }
+
+    /// Open a selector produced by `serializeAlloc`.
+    pub fn initFromSerialized(
+        allocator: std.mem.Allocator,
+        bytes: []const u8,
+    ) Error!ConverterSelector {
+        var reader = SerializedReader{ .data = bytes };
+        const magic = try reader.readBytes(4);
+        if (!std.mem.eql(u8, magic, "CJSS")) return error.InvalidSerialized;
+        const version = try reader.readBytes(4);
+        if (!std.mem.eql(u8, version, &.{ 1, 0, 0, 0 })) return error.InvalidSerialized;
+        const converter_count = try reader.readU16();
+        const mode_value = try reader.readU8();
+        _ = try reader.readU8();
+        const range_count = try reader.readU32();
+        const string_count = try reader.readU32();
+        if (mode_value > @intFromEnum(UnicodeSetMode.roundtrip_and_fallback)) {
+            return error.InvalidSerialized;
+        }
+
+        var names = std.ArrayList([]const u8).empty;
+        defer names.deinit(allocator);
+        for (0..converter_count) |_| {
+            const length = try reader.readU16();
+            try names.append(allocator, try reader.readBytes(length));
+        }
+
+        var excluded = set_mod.Set.init(allocator);
+        defer excluded.deinit();
+        for (0..range_count) |_| {
+            const first = try reader.readU32();
+            const last = try reader.readU32();
+            if (first > last or last > 0x10ffff) return error.InvalidSerialized;
+            try excluded.addRange(@intCast(first), @intCast(last));
+        }
+        for (0..string_count) |_| {
+            const length = try reader.readU16();
+            try excluded.addString(try reader.readBytes(length));
+        }
+        try excluded.finalize();
+        if (reader.index != bytes.len) return error.InvalidSerialized;
+
+        return ConverterSelector.init(
+            allocator,
+            names.items,
+            if (range_count != 0 or string_count != 0) &excluded else null,
+            @enumFromInt(mode_value),
+        );
     }
 
     /// Returns one flag per converter, in the order supplied to `init`.
@@ -208,6 +296,59 @@ test "converter selector excluded code points" {
     try testing.expect(selected[1]);
 }
 
+const SerializedReader = struct {
+    data: []const u8,
+    index: usize = 0,
+
+    fn readU8(self: *SerializedReader) Error!u8 {
+        if (self.index >= self.data.len) return error.InvalidSerialized;
+        const value = self.data[self.index];
+        self.index += 1;
+        return value;
+    }
+
+    fn readU16(self: *SerializedReader) Error!u16 {
+        if (self.index + 2 > self.data.len) return error.InvalidSerialized;
+        const value = std.mem.readInt(u16, self.data[self.index..][0..2], .little);
+        self.index += 2;
+        return value;
+    }
+
+    fn readU32(self: *SerializedReader) Error!u32 {
+        if (self.index + 4 > self.data.len) return error.InvalidSerialized;
+        const value = std.mem.readInt(u32, self.data[self.index..][0..4], .little);
+        self.index += 4;
+        return value;
+    }
+
+    fn readBytes(self: *SerializedReader, length: usize) Error![]const u8 {
+        if (self.index + length > self.data.len) return error.InvalidSerialized;
+        const value = self.data[self.index..][0..length];
+        self.index += length;
+        return value;
+    }
+};
+
+fn appendU16(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    value: u16,
+) Error!void {
+    var buffer: [2]u8 = undefined;
+    std.mem.writeInt(u16, &buffer, value, .little);
+    try output.appendSlice(allocator, &buffer);
+}
+
+fn appendU32(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    value: u32,
+) Error!void {
+    var buffer: [4]u8 = undefined;
+    std.mem.writeInt(u32, &buffer, value, .little);
+    try output.appendSlice(allocator, &buffer);
+}
+
 const Fixture = struct {
     data: []const u8,
     index: usize = 0,
@@ -300,4 +441,41 @@ test "converter selector ICU conformance fixture" {
     }
     try std.testing.expectEqual(@as(usize, 0), fixture_data.len - fixture.index);
     std.debug.print("converter selector conformance: {}/{} passed\n", .{ passed, case_count });
+}
+
+test "converter selector serialization" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+    const names = [_][]const u8{ "UTF-8", "US-ASCII", "ISO-8859-1" };
+    var excluded = try set_mod.parse(allocator, "[€]");
+    defer excluded.deinit();
+    var selector = try ConverterSelector.init(allocator, &names, &excluded, .roundtrip);
+    defer selector.deinit();
+
+    const bytes = try selector.serializeAlloc(allocator);
+    defer allocator.free(bytes);
+
+    var restored = try ConverterSelector.initFromSerialized(allocator, bytes);
+    defer restored.deinit();
+
+    for ([_][]const u8{ "", "hello", "a€", "Привет" }) |text| {
+        const original = try selector.selectForUTF8Alloc(allocator, text);
+        defer allocator.free(original);
+        const copy = try restored.selectForUTF8Alloc(allocator, text);
+        defer allocator.free(copy);
+        try testing.expectEqualSlices(bool, original, copy);
+    }
+
+    try testing.expectError(
+        error.InvalidSerialized,
+        ConverterSelector.initFromSerialized(allocator, ""),
+    );
+    try testing.expectError(
+        error.InvalidSerialized,
+        ConverterSelector.initFromSerialized(allocator, "nope"),
+    );
+    try testing.expectError(
+        error.InvalidSerialized,
+        ConverterSelector.initFromSerialized(allocator, bytes[0 .. bytes.len - 1]),
+    );
 }

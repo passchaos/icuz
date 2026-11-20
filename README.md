@@ -377,7 +377,9 @@ need without pulling in a font or layout engine.
 - ICU `ucnvsel`-compatible converter selection (`ConverterSelector`): an
   ordered converter list, optional excluded code points, UTF-8 and UTF-16
   input, and per-converter encodability flags or names, validated by a
-  20-case ICU 78 differential fixture.
+  20-case ICU 78 differential fixture. Selectors can be persisted with
+  `serializeAlloc`/`initFromSerialized` using icuz's versioned `CJSS`
+  format (converter names, exclusion set, and mode).
 - CLDR 48 transliteration for Latin-ASCII (NFD, mark removal, NFC, 844 mapping
   rules), Fullwidth-Halfwidth, Halfwidth-Fullwidth, Georgian-Latin,
   Georgian-Latin-BGN (1981), Hebrew-Latin-BGN, Russian-Latin-BGN,
