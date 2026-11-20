@@ -132,8 +132,21 @@ def parse_locale(archive: zipfile.ZipFile, locale: str) -> dict:
             data["list"][style] = parts
 
     for field in root.findall(".//dates/fields/field"):
-        unit = field.get("type")
+        raw_type = field.get("type", "")
+        style = "long"
+        unit = raw_type
+        if raw_type.endswith("-short"):
+            unit = raw_type[: -len("-short")]
+            style = "short"
+        elif raw_type.endswith("-narrow"):
+            unit = raw_type[: -len("-narrow")]
+            style = "narrow"
         if unit not in RELATIVE_UNITS:
+            continue
+        if field.find("alias") is not None:
+            # CLDR aliases resolve in the current locale's context; the
+            # resolver below implements that as a fallback to the locale's
+            # long (or short) field.
             continue
         entry = {
             "relative": {},
@@ -152,7 +165,7 @@ def parse_locale(archive: zipfile.ZipFile, locale: str) -> dict:
                 category = pattern.get("count")
                 if category and pattern.text:
                     entry[direction][category] = pattern.text
-        data["relative"][unit] = entry
+        data["relative"].setdefault(unit, {})[style] = entry
 
     for unit_length in root.findall(".//units/unitLength"):
         form = unit_length.get("type")
@@ -241,37 +254,58 @@ def resolve_list(locale_data, parent_data, root_data):
     return result
 
 
+def relative_field(entry):
+    field = {
+        "past_relative": entry.get("relative", {}).get("-1", ""),
+        "now_relative": entry.get("relative", {}).get("0", ""),
+        "future_relative": entry.get("relative", {}).get("1", ""),
+        "past": {},
+        "future": {},
+    }
+    for direction in ("future", "past"):
+        for category in CATEGORIES:
+            field[direction][category] = (
+                entry.get(direction, {}).get(category)
+                or entry.get(direction, {}).get("other")
+                or ""
+            )
+    return field
+
+
 def resolve_relative(locale_data, parent_data, root_data):
     layers = [locale_data, parent_data, root_data]
-    result = {}
+
+    def style_entry(unit, style):
+        for data in layers:
+            entry = data["relative"].get(unit, {}).get(style)
+            if entry is not None:
+                return entry
+        return None
+
+    fields = []
+    short_fields = []
+    narrow_fields = []
     for unit in RELATIVE_UNITS:
-        entry = {
-            "past_relative": layer_value(
-                layers,
-                lambda data, unit=unit: data["relative"].get(unit, {}).get("relative", {}).get("-1"),
-            ),
-            "now_relative": layer_value(
-                layers,
-                lambda data, unit=unit: data["relative"].get(unit, {}).get("relative", {}).get("0"),
-            ),
-            "future_relative": layer_value(
-                layers,
-                lambda data, unit=unit: data["relative"].get(unit, {}).get("relative", {}).get("1"),
-            ),
-            "past": {},
-            "future": {},
-        }
-        for direction in ("future", "past"):
-            for category in CATEGORIES:
-                entry[direction][category] = layer_value(
-                    layers,
-                    lambda data, unit=unit, direction=direction, category=category: (
-                        data["relative"].get(unit, {}).get(direction, {}).get(category)
-                        or data["relative"].get(unit, {}).get(direction, {}).get("other")
-                    ),
-                )
-        result[unit] = entry
-    return result
+        long_entry = style_entry(unit, "long") or {}
+        short_entry = style_entry(unit, "short")
+        short_effective = short_entry if short_entry is not None else long_entry
+        narrow_entry = style_entry(unit, "narrow")
+        narrow_effective = (
+            narrow_entry if narrow_entry is not None else short_effective
+        )
+        long_field = relative_field(long_entry)
+        short_field = relative_field(short_effective)
+        narrow_field = relative_field(narrow_effective)
+        fields.append(long_field)
+        short_fields.append(short_field if short_field != long_field else None)
+        narrow_fields.append(
+            narrow_field if narrow_field != short_field else None
+        )
+    return {
+        "fields": fields,
+        "short_fields": short_fields,
+        "narrow_fields": narrow_fields,
+    }
 
 
 def unit_pattern(layers, form, unit_id, category):
@@ -484,24 +518,42 @@ def render_relative(compiled: dict[str, dict]) -> str:
         "pub const Locale = struct {",
         "    id: []const u8,",
         "    fields: [7]Field,",
+        "    short_fields: [7]?Field,",
+        "    narrow_fields: [7]?Field,",
         "};",
         "",
         "pub const locales = [_]Locale{",
     ]
-    for locale in sorted(compiled):
-        lines.append(f"    .{{ .id = {zig_string(locale)}, .fields = .{{")
-        for unit in RELATIVE_UNITS:
-            entry = compiled[locale]["relative"][unit]
+    def render_fields(key: str, optional: bool) -> list[str]:
+        result = []
+        for entry in compiled_current["relative"][key]:
+            if entry is None:
+                result.append("        null,")
+                continue
             past = ", ".join(zig_string(entry["past"][c]) for c in CATEGORIES)
             future = ", ".join(zig_string(entry["future"][c]) for c in CATEGORIES)
-            lines.append("        .{")
-            lines.append(f"            .past_relative = {zig_string(entry['past_relative'])},")
-            lines.append(f"            .now_relative = {zig_string(entry['now_relative'])},")
-            lines.append(f"            .future_relative = {zig_string(entry['future_relative'])},")
-            lines.append(f"            .past = .{{ {past} }},")
-            lines.append(f"            .future = .{{ {future} }},")
-            lines.append("        },")
-        lines.append("    } },")
+            result.append("        .{")
+            result.append(f"            .past_relative = {zig_string(entry['past_relative'])},")
+            result.append(f"            .now_relative = {zig_string(entry['now_relative'])},")
+            result.append(f"            .future_relative = {zig_string(entry['future_relative'])},")
+            result.append(f"            .past = .{{ {past} }},")
+            result.append(f"            .future = .{{ {future} }},")
+            result.append("        },")
+        return result
+
+    for locale in sorted(compiled):
+        compiled_current = compiled[locale]
+        lines.append(f"    .{{ .id = {zig_string(locale)},")
+        lines.append("        .fields = .{")
+        lines.extend(render_fields("fields", False))
+        lines.append("        },")
+        lines.append("        .short_fields = .{")
+        lines.extend(render_fields("short_fields", True))
+        lines.append("        },")
+        lines.append("        .narrow_fields = .{")
+        lines.extend(render_fields("narrow_fields", True))
+        lines.append("        },")
+        lines.append("    },")
     lines.extend(["};", ""])
     return "\n".join(lines)
 

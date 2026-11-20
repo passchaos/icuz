@@ -450,6 +450,7 @@ pub const formatListAlloc = list_mod.formatAlloc;
 
 pub const RelativeUnit = relative_mod.Unit;
 pub const RelativeNumeric = relative_mod.Numeric;
+pub const RelativeStyle = relative_mod.Style;
 pub const RelativeOptions = relative_mod.Options;
 pub const formatRelativeAlloc = relative_mod.formatAlloc;
 

@@ -490,7 +490,7 @@ GENERATORS = {
     "tools/unicode/format/generate_dates.py": "b2dde11d124e83060c4372e431b222f3ae08770694f6d6673f40e0b5f4e58775",
     "tools/unicode/format/generate_interval_skeleton_conformance.py": "3733e4ee24ea0d32bde4a35475b0c65c28d634fff77a89ab20413631b5d5bddc",
     "tools/unicode/format/generate_date_skeleton_conformance.py": "0180072157ba234dea9af11cd401695cace6e6d399792743a76ace27c24b8246",
-    "tools/unicode/format/generate_misc.py": "6f811f84eb654ea301ead14d178f9ef74b5f31d75c00e4a958ee887b60380af5",
+    "tools/unicode/format/generate_misc.py": "0b8cee32e263a6a023af91b67ee5b980b9a14d0950d18868064e817afd1ee4c3",
     "tools/unicode/format/generate_weekend.py": "070f632b8a485a9ca9b5ef3399bfc193b0daeaf96bedf6dd8726d7bbec83e472",
     "tools/unicode/format/generate_week.py": "0b50f890c53513a78eb93c5e59af694fc953461ff276cbf27e15dedb74d4b7f9",
     "tools/unicode/format/generate_gender.py": "06d218aa5dadc26674d72085c4b803a4badc5663dcf07cd17aa98bc9be5caba1",
@@ -596,7 +596,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/format/relative_data.zig",
         "tools/unicode/format/generate_misc.py",
-        "31e356d25c99bbfba0097b0e2026983cb25acf1e44de3128c00f3be1fbb4e91d",
+        "a6a9aa94c8ed07e2166e67bce9a51030dd938e4507f74e870a94395ba577244c",
     ),
     GeneratedText(
         "src/unicode/format/units_data.zig",

@@ -15,8 +15,11 @@ pub const Numeric = enum {
     always,
 };
 
+pub const Style = enum { long, short, narrow };
+
 pub const Options = struct {
     numeric: Numeric = .auto,
+    style: Style = .long,
 };
 
 pub const Error = error{ OutOfMemory, InvalidPattern, MissingCurrency };
@@ -30,18 +33,30 @@ pub fn formatAlloc(
 ) Error![]u8 {
     const locale_data = misc.findLocale(data.locales, locale) orelse
         misc.findLocale(data.locales, "en").?;
-    const field = locale_data.fields[@intFromEnum(unit)];
+    const unit_index = @intFromEnum(unit);
+    // Relative-type text ("yesterday") always comes from the long field, as
+    // in ICU's RelativeDateTimeFormatter; only the numeric patterns follow
+    // the requested width.
+    const text_field = locale_data.fields[unit_index];
+    const field = switch (options.style) {
+        .long => locale_data.fields[unit_index],
+        .short => locale_data.short_fields[unit_index] orelse
+            locale_data.fields[unit_index],
+        .narrow => locale_data.narrow_fields[unit_index] orelse
+            locale_data.short_fields[unit_index] orelse
+            locale_data.fields[unit_index],
+    };
 
     if (options.numeric == .auto and isSmallInteger(value)) {
         const integer: i64 = @intFromFloat(value);
-        if (integer == -1 and field.past_relative.len != 0) {
-            return allocator.dupe(u8, field.past_relative);
+        if (integer == -1 and text_field.past_relative.len != 0) {
+            return allocator.dupe(u8, text_field.past_relative);
         }
-        if (integer == 0 and field.now_relative.len != 0) {
-            return allocator.dupe(u8, field.now_relative);
+        if (integer == 0 and text_field.now_relative.len != 0) {
+            return allocator.dupe(u8, text_field.now_relative);
         }
-        if (integer == 1 and field.future_relative.len != 0) {
-            return allocator.dupe(u8, field.future_relative);
+        if (integer == 1 and text_field.future_relative.len != 0) {
+            return allocator.dupe(u8, text_field.future_relative);
         }
     }
 
@@ -168,4 +183,72 @@ test "relative time covers additional locales" {
         defer allocator.free(result);
         try testing.expectEqualStrings(case.expected, result);
     }
+}
+
+
+test "relative time styles" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const french_short = try formatAlloc(
+        allocator,
+        2,
+        .day,
+        "fr",
+        .{ .numeric = .always, .style = .short },
+    );
+    defer allocator.free(french_short);
+    try testing.expectEqualStrings("dans 2\u{00a0}j", french_short);
+
+    const french_long = try formatAlloc(
+        allocator,
+        2,
+        .day,
+        "fr",
+        .{ .numeric = .always, .style = .long },
+    );
+    defer allocator.free(french_long);
+    try testing.expectEqualStrings("dans 2 jours", french_long);
+
+    const french_narrow = try formatAlloc(
+        allocator,
+        2,
+        .day,
+        "fr",
+        .{ .numeric = .always, .style = .narrow },
+    );
+    defer allocator.free(french_narrow);
+    try testing.expectEqualStrings("+2 j", french_narrow);
+
+    // Relative-type text stays long regardless of the requested width.
+    const french_yesterday = try formatAlloc(
+        allocator,
+        -1,
+        .day,
+        "fr",
+        .{ .style = .narrow },
+    );
+    defer allocator.free(french_yesterday);
+    try testing.expectEqualStrings("hier", french_yesterday);
+
+    const english_narrow = try formatAlloc(
+        allocator,
+        2,
+        .day,
+        "en",
+        .{ .numeric = .always, .style = .narrow },
+    );
+    defer allocator.free(english_narrow);
+    try testing.expectEqualStrings("in 2d", english_narrow);
+
+    // German has no explicit short field; it falls back to the long one.
+    const german_short = try formatAlloc(
+        allocator,
+        2,
+        .day,
+        "de",
+        .{ .numeric = .always, .style = .short },
+    );
+    defer allocator.free(german_short);
+    try testing.expectEqualStrings("in 2 Tagen", german_short);
 }

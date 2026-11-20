@@ -251,7 +251,9 @@ need without pulling in a font or layout engine.
   styles with narrow/short variants. `listGender` implements the CLDR
   neutral, mixed-neutral, and male-tainting list-gender rules.
 - CLDR 48 relative time for 87 locales, including yesterday/today/tomorrow
-  text and future/past plural patterns.
+  text, future/past plural patterns, and long/short/narrow styles
+  (`RelativeStyle`). Relative-type text always follows the long field, as in
+  ICU's `RelativeDateTimeFormatter`.
 - CLDR 48 unit formatting for 87 locales and all 231 CLDR units across
   length, mass, temperature, speed, area, volume, duration, digital, energy,
   power, pressure, frequency, angle, light, electricity, torque, and
