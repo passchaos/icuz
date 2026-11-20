@@ -220,6 +220,13 @@ need without pulling in a font or layout engine.
   territory, grouping, deprecated, unknown), containment parents and
   children, transitive containment, and available-region enumeration,
   validated by a 138-case ICU 78 differential fixture.
+- ICU `ulocdata`-compatible locale data (`LocaleData`,
+  `localeExemplarSetAlloc`, `localeMeasurementSystem`, `localePaperSize`):
+  CLDR 48 exemplar sets (standard, auxiliary, index, and punctuation, with
+  `USET_IGNORE_SPACE` and mark-string normalization), quotation delimiters,
+  locale display patterns and separators, region-based measurement systems,
+  and A4/US-Letter paper sizes, validated by a 936-case ICU 78 differential
+  fixture.
 - BCP 47 locale tag canonicalization (`canonicalizeLocaleAlloc`): case and
   separator normalization, CLDR 48 language, script, territory, and variant
   alias rules with multi-field replacements, wildcard and chained aliases,

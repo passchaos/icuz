@@ -79,6 +79,8 @@ BLOBS = (
     Blob("src/unicode/format/time_scale_conformance.bin", b"CJTS", 1, "6c7adfa084590f939cd4847f40561e32963b12e4ff88020645564cd42011941f", version=(0, 0, 0)),
     Blob("src/unicode/locale/region_data.bin", b"CJR0", 1, "df18f67eeae78bb659bd044ceb51578e3f4518062f2bba01d673651d94190bc8", version=(48, 0, 0)),
     Blob("src/unicode/locale/region_conformance.bin", b"CJRC", 1, "36379213b86fef1c5bc816efb7f8f6bbd642b64fa873474e78bd1180e0870668", version=(0, 0, 0)),
+    Blob("src/unicode/locale/data.bin", b"CJL0", 1, "74c094e62619193564e6c511d9ba7095abe4fe7b63bee5e178c37fed7dff5a1e", version=(48, 0, 0)),
+    Blob("src/unicode/locale/data_conformance.bin", b"CJL3", 1, "1b77b67170de1dbe6816d3cd64cec4b44c2415112444ace9289b9bc2a46eebcf", version=(0, 0, 0)),
     Blob("src/unicode/regex/conformance.bin", b"CJRX", 1, "d812ea80da5992706de6149927f68a1cac27052e0894acac84fb1297f277d891", version=(0, 0, 0)),
     Blob("src/unicode/format/units_data.bin", b"CJUN", 2, "3ff2588f561f47ce80c707960d8580e535b33ce7516488433e4ebc19f5e0eb6f", version=(0, 0, 0)),
     Blob("src/unicode/format/unit_conformance.bin", b"CJU1", 1, "53270b0acc7cf590569c5599a791d37717f358c0da37975b9c56ea7efc113726", version=(0, 0, 0)),
@@ -514,6 +516,8 @@ GENERATORS = {
     "tools/unicode/regex/generate_regex_conformance.py": "cf1f04282f51419a4b541d5cb422e9cde6273060025850c7e193ace2c1950984",
     "tools/unicode/locale/generate_region.py": "7ed0cc772967d5389aafb99c3ff853d17cc012518cf7a19426159d7dca285afe",
     "tools/unicode/locale/generate_region_conformance.py": "bf7ef75ea790ef67d71b3ac6ef67c527fb7660f956ab2f536e3f16c6f2d3dee3",
+    "tools/unicode/locale/generate_locale_data.py": "7f2965710c46e4efc6f32241016e574d285f3a5182faea1892a8a937cb8836ec",
+    "tools/unicode/locale/generate_locale_data_conformance.py": "5d67c402b048eb2ddda67becde84a0dd9949466e4c6fb3a75cdc91e25f3f53cb",
     "tools/unicode/format/generate_range_data.py": "5a2a37e0ae47a1c91483c42ab8c9481947af518b1eb9943918ce9101788c0286",
     "tools/unicode/format/generate_range_conformance.py": "aa423e4f5f3e63035455398ad926104c203e6e90f332350d08369e62e8c4bf6b",
     "tools/unicode/format/generate_unit_conformance.py": "4227b3b9e7528c778a7a19dc0ed6b063cd39d9787f1962da419fb6a4300080a8",
@@ -1045,6 +1049,50 @@ def check_layout(blob: Blob, data: bytes) -> None:
             + ce_count * 16
             == len(data)
         )
+    elif magic == b"CJL0":
+        locale_count = struct.unpack_from("<I", data, 8)[0]
+        string_len = struct.unpack_from("<I", data, 12)[0]
+        measurement_count, paper_count = struct.unpack_from("<HH", data, 16)
+        assert (
+            22
+            + locale_count * 68
+            + measurement_count * 8
+            + paper_count * 8
+            + string_len
+            == len(data)
+        )
+    elif magic == b"CJL3":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            kind = data[offset]
+            offset += 1
+            length = struct.unpack_from("<H", data, offset)[0]
+            offset += 2 + length
+            if kind == 0:
+                offset += 1
+                item_count = struct.unpack_from("<I", data, offset)[0]
+                offset += 4
+                for _ in range(item_count):
+                    tag = data[offset]
+                    offset += 1
+                    if tag == 0:
+                        offset += 8
+                    else:
+                        length = struct.unpack_from("<H", data, offset)[0]
+                        offset += 2 + length
+            elif kind == 1:
+                offset += 1
+                length = struct.unpack_from("<H", data, offset)[0]
+                offset += 2 + length
+            elif kind in (2, 3):
+                length = struct.unpack_from("<H", data, offset)[0]
+                offset += 2 + length
+            elif kind == 4:
+                offset += 1
+            elif kind == 5:
+                offset += 8
+        assert offset == len(data)
     elif magic == b"CJR0":
         region_count, alias_count, numeric_count, string_len = struct.unpack_from(
             "<HHHH", data, 8

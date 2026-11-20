@@ -919,11 +919,26 @@ pub fn fromScriptExtensions(
 /// `\uXXXX`/`\UXXXXXXXX` escapes, `\p{Property}`/`\P{Property}`, and property
 /// selectors such as `gc=Lu`, `General_Category=Uppercase_Letter`,
 /// `sc=Grek`, `Script=Greek`, `scx=Greek`, plus binary property aliases.
+pub const ParseOptions = struct {
+    /// Skip Pattern_White_Space between elements, like ICU's
+    /// USET_IGNORE_SPACE option.
+    ignore_space: bool = false,
+};
+
 pub fn parse(allocator: std.mem.Allocator, pattern: []const u8) Error!Set {
+    return parseWithOptions(allocator, pattern, .{});
+}
+
+pub fn parseWithOptions(
+    allocator: std.mem.Allocator,
+    pattern: []const u8,
+    options: ParseOptions,
+) Error!Set {
     var parser = Parser{
         .allocator = allocator,
         .pattern = pattern,
         .index = 0,
+        .ignore_space = options.ignore_space,
     };
     return parser.parseSet();
 }
@@ -932,6 +947,7 @@ const Parser = struct {
     allocator: std.mem.Allocator,
     pattern: []const u8,
     index: usize,
+    ignore_space: bool = false,
 
     fn parseSet(self: *Parser) Error!Set {
         if (self.index < self.pattern.len and
@@ -941,17 +957,20 @@ const Parser = struct {
         }
         if (self.peek() != '[') return error.InvalidPattern;
         self.index += 1;
+        self.skipWhitespace();
 
         var negated = false;
         if (self.peek() == '^') {
             negated = true;
             self.index += 1;
+            self.skipWhitespace();
         }
 
         var set = Set.init(self.allocator);
         errdefer set.deinit();
 
         while (true) {
+            self.skipWhitespace();
             if (self.index >= self.pattern.len) return error.InvalidPattern;
             if (self.peek() == ']') {
                 self.index += 1;
@@ -961,11 +980,13 @@ const Parser = struct {
             const atom = try self.parseAtom();
             switch (atom) {
                 .literal => |start_codepoint| {
+                    self.skipWhitespace();
                     if (self.peek() == '-' and
                         self.index + 1 < self.pattern.len and
                         self.pattern[self.index + 1] != ']')
                     {
                         self.index += 1;
+                        self.skipWhitespace();
                         const end_atom = try self.parseAtom();
                         const end_codepoint = switch (end_atom) {
                             .literal => |codepoint| codepoint,
@@ -1141,6 +1162,27 @@ const Parser = struct {
     fn peek(self: *Parser) u8 {
         if (self.index >= self.pattern.len) return 0;
         return self.pattern[self.index];
+    }
+
+    fn skipWhitespace(self: *Parser) void {
+        if (!self.ignore_space) return;
+        while (self.index < self.pattern.len) {
+            const length = std.unicode.utf8ByteSequenceLength(
+                self.pattern[self.index],
+            ) catch return;
+            if (self.index + length > self.pattern.len) return;
+            const codepoint = std.unicode.utf8Decode(
+                self.pattern[self.index..][0..length],
+            ) catch return;
+            // ICU's USET_IGNORE_SPACE skips Pattern_White_Space, which also
+            // covers the bidi marks U+200E/U+200F.
+            const whitespace = switch (codepoint) {
+                0x09...0x0d, 0x20, 0x85, 0x200e, 0x200f, 0x2028, 0x2029 => true,
+                else => false,
+            };
+            if (!whitespace) return;
+            self.index += length;
+        }
     }
 };
 
