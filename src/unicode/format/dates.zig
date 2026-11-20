@@ -1383,25 +1383,31 @@ fn appendField(
                     (if (is_pm) locale.pm_abbreviated else locale.am_abbreviated));
             }
         },
-        'H' => try appendPaddedNumber(
+        'H', 'J' => try appendPaddedNumber(
             allocator,
             output,
             date_time.hour,
             if (length >= 2) 2 else 1,
             locale,
         ),
-        'h' => {
-            const hour = if (date_time.hour % 12 == 0)
-                12
-            else
-                date_time.hour % 12;
-            try appendPaddedNumber(
-                allocator,
-                output,
-                hour,
-                if (length >= 2) 2 else 1,
-                locale,
-            );
+        'h' => try appendHour12(allocator, output, date_time, length, locale),
+        'C', 'j' => {
+            const preferred_hour: u8 = if (std.mem.indexOfAny(
+                u8,
+                locale.time_short,
+                "hK",
+            ) != null) 'h' else 'H';
+            if (preferred_hour == 'h') {
+                try appendHour12(allocator, output, date_time, length, locale);
+            } else {
+                try appendPaddedNumber(
+                    allocator,
+                    output,
+                    date_time.hour,
+                    if (length >= 2) 2 else 1,
+                    locale,
+                );
+            }
         },
         'K' => try appendPaddedNumber(
             allocator,
@@ -1593,6 +1599,26 @@ fn appendField(
         },
         else => {},
     }
+}
+
+fn appendHour12(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    date_time: DateTime,
+    length: usize,
+    locale: *const data.Locale,
+) Error!void {
+    const hour = if (date_time.hour % 12 == 0)
+        12
+    else
+        date_time.hour % 12;
+    try appendPaddedNumber(
+        allocator,
+        output,
+        hour,
+        if (length >= 2) 2 else 1,
+        locale,
+    );
 }
 
 fn appendPaddedNumber(
@@ -2235,7 +2261,26 @@ fn parsePatternField(
             state.hour12 = @intCast(value % 12);
             return true;
         },
-        'H' => {
+        'H', 'J' => {
+            const value = parseDateNumber(locale, text, index, 2) orelse
+                return false;
+            if (value > 23) return false;
+            state.hour = @intCast(value);
+            return true;
+        },
+        'C', 'j' => {
+            const preferred_hour: u8 = if (std.mem.indexOfAny(
+                u8,
+                locale.time_short,
+                "hK",
+            ) != null) 'h' else 'H';
+            if (preferred_hour == 'h') {
+                const value = parseDateNumber(locale, text, index, 2) orelse
+                    return false;
+                if (value < 1 or value > 12) return false;
+                state.hour12 = @intCast(value % 12);
+                return true;
+            }
             const value = parseDateNumber(locale, text, index, 2) orelse
                 return false;
             if (value > 23) return false;
@@ -3779,4 +3824,42 @@ test "regional week fields use the locale region" {
     const de = try formatPatternAlloc(allocator, "w", date, "de", "UTC");
     defer allocator.free(de);
     try testing.expectEqualStrings("52", de);
+}
+
+test "J and C hour pattern fields" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const date = DateTime{
+        .year = 2026,
+        .month = 1,
+        .day = 1,
+        .hour = 15,
+        .minute = 0,
+        .second = 0,
+    };
+    const j = try formatPatternAlloc(allocator, "J", date, "en", "UTC");
+    defer allocator.free(j);
+    try testing.expectEqualStrings("15", j);
+    const c_en = try formatPatternAlloc(allocator, "C", date, "en", "UTC");
+    defer allocator.free(c_en);
+    try testing.expectEqualStrings("3", c_en);
+    const c_de = try formatPatternAlloc(allocator, "C", date, "de", "UTC");
+    defer allocator.free(c_de);
+    try testing.expectEqualStrings("15", c_de);
+
+    const defaults = ParseDefaults{
+        .year = 2026,
+        .month = 1,
+        .day = 1,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    };
+    const parsed_j = parsePattern("15", "J", "en", defaults).?;
+    try testing.expectEqual(@as(u8, 15), parsed_j.hour);
+    const parsed_c = parsePattern("3 PM", "C a", "en", defaults).?;
+    try testing.expectEqual(@as(u8, 15), parsed_c.hour);
+    const parsed_c_de = parsePattern("15", "C", "de", defaults).?;
+    try testing.expectEqual(@as(u8, 15), parsed_c_de.hour);
 }
