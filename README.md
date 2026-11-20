@@ -136,7 +136,8 @@ need without pulling in a font or layout engine.
   bitmask, restriction-level thresholds, allowed-character sets,
   invisible-character, hidden-overlay, mixed-number, and char-limit checks,
   plus `areConfusable` bitmask classification (single/mixed/whole script),
-  validated by a 923-case ICU 78 differential fixture.
+  bidi-confusable skeletons and `areBidiConfusable` classification, and
+  validated by a 943-case ICU 78 differential fixture.
 - CLDR 48 cardinal plural rules for 224 locales and ordinal plural rules for
   110 locales, including both CLDR sample conformance fixtures, plus plural
   range selection (`pluralRangeCategory`) for 91 locales from

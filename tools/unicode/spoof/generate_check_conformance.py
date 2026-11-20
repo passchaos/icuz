@@ -145,6 +145,19 @@ CONFIGS = (
     (ALL_CHECKS, HIGHLY_RESTRICTIVE, 3),
 )
 
+BIDI_CONFUSABLE_PAIRS = (
+    ("paypal", "p\u0430ypal"),
+    ("scope", "s\u0441ope"),
+    ("abc", "abd"),
+    ("l", "1"),
+    ("abc \u05d0\u05d1\u05d2", "abc \u05d0\u05d1\u05d2"),
+    ("\u05d0(\u05d1)", "(\u05d0)\u05d1"),
+    ("\u05d0\u05d1", "\u05d1\u05d0"),
+    ("a\u05d0b", "a\u05d0b"),
+    ("\u202babc\u202c", "\u202babc\u202c"),
+    ("abc", "\u0430\u0432\u0441"),
+)
+
 CONFUSABLE_PAIRS = (
     ("paypal", "p\u0430ypal"),
     ("paypal", "paypa1"),
@@ -222,6 +235,20 @@ def main() -> int:
         "uspoof_checkUTF8",
         ctypes.c_int32,
         [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32, P, P],
+    )
+    uspoof_are_bidi_confusable = bind(
+        i18n,
+        "uspoof_areBidiConfusableUTF8",
+        ctypes.c_int32,
+        [
+            ctypes.c_void_p,
+            ctypes.c_int32,
+            ctypes.c_char_p,
+            ctypes.c_int32,
+            ctypes.c_char_p,
+            ctypes.c_int32,
+            P,
+        ],
     )
     uspoof_are_confusable = bind(
         i18n,
@@ -327,6 +354,36 @@ def main() -> int:
                 result & 0xFFFFFFFF,
             )
         )
+
+    for first, second in BIDI_CONFUSABLE_PAIRS:
+        encoded_first = first.encode("utf-8")
+        encoded_second = second.encode("utf-8")
+        for direction in (0, 1):
+            status.value = 0
+            result = uspoof_are_bidi_confusable(
+                checker,
+                direction,
+                encoded_first,
+                len(encoded_first),
+                encoded_second,
+                len(encoded_second),
+                ctypes.byref(status),
+            )
+            if status.value > 0:
+                raise SystemExit(
+                    f"uspoof_areBidiConfusableUTF8 failed for {first!r}"
+                )
+            records.append(
+                (
+                    2,
+                    direction,
+                    0,
+                    CONFUSABLE,
+                    encoded_first,
+                    encoded_second,
+                    result & 0xFFFFFFFF,
+                )
+            )
 
     uspoof_close(checker)
     for uset in allowed_sets[1:]:

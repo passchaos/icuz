@@ -12,6 +12,7 @@ const properties = @import("properties.zig");
 const script = @import("script/root.zig");
 const script_extensions = @import("script_extensions/root.zig");
 const set_mod = @import("set.zig");
+const bidi_paragraph = @import("bidi/paragraph.zig");
 
 const blob = @embedFile("spoof/confusables_data.bin");
 const conformance = @embedFile("spoof/conformance.bin");
@@ -491,7 +492,15 @@ pub const Checker = struct {
         try skeletonCodepointsInto(allocator, first, &skeleton_a);
         try skeletonCodepointsInto(allocator, second, &skeleton_b);
         if (!std.mem.eql(u21, skeleton_a.items, skeleton_b.items)) return 0;
+        return self.confusableClass(first, second);
+    }
 
+    /// Classify two strings whose skeletons match.
+    fn confusableClass(
+        self: *const Checker,
+        first: []const u8,
+        second: []const u8,
+    ) Error!u32 {
         const resolved_a = try resolvedScriptSet(first);
         const resolved_b = try resolvedScriptSet(second);
         var result: u32 = 0;
@@ -506,6 +515,51 @@ pub const Checker = struct {
             }
         }
         return result & self.checks;
+    }
+
+    /// ICU `uspoof_getBidiSkeletonUTF8`: reorder with the given base
+    /// direction, keeping base combining marks and mirroring, then compute
+    /// the confusable skeleton.
+    pub fn bidiSkeletonAlloc(
+        self: *const Checker,
+        allocator: std.mem.Allocator,
+        text: []const u8,
+        direction: bidi_paragraph.BaseDirection,
+    ) Error![]u8 {
+        _ = self;
+        return bidiSkeletonImpl(allocator, text, direction);
+    }
+
+    /// ICU `uspoof_areBidiConfusableUTF8`.
+    pub fn areBidiConfusableAlloc(
+        self: *const Checker,
+        allocator: std.mem.Allocator,
+        a: []const u8,
+        b: []const u8,
+        direction: bidi_paragraph.BaseDirection,
+        case_fold: bool,
+    ) Error!u32 {
+        if (self.checks & Checks.confusable == 0) return error.InvalidState;
+
+        var folded_a: ?[]u8 = null;
+        defer if (folded_a) |owned| allocator.free(owned);
+        var folded_b: ?[]u8 = null;
+        defer if (folded_b) |owned| allocator.free(owned);
+        var first = a;
+        var second = b;
+        if (case_fold) {
+            folded_a = try case.foldAlloc(allocator, a);
+            folded_b = try case.foldAlloc(allocator, b);
+            first = folded_a.?;
+            second = folded_b.?;
+        }
+
+        const skeleton_a = try bidiSkeletonImpl(allocator, first, direction);
+        defer allocator.free(skeleton_a);
+        const skeleton_b = try bidiSkeletonImpl(allocator, second, direction);
+        defer allocator.free(skeleton_b);
+        if (!std.mem.eql(u8, skeleton_a, skeleton_b)) return 0;
+        return self.confusableClass(first, second);
     }
 
     fn allowsAll(self: *const Checker, text: []const u8) Error!bool {
@@ -676,6 +730,31 @@ pub fn skeletonAlloc(
         try output.appendSlice(allocator, buffer[0..length]);
     }
     return output.toOwnedSlice(allocator);
+}
+
+/// ICU `uspoof_getBidiSkeletonUTF8`: reorder with `direction`, keeping base
+/// combining marks and mirroring, then compute the confusable skeleton.
+pub fn bidiSkeletonAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    direction: bidi_paragraph.BaseDirection,
+) Error![]u8 {
+    return bidiSkeletonImpl(allocator, text, direction);
+}
+
+fn bidiSkeletonImpl(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    direction: bidi_paragraph.BaseDirection,
+) Error![]u8 {
+    var paragraph = try bidi_paragraph.resolve(allocator, text, direction);
+    defer paragraph.deinit();
+    const reordered = try paragraph.reorderAlloc(allocator, text, .{
+        .mirroring = true,
+        .keep_base_combining = true,
+    });
+    defer allocator.free(reordered);
+    return skeletonAlloc(allocator, reordered);
 }
 
 /// Report whether two strings have the same skeleton. When `case_fold` is
@@ -927,10 +1006,17 @@ test "USpoofChecker ICU conformance fixture" {
         checker.setRestrictionLevel(levels[level_index]);
         checker.setChecks(checks);
 
-        const actual = if (kind == 1)
-            try checker.areConfusableAlloc(allocator, first, second, false)
-        else
-            try checker.checkAlloc(allocator, first);
+        const actual = switch (kind) {
+            1 => try checker.areConfusableAlloc(allocator, first, second, false),
+            2 => try checker.areBidiConfusableAlloc(
+                allocator,
+                first,
+                second,
+                if (level_index == 0) .ltr else .rtl,
+                false,
+            ),
+            else => try checker.checkAlloc(allocator, first),
+        };
         if (actual != expected) {
             failures += 1;
             if (failures <= 10) {
@@ -1062,4 +1148,48 @@ test "UTS 39 skeleton conformance" {
     }
     try testing.expectEqual(conformance.len, cursor);
     try testing.expectEqual(@as(usize, 0), failures);
+}
+
+test "bidi confusable skeletons" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const ltr = try bidiSkeletonAlloc(allocator, "abc \u{05d0}\u{05d1}", .ltr);
+    defer allocator.free(ltr);
+    const rtl = try bidiSkeletonAlloc(allocator, "abc \u{05d0}\u{05d1}", .rtl);
+    defer allocator.free(rtl);
+    try testing.expect(ltr.len > 0);
+    try testing.expect(rtl.len > 0);
+
+    var checker = Checker.init();
+    checker.setChecks(Checks.confusable);
+    try testing.expectEqual(
+        Checks.single_script_confusable,
+        try checker.areBidiConfusableAlloc(
+            allocator,
+            "abc",
+            "abc",
+            .ltr,
+            false,
+        ),
+    );
+    try testing.expectEqual(
+        @as(u32, 0),
+        try checker.areBidiConfusableAlloc(
+            allocator,
+            "abc",
+            "abd",
+            .rtl,
+            false,
+        ),
+    );
+    try testing.expect(
+        (try checker.areBidiConfusableAlloc(
+            allocator,
+            "paypal",
+            "p\u{0430}ypal",
+            .ltr,
+            false,
+        )) != 0,
+    );
 }

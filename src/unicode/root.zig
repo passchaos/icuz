@@ -291,6 +291,7 @@ pub const spoofHasMixedNumbers = spoof_mod.hasMixedNumbers;
 pub const spoofIsAllowedIdentifier = spoof_mod.isAllowedIdentifier;
 pub const spoofHasHiddenOverlay = spoof_mod.hasHiddenOverlay;
 pub const spoofHasInvisibleMarks = spoof_mod.hasInvisibleMarks;
+pub const spoofBidiSkeletonAlloc = spoof_mod.bidiSkeletonAlloc;
 pub const spoofRestrictionLevelFlag = spoof_mod.restrictionLevelFlag;
 pub const SpoofChecks = spoof_mod.Checks;
 pub const SpoofChecker = spoof_mod.Checker;
