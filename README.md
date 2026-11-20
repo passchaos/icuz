@@ -108,6 +108,10 @@ need without pulling in a font or layout engine.
   CLDR settings; `Options.case_first` and `Options.backwards_secondary`
   override them per call. Japanese private-kana and Korean searchjl
   tailorings are skipped.
+- ICU-style `Collator` attributes (`getAttribute`/`setAttribute`):
+  strength, alternate handling, case first, case level, French collation,
+  numeric collation, and the `UColAttributeValue` constants, including
+  tailoring-derived defaults.
 - Locale-aware string search (`search.indexOf`, `search.lastIndexOf`,
   `search.Search`): finds the first or last
   substring whose collation key equals the pattern at a chosen strength, so

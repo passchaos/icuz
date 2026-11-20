@@ -285,6 +285,100 @@ pub const Collator = struct {
         };
     }
 
+    /// ICU `UColAttribute` values.
+    pub const Attribute = enum(u8) {
+        french_collation = 0,
+        alternate_handling = 1,
+        case_first = 2,
+        case_level = 3,
+        normalization_mode = 4,
+        strength = 5,
+        hiragana_quaternary_mode = 6,
+        numeric_collation = 7,
+    };
+
+    /// ICU `UColAttributeValue` values used by the supported attributes.
+    pub const AttributeValue = struct {
+        pub const off: u32 = 0;
+        pub const on: u32 = 1;
+        pub const lower_first: u32 = 1;
+        pub const upper_first: u32 = 2;
+        pub const primary: u32 = 0;
+        pub const secondary: u32 = 1;
+        pub const tertiary: u32 = 2;
+        pub const quaternary: u32 = 3;
+        pub const identical: u32 = 4;
+    };
+
+    pub fn getAttribute(self: *const Collator, attribute: Attribute) u32 {
+        return switch (attribute) {
+            .french_collation => blk: {
+                if (self.options.backwards_secondary) |value| {
+                    break :blk @intFromBool(value);
+                }
+                break :blk if (self.tailoring) |tailoring|
+                    @intFromBool(tailoring.backwards)
+                else
+                    0;
+            },
+            .alternate_handling => if (self.options.variable_weighting == .shifted)
+                @as(u32, 1)
+            else
+                0,
+            .case_first => blk: {
+                const value = self.options.case_first orelse
+                    if (self.tailoring) |tailoring| tailoring.case_first else .off;
+                break :blk switch (value) {
+                    .off => 0,
+                    .lower => 1,
+                    .upper => 2,
+                };
+            },
+            .case_level => @intFromBool(self.options.case_level),
+            .normalization_mode => 1,
+            .strength => @intFromEnum(self.options.strength),
+            .hiragana_quaternary_mode => 0,
+            .numeric_collation => @intFromBool(self.options.numeric),
+        };
+    }
+
+    pub fn setAttribute(
+        self: *Collator,
+        attribute: Attribute,
+        value: u32,
+    ) void {
+        switch (attribute) {
+            .french_collation => {
+                self.options.backwards_secondary = value != 0;
+            },
+            .alternate_handling => {
+                self.options.variable_weighting = if (value == 0)
+                    .non_ignorable
+                else
+                    .shifted;
+            },
+            .case_first => {
+                self.options.case_first = switch (value) {
+                    0 => .off,
+                    1 => .lower,
+                    2 => .upper,
+                    else => return,
+                };
+            },
+            .case_level => {
+                self.options.case_level = value != 0;
+            },
+            .strength => {
+                if (value > @intFromEnum(Strength.identical)) return;
+                self.options.strength = @enumFromInt(value);
+            },
+            .numeric_collation => {
+                self.options.numeric = value != 0;
+            },
+            .normalization_mode, .hiragana_quaternary_mode => {},
+        }
+    }
+
     pub fn sortKeyInto(
         self: *const Collator,
         allocator: std.mem.Allocator,
@@ -3393,3 +3487,42 @@ test "case level collation" {
     );
 }
 
+fn compareWith(
+    collator: *const Collator,
+    allocator: std.mem.Allocator,
+    a: []const u8,
+    b: []const u8,
+) !std.math.Order {
+    var key_a = std.ArrayList(u32).empty;
+    defer key_a.deinit(allocator);
+    var key_b = std.ArrayList(u32).empty;
+    defer key_b.deinit(allocator);
+    return collator.compare(allocator, a, b, &key_a, &key_b);
+}
+
+test "collator attributes" {
+    const testing = @import("std").testing;
+    var collator = Collator.init(.{});
+    try testing.expectEqual(@as(u32, 2), collator.getAttribute(.strength));
+    collator.setAttribute(.strength, 0);
+    try testing.expectEqual(@as(u32, 0), collator.getAttribute(.strength));
+    try testing.expectEqual(std.math.Order.eq, try compareWith(&collator, testing.allocator, "a", "A"));
+
+    collator.setAttribute(.strength, 2);
+    collator.setAttribute(.numeric_collation, 1);
+    try testing.expectEqual(@as(u32, 1), collator.getAttribute(.numeric_collation));
+    try testing.expectEqual(std.math.Order.lt, try compareWith(&collator, testing.allocator, "a2", "a10"));
+
+    collator.setAttribute(.case_first, 2);
+    try testing.expectEqual(@as(u32, 2), collator.getAttribute(.case_first));
+    try testing.expectEqual(std.math.Order.lt, try compareWith(&collator, testing.allocator, "A", "a"));
+
+    collator.setAttribute(.alternate_handling, 1);
+    try testing.expectEqual(@as(u32, 1), collator.getAttribute(.alternate_handling));
+
+    var french = Collator.init(.{});
+    french.setAttribute(.french_collation, 1);
+    try testing.expectEqual(@as(u32, 1), french.getAttribute(.french_collation));
+    french.setAttribute(.french_collation, 0);
+    try testing.expectEqual(@as(u32, 0), french.getAttribute(.french_collation));
+}
