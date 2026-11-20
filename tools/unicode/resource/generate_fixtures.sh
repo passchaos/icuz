@@ -9,6 +9,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
 fixtures_dir="$repo_root/src/unicode/resource/fixtures"
 genrb="${GENRB:-genrb}"
+pkgdata="${PKGDATA:-pkgdata}"
 icu_inc="${ICU_INC:-/tmp/icu78/icu4c/source/common}"
 icu_lib="${ICU_LIB:-/Users/bytedance/.pixi/envs/nodejs/lib}"
 
@@ -35,6 +36,13 @@ cp "$work_dir/pooled/root.res" "$fixtures_dir/pooled_root.res"
 cp "$work_dir/pooled/en.res" "$fixtures_dir/pooled_en.res"
 cp "$work_dir/pooled/en_US.res" "$fixtures_dir/pooled_en_US.res"
 
+printf '%s\n' \
+    root.res en.res en_US.res pool.res \
+    pooled_root.res pooled_en.res pooled_en_US.res \
+    > "$work_dir/package_files.txt"
+"$pkgdata" -q -m common -p icudt_test \
+    -d "$fixtures_dir" -s "$fixtures_dir" "$work_dir/package_files.txt"
+
 clang++ -std=c++17 -I "$icu_inc" \
     "$script_dir/generate_conformance.cpp" \
     -L "$icu_lib" -licuuc -licudata -Wl,-rpath,"$icu_lib" \
@@ -43,4 +51,12 @@ clang++ -std=c++17 -I "$icu_inc" \
     "$fixtures_dir" \
     "$repo_root/src/unicode/resource/res_conformance.bin"
 
-echo "regenerated resource fixtures and conformance trace"
+clang++ -std=c++17 -I "$icu_inc" \
+    "$script_dir/generate_dat_conformance.cpp" \
+    -L "$icu_lib" -licuuc -licudata -Wl,-rpath,"$icu_lib" \
+    -o "$work_dir/generate_dat_conformance"
+"$work_dir/generate_dat_conformance" \
+    "$fixtures_dir/icudt_test" \
+    "$repo_root/src/unicode/resource/dat_conformance.bin"
+
+echo "regenerated resource fixtures and conformance traces"
