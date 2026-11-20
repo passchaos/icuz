@@ -509,6 +509,29 @@ fn appendTokenLower(
     for (token) |byte| try output.append(allocator, std.ascii.toLower(byte));
 }
 
+fn appendTokenUpper(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    token: []const u8,
+) error{OutOfMemory}!void {
+    if (output.items.len != 0) try output.append(allocator, '-');
+    for (token) |byte| try output.append(allocator, std.ascii.toUpper(byte));
+}
+
+fn appendTokenTitle(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    token: []const u8,
+) error{OutOfMemory}!void {
+    if (output.items.len != 0) try output.append(allocator, '-');
+    for (token, 0..) |byte, index| {
+        try output.append(
+            allocator,
+            if (index == 0) std.ascii.toUpper(byte) else std.ascii.toLower(byte),
+        );
+    }
+}
+
 fn aliasFor(key: []const u8, value: []const u8) ?[]const u8 {
     var low: usize = 0;
     var high = extension_aliases.aliases.len;
@@ -528,9 +551,41 @@ fn aliasFor(key: []const u8, value: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Canonicalize the extension and private-use subtags of a locale tag. Only
-/// the `-u-` extension applies BCP 47 key/type aliases; other extensions and
-/// private use are lowercased and preserved.
+fn alphaToken(text: []const u8, min: usize, max: usize) bool {
+    if (text.len < min or text.len > max) return false;
+    for (text) |byte| {
+        if (!std.ascii.isAlphabetic(byte)) return false;
+    }
+    return true;
+}
+
+fn digitToken(text: []const u8) bool {
+    for (text) |byte| {
+        if (!std.ascii.isDigit(byte)) return false;
+    }
+    return text.len != 0;
+}
+
+fn alnumToken(text: []const u8) bool {
+    for (text) |byte| {
+        if (!std.ascii.isAlphanumeric(byte)) return false;
+    }
+    return text.len != 0;
+}
+
+fn regionToken(text: []const u8) bool {
+    return (text.len == 2 and alphaToken(text, 2, 2)) or
+        (text.len == 3 and digitToken(text));
+}
+
+fn variantToken(text: []const u8) bool {
+    if (text.len >= 5 and text.len <= 8) return alnumToken(text);
+    return text.len == 4 and std.ascii.isDigit(text[0]) and alnumToken(text);
+}
+
+/// Canonicalize the extension and private-use subtags of a locale tag. The
+/// `-u-` and `-t-` extensions apply BCP 47 key/type aliases; other extensions
+/// and private use are lowercased and preserved.
 fn canonicalizeTailAlloc(
     allocator: std.mem.Allocator,
     tail: []const u8,
@@ -554,6 +609,87 @@ fn canonicalizeTailAlloc(
             const singleton = std.ascii.toLower(token[0]);
             try appendTokenLower(allocator, &output, token);
             token_index += 1;
+            if (singleton == 't') {
+                // Optional transform language tag: language, script, region,
+                // and variants, followed by 2-character keys.
+                if (token_index < tokens.items.len and
+                    alphaToken(tokens.items[token_index], 2, 3))
+                {
+                    try appendTokenLower(
+                        allocator,
+                        &output,
+                        tokens.items[token_index],
+                    );
+                    token_index += 1;
+                    if (token_index < tokens.items.len and
+                        alphaToken(tokens.items[token_index], 4, 4))
+                    {
+                        try appendTokenTitle(
+                            allocator,
+                            &output,
+                            tokens.items[token_index],
+                        );
+                        token_index += 1;
+                    }
+                    if (token_index < tokens.items.len and
+                        regionToken(tokens.items[token_index]))
+                    {
+                        try appendTokenUpper(
+                            allocator,
+                            &output,
+                            tokens.items[token_index],
+                        );
+                        token_index += 1;
+                    }
+                    while (token_index < tokens.items.len and
+                        variantToken(tokens.items[token_index]))
+                    {
+                        try appendTokenLower(
+                            allocator,
+                            &output,
+                            tokens.items[token_index],
+                        );
+                        token_index += 1;
+                    }
+                }
+                while (token_index < tokens.items.len and
+                    tokens.items[token_index].len != 1)
+                {
+                    const key = tokens.items[token_index];
+                    if (key.len != 2) {
+                        try appendTokenLower(allocator, &output, key);
+                        token_index += 1;
+                        continue;
+                    }
+                    var key_buffer: [2]u8 = undefined;
+                    const lower_key = lowerInto(&key_buffer, key);
+                    try appendTokenLower(allocator, &output, key);
+                    token_index += 1;
+                    const value_start = token_index;
+                    while (token_index < tokens.items.len and
+                        tokens.items[token_index].len != 1 and
+                        tokens.items[token_index].len != 2)
+                    {
+                        token_index += 1;
+                    }
+                    if (token_index == value_start) continue;
+                    var value = std.ArrayList(u8).empty;
+                    defer value.deinit(allocator);
+                    for (tokens.items[value_start..token_index], 0..) |part, part_index| {
+                        if (part_index > 0) try value.append(allocator, '-');
+                        for (part) |byte| {
+                            try value.append(allocator, std.ascii.toLower(byte));
+                        }
+                    }
+                    try output.append(allocator, '-');
+                    if (aliasFor(lower_key, value.items)) |canonical| {
+                        try output.appendSlice(allocator, canonical);
+                    } else {
+                        try output.appendSlice(allocator, value.items);
+                    }
+                }
+                continue;
+            }
             if (singleton != 'u') {
                 while (token_index < tokens.items.len and
                     tokens.items[token_index].len != 1)
@@ -738,6 +874,20 @@ test "locale extension type aliases" {
         },
         .{ .input = "en-u-nu-thai", .expected = "en-u-nu-thai" },
         .{ .input = "en-x-private", .expected = "en-x-private" },
+        .{ .input = "en-t-d0-fullwidth", .expected = "en-t-d0-fwidth" },
+        .{ .input = "en-t-m0-names", .expected = "en-t-m0-prprname" },
+        .{
+            .input = "en-t-s0-numericpinyin",
+            .expected = "en-t-s0-npinyin",
+        },
+        .{
+            .input = "en-t-de-DE-m0-ies-jes",
+            .expected = "en-t-de-DE-m0-iesjes",
+        },
+        .{
+            .input = "en-t-m0-tekie-alibekit",
+            .expected = "en-t-m0-tekieali",
+        },
     };
     for (cases) |case| {
         const value = try canonicalizeAlloc(allocator, case.input);
