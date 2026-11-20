@@ -81,6 +81,20 @@ pub fn normalizeNfkdAlloc(
 /// Validate UTF-8, copy stable spans verbatim, and normalize only the spans
 /// that can change, all in one pass. Returns whether any edit was applied.
 /// Output is untouched when the text is already normalized.
+/// True when every scalar in U+4000..U+9FFF is on a simple page in both
+/// canonical and compatibility normalization. Canonical composition pairs do
+/// not start in this range, so the scans can skip decoding these CJK scalars
+/// and treat them as starters.
+const cjk_lead_simple = blk: {
+    @setEvalBranchQuota(100_000);
+    for (0x40..0xa0) |page| {
+        const codepoint: u21 = @intCast(page * 256);
+        if (!data.isSimplePage(codepoint, false)) break :blk false;
+        if (!data.isSimplePage(codepoint, true)) break :blk false;
+    }
+    break :blk true;
+};
+
 fn normalizeFusedInto(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -115,6 +129,21 @@ fn normalizeFusedInto(
             continue;
         }
         const start = index;
+        if (cjk_lead_simple and text[index] >= 0xe4 and
+            text[index] <= 0xe9)
+        {
+            if (index + 3 > text.len) return error.InvalidUtf8;
+            if (text[index + 1] & 0xc0 != 0x80 or
+                text[index + 2] & 0xc0 != 0x80)
+            {
+                return error.InvalidUtf8;
+            }
+            starter = null;
+            starter_offset = start;
+            previous_input_class = 0;
+            index += 3;
+            continue;
+        }
         const decoded = scalar.decodeValidating(text, index) orelse
             return error.InvalidUtf8;
         const codepoint = decoded.codepoint;
@@ -847,6 +876,20 @@ fn isNormalizedFormUnchecked(text: []const u8, form: Form) bool {
             index = end;
             continue;
         }
+        if (cjk_lead_simple and text[index] >= 0xe4 and
+            text[index] <= 0xe9)
+        {
+            if (index + 3 > text.len) return false;
+            if (text[index + 1] & 0xc0 != 0x80 or
+                text[index + 2] & 0xc0 != 0x80)
+            {
+                return false;
+            }
+            starter = null;
+            previous_input_class = 0;
+            index += 3;
+            continue;
+        }
         const decoded = scalar.decodeValidating(text, index) orelse return false;
         const codepoint = decoded.codepoint;
         index = decoded.next;
@@ -920,6 +963,25 @@ fn spanQuickCheckYesImpl(
             continue;
         }
         const start = index;
+        if (cjk_lead_simple and text[index] >= 0xe4 and
+            text[index] <= 0xe9)
+        {
+            if (index + 3 > text.len) {
+                if (validating) return error.InvalidUtf8;
+                return text.len;
+            }
+            if (text[index + 1] & 0xc0 != 0x80 or
+                text[index + 2] & 0xc0 != 0x80)
+            {
+                if (validating) return error.InvalidUtf8;
+                return text.len;
+            }
+            starter = null;
+            starter_offset = start;
+            previous_input_class = 0;
+            index += 3;
+            continue;
+        }
         const decoded = scalar.decodeValidating(text, index) orelse {
             if (validating) return error.InvalidUtf8;
             return text.len;
