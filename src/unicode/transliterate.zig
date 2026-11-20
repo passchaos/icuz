@@ -60,7 +60,8 @@ const step_count = readU32(40);
 const transform_offset = header_len;
 const step_offset = transform_offset + @as(usize, transform_count) * 36;
 const entry_offset = step_offset + @as(usize, step_count) * 8;
-const set_offset = entry_offset + @as(usize, entry_count) * 34;
+const first_offset = entry_offset + @as(usize, entry_count) * 34;
+const set_offset = first_offset + @as(usize, entry_count) * 4;
 const range_offset = set_offset + @as(usize, set_count) * 8;
 const context_offset = range_offset + @as(usize, range_count) * 8;
 const context_element_offset = context_offset + @as(usize, context_count) * 8;
@@ -83,7 +84,7 @@ const pass_norm_offset = targets_offset + @as(usize, target_count) * 4;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJTR") or
-        data[4] != 19 or data[5] != 48 or data[6] != 0 or data[7] != 0)
+        data[4] != 20 or data[5] != 48 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid transliteration data");
     }
@@ -269,8 +270,7 @@ fn entryAt(index: usize) Entry {
 /// First source codepoint of an entry without materializing the whole record;
 /// used by the binary search in the literal range.
 fn entryFirstCodepoint(index: usize) u21 {
-    const base = entry_offset + index * 34;
-    return @intCast(readU32(sources_offset + readU32(base) * 4));
+    return @intCast(readU32(first_offset + index * 4));
 }
 
 fn sourceCodepoint(entry: Entry, index: usize) u21 {

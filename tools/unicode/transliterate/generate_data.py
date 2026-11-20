@@ -3653,7 +3653,7 @@ def render_blob(
     header = bytearray(b"CJTR")
     header += struct.pack(
         "<B3BH7IH",
-        19,
+        20,
         CLDR_VERSION,
         0,
         0,
@@ -3705,8 +3705,11 @@ def render_blob(
     for kind, a, b, value in step_pool:
         step_bytes += struct.pack("<BBHI", kind, a, b, value)
     entry_bytes = bytearray()
+    first_bytes = bytearray()
     for entry in entries:
         entry_bytes += struct.pack("<IBIBIIBBHIBBIBB", *entry)
+        first = struct.unpack_from("<I", sources, entry[0] * 4)[0]
+        first_bytes += struct.pack("<I", first)
     set_bytes = bytearray()
     for offset, count in set_records:
         set_bytes += struct.pack("<II", offset, count)
@@ -3724,6 +3727,7 @@ def render_blob(
         + transform_bytes
         + step_bytes
         + entry_bytes
+        + first_bytes
         + set_bytes
         + range_bytes
         + context_bytes

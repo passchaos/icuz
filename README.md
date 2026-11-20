@@ -401,6 +401,13 @@ atomic cache of recent reverse lookups, UTF-8 to DBCS pairs use a fused
 decode/encode loop, and DBCS to UTF-8 pairs write UTF-8 bytes directly;
 both fall back to the generic converter on any error.
 
+Transliteration passes precompute their literal-entry bounds and store a
+parallel `u32` first-code-point array, so per-character rule lookup
+binary-searches a compact array instead of decoding 34-byte entry records.
+Latin-ASCII skips rule matching entirely when accent stripping leaves pure
+ASCII text, and root collation emits its three levels directly while
+scanning, with a precomputed ASCII element table for mixed-script keys.
+
 ## Data provenance
 
 Generated tables and conformance fixtures contain derived Unicode data. See

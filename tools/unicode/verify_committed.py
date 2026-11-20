@@ -75,7 +75,7 @@ BLOBS = (
     Blob("src/unicode/format/units_data.bin", b"CJUN", 1, "8c27bc9b2594d77e74a6c40221b4f2a7b8448a65f1a1d946fa2c7a5d37f01f88", version=(0, 0, 0)),
     Blob("src/unicode/format/unit_conformance.bin", b"CJU1", 1, "f260532a091a6fd0990f664f8afcd6a5fb3785e46bb0b52dd6a8f2fc12c265fa", version=(0, 0, 0)),
     Blob("src/unicode/format/calendar_format_conformance.bin", b"CJKF", 1, "ffa627f64f42870b6d2ba203ff8abb707c7124360d910bab7f93cd41808d305f", version=(0, 0, 0)),
-    Blob("src/unicode/transliterate/data.bin", b"CJTR", 19, "1bd4dcd6b62666cc9fd08158ac478f6c46d4b9a327f878083670e520bcbe8100", version=(48, 0, 0)),
+    Blob("src/unicode/transliterate/data.bin", b"CJTR", 20, "6f017c27d4b74ee9086b6b1f12b21b8da231eb1e6164cc2d417bcf92986a63e7", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/cs_ja_conformance.bin", b"CJJA", 1, "50e191c3adeb2c90683c6eaa1a381472da7cfedb7c7e682bfa56e05bbf1d6be0", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/es_ja_conformance.bin", b"CJJB", 1, "a74c2496b408e4d17c4eaae5cf101d5d9e8d5242f029c99b6602e3280ff00598", version=(48, 0, 0)),
     Blob("src/unicode/transliterate/es_419_am_conformance.bin", b"CJJC", 1, "9dddd0894dc63d304c82daf90d286e8818ba850f182ea4e0f863a1e3a1a7bcba", version=(48, 0, 0)),
@@ -492,7 +492,7 @@ GENERATORS = {
     "tools/unicode/format/generate_unit_conformance.py": "7a1aca3892b688d6bce1c8a6f1a1d7af789e69f12f0ab18305ea5127949e8eb5",
     "tools/unicode/charset/generate_data.py": "5b13222d52bfaea336ef6fb3aac9b0d629411e62fb1173ae6bdd3ae9e059e594",
     "tools/unicode/set/generate_conformance.py": "2aa1d6db18bcb6d0cb0f77c5ed449643089f158f33bc431bf89fcda932c42592",
-    "tools/unicode/transliterate/generate_data.py": "91afe85d49b11897378768e79e555df7154e4ab50c03754590e0c6df7f25cccf",
+    "tools/unicode/transliterate/generate_data.py": "6d8e406b3358b45511df4b9007c846ed394bc726c662dcbecfc5cd46ccf77aca",
     "tools/unicode/transliterate/generate_pipeline_conformance.py": "982fe737c3d663f0d7e69715461cd6dbfa73c759a134c9abc67c98aa201e4bb6",
     "tools/unicode/break/generate_dictionaries.py": "bdbd4c4e9c999b4cea6a8924b08c72a49719c857e26dea82fc50940ee145e264",
     "tools/unicode/break/generate_conformance.py": "785d56bab3f388e70b5260ce03f198294fb82b68925c12ff4e571d705480bb8c",
@@ -800,6 +800,7 @@ def check_layout(blob: Blob, data: bytes) -> None:
             + transform_count * 36
             + step_count * 8
             + entry_count * 34
+            + entry_count * 4
             + set_count * 8
             + range_count * 8
             + context_count * 8
