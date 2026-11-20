@@ -998,13 +998,27 @@ fn sortKeyCodepointsResolved(
         }
     }
 
-    const normalized = try normalization.normalizeCodepointsAlloc(
-        allocator,
+    // Short inputs dominate sort-key traffic; normalize them on the stack so
+    // the common case does not allocate.
+    var normalized_stack: [512]u21 = undefined;
+    var normalized_owned: ?[]u21 = null;
+    defer if (normalized_owned) |owned| allocator.free(owned);
+    const source: []const u21 = switch (normalization.normalizeCodepointsTryInto(
+        &normalized_stack,
         codepoints,
         .nfd,
-    );
-    defer if (normalized) |owned| allocator.free(owned);
-    const source = normalized orelse codepoints;
+    )) {
+        .unchanged => codepoints,
+        .written => |items| items,
+        .overflow => blk: {
+            normalized_owned = try normalization.normalizeCodepointsAlloc(
+                allocator,
+                codepoints,
+                .nfd,
+            );
+            break :blk normalized_owned orelse codepoints;
+        },
+    };
 
     // Root collation without weighting or case-level options can emit the
     // three levels directly while scanning, skipping the collation-element

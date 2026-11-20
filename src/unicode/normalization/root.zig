@@ -262,6 +262,33 @@ pub fn normalizeCodepointsAlloc(
     return result;
 }
 
+/// Outcome of `normalizeCodepointsTryInto`.
+pub const CodepointNormalization = union(enum) {
+    /// The input is already in the requested form.
+    unchanged,
+    /// The normalized form was written into the caller's buffer.
+    written: []const u21,
+    /// The buffer was too small; callers should fall back to the allocating
+    /// API.
+    overflow,
+};
+
+/// Normalize already decoded code points into a caller-owned buffer without
+/// heap allocation when the result fits. Short sort keys and search
+/// candidates use this to avoid a per-call allocation.
+pub fn normalizeCodepointsTryInto(
+    buffer: []u21,
+    codepoints: []const u21,
+    form: Form,
+) CodepointNormalization {
+    if (isNormalizedCodepoints(codepoints, form)) return .unchanged;
+    var fixed = std.heap.FixedBufferAllocator.init(std.mem.sliceAsBytes(buffer));
+    var output = std.ArrayList(u21).empty;
+    normalizeCodepointsInto(fixed.allocator(), codepoints, form, &output) catch
+        return .overflow;
+    return .{ .written = output.items };
+}
+
 /// Append the recursive canonical decomposition of a single code point to
 /// `output` without reordering it against surrounding text. ICU's identical
 /// collation strength compares this per-code-point decomposition.
