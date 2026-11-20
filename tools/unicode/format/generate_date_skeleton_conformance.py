@@ -16,7 +16,12 @@ import sys
 
 import icu
 
-LOCALES = ("en", "de", "fr", "ja", "ru", "ar", "zh", "hi")
+LOCALES = (
+    "en", "de", "fr", "ja", "ru", "ar", "zh", "hi",
+    "ak", "ccp", "chr", "ee", "en-001", "eo", "ff", "fo",
+    "fr-BE", "ky", "lb", "nn", "no", "qu", "se", "su", "vec",
+    "yue", "yue-Hans",
+)
 
 SKELETONS = (
     "yMMMd",

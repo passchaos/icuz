@@ -160,7 +160,7 @@ need without pulling in a font or layout engine.
   decimal separator, fraction, currency, and percent spans for editor-style
   highlighting; `formatNumberSkeletonFieldsAlloc` does the same for skeletons
   and shifts the spans into unit patterns.
-- CLDR 48 Gregorian date/time formatting for 87 locales, including localized
+- CLDR 48 Gregorian date/time formatting for 108 locales, including localized
   month/day names, date/time styles, custom patterns, ICU date/time
   skeletons (`yMMMd`, `Hm`, combined date+time skeletons) resolved from
   CLDR availableFormats with canonical field ordering, width adjustment,
@@ -170,7 +170,7 @@ need without pulling in a font or layout engine.
   fields (fixed 0-23 and locale-preferred hour cycle), deprecated
   standalone-month `l`, milliseconds-in-day (`A`), day-of-week-in-month
   (`F`), modified Julian day (`g`), and Unix timestamp conversion. Skeleton
-  output is validated against an 80-case PyICU fixture. Date/time parsing
+  output is validated against a 270-case PyICU fixture. Date/time parsing
   (`parsePattern`, `parseSkeleton`) consumes the same pattern syntax,
   including localized month, weekday, era, day-period, and quarter names,
   flexible day-period names (`B`), native digits, numeric zone offsets, and
@@ -186,6 +186,13 @@ need without pulling in a font or layout engine.
   quoted literals, canonical field ordering, duplicate-field resolution,
   minute-plus-fraction second insertion, and 12/24-hour day-period rules.
   Validated by a 1,885-case PyICU fixture.
+- CLDR 48 default calendar selection (`defaultCalendarForRegion`,
+  `defaultCalendarForLocale`): territory preferences from
+  `calendarPreferenceData` resolved through likely subtags, skipping calendars
+  this library cannot format (for example `fa` selects Persian and `th`
+  selects Buddhist, while `ar-SA` selects Gregorian as in ICU). Skeleton
+  formatting remains Gregorian; use the calendar-aware date APIs for the
+  selected non-Gregorian calendar.
 - Non-Gregorian calendar conversion and formatting for Buddhist, Japanese,
   ROC, Islamic civil/tbla/umalqura, Hebrew, Chinese, Persian, Indian,
   Coptic, Ethiopic, Ethiopic Amete Alem, and ISO-8601 calendars, following
