@@ -436,7 +436,8 @@ runs, CJK scalars whose whole 3-byte lead range is simple are validated and
 skipped without decoding, stable spans before and between changes are copied
 verbatim, and the segment engine streams UTF-8 straight to the output sink
 with ASCII runs bulk-copied. The quick-check scan doubles as UTF-8 validation, so a text that
-is already normalized never pays a second validation pass.
+is already normalized never pays a second validation pass; when the scan
+stops early, only the unscanned suffix is validated.
 
 Collation keeps five fast paths: a 128-entry ASCII table, a compile-time table
 for Latin-1 and Latin Extended-A/B (decomposed on the stack) that bypasses the

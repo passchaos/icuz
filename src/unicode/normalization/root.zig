@@ -838,10 +838,13 @@ pub fn isNormalized(text: []const u8) error{InvalidUtf8}!bool {
 pub fn isNormalizedForm(text: []const u8, form: Form) error{InvalidUtf8}!bool {
     // The scan validates every scalar it visits. A true result therefore
     // proves the whole string is valid and no second pass is needed. A false
-    // result may short-circuit before later invalid bytes, so validate the
-    // whole string before reporting "not normalized".
-    if (isNormalizedFormUnchecked(text, form)) return true;
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    // result may short-circuit before later invalid bytes, so validate only
+    // the unscanned suffix before reporting "not normalized".
+    const result = isNormalizedFormScan(text, form);
+    if (result.normalized) return true;
+    if (!std.unicode.utf8ValidateSlice(text[result.valid_until..])) {
+        return error.InvalidUtf8;
+    }
     return false;
 }
 
@@ -856,12 +859,21 @@ pub fn isNormalizedFormAssumeValid(text: []const u8, form: Form) bool {
     return isNormalizedFormUnchecked(text, form);
 }
 
-fn isNormalizedFormUnchecked(text: []const u8, form: Form) bool {
+const ScanResult = struct {
+    normalized: bool,
+    /// Byte offset through which the scan validated UTF-8. Bytes before this
+    /// offset are valid even when `normalized` is false.
+    valid_until: usize,
+};
+
+fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
     // ASCII is Quick_Check=Yes with Canonical_Combining_Class=0 in every
     // normalization form, so a pure-ASCII prefix cannot affect the state
     // machine. Skipping it turns the common prose case into a byte scan.
     const ascii_end = asciiPrefixLen(text);
-    if (ascii_end == text.len) return true;
+    if (ascii_end == text.len) {
+        return .{ .normalized = true, .valid_until = text.len };
+    }
 
     const compatibility = form == .nfkc or form == .nfkd;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
@@ -876,21 +888,25 @@ fn isNormalizedFormUnchecked(text: []const u8, form: Form) bool {
             index = end;
             continue;
         }
+        const start = index;
         if (cjk_lead_simple and text[index] >= 0xe4 and
             text[index] <= 0xe9)
         {
-            if (index + 3 > text.len) return false;
+            if (index + 3 > text.len) {
+                return .{ .normalized = false, .valid_until = start };
+            }
             if (text[index + 1] & 0xc0 != 0x80 or
                 text[index + 2] & 0xc0 != 0x80)
             {
-                return false;
+                return .{ .normalized = false, .valid_until = start };
             }
             starter = null;
             previous_input_class = 0;
             index += 3;
             continue;
         }
-        const decoded = scalar.decodeValidating(text, index) orelse return false;
+        const decoded = scalar.decodeValidating(text, index) orelse
+            return .{ .normalized = false, .valid_until = start };
         const codepoint = decoded.codepoint;
         index = decoded.next;
         if (data.isSimplePage(codepoint, compatibility)) {
@@ -899,21 +915,28 @@ fn isNormalizedFormUnchecked(text: []const u8, form: Form) bool {
             continue;
         }
         const quick_check = data.quickCheck(codepoint, form);
-        if (quick_check == .no) return false;
+        if (quick_check == .no) {
+            return .{ .normalized = false, .valid_until = start };
+        }
         const current_class = combining_class.forCodepoint(codepoint);
-        if (current_class != 0 and
-            previous_input_class > current_class) return false;
+        if (current_class != 0 and previous_input_class > current_class) {
+            return .{ .normalized = false, .valid_until = start };
+        }
         if (quick_check == .maybe and starter != null and
             (previous_input_class == 0 or
                 previous_input_class < current_class) and
             pairChangesUnderForm(starter.?, codepoint, form))
         {
-            return false;
+            return .{ .normalized = false, .valid_until = start };
         }
         if (current_class == 0) starter = codepoint;
         previous_input_class = current_class;
     }
-    return true;
+    return .{ .normalized = true, .valid_until = text.len };
+}
+
+fn isNormalizedFormUnchecked(text: []const u8, form: Form) bool {
+    return isNormalizedFormScan(text, form).normalized;
 }
 
 /// Return the length of the longest prefix that is definitely normalized.
@@ -1625,3 +1648,13 @@ test "Unicode 17 NFC normalization conformance" {
 
 
 
+
+test "isNormalized validates the unscanned suffix" {
+    const testing = @import("std").testing;
+    try testing.expect(!(try isNormalized("a\u{0301}b")));
+    try testing.expectError(
+        error.InvalidUtf8,
+        isNormalized("a\u{0301}\xff"),
+    );
+    try testing.expectError(error.InvalidUtf8, isNormalized("\xff"));
+}
