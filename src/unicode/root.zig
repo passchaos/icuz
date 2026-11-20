@@ -683,6 +683,8 @@ test {
     _ = number_mod;
     _ = dates_mod;
     _ = dates_mod.weekend;
+    _ = @import("./format/week.zig");
+    _ = @import("./format/day_periods.zig");
     _ = rbnf_mod;
     _ = timezone_mod;
     _ = timezone_mod.windows;

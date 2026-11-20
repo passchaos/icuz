@@ -135,13 +135,15 @@ need without pulling in a font or layout engine.
   month/day names, date/time styles, custom patterns, ICU date/time
   skeletons (`yMMMd`, `Hm`, combined date+time skeletons) resolved from
   CLDR availableFormats with canonical field ordering, width adjustment,
-  and date/time split fallbacks, and Unix timestamp conversion. Skeleton
+  and date/time split fallbacks, flexible day periods (`B`) and
+  am/pm/noon/midnight (`b`) from CLDR dayPeriods rules and names, and Unix
+  timestamp conversion. Skeleton
   output is validated against an 80-case PyICU fixture. Date/time parsing
   (`parsePattern`, `parseSkeleton`) consumes the same pattern syntax,
   including localized month, weekday, era, day-period, and quarter names,
-  native digits, numeric zone offsets, and caller-supplied defaults for
-  absent fields, validated by a 1,200-case ICU parsing fixture across 30
-  locales and eight patterns. Calendar arithmetic (`addDays`, `addMonths`,
+  flexible day-period names (`B`), native digits, numeric zone offsets, and
+  caller-supplied defaults for absent fields, validated by a 1,200-case ICU
+  parsing fixture across 30 locales and eight patterns. Calendar arithmetic (`addDays`, `addMonths`,
   `addYears`, `fieldDifference`) matches ICU's clamping and whole-field
   semantics, and `formatPatternFieldsAlloc` reports the byte range of every
   expanded pattern field for editor-style highlighting.

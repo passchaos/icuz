@@ -4,6 +4,7 @@ const std = @import("std");
 const data = @import("dates_data.zig");
 const timezone = @import("../timezone/root.zig");
 const week = @import("week.zig");
+const day_periods = @import("day_periods.zig");
 const timezone_names = @import("../timezone/names.zig");
 const calendar_mod = @import("calendar.zig");
 const calendars = @import("calendars.zig");
@@ -1351,6 +1352,32 @@ fn appendField(
             else if (is_pm) locale.pm_abbreviated else locale.am_abbreviated;
             try output.appendSlice(allocator, value);
         },
+        'b', 'B' => {
+            const width: day_periods.Width = if (length >= 5)
+                .narrow
+            else if (length == 4)
+                .wide
+            else
+                .abbreviated;
+            const value = day_periods.nameForTime(
+                locale_name,
+                date_time.hour,
+                date_time.minute,
+                width,
+                field == 'B',
+            );
+            if (value.len != 0) {
+                try output.appendSlice(allocator, value);
+            } else {
+                const is_pm = date_time.hour >= 12;
+                try output.appendSlice(allocator, if (length >= 5)
+                    (if (is_pm) locale.pm_narrow else locale.am_narrow)
+                else if (length == 4)
+                    (if (is_pm) locale.pm_wide else locale.am_wide)
+                else
+                    (if (is_pm) locale.pm_abbreviated else locale.am_abbreviated));
+            }
+        },
         'H' => try appendPaddedNumber(
             allocator,
             output,
@@ -1969,6 +1996,7 @@ pub fn parsePattern(
                 byte,
                 end - index,
                 locale,
+                locale_name,
             )) {
                 return null;
             }
@@ -2096,6 +2124,7 @@ fn parsePatternField(
     field: u8,
     length: usize,
     locale: *const data.Locale,
+    locale_name: []const u8,
 ) bool {
     switch (field) {
         'y', 'u', 'U', 'r' => {
@@ -2140,7 +2169,15 @@ fn parsePatternField(
             return true;
         },
         'E', 'e', 'c' => return parseWeekdayName(text, index, length, locale),
-        'a', 'b', 'B' => return parseDayPeriod(state, text, index, locale),
+        'a', 'b', 'B' => return parseDayPeriod(
+            state,
+            text,
+            index,
+            locale,
+            locale_name,
+            field,
+            length,
+        ),
         'h' => {
             const value = parseDateNumber(locale, text, index, 2) orelse
                 return false;
@@ -2275,6 +2312,9 @@ fn parseDayPeriod(
     text: []const u8,
     index: *usize,
     locale: *const data.Locale,
+    locale_name: []const u8,
+    field: u8,
+    length: usize,
 ) bool {
     const names = [_][]const u8{
         locale.am_wide,
@@ -2284,8 +2324,48 @@ fn parseDayPeriod(
         locale.am_narrow,
         locale.pm_narrow,
     };
-    const period = matchName(text, index, &names) orelse return false;
-    state.pm = period % 2 == 1;
+    if (matchName(text, index, &names)) |period| {
+        state.pm = period % 2 == 1;
+        return true;
+    }
+    if (field != 'b' and field != 'B') return false;
+
+    const width: day_periods.Width = if (length >= 5)
+        .narrow
+    else if (length == 4)
+        .wide
+    else
+        .abbreviated;
+    const day_names = day_periods.localeNames(locale_name);
+    var best: ?day_periods.Period = null;
+    var best_length: usize = 0;
+    var period_index: u8 = 0;
+    while (period_index < 12) : (period_index += 1) {
+        const period: day_periods.Period = @enumFromInt(period_index);
+        if (field == 'b' and period != .am and period != .pm and
+            period != .noon and period != .midnight)
+        {
+            continue;
+        }
+        const name = day_periods.nameAt(day_names, period, width);
+        if (name.len == 0 or name.len <= best_length) continue;
+        if (!startsWithIgnoreCase(text[index.*..], name)) continue;
+        best = period;
+        best_length = name.len;
+    }
+    const period = best orelse return false;
+    index.* += best_length;
+    switch (period) {
+        .am, .midnight, .morning1, .morning2, .night1, .night2 => {
+            state.pm = false;
+        },
+        .pm, .noon, .afternoon1, .afternoon2, .evening1, .evening2 => {
+            state.pm = true;
+        },
+    }
+    // The 12-hour parsers store 12 o'clock as 0, so noon and midnight use
+    // the same representation and rely on the pm flag.
+    if (period == .noon or period == .midnight) state.hour12 = 0;
     return true;
 }
 
@@ -3087,6 +3167,100 @@ test "date field positions" {
             text[position.start..position.end],
         );
     }
+}
+
+test "parse flexible day periods" {
+    const testing = @import("std").testing;
+
+    const defaults = ParseDefaults{
+        .year = 2026,
+        .month = 1,
+        .day = 1,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    };
+    const morning = parsePattern("9 in the morning", "h B", "en", defaults).?;
+    try testing.expectEqual(@as(u8, 9), morning.hour);
+    const afternoon = parsePattern("3 in the afternoon", "h B", "en", defaults).?;
+    try testing.expectEqual(@as(u8, 15), afternoon.hour);
+    const noon = parsePattern("12 noon", "h b", "en", defaults).?;
+    try testing.expectEqual(@as(u8, 12), noon.hour);
+    const midnight = parsePattern("12 midnight", "h b", "en", defaults).?;
+    try testing.expectEqual(@as(u8, 0), midnight.hour);
+}
+
+test "flexible day period pattern fields" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const morning = try formatPatternAlloc(
+        allocator,
+        "h B",
+        .{
+            .year = 2026,
+            .month = 1,
+            .day = 1,
+            .hour = 9,
+            .minute = 0,
+            .second = 0,
+        },
+        "en",
+        "UTC",
+    );
+    defer allocator.free(morning);
+    try testing.expectEqualStrings("9 in the morning", morning);
+
+    const noon = try formatPatternAlloc(
+        allocator,
+        "h b",
+        .{
+            .year = 2026,
+            .month = 1,
+            .day = 1,
+            .hour = 12,
+            .minute = 0,
+            .second = 0,
+        },
+        "en",
+        "UTC",
+    );
+    defer allocator.free(noon);
+    try testing.expectEqualStrings("12 noon", noon);
+
+    const afternoon = try formatPatternAlloc(
+        allocator,
+        "h B",
+        .{
+            .year = 2026,
+            .month = 1,
+            .day = 1,
+            .hour = 15,
+            .minute = 0,
+            .second = 0,
+        },
+        "en",
+        "UTC",
+    );
+    defer allocator.free(afternoon);
+    try testing.expectEqualStrings("3 in the afternoon", afternoon);
+
+    const german = try formatPatternAlloc(
+        allocator,
+        "h BBBB",
+        .{
+            .year = 2026,
+            .month = 1,
+            .day = 1,
+            .hour = 11,
+            .minute = 0,
+            .second = 0,
+        },
+        "de",
+        "UTC",
+    );
+    defer allocator.free(german);
+    try testing.expectEqualStrings("11 vormittags", german);
 }
 
 test "time zone name conformance" {
