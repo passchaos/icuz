@@ -21,22 +21,29 @@ pub const Range = struct {
 pub const Set = struct {
     allocator: std.mem.Allocator,
     ranges: std.ArrayList(Range),
+    /// Multi-code-point elements, sorted by byte order.
+    strings: std.ArrayList([]u8) = .empty,
     bits: ?[]u64 = null,
 
     pub fn init(allocator: std.mem.Allocator) Set {
         return .{
             .allocator = allocator,
             .ranges = .empty,
+            .strings = .empty,
             .bits = null,
         };
     }
 
     pub fn deinit(self: *Set) void {
+        for (self.strings.items) |text| self.allocator.free(text);
+        self.strings.deinit(self.allocator);
         if (self.bits) |bits| self.allocator.free(bits);
         self.ranges.deinit(self.allocator);
     }
 
     pub fn clear(self: *Set) void {
+        for (self.strings.items) |text| self.allocator.free(text);
+        self.strings.clearRetainingCapacity();
         self.invalidateBits();
         self.ranges.clearRetainingCapacity();
     }
@@ -71,7 +78,7 @@ pub const Set = struct {
     }
 
     pub fn isEmpty(self: Set) bool {
-        return self.ranges.items.len == 0;
+        return self.ranges.items.len == 0 and self.strings.items.len == 0;
     }
 
     pub fn isFull(self: Set) bool {
@@ -177,6 +184,54 @@ pub const Set = struct {
             self.ranges.shrinkRetainingCapacity(
                 self.ranges.items.len - remove_count,
             );
+        }
+    }
+
+    /// Add a multi-code-point element. Empty strings are ignored.
+    pub fn addString(self: *Set, text: []const u8) !void {
+        if (text.len == 0) return;
+        if (self.stringIndex(text) != null) return;
+        const copy = try self.allocator.dupe(u8, text);
+        errdefer self.allocator.free(copy);
+        var position: usize = 0;
+        while (position < self.strings.items.len and
+            std.mem.order(u8, self.strings.items[position], copy) == .lt)
+        {
+            position += 1;
+        }
+        try self.strings.insert(self.allocator, position, copy);
+    }
+
+    pub fn containsString(self: Set, text: []const u8) bool {
+        return self.stringIndex(text) != null;
+    }
+
+    pub fn stringCount(self: Set) usize {
+        return self.strings.items.len;
+    }
+
+    pub fn stringAt(self: Set, index: usize) []const u8 {
+        return self.strings.items[index];
+    }
+
+    fn stringIndex(self: Set, text: []const u8) ?usize {
+        var low: usize = 0;
+        var high = self.strings.items.len;
+        while (low < high) {
+            const middle = low + (high - low) / 2;
+            switch (std.mem.order(u8, self.strings.items[middle], text)) {
+                .lt => low = middle + 1,
+                .gt => high = middle,
+                .eq => return middle,
+            }
+        }
+        return null;
+    }
+
+    fn removeString(self: *Set, text: []const u8) void {
+        if (self.stringIndex(text)) |index| {
+            self.allocator.free(self.strings.items[index]);
+            _ = self.strings.orderedRemove(index);
         }
     }
 
@@ -292,6 +347,7 @@ pub const Set = struct {
 
         self.ranges.deinit(self.allocator);
         self.ranges = result;
+        for (other.strings.items) |text| try self.addString(text);
     }
 
     pub fn intersectWith(self: *Set, other: Set) !void {
@@ -329,18 +385,38 @@ pub const Set = struct {
 
         self.ranges.deinit(self.allocator);
         self.ranges = result;
+        var string_index: usize = 0;
+        while (string_index < self.strings.items.len) {
+            if (!other.containsString(self.strings.items[string_index])) {
+                self.allocator.free(self.strings.items[string_index]);
+                _ = self.strings.orderedRemove(string_index);
+            } else {
+                string_index += 1;
+            }
+        }
     }
 
     pub fn subtract(self: *Set, other: Set) !void {
+        if (self.ranges.items.ptr == other.ranges.items.ptr) {
+            // Subtracting the same set empties it; avoid iterating the
+            // storage that is being freed.
+            self.clear();
+            return;
+        }
         for (other.ranges.items) |range| {
             try self.removeRange(range.first, range.last);
         }
+        for (other.strings.items) |text| self.removeString(text);
     }
 
     pub fn eql(self: Set, other: Set) bool {
         if (self.ranges.items.len != other.ranges.items.len) return false;
         for (self.ranges.items, other.ranges.items) |a, b| {
             if (a.first != b.first or a.last != b.last) return false;
+        }
+        if (self.strings.items.len != other.strings.items.len) return false;
+        for (self.strings.items, other.strings.items) |a, b| {
+            if (!std.mem.eql(u8, a, b)) return false;
         }
         return true;
     }
@@ -349,6 +425,9 @@ pub const Set = struct {
         for (self.ranges.items) |range| {
             if (!other.containsRange(range.first, range.last)) return false;
         }
+        for (self.strings.items) |text| {
+            if (!other.containsString(text)) return false;
+        }
         return true;
     }
 
@@ -356,6 +435,7 @@ pub const Set = struct {
         var result = Set.init(allocator);
         errdefer result.deinit();
         try result.ranges.appendSlice(allocator, self.ranges.items);
+        for (self.strings.items) |text| try result.addString(text);
         return result;
     }
 
@@ -385,10 +465,13 @@ pub const Set = struct {
                 return false;
             }
         }
+        for (self.strings.items) |text| {
+            if (other.containsString(text)) return false;
+        }
         return true;
     }
 
-    /// True when the two sets share at least one code point.
+    /// True when the two sets share at least one code point or string.
     pub fn containsSome(self: Set, other: Set) bool {
         return !self.containsNone(other);
     }
@@ -408,6 +491,16 @@ pub const Set = struct {
                 try appendPatternCodepoint(allocator, &output, range.last);
             }
         }
+        for (self.strings.items) |text| {
+            try output.append(allocator, '{');
+            for (text) |byte| {
+                if (byte == '\\' or byte == '{' or byte == '}') {
+                    try output.append(allocator, '\\');
+                }
+                try output.append(allocator, byte);
+            }
+            try output.append(allocator, '}');
+        }
         try output.append(allocator, ']');
         return output.toOwnedSlice(allocator);
     }
@@ -419,7 +512,7 @@ fn appendPatternCodepoint(
     codepoint: u21,
 ) error{OutOfMemory}!void {
     switch (codepoint) {
-        '\\', '[', ']', '-', '^', '&' => {
+        '\\', '[', ']', '-', '^', '&', '{', '}' => {
             try output.append(allocator, '\\');
             try output.append(allocator, @intCast(codepoint));
         },
@@ -619,7 +712,7 @@ const Parser = struct {
                         const end_atom = try self.parseAtom();
                         const end_codepoint = switch (end_atom) {
                             .literal => |codepoint| codepoint,
-                            .set => return error.InvalidPattern,
+                            .set, .string => return error.InvalidPattern,
                         };
                         if (start_codepoint > end_codepoint) {
                             return error.InvalidPattern;
@@ -634,6 +727,10 @@ const Parser = struct {
                     defer owned_set.deinit();
                     try set.unionWith(owned_set);
                 },
+                .string => |text| {
+                    defer self.allocator.free(text);
+                    try set.addString(text);
+                },
             }
         }
 
@@ -647,7 +744,7 @@ const Parser = struct {
         const atom = try self.parseAtom();
         if (self.index != self.pattern.len) return error.InvalidPattern;
         return switch (atom) {
-            .literal => error.InvalidPattern,
+            .literal, .string => error.InvalidPattern,
             .set => |owned| owned,
         };
     }
@@ -655,11 +752,16 @@ const Parser = struct {
     const Atom = union(enum) {
         literal: u21,
         set: Set,
+        string: []u8,
     };
 
     fn parseAtom(self: *Parser) Error!Atom {
         if (self.index >= self.pattern.len) return error.InvalidPattern;
         const byte = self.pattern[self.index];
+
+        if (byte == '{') {
+            return .{ .string = try self.parseStringAtom() };
+        }
 
         if (byte == '\\') {
             self.index += 1;
@@ -709,6 +811,43 @@ const Parser = struct {
         ) catch return error.InvalidPattern;
         self.index += @as(usize, length);
         return .{ .literal = codepoint };
+    }
+
+    fn parseStringAtom(self: *Parser) Error![]u8 {
+        self.index += 1; // '{'
+        var buffer = std.ArrayList(u8).empty;
+        errdefer buffer.deinit(self.allocator);
+        while (self.index < self.pattern.len) {
+            const byte = self.pattern[self.index];
+            if (byte == '}') {
+                self.index += 1;
+                if (buffer.items.len == 0) return error.InvalidPattern;
+                return buffer.toOwnedSlice(self.allocator);
+            }
+            if (byte == '\\') {
+                self.index += 1;
+                if (self.index >= self.pattern.len) return error.InvalidPattern;
+                const escape = self.pattern[self.index];
+                if (escape == 'u' or escape == 'U') {
+                    const codepoint = try self.parseHex(
+                        if (escape == 'u') 4 else 8,
+                    );
+                    var encoded: [4]u8 = undefined;
+                    const length = std.unicode.utf8Encode(
+                        codepoint,
+                        &encoded,
+                    ) catch return error.InvalidPattern;
+                    try buffer.appendSlice(self.allocator, encoded[0..length]);
+                    continue;
+                }
+                try buffer.append(self.allocator, escape);
+                self.index += 1;
+                continue;
+            }
+            try buffer.append(self.allocator, byte);
+            self.index += 1;
+        }
+        return error.InvalidPattern;
     }
 
     fn parseHex(self: *Parser, digits: usize) Error!u21 {
@@ -1081,6 +1220,51 @@ test "set algebra and pattern round-trip" {
         defer round_trip.deinit();
         try testing.expect(original.eql(round_trip));
     }
+}
+
+test "set string elements" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var set = try parse(allocator, "[a-z{abc}{x\\}y}]");
+    defer set.deinit();
+    try testing.expect(set.contains('a'));
+    try testing.expect(set.containsString("abc"));
+    try testing.expect(set.containsString("x}y"));
+    try testing.expect(!set.containsString("ab"));
+    try testing.expectEqual(@as(usize, 2), set.stringCount());
+
+    var other = try parse(allocator, "[{abc}b]");
+    defer other.deinit();
+    var union_set = try set.clone(allocator);
+    defer union_set.deinit();
+    try union_set.unionWith(other);
+    try testing.expect(union_set.contains('b'));
+    try testing.expectEqual(@as(usize, 2), union_set.stringCount());
+
+    var intersection = try set.clone(allocator);
+    defer intersection.deinit();
+    try intersection.intersectWith(other);
+    try testing.expectEqual(@as(usize, 1), intersection.stringCount());
+    try testing.expect(intersection.containsString("abc"));
+
+    var difference = try set.clone(allocator);
+    defer difference.deinit();
+    try difference.subtract(other);
+    try testing.expectEqual(@as(usize, 1), difference.stringCount());
+    try testing.expect(difference.containsString("x}y"));
+
+    var complement = try set.clone(allocator);
+    defer complement.deinit();
+    try complement.complement();
+    try testing.expect(complement.containsString("abc"));
+    try testing.expect(!complement.contains('a'));
+
+    const rendered = try set.toPatternAlloc(allocator);
+    defer allocator.free(rendered);
+    var round_trip = try parse(allocator, rendered);
+    defer round_trip.deinit();
+    try testing.expect(set.eql(round_trip));
 }
 
 test "set algebra conformance" {
