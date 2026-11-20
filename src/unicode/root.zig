@@ -244,6 +244,10 @@ pub const spoofIsMixedScript = spoof_mod.isMixedScript;
 pub const spoofHasMixedNumbers = spoof_mod.hasMixedNumbers;
 pub const spoofIsAllowedIdentifier = spoof_mod.isAllowedIdentifier;
 pub const collation_uca_version = collation_mod.uca_version;
+pub const mergeSortKeysAlloc = collation_mod.mergeSortKeysAlloc;
+pub const sortKeyBoundAlloc = collation_mod.sortKeyBoundAlloc;
+pub const SortKeyBound = collation_mod.SortKeyBound;
+pub const sort_key_merge_separator = collation_mod.merge_separator;
 pub const collation_cldr_version = collation_mod.cldr_version;
 
 pub const IdnaOptions = idna_mod.Options;

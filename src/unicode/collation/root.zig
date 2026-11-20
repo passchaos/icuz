@@ -512,6 +512,148 @@ fn sortKeyUtf8Resolved(
     );
 }
 
+/// Separator inserted between the two fields of a merged sort key. It is
+/// greater than every collation weight, like ICU's 0x02 merge byte.
+pub const merge_separator: u32 = std.math.maxInt(u32);
+
+/// Merge two sort keys level by level, so the result sorts by `first` and
+/// then by `second` at each strength level. This is ICU's
+/// `ucol_mergeSortkeys` for multi-field sorting.
+pub fn mergeSortKeysAlloc(
+    allocator: std.mem.Allocator,
+    first: []const u32,
+    second: []const u32,
+    separator: u32,
+) error{OutOfMemory}![]u32 {
+    var output = std.ArrayList(u32).empty;
+    errdefer output.deinit(allocator);
+    if (first.len == 0 and second.len == 0) return output.toOwnedSlice(allocator);
+    try output.ensureTotalCapacity(allocator, first.len + second.len + 4);
+    var first_index: usize = 0;
+    var second_index: usize = 0;
+    while (true) {
+        while (first_index < first.len and first[first_index] != 0) {
+            try output.append(allocator, first[first_index]);
+            first_index += 1;
+        }
+        try output.append(allocator, separator);
+        while (second_index < second.len and second[second_index] != 0) {
+            try output.append(allocator, second[second_index]);
+            second_index += 1;
+        }
+        const first_more = first_index + 1 < first.len;
+        const second_more = second_index + 1 < second.len;
+        if (first_more and second_more) {
+            first_index += 1;
+            second_index += 1;
+            try output.append(allocator, 0);
+            continue;
+        }
+        if (first_more) {
+            try output.appendSlice(allocator, first[first_index..]);
+        } else if (second_more) {
+            try output.appendSlice(allocator, second[second_index..]);
+        } else {
+            try output.append(allocator, 0);
+        }
+        break;
+    }
+    if (output.items[output.items.len - 1] != 0) {
+        try output.append(allocator, 0);
+    }
+    return output.toOwnedSlice(allocator);
+}
+
+pub const SortKeyBound = enum { lower, upper, upper_long };
+
+/// Return the prefix of `key` covering the first `levels` strength levels,
+/// optionally with an exclusive upper-bound suffix, like ICU's
+/// `ucol_getBound`. The result is a valid sort key terminated by 0.
+pub fn sortKeyBoundAlloc(
+    allocator: std.mem.Allocator,
+    key: []const u32,
+    levels: usize,
+    bound: SortKeyBound,
+) error{OutOfMemory}![]u32 {
+    var end: usize = 0;
+    var seen: usize = 0;
+    while (end < key.len and seen < levels) {
+        if (key[end] == 0) seen += 1;
+        end += 1;
+    }
+    var prefix = key[0..end];
+    if (prefix.len != 0 and prefix[prefix.len - 1] == 0) {
+        prefix = prefix[0 .. prefix.len - 1];
+    }
+    var output = std.ArrayList(u32).empty;
+    errdefer output.deinit(allocator);
+    try output.ensureTotalCapacity(allocator, prefix.len + 3);
+    try output.appendSlice(allocator, prefix);
+    switch (bound) {
+        .lower => {},
+        .upper => try output.append(allocator, merge_separator),
+        .upper_long => {
+            try output.append(allocator, merge_separator);
+            try output.append(allocator, merge_separator);
+        },
+    }
+    try output.append(allocator, 0);
+    return output.toOwnedSlice(allocator);
+}
+
+test "sort key merge and bound" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const primary = try mergeSortKeysAlloc(
+        allocator,
+        &.{ 2, 0 },
+        &.{ 3, 0 },
+        merge_separator,
+    );
+    defer allocator.free(primary);
+    try testing.expectEqualSlices(
+        u32,
+        &.{ 2, merge_separator, 3, 0 },
+        primary,
+    );
+
+    const levels = try mergeSortKeysAlloc(
+        allocator,
+        &.{ 1, 0, 10, 0 },
+        &.{ 2, 0, 20, 0 },
+        merge_separator,
+    );
+    defer allocator.free(levels);
+    try testing.expectEqualSlices(
+        u32,
+        &.{ 1, merge_separator, 2, 0, 10, merge_separator, 20, 0 },
+        levels,
+    );
+
+    const key = [_]u32{ 5, 0, 7, 0, 9, 0 };
+    const lower = try sortKeyBoundAlloc(allocator, &key, 1, .lower);
+    defer allocator.free(lower);
+    try testing.expectEqualSlices(u32, &.{ 5, 0 }, lower);
+    const upper = try sortKeyBoundAlloc(allocator, &key, 1, .upper);
+    defer allocator.free(upper);
+    try testing.expectEqualSlices(
+        u32,
+        &.{ 5, merge_separator, 0 },
+        upper,
+    );
+    const two = try sortKeyBoundAlloc(allocator, &key, 2, .lower);
+    defer allocator.free(two);
+    try testing.expectEqualSlices(u32, &.{ 5, 0, 7, 0 }, two);
+    const long = try sortKeyBoundAlloc(allocator, &key, 2, .upper_long);
+    defer allocator.free(long);
+    try testing.expectEqualSlices(
+        u32,
+        &.{ 5, 0, 7, merge_separator, merge_separator, 0 },
+        long,
+    );
+}
+
 /// Append a sort key for UTF-16 text to `output`.
 pub fn sortKeyUtf16Into(
     allocator: std.mem.Allocator,

@@ -60,8 +60,9 @@ need without pulling in a font or layout engine.
   weighting, numeric collation (`a2` before `a10`, leading zeros ignored,
   digits from any numbering system compared by value), a separate case
   level with caseFirst interaction, identical strength with per-code-point
-  decomposition tie-breaking, sort keys, and comparison, validated by a
-  79-case ICU C API differential fixture.
+  decomposition tie-breaking, sort keys, comparison, level-by-level sort-key
+  merging (`mergeSortKeysAlloc`) and level bounds (`sortKeyBoundAlloc`),
+  validated by a 79-case ICU C API differential fixture.
 - CLDR 48 locale collation tailorings for 147 locale/type entries, including
   standard, search, phonebook, traditional, eor, pinyin, stroke, zhuyin, and
   unihan variants. Applied through `Options.locale` and `Options.collation`
