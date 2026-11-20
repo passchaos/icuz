@@ -111,7 +111,8 @@ need without pulling in a font or layout engine.
   and currency-specific fraction digits, accounting parentheses, short/long
   compact notation that keeps at least two significant digits of the scaled
   mantissa (1200 becomes `1.2K`) and selects plurals from the visible fraction
-  digits, and ICU number skeletons (fraction and significant
+  digits and compact exponent, and ICU number skeletons (fraction and
+  significant
   precision including `precision-increment/` decimal increments, sign
   modes, integer width with truncation, grouping modes, scale,
   percent/permille units, currency unit widths, compact significant-digit

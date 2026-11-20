@@ -472,6 +472,7 @@ pub fn formatRangeAlloc(
             first,
             fraction_digits,
             fraction_digits,
+            0,
         );
         const category = if (first == second)
             start_category
@@ -484,6 +485,7 @@ pub fn formatRangeAlloc(
                     second,
                     fraction_digits,
                     fraction_digits,
+                    0,
                 ),
             );
         var name: []const u8 = code;
@@ -1499,12 +1501,21 @@ fn compactCategory(
     value: f64,
     fraction_digits: u8,
     min_fraction: u8,
+    exponent: u8,
 ) plural.Category {
     const magnitude = @abs(value);
     const scale = pow10(fraction_digits);
     const rounded = roundHalfEven(magnitude, fraction_digits);
     if (fraction_digits == 0) {
-        return plural.categoryForInteger(locale_name, @intFromFloat(rounded));
+        return plural.category(locale_name, .{
+            .n = rounded,
+            .i = @intFromFloat(rounded),
+            .v = 0,
+            .w = 0,
+            .f = 0,
+            .t = 0,
+            .e = exponent,
+        });
     }
     const integer_part: u64 = @intFromFloat(@floor(rounded));
     const fraction_value: u64 = @intFromFloat(
@@ -1525,7 +1536,7 @@ fn compactCategory(
         .w = @intCast(trimmed_digits),
         .f = fraction_value,
         .t = trimmed,
-        .e = 0,
+        .e = exponent,
     });
 }
 
@@ -1628,6 +1639,7 @@ fn formatCompactAlloc(
         scaled,
         fraction_digits,
         if (options.skeleton) 0 else format_info.fraction_digits,
+        @intCast(chosen_index + 3),
     );
     var pattern = entry.patterns[@intFromEnum(category)];
     if (pattern.len == 0) pattern = entry.patterns[@intFromEnum(plural.Category.other)];
@@ -1964,6 +1976,7 @@ fn formatCurrencyNameAlloc(
         magnitude,
         fraction_digits,
         min_fraction,
+        0,
     );
     var name: []const u8 = code;
     if (currencyEntry(locale, code)) |entry| {
@@ -3871,5 +3884,23 @@ test "compact ranges keep significant digits" {
     );
     defer allocator.free(text);
     try testing.expectEqualStrings("1.2K \u{2013} 1.5K", text);
+}
+
+
+test "compact plural exponent operand" {
+    const testing = @import("std").testing;
+
+    try testing.expectEqual(
+        plural.Category.one,
+        compactCategory("es", 1, 0, 0, 6),
+    );
+    try testing.expectEqual(
+        plural.Category.many,
+        compactCategory("es", 2, 0, 0, 6),
+    );
+    try testing.expectEqual(
+        plural.Category.other,
+        compactCategory("es", 2, 0, 0, 0),
+    );
 }
 
