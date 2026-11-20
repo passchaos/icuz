@@ -15,6 +15,10 @@ pub const CaseOptions = full.Options;
 pub const fullLowerAlloc = full.fullLowerAlloc;
 pub const fullUpperAlloc = full.fullUpperAlloc;
 pub const fullTitleAlloc = full.fullTitleAlloc;
+pub const Edits = full.Edits;
+pub const fullLowerWithEditsAlloc = full.fullLowerWithEditsAlloc;
+pub const fullUpperWithEditsAlloc = full.fullUpperWithEditsAlloc;
+pub const fullTitleWithEditsAlloc = full.fullTitleWithEditsAlloc;
 
 /// Simple lowercase mapping. ASCII is handled arithmetically so prose case
 /// conversion does not enter the generated record search.

@@ -187,6 +187,10 @@ pub const caseFoldAlloc = case_mod.foldAlloc;
 pub const fullLowerAlloc = case_mod.fullLowerAlloc;
 pub const fullUpperAlloc = case_mod.fullUpperAlloc;
 pub const fullTitleAlloc = case_mod.fullTitleAlloc;
+pub const CaseEdits = case_mod.Edits;
+pub const fullLowerWithEditsAlloc = case_mod.fullLowerWithEditsAlloc;
+pub const fullUpperWithEditsAlloc = case_mod.fullUpperWithEditsAlloc;
+pub const fullTitleWithEditsAlloc = case_mod.fullTitleWithEditsAlloc;
 pub const CaseLocale = case_mod.Locale;
 pub const CaseOptions = case_mod.CaseOptions;
 

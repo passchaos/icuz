@@ -12,6 +12,9 @@ const properties = @import("../properties/general_category.zig");
 const combining_class = @import("../canonical/combining_class.zig");
 const scalar = @import("../scalar/root.zig");
 const word = @import("../word/iterator.zig");
+const edits_mod = @import("edits.zig");
+
+pub const Edits = edits_mod.Edits;
 
 pub const Error = error{ InvalidUtf8, OutOfMemory };
 
@@ -42,7 +45,17 @@ pub fn fullLowerAlloc(
     text: []const u8,
     options: Options,
 ) Error![]u8 {
-    return mapAlloc(allocator, text, options, .lower);
+    return mapAlloc(allocator, text, options, .lower, null);
+}
+
+/// Lowercase with edit tracking, like ICU's `CaseMap.toLower` with `Edits`.
+pub fn fullLowerWithEditsAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    edits: *Edits,
+    options: Options,
+) Error![]u8 {
+    return mapAlloc(allocator, text, options, .lower, edits);
 }
 
 /// Uppercase UTF-8 text using full mappings.
@@ -51,7 +64,17 @@ pub fn fullUpperAlloc(
     text: []const u8,
     options: Options,
 ) Error![]u8 {
-    return mapAlloc(allocator, text, options, .upper);
+    return mapAlloc(allocator, text, options, .upper, null);
+}
+
+/// Uppercase with edit tracking, like ICU's `CaseMap.toUpper` with `Edits`.
+pub fn fullUpperWithEditsAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    edits: *Edits,
+    options: Options,
+) Error![]u8 {
+    return mapAlloc(allocator, text, options, .upper, edits);
 }
 
 /// Titlecase UTF-8 text using UAX #29 word boundaries and full mappings.
@@ -64,7 +87,27 @@ pub fn fullTitleAlloc(
     text: []const u8,
     options: Options,
 ) Error![]u8 {
+    return titleAlloc(allocator, text, options, null);
+}
+
+/// Titlecase with edit tracking, like ICU's `CaseMap.toTitle` with `Edits`.
+pub fn fullTitleWithEditsAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    edits: *Edits,
+    options: Options,
+) Error![]u8 {
+    return titleAlloc(allocator, text, options, edits);
+}
+
+fn titleAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    options: Options,
+    edits: ?*Edits,
+) Error![]u8 {
     if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (edits) |value| value.clearRetainingCapacity();
 
     var decoded = try decodeAlloc(allocator, text);
     defer decoded.deinit(allocator);
@@ -82,7 +125,14 @@ pub fn fullTitleAlloc(
             segment.byte_start + segment.byte_len,
         );
         while (emitted < start) : (emitted += 1) {
+            const before = output.items.len;
             try appendCodepoint(allocator, &output, decoded.codepoints.items[emitted]);
+            try recordEdit(
+                edits,
+                sourceSlice(text, &decoded, emitted),
+                decoded.offsets.items[emitted],
+                output.items[before..],
+            );
         }
 
         if (segment.is_word) {
@@ -95,6 +145,7 @@ pub fn fullTitleAlloc(
             }
             for (start..end) |index| {
                 const codepoint = decoded.codepoints.items[index];
+                const before = output.items.len;
                 if (first_cased != null and index == first_cased.?) {
                     if (lookup(
                         codepoint,
@@ -128,20 +179,40 @@ pub fn fullTitleAlloc(
                         );
                     }
                 }
+                try recordEdit(
+                    edits,
+                    sourceSlice(text, &decoded, index),
+                    decoded.offsets.items[index],
+                    output.items[before..],
+                );
             }
         } else {
             for (start..end) |index| {
+                const before = output.items.len;
                 try appendCodepoint(
                     allocator,
                     &output,
                     decoded.codepoints.items[index],
+                );
+                try recordEdit(
+                    edits,
+                    sourceSlice(text, &decoded, index),
+                    decoded.offsets.items[index],
+                    output.items[before..],
                 );
             }
         }
         emitted = end;
     }
     while (emitted < decoded.codepoints.items.len) : (emitted += 1) {
+        const before = output.items.len;
         try appendCodepoint(allocator, &output, decoded.codepoints.items[emitted]);
+        try recordEdit(
+            edits,
+            sourceSlice(text, &decoded, emitted),
+            decoded.offsets.items[emitted],
+            output.items[before..],
+        );
     }
     return output.toOwnedSlice(allocator);
 }
@@ -195,8 +266,10 @@ fn mapAlloc(
     text: []const u8,
     options: Options,
     comptime kind: full_data.Kind,
+    edits: ?*Edits,
 ) Error![]u8 {
     if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (edits) |value| value.clearRetainingCapacity();
 
     var decoded = try decodeAlloc(allocator, text);
     defer decoded.deinit(allocator);
@@ -206,6 +279,7 @@ fn mapAlloc(
     try output.ensureTotalCapacity(allocator, text.len);
 
     for (decoded.codepoints.items, 0..) |codepoint, index| {
+        const before = output.items.len;
         if (lookup(codepoint, kind, options.locale, decoded.codepoints.items, index)) |mapping| {
             try appendMapping(allocator, &output, mapping);
         } else {
@@ -216,8 +290,39 @@ fn mapAlloc(
             };
             try appendCodepoint(allocator, &output, mapped);
         }
+        try recordEdit(
+            edits,
+            sourceSlice(text, &decoded, index),
+            decoded.offsets.items[index],
+            output.items[before..],
+        );
     }
     return output.toOwnedSlice(allocator);
+}
+
+fn sourceSlice(text: []const u8, decoded: *const DecodedText, index: usize) []const u8 {
+    const start = decoded.offsets.items[index];
+    const end = if (index + 1 < decoded.offsets.items.len)
+        decoded.offsets.items[index + 1]
+    else
+        text.len;
+    return text[start..end];
+}
+
+fn recordEdit(
+    edits: ?*Edits,
+    source: []const u8,
+    source_index: usize,
+    destination: []const u8,
+) error{OutOfMemory}!void {
+    const value = edits orelse return;
+    if (destination.len == source.len and
+        std.mem.eql(u8, source, destination))
+    {
+        try value.addUnchanged(source_index, source.len);
+    } else {
+        try value.addReplace(source.len, destination.len);
+    }
 }
 
 fn lookup(
@@ -492,4 +597,57 @@ test "title casing lowercases the rest of each word with context" {
     const leading = try fullTitleAlloc(allocator, "  hello", .{});
     defer allocator.free(leading);
     try std.testing.expectEqualStrings("  Hello", leading);
+}
+
+test "case mapping with edits" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var edits = Edits.init(allocator);
+    defer edits.deinit();
+    const source = "Stra\u{00df}e ABC";
+    const mapped = try fullLowerWithEditsAlloc(allocator, source, &edits, .{});
+    defer allocator.free(mapped);
+    try testing.expectEqualStrings("stra\u{00df}e abc", mapped);
+    try testing.expect(edits.hasChanges());
+    try testing.expectEqual(@as(usize, 4), edits.changeCount());
+    try testing.expectEqual(source.len, edits.sourceLength());
+    try testing.expectEqual(mapped.len, edits.destinationLength());
+    try testing.expectEqual(@as(usize, 4), edits.mapIndex(4));
+    try testing.expectEqual(@as(usize, 8), edits.mapIndex(8));
+
+    // A one-code-point to two-code-point mapping shifts later indices.
+    var dotted = Edits.init(allocator);
+    defer dotted.deinit();
+    const lower = try fullLowerWithEditsAlloc(allocator, "\u{0130}x", &dotted, .{});
+    defer allocator.free(lower);
+    try testing.expectEqualStrings("i\u{0307}x", lower);
+    try testing.expectEqual(@as(usize, 1), dotted.changeCount());
+    try testing.expectEqual(@as(usize, 0), dotted.mapIndex(0));
+    try testing.expectEqual(@as(usize, 3), dotted.mapIndex(2));
+    try testing.expectEqual(@as(usize, 4), dotted.mapIndex(3));
+
+    var upper_edits = Edits.init(allocator);
+    defer upper_edits.deinit();
+    const upper = try fullUpperWithEditsAlloc(
+        allocator,
+        "stra\u{00df}e",
+        &upper_edits,
+        .{},
+    );
+    defer allocator.free(upper);
+    try testing.expectEqualStrings("STRASSE", upper);
+    try testing.expect(upper_edits.hasChanges());
+
+    var title_edits = Edits.init(allocator);
+    defer title_edits.deinit();
+    const title = try fullTitleWithEditsAlloc(
+        allocator,
+        "hello world",
+        &title_edits,
+        .{},
+    );
+    defer allocator.free(title);
+    try testing.expectEqualStrings("Hello World", title);
+    try testing.expectEqual(@as(usize, 2), title_edits.changeCount());
 }

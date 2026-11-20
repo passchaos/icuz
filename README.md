@@ -22,7 +22,10 @@ need without pulling in a font or layout engine.
   Unicode 17 mapping table.
 - Simple lower/upper/title mappings, full case folding, and full
   lower/upper/title mappings with `Final_Sigma`, Turkic, and Lithuanian
-  context rules.
+  context rules. The `Edits` recorder (`fullLowerWithEditsAlloc`,
+  `fullUpperWithEditsAlloc`, `fullTitleWithEditsAlloc`) tracks unchanged and
+  replaced source spans and maps source/destination indices like ICU's
+  `CaseMap` with `Edits`.
 - UAX #24 script runs.
 - UAX #29 grapheme, word, and sentence boundaries.
 - ICU break dictionaries for Thai, Lao, Khmer, Burmese, and CJK word
