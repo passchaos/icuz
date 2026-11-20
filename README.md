@@ -350,6 +350,9 @@ need without pulling in a font or layout engine.
   string by default; a registry markup handler can emit tags, with literal
   and variable option values resolved before the callback. Selection on date
   and currency values is rejected as unsupported.
+- Bidirectional character iteration (`CharIterator`): UTF-8 and UTF-16
+  storage, ICU `uiter` post-increment/pre-decrement movement, current,
+  first/last, and relative moves with boundary snapping.
 - UTF-16 validation, iteration, and UTF-8/UTF-16 conversion helpers.
 - Charset conversion for UTF-8/16/32, ASCII, Latin-1, 28 legacy single-byte
   encodings, GBK/GB18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, and EUC-KR,

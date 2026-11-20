@@ -40,6 +40,7 @@ pub const regex = @import("unicode/regex/root.zig");
 pub const region = @import("unicode/locale/region.zig");
 pub const locale_data = @import("unicode/locale/data.zig");
 pub const charset_selector = @import("unicode/charset/selector.zig");
+pub const char_iterator = @import("unicode/char_iterator.zig");
 
 pub const Regex = regex.Regex;
 pub const RegexMatcher = regex.Matcher;
@@ -49,6 +50,7 @@ pub const RegionType = region.RegionType;
 pub const LocaleData = locale_data.LocaleData;
 pub const ConverterSelector = charset_selector.ConverterSelector;
 pub const UnicodeSetIterator = unicode.UnicodeSetIterator;
+pub const CharIterator = unicode.CharIterator;
 pub const calendar_preferences = @import("unicode/format/calendar_preferences.zig");
 pub const break_rules = @import("unicode/break_rules.zig");
 pub const bidi = @import("unicode/bidi/paragraph.zig");

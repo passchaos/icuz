@@ -23,6 +23,7 @@ const name_mod = @import("./name.zig");
 const set_mod = @import("./set.zig");
 const break_rules_mod = @import("./break_rules.zig");
 const utf16_mod = @import("./utf16.zig");
+const char_iterator_mod = @import("./char_iterator.zig");
 const collation_mod = @import("./collation/root.zig");
 const search_mod = @import("./search.zig");
 const spoof_mod = @import("./spoof.zig");
@@ -238,6 +239,8 @@ pub const findCharacterByName = name_mod.findByName;
 
 pub const UnicodeSet = set_mod.Set;
 pub const UnicodeSetIterator = set_mod.Iterator;
+pub const CharIterator = char_iterator_mod.CharIterator;
+pub const CharIteratorOrigin = char_iterator_mod.Origin;
 pub const UnicodeSetSpanCondition = set_mod.Set.SpanCondition;
 pub const UnicodeSetRange = set_mod.Range;
 pub const parseUnicodeSet = set_mod.parse;
@@ -814,6 +817,7 @@ test {
     _ = region_mod;
     _ = locale_data_mod;
     _ = charset_selector_mod;
+    _ = char_iterator_mod;
     _ = transliterate_mod;
     _ = shape_mod;
     _ = pattern_generator_mod;
