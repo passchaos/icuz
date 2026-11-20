@@ -31,6 +31,7 @@ pub const list = @import("unicode/format/list.zig");
 pub const relative = @import("unicode/format/relative.zig");
 pub const units = @import("unicode/format/units.zig");
 pub const charset = @import("unicode/charset.zig");
+pub const charset_detection = @import("unicode/charset/detect.zig");
 pub const transliterate = @import("unicode/transliterate.zig");
 pub const shape = @import("unicode/shape/root.zig");
 pub const pattern_generator = @import("unicode/format/pattern_generator.zig");

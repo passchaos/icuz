@@ -41,6 +41,7 @@ const list_mod = @import("./format/list.zig");
 const relative_mod = @import("./format/relative.zig");
 const units_mod = @import("./format/units.zig");
 const charset_mod = @import("./charset.zig");
+const charset_detect = @import("./charset/detect.zig");
 const locale_mod = @import("./locale.zig");
 const transliterate_mod = @import("./transliterate.zig");
 const shape_mod = @import("./shape/root.zig");
@@ -458,6 +459,10 @@ pub const Message2Handler = message2_mod.Handler;
 
 pub const CharsetEncoding = charset_mod.Encoding;
 pub const CharsetErrorMode = charset_mod.ErrorMode;
+pub const CharsetMatch = charset_detect.Match;
+pub const CharsetDetectOptions = charset_detect.Options;
+pub const detectCharsetsAlloc = charset_detect.detectAll;
+pub const detectCharset = charset_detect.detect;
 pub const CharsetOptions = charset_mod.Options;
 pub const CharsetDecoder = charset_mod.Decoder;
 pub const CharsetEncoder = charset_mod.Encoder;
@@ -770,6 +775,7 @@ test {
     _ = shape_mod;
     _ = pattern_generator_mod;
     _ = normalization_boundary;
+    _ = charset_detect;
     _ = calendar_preferences_mod;
     _ = list_mod;
     _ = relative_mod;

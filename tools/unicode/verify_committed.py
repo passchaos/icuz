@@ -42,6 +42,7 @@ BLOBS = (
     Blob("src/unicode/bidi/data.bin", b"CJB1", 1, "9e9f9937100d6019f7308743916c3606bdb31c9cc4f142eb605becf45a210c3f"),
     Blob("src/unicode/canonical/combining_class.bin", b"CJC1", 1, "336130546fc300108806f5ae23144cda93da13488a810946357304b5a12f5fcc"),
     Blob("src/unicode/charset/data.bin", b"CJCS", 2, "2f683ea3541100baa40ec047bf13e9af98e7a8337a6b981f97ea97208bfbc705"),
+    Blob("src/unicode/charset/detection_conformance.bin", b"CJSD", 1, "9e3d4534c715488609ccdce0cbf1289dfc27fc87704aa44618968a29ed437817", version=(0, 0, 0)),
     Blob("src/unicode/locale/aliases.bin", b"CJLX", 2, "21a2feec8619f2697a8359992932b061890e9a68702e4d365756554b14ab4edd", version=(48, 0, 0)),
     Blob("src/unicode/locale/canonicalization_conformance.bin", b"CJLY", 1, "8e3d48a4a16588dbccba978589282c08e04dbaa65cd57617ea0643ddd14eef3d", version=(48, 0, 0)),
     Blob("src/unicode/format/person_names_data.bin", b"CJPU", 1, "43f82b79e7e62717e4c0710fdad28f3a808f5b44851faec86d04fd7ef587551a", version=(48, 0, 0)),
@@ -509,6 +510,8 @@ GENERATORS = {
     "tools/unicode/format/generate_range_conformance.py": "aa423e4f5f3e63035455398ad926104c203e6e90f332350d08369e62e8c4bf6b",
     "tools/unicode/format/generate_unit_conformance.py": "4227b3b9e7528c778a7a19dc0ed6b063cd39d9787f1962da419fb6a4300080a8",
     "tools/unicode/charset/generate_data.py": "5b13222d52bfaea336ef6fb3aac9b0d629411e62fb1173ae6bdd3ae9e059e594",
+    "tools/unicode/charset/generate_detection_tables.py": "63be0281796f335f842aff1f8c448e0b48617d6be96de8d2b0b5a8b6016b952d",
+    "tools/unicode/charset/generate_detection_conformance.py": "29311e77e022076746a83331d4d791ff5359e12c9e7d402ceb562886b927f717",
     "tools/unicode/set/generate_conformance.py": "b97a194a3698c9542d2323ffab4fc5e92a77588c16a4d897751e7c9b67c0adac",
     "tools/unicode/properties/generate_extra.py": "e5c04b6ec00c689fbc7669b67e31206f677820af6a01ba22d8f6e98fdb9dc670",
     "tools/unicode/transliterate/generate_data.py": "6d8e406b3358b45511df4b9007c846ed394bc726c662dcbecfc5cd46ccf77aca",
@@ -692,6 +695,11 @@ GENERATED_TEXT = (
         "tools/unicode/properties/generate_extra.py",
         "5a46601a6658f8c346cc185caa9069398066b6bb43575bb4c2f5c84003baa5bc",
     ),
+    GeneratedText(
+        "src/unicode/charset/detect_tables.zig",
+        "tools/unicode/charset/generate_detection_tables.py",
+        "12b362510e550c61e801da7dcf723d13ad2bcef0f3e8923cf6502e8dde0ff991",
+    ),
 )
 SOURCE_SHA = re.compile(r"^// Source SHA-256: ([0-9a-f]{64})$", re.MULTILINE)
 
@@ -713,7 +721,17 @@ def check_page_table(data: bytes, width: int) -> None:
 
 def check_layout(blob: Blob, data: bytes) -> None:
     magic = blob.magic
-    if magic == b"CJNB":
+    if magic == b"CJSD":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            input_len, match_count = struct.unpack_from("<HB", data, offset)
+            offset += 4 + input_len
+            for _ in range(match_count):
+                name_len, _, language_len = struct.unpack_from("<BBB", data, offset)
+                offset += 3 + name_len + language_len
+        assert offset == len(data)
+    elif magic == b"CJNB":
         count = struct.unpack_from("<I", data, 8)[0]
         assert 12 + count * 8 == len(data)
     elif magic == b"CJPG":
