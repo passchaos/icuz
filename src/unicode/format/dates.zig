@@ -1200,10 +1200,11 @@ fn appendField(
             }
         },
         'Y' => {
+            const settings = weekSettingsFor(locale, locale_name);
             const info = weekOfYear(
                 date_time,
-                locale.first_day_of_week,
-                locale.minimal_days,
+                settings.first_day,
+                settings.minimal_days,
             );
             const year: u64 = @intCast(@max(info.year, 0));
             if (length == 2) {
@@ -1238,10 +1239,11 @@ fn appendField(
             }
         },
         'w' => {
+            const settings = weekSettingsFor(locale, locale_name);
             const info = weekOfYear(
                 date_time,
-                locale.first_day_of_week,
-                locale.minimal_days,
+                settings.first_day,
+                settings.minimal_days,
             );
             try appendPaddedNumber(
                 allocator,
@@ -1251,17 +1253,20 @@ fn appendField(
                 locale,
             );
         },
-        'W' => try appendPaddedNumber(
-            allocator,
-            output,
-            weekOfMonth(
-                date_time,
-                locale.first_day_of_week,
-                locale.minimal_days,
-            ),
-            if (length >= 2) 2 else 1,
-            locale,
-        ),
+        'W' => {
+            const settings = weekSettingsFor(locale, locale_name);
+            try appendPaddedNumber(
+                allocator,
+                output,
+                weekOfMonth(
+                    date_time,
+                    settings.first_day,
+                    settings.minimal_days,
+                ),
+                if (length >= 2) 2 else 1,
+                locale,
+            );
+        },
         'M', 'L' => {
             const month = @min(@max(overrides.month orelse date_time.month, 1), 13);
             if (length <= 2) {
@@ -1815,6 +1820,51 @@ fn weekOfMonth(date_time: DateTime, first_day: u8, min_days: u8) u8 {
     if (days < week_one) return 0;
     const start = weekStart(days, first_day);
     return @intCast(@divFloor(start - week_one, 7) + 1);
+}
+
+/// Region subtag of a locale tag, when one is present. Language-only tags
+/// keep the likely-region week settings baked into the date data.
+fn regionFromLocale(locale_name: []const u8) ?[]const u8 {
+    var index: usize = 0;
+    var first = true;
+    while (index < locale_name.len) {
+        const start = index;
+        while (index < locale_name.len and locale_name[index] != '-' and
+            locale_name[index] != '_')
+        {
+            index += 1;
+        }
+        const subtag = locale_name[start..index];
+        if (index < locale_name.len) index += 1;
+        if (first) {
+            first = false;
+            continue;
+        }
+        if (subtag.len == 4 and std.ascii.isAlphabetic(subtag[0])) continue;
+        if ((subtag.len == 2 and std.ascii.isAlphabetic(subtag[0]) and
+            std.ascii.isAlphabetic(subtag[1])) or
+            (subtag.len == 3 and std.ascii.isDigit(subtag[0]) and
+                std.ascii.isDigit(subtag[1]) and
+                std.ascii.isDigit(subtag[2])))
+        {
+            return subtag;
+        }
+        break;
+    }
+    return null;
+}
+
+fn weekSettingsFor(
+    locale: *const data.Locale,
+    locale_name: []const u8,
+) week.WeekData {
+    if (regionFromLocale(locale_name)) |region| {
+        return week.weekDataForRegion(region);
+    }
+    return .{
+        .first_day = locale.first_day_of_week,
+        .minimal_days = locale.minimal_days,
+    };
 }
 
 /// Week-based year and week-of-year for a date under a region's CLDR rules.
@@ -3697,4 +3747,36 @@ test "quarter and week pattern fields" {
         defer allocator.free(text);
         try testing.expectEqualStrings(case.expected, text);
     }
+}
+
+test "regional week fields use the locale region" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const date = DateTime{
+        .year = 2023,
+        .month = 1,
+        .day = 1,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    };
+    const us = try formatPatternAlloc(allocator, "w", date, "en", "UTC");
+    defer allocator.free(us);
+    try testing.expectEqualStrings("1", us);
+    const us_region = try formatPatternAlloc(
+        allocator,
+        "w",
+        date,
+        "en-US",
+        "UTC",
+    );
+    defer allocator.free(us_region);
+    try testing.expectEqualStrings("1", us_region);
+    const gb = try formatPatternAlloc(allocator, "w", date, "en-GB", "UTC");
+    defer allocator.free(gb);
+    try testing.expectEqualStrings("52", gb);
+    const de = try formatPatternAlloc(allocator, "w", date, "de", "UTC");
+    defer allocator.free(de);
+    try testing.expectEqualStrings("52", de);
 }

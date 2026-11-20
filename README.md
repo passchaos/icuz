@@ -137,7 +137,8 @@ need without pulling in a font or layout engine.
   skeletons (`yMMMd`, `Hm`, combined date+time skeletons) resolved from
   CLDR availableFormats with canonical field ordering, width adjustment,
   and date/time split fallbacks, flexible day periods (`B`) and
-  am/pm/noon/midnight (`b`) from CLDR dayPeriods rules and names, and Unix
+  am/pm/noon/midnight (`b`) from CLDR dayPeriods rules and names,
+  region-aware week-of-year/month fields (`w`, `W`, `Y`), and Unix
   timestamp conversion. Skeleton
   output is validated against an 80-case PyICU fixture. Date/time parsing
   (`parsePattern`, `parseSkeleton`) consumes the same pattern syntax,
