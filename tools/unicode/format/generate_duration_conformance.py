@@ -17,6 +17,9 @@ import icu
 
 LOCALES = (
     "en", "fr", "de", "es", "it", "pt", "ru", "pl", "ja", "zh", "ko", "ar",
+    "ak", "ccp", "chr", "ee", "en-001", "eo", "fa-AF", "ff", "fo",
+    "fr-BE", "ky", "lb", "lrc", "nn", "no", "qu", "se", "su", "vec",
+    "yue", "yue-Hans",
 )
 
 UNITS = (

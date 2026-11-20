@@ -244,12 +244,12 @@ need without pulling in a font or layout engine.
   fullwide, and others) through `@numbers=`/`-u-nu-` locale keywords or an
   explicit option, with per-system digits and ICU-compatible symbol
   fallback. Validated by a 618-case PyICU fixture.
-- CLDR 48 duration formatting for 87 locales with long, short, narrow, and
+- CLDR 48 duration formatting for 108 locales with long, short, narrow, and
   numeric styles: locale-specific numeric patterns (h:mm:ss, m:ss, and
   overrides) plus unit and unit-list composition for hours, minutes, and
   seconds with plural selection. `formatDurationUnitsAlloc` accepts a
   `Duration` with years through nanoseconds and composes every non-zero unit
-  through the locale's long, short, or narrow unit and unit-list patterns. Validated by a 312-case
+  through the locale's long, short, or narrow unit and unit-list patterns. Validated by an 858-case
   PyICU fixture.
 - CLDR 48 date and time interval formatting for 87 locales, using ICU's
   repeated-field pattern splitting, greatest-difference selection,

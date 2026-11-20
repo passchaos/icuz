@@ -18,21 +18,25 @@ import zipfile
 from pathlib import Path
 
 LOCALES = (
-    "af", "am", "ar", "az", "be", "bg", "bn", "bs", "ca", "cs",
-    "cy", "da", "de", "de-AT", "de-CH", "el", "en", "en-AU", "en-CA",
-    "en-GB", "en-IN", "es", "es-419", "es-MX", "et", "eu", "fa", "fi",
-    "fil", "fr", "fr-CA", "ga", "gl", "gu", "he", "hi", "hr", "hu",
-    "hy", "id", "is", "it", "ja", "ka", "kk", "km", "kn", "ko", "lo",
-    "lt", "lv", "mk", "ml", "mn", "mr", "ms", "mt", "my", "nb", "ne",
-    "nl", "nl-BE", "pa", "pl", "ps", "pt", "pt-PT", "ro", "ru", "si",
-    "sk", "sl", "sq", "sr", "sv", "sw", "ta", "te", "th", "tr", "uk",
-    "ur", "uz", "vi", "zh", "zh-Hant", "zu",
+    "af", "ak", "am", "ar", "az", "be", "bg", "bn", "bs", "ca", "ccp",
+    "chr", "cs", "cy", "da", "de", "de-AT", "de-CH", "ee", "el", "en",
+    "en-001", "en-AU", "en-CA", "en-GB", "en-IN", "eo", "es", "es-419",
+    "es-MX", "et", "eu", "fa", "fa-AF", "ff", "fi", "fil", "fo", "fr",
+    "fr-BE", "fr-CA", "ga", "gl", "gu", "he", "hi", "hr", "hu",
+    "hy", "id", "is", "it", "ja", "ka", "kk", "km", "kn", "ko", "ky",
+    "lb", "lo", "lrc", "lt", "lv", "mk", "ml", "mn", "mr", "ms",
+    "mt", "my", "nb", "ne", "nl", "nl-BE", "nn", "no", "pa", "pl", "ps",
+    "pt", "pt-PT", "qu", "ro", "ru", "se", "si", "sk", "sl", "sq", "sr",
+    "su", "sv", "sw", "ta", "te", "th", "tr", "uk", "ur",
+    "uz", "vec", "vi", "yue", "yue-Hans", "zh", "zh-Hant", "zu",
 )
 
 PARENT = {
-    "de-AT": "de", "de-CH": "de", "en-AU": "en-001", "en-CA": "en-001",
-    "en-GB": "en-001", "en-IN": "en-001", "es-419": "es", "es-MX": "es-419",
-    "fr-CA": "fr", "nb": "no", "nl-BE": "nl", "pt-PT": "pt", "zh-Hant": "root",
+    "de-AT": "de", "de-CH": "de", "en-001": "en", "en-AU": "en-001",
+    "en-CA": "en-001", "en-GB": "en-001", "en-IN": "en-001",
+    "es-419": "es", "es-MX": "es-419", "fa-AF": "fa", "fr-BE": "fr",
+    "fr-CA": "fr", "nb": "no", "nn": "no", "nl-BE": "nl", "pt-PT": "pt",
+    "yue-Hans": "yue", "zh-Hant": "root",
 }
 
 DEFAULTS = {"hm": "h:mm", "hms": "h:mm:ss", "ms": "m:ss"}
