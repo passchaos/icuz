@@ -83,7 +83,8 @@ need without pulling in a font or layout engine.
   CLDR settings; `Options.case_first` and `Options.backwards_secondary`
   override them per call. Japanese private-kana and Korean searchjl
   tailorings are skipped.
-- Locale-aware string search (`search.indexOf`, `search.Search`): finds the first
+- Locale-aware string search (`search.indexOf`, `search.lastIndexOf`,
+  `search.Search`): finds the first or last
   substring whose collation key equals the pattern at a chosen strength, so
   primary-strength search ignores case and accents while tailored letters keep
   their locale weights; contraction prefixes and combining sequences are

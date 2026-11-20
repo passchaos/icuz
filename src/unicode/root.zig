@@ -241,6 +241,7 @@ pub const collationCompare = collation_mod.compare;
 pub const collationCompareUtf16 = collation_mod.compareUtf16;
 pub const SearchState = search_mod.Search;
 pub const searchIndexOf = search_mod.indexOf;
+pub const searchLastIndexOf = search_mod.lastIndexOf;
 pub const spoofSkeletonAlloc = spoof_mod.skeletonAlloc;
 pub const spoofSkeletonCodepointsInto = spoof_mod.skeletonCodepointsInto;
 pub const spoofAreConfusable = spoof_mod.areConfusable;

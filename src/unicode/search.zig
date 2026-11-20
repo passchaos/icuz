@@ -220,6 +220,28 @@ pub const Search = struct {
         return null;
     }
 
+    /// Last match starting at or before byte offset `limit`.
+    pub fn findLast(
+        self: *Search,
+        text: []const u8,
+        limit: usize,
+    ) Error!?usize {
+        var position: usize = 0;
+        var result: ?usize = null;
+        while (position <= limit) {
+            const found = (try self.find(text, position)) orelse break;
+            if (found > limit) break;
+            result = found;
+            position = found + 1;
+        }
+        return result;
+    }
+
+    /// Last match in `text`.
+    pub fn last(self: *Search, text: []const u8) Error!?usize {
+        return self.findLast(text, text.len);
+    }
+
     /// Root-collation primary search for ASCII text. Avoids decoding and
     /// building a sort key per candidate.
     fn findAsciiPrimary(self: *Search, text: []const u8, start: usize) ?usize {
@@ -438,6 +460,18 @@ pub fn indexOf(
     return search.find(text, 0);
 }
 
+/// Last match in `text`, or null when there is none.
+pub fn lastIndexOf(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    needle: []const u8,
+    options: Options,
+) Error!?usize {
+    var search = try Search.init(allocator, needle, options);
+    defer search.deinit();
+    return search.last(text);
+}
+
 fn primaryLength(key: []const u32) usize {
     for (key, 0..) |weight, index| {
         if (weight == 0) return index;
@@ -486,6 +520,14 @@ test "locale-aware search" {
     try testing.expectEqual(
         @as(?usize, null),
         try indexOf(allocator, ascii, "zebra", primary),
+    );
+    try testing.expectEqual(
+        @as(?usize, 31),
+        try lastIndexOf(allocator, ascii, "the", primary),
+    );
+    try testing.expectEqual(
+        @as(?usize, null),
+        try lastIndexOf(allocator, ascii, "zebra", primary),
     );
 
     // Root collation treats ring-accented letters as their base at the
