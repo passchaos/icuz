@@ -76,7 +76,21 @@ pub fn isSentenceTerminator(class: Class) bool {
     return class == .a_term or class == .s_term;
 }
 
-pub fn classForCodepoint(codepoint: u21) Class {
+const ascii_classes = blk: {
+    @setEvalBranchQuota(10_000);
+    var table: [128]Class = undefined;
+    for (0..128) |codepoint| {
+        table[codepoint] = classForCodepointSlow(@intCast(codepoint));
+    }
+    break :blk table;
+};
+
+pub inline fn classForCodepoint(codepoint: u21) Class {
+    if (codepoint < 0x80) return ascii_classes[codepoint];
+    return classForCodepointSlow(codepoint);
+}
+
+fn classForCodepointSlow(codepoint: u21) Class {
     if (!scalar_value.isValid(codepoint)) return .other;
     const page = @as(usize, codepoint) >> 8;
     const slot = readU16(header.index_offset + page * 2);

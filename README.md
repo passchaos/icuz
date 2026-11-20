@@ -431,8 +431,9 @@ matched code points; above U+1000, rule records carry their first code point
 inline so binary-search probes are a single load. Collation elements start in
 a stack buffer, so typical sort keys allocate only the returned key, and the
 NFD pass over Latin text handles ASCII without a decomposition lookup.
-UAX #29 word segmentation classifies ASCII bytes through compile-time class
-and word-anchor tables, so prose runs skip the general property lookup.
+UAX #29 word and sentence segmentation classify ASCII bytes through
+compile-time tables and decode ASCII bytes directly, so prose runs skip the
+general property lookup and the UTF-8 decoder.
 Charset
 reverse indexes carry compile-time page indexes and a split layout (sorted
 `u32` code points, then parallel `u16` pointers), so DBCS encoders

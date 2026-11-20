@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const rules = @import("rules.zig");
+const scalar = @import("../scalar/root.zig");
 const test_data = @embedFile("conformance.bin");
 
 pub const unicode_version = [3]u8{ 17, 0, 0 };
@@ -40,7 +41,14 @@ pub const Iterator = struct {
 
         var end = first.next;
         while (end < self.text.len) {
-            const current = decode(self.text, end) orelse unreachable;
+            const current = if (self.text[end] < 0x80)
+                Decoded{
+                    .codepoint = self.text[end],
+                    .start = end,
+                    .next = end + 1,
+                }
+            else
+                decode(self.text, end) orelse unreachable;
             const current_class = classForCodepoint(current.codepoint);
             if (self.breaksAt(end, current_class, state)) break;
             state.consume(current_class);
@@ -107,13 +115,12 @@ const Decoded = struct {
 };
 
 fn decode(text: []const u8, offset: usize) ?Decoded {
-    if (offset >= text.len) return null;
-    const sequence_len = std.unicode.utf8ByteSequenceLength(text[offset]) catch
-        return null;
-    if (offset + sequence_len > text.len) return null;
-    const codepoint = std.unicode.utf8Decode(text[offset .. offset + sequence_len]) catch
-        return null;
-    return .{ .codepoint = codepoint, .start = offset, .next = offset + sequence_len };
+    const decoded = scalar.decodeValid(text, offset) orelse return null;
+    return .{
+        .codepoint = decoded.codepoint,
+        .start = offset,
+        .next = decoded.next,
+    };
 }
 
 test "Unicode 17 sentence-boundary conformance" {

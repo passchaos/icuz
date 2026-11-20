@@ -484,12 +484,16 @@ pub fn decide(
     return .soft; // LB31.
 }
 
+const ascii_word_classes = blk: {
+    var table = [_]?BreakClass{null} ** 128;
+    for ('A'..'Z' + 1) |byte| table[byte] = .alphabetic;
+    for ('a'..'z' + 1) |byte| table[byte] = .alphabetic;
+    for ('0'..'9' + 1) |byte| table[byte] = .numeric;
+    break :blk table;
+};
+
 pub inline fn asciiWordClass(byte: u8) ?BreakClass {
-    return switch (byte) {
-        'A'...'Z', 'a'...'z' => .alphabetic,
-        '0'...'9' => .numeric,
-        else => null,
-    };
+    return ascii_word_classes[byte];
 }
 
 const ascii_word_bytes: [256]bool = blk: {
