@@ -69,8 +69,9 @@ need without pulling in a font or layout engine.
   digits from any numbering system compared by value), a separate case
   level with caseFirst interaction, identical strength with per-code-point
   decomposition tie-breaking, sort keys, comparison, level-by-level sort-key
-  merging (`mergeSortKeysAlloc`) and level bounds (`sortKeyBoundAlloc`),
-  validated by a 79-case ICU C API differential fixture.
+  merging (`mergeSortKeysAlloc`), level bounds (`sortKeyBoundAlloc`), and
+  collation-element iteration (`collationElementsAlloc`, like ICU's
+  `ucol_openElements`), validated by a 79-case ICU C API differential fixture.
 - CLDR 48 locale collation tailorings for 147 locale/type entries, including
   standard, search, phonebook, traditional, eor, pinyin, stroke, zhuyin, and
   unihan variants. Applied through `Options.locale` and `Options.collation`

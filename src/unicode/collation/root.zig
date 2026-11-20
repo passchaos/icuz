@@ -70,7 +70,7 @@ comptime {
     }
 }
 
-const CollationElement = struct {
+pub const CollationElement = struct {
     primary: u32,
     secondary: u32,
     tertiary: u32,
@@ -240,6 +240,27 @@ pub fn sortKeyInto(
     return collator.sortKeyInto(allocator, text, output);
 }
 
+/// Collation elements for UTF-8 text, mirroring ICU's
+/// `ucol_openElements`. The returned elements use the configured strength,
+/// variable weighting, numeric ordering, and locale tailoring.
+pub fn collationElementsAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    options: Options,
+) error{ InvalidUtf8, OutOfMemory }![]CollationElement {
+    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    var codepoints = std.ArrayList(u21).empty;
+    defer codepoints.deinit(allocator);
+    try codepoints.ensureTotalCapacity(allocator, text.len);
+    var cursor: usize = 0;
+    while (scalar.decodeValid(text, cursor)) |decoded| {
+        try codepoints.append(allocator, decoded.codepoint);
+        cursor = decoded.next;
+    }
+    const collator = Collator.init(options);
+    return collator.elementsAlloc(allocator, codepoints.items);
+}
+
 /// A collator with the locale tailoring resolved once, mirroring ICU's
 /// `UCollator`. Reuse one across many sort keys to skip the locale lookup
 /// and page-index claim on every call.
@@ -404,6 +425,40 @@ pub const Collator = struct {
         errdefer key.deinit(allocator);
         try self.sortKeyInto(allocator, text, &key);
         return key.toOwnedSlice(allocator);
+    }
+
+    /// Collation elements for already decoded code points.
+    pub fn elementsAlloc(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        codepoints: []const u21,
+    ) error{OutOfMemory}![]CollationElement {
+        const normalized = try normalization.normalizeCodepointsAlloc(
+            allocator,
+            codepoints,
+            .nfd,
+        );
+        defer if (normalized) |owned| allocator.free(owned);
+        const source = normalized orelse codepoints;
+        const reorder = if (self.tailoring) |tailoring|
+            tailoring.reorder
+        else
+            null;
+        const shifted = self.options.variable_weighting == .shifted;
+        var stack: [512]CollationElement = undefined;
+        var ces = CeBuffer.init(allocator, &stack);
+        defer ces.deinit();
+        try buildElements(
+            allocator,
+            source,
+            self.options,
+            self.tailoring,
+            self.pages,
+            reorder,
+            shifted,
+            &ces,
+        );
+        return allocator.dupe(CollationElement, ces.items());
     }
 
     pub fn sortKeyUtf16Into(
@@ -748,6 +803,55 @@ pub fn sortKeyCodepointsInto(
 }
 
 /// Append a sort key using an already resolved locale tailoring.
+/// Append the collation elements for NFD-normalized `source` to `ces`.
+/// Numeric runs and locale tailoring rules are applied in the same order as
+/// the sort-key path.
+fn buildElements(
+    allocator: std.mem.Allocator,
+    source: []const u21,
+    options: Options,
+    locale_tailoring: ?tailorings.Tailoring,
+    tailoring_pages: ?*tailorings.PageIndex,
+    reorder: ?tailorings.Reorder,
+    shifted: bool,
+    ces: *CeBuffer,
+) error{OutOfMemory}!void {
+    try ces.ensureTotalCapacity(source.len + 8);
+    var index: usize = 0;
+    while (index < source.len) {
+        if (options.numeric) {
+            if (decimalValue(source[index]) != null) {
+                const end = decimalRunEnd(source, index);
+                try appendNumeric(allocator, ces, source[index..end]);
+                index = end;
+                continue;
+            }
+        }
+        if (locale_tailoring) |tailoring| {
+            if (tailorings.couldMatch(tailoring_pages, source[index])) {
+                if (tailorings.match(
+                    tailoring,
+                    tailoring_pages,
+                    source,
+                    index,
+                )) |matched| {
+                    try appendTailored(allocator, ces, matched.rule);
+                    index += matched.length;
+                    continue;
+                }
+            }
+        }
+        index += try appendElements(
+            allocator,
+            ces,
+            source,
+            index,
+            reorder,
+            shifted,
+        );
+    }
+}
+
 fn sortKeyCodepointsResolved(
     allocator: std.mem.Allocator,
     codepoints: []const u21,
@@ -825,45 +929,16 @@ fn sortKeyCodepointsResolved(
     var stack_ces: [512]CollationElement = undefined;
     var ces = CeBuffer.init(allocator, &stack_ces);
     defer ces.deinit();
-    try ces.ensureTotalCapacity(source.len + 8);
-
-    var index: usize = 0;
-    while (index < source.len) {
-        if (options.numeric) {
-            if (decimalValue(source[index]) != null) {
-                const end = decimalRunEnd(source, index);
-                try appendNumeric(
-                    allocator,
-                    &ces,
-                    source[index..end],
-                );
-                index = end;
-                continue;
-            }
-        }
-        if (locale_tailoring) |tailoring| {
-            if (tailorings.couldMatch(tailoring_pages, source[index])) {
-                if (tailorings.match(
-                    tailoring,
-                    tailoring_pages,
-                    source,
-                    index,
-                )) |matched| {
-                    try appendTailored(allocator, &ces, matched.rule);
-                    index += matched.length;
-                    continue;
-                }
-            }
-        }
-        index += try appendElements(
-            allocator,
-            &ces,
-            source,
-            index,
-            reorder,
-            shifted,
-        );
-    }
+    try buildElements(
+        allocator,
+        source,
+        options,
+        locale_tailoring,
+        tailoring_pages,
+        reorder,
+        shifted,
+        &ces,
+    );
 
     if (!shifted and (case_first != .upper or options.case_level)) {
         // The common path can emit levels straight from the collation
@@ -2446,6 +2521,58 @@ test "sort key buffer and UTF-16 APIs" {
     try testing.expectError(
         error.InvalidUtf8,
         sortKeyAlloc(allocator, "\xff", .{}),
+    );
+}
+
+test "collation elements match the sort key weights" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const cases = [_]struct { text: []const u8, options: Options }{
+        .{ .text = "Hello, world!", .options = .{} },
+        .{
+            .text = "\u{00c5}ngstr\u{00f6}m",
+            .options = .{ .locale = "sv" },
+        },
+        .{ .text = "\u{4f60}\u{597d}", .options = .{} },
+    };
+    for (cases) |case| {
+        const elements = try collationElementsAlloc(
+            allocator,
+            case.text,
+            case.options,
+        );
+        defer allocator.free(elements);
+        const key = try sortKeyAlloc(allocator, case.text, case.options);
+        defer allocator.free(key);
+
+        var primaries: [64]u32 = undefined;
+        var count: usize = 0;
+        for (elements) |element| {
+            if (element.primary == 0) continue;
+            try testing.expect(count < primaries.len);
+            primaries[count] = element.primary;
+            count += 1;
+        }
+        try testing.expectEqualSlices(u32, key[0..count], primaries[0..count]);
+        try testing.expectEqual(@as(u32, 0), key[count]);
+    }
+
+    // Swedish tailoring gives a-ring a distinct primary weight.
+    const root = try collationElementsAlloc(allocator, "\u{00e5}", .{});
+    defer allocator.free(root);
+    const swedish = try collationElementsAlloc(
+        allocator,
+        "\u{00e5}",
+        .{ .locale = "sv" },
+    );
+    defer allocator.free(swedish);
+    try testing.expect(root.len > 0 and swedish.len > 0);
+    try testing.expect(root[0].primary != swedish[0].primary);
+
+    try testing.expectError(
+        error.InvalidUtf8,
+        collationElementsAlloc(allocator, "\xff", .{}),
     );
 }
 
