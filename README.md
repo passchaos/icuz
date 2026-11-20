@@ -16,7 +16,10 @@ need without pulling in a font or layout engine.
   reports the Unicode version that first assigned each scalar.
 - General_Category, Script, and binary-property alias resolution for
   `\p{...}`-style consumers.
-- UAX #9 bidirectional paragraph resolution.
+- UAX #9 bidirectional paragraph resolution. CLDR script metadata provides
+  right-to-left script detection (`scriptIsRightToLeft`) and locale-level
+  checks (`localeIsRightToLeft`, `Locale.isRightToLeft`) that follow likely
+  subtags (for example `pa-PK` resolves to Arabic script).
 - UAX #14 line-break opportunities.
 - UAX #15 normalization: NFC, NFD, NFKC, and NFKD, with `normalizeFormInto`,
   `spanQuickCheckYes`, code-point and UTF-16 forms, and a memory-bounded

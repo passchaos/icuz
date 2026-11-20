@@ -7,6 +7,8 @@
 const data = @import("data.zig");
 
 pub const Script = @import("types.zig").Script;
+pub const direction = @import("direction.zig");
+pub const isRightToLeft = direction.isRightToLeft;
 
 pub inline fn forCodepoint(codepoint: u21) Script {
     // The generated, deduplicated page table is exact for every Unicode 17

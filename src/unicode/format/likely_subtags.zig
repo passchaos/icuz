@@ -209,6 +209,13 @@ pub fn regionForLocale(locale: []const u8) ?[]const u8 {
     return if (maximal.region.len != 0) maximal.region else null;
 }
 
+/// Likely script subtag for a locale, such as "Arab" for "ar". The returned
+/// slice points into the input tag or the embedded likely-subtag data.
+pub fn scriptForLocale(locale: []const u8) ?[]const u8 {
+    const maximal = maximizeParts(parse(locale)) orelse return null;
+    return if (maximal.script.len != 0) maximal.script else null;
+}
+
 /// Maximize a locale by filling in likely script and region subtags.
 pub fn maximizeAlloc(
     allocator: std.mem.Allocator,

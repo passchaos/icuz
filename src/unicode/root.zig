@@ -54,6 +54,7 @@ pub const scriptExtensionsCount = script_extensions.count;
 pub const ScriptExtensions = script_extensions.Set;
 pub const scriptExtensionsForCodepoint = script_extensions.forCodepoint;
 pub const scriptForCodepoint = script_mod.forCodepoint;
+pub const scriptIsRightToLeft = script_mod.isRightToLeft;
 
 pub const ScriptRun = struct {
     script: Script,
@@ -409,6 +410,7 @@ pub const minimizeLocaleWithOptionsAlloc =
     likely_subtags_mod.minimizeWithOptionsAlloc;
 pub const canonicalizeLocaleAlloc = locale_mod.canonicalizeAlloc;
 pub const Locale = locale_mod.Locale;
+pub const localeIsRightToLeft = locale_mod.isRightToLeft;
 pub const LocaleMatchOptions = locale_mod.matcher.Options;
 pub const localeBestMatchAlloc = locale_mod.bestMatchAlloc;
 pub const localeDistanceAlloc = locale_mod.localeDistanceAlloc;

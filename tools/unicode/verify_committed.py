@@ -447,6 +447,7 @@ GENERATORS = {
     "tools/unicode/normalization/generate_casefold.py": "ddfa581f1fdaa2e914bf4a216aeb0dd6d428a5413dc96ddb0e005f7966d2a5e9",
     "tools/unicode/locale/generate_matcher.py": "d184c9ae1b441f60d3bae49386ea476c53e538c9d2bf41051bfa761102f74690",
     "tools/unicode/locale/generate_extension_aliases.py": "5853caa458dca1ffc133ce165e40543648e2209ff446093b58d11dc05197589f",
+    "tools/unicode/locale/generate_script_direction.py": "4eb044adfbf490197b2f22c04c16c997074f6a98426b885cf16e11796c878282",
     "tools/unicode/case/generate_data.py": "c4b275209f5fa8695b35c22ddd5cb95d2e08f40f35868b901dc22b39726a4dc9",
     "tools/unicode/case/generate_full_data.py": "ac0b2ce2938d19da1c8b80289fcfbbcb0e7176a95736ca3cf0d6b0b9631a9ed8",
     "tools/unicode/collation/generate_data.py": "3e789930a4ee07357d7e89a26d9bf93fe598ce7555efdbd16c524e860f0e4c96",
@@ -637,6 +638,11 @@ GENERATED_TEXT = (
         "src/unicode/locale/extension_aliases.zig",
         "tools/unicode/locale/generate_extension_aliases.py",
         "31e223bcb8ae16600004603f498069301607968483028807ba01b4e75bd139ec",
+    ),
+    GeneratedText(
+        "src/unicode/script/direction_data.zig",
+        "tools/unicode/locale/generate_script_direction.py",
+        "75820fce256699a577c21a6cb495f4de415abd26df5a41cd42a55c83986dee1d",
     ),
     GeneratedText(
         "src/unicode/format/weekend_data.zig",

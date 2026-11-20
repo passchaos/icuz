@@ -10,6 +10,8 @@
 const std = @import("std");
 
 const extension_aliases = @import("locale/extension_aliases.zig");
+const likely_subtags = @import("format/likely_subtags.zig");
+const script_direction = @import("script/direction.zig");
 const alias_blob = @embedFile("locale/aliases.bin");
 const conformance_blob = @embedFile("locale/canonicalization_conformance.bin");
 
@@ -616,6 +618,12 @@ fn canonicalizeTailAlloc(
     return output.toOwnedSlice(allocator);
 }
 
+/// True when a locale tag's script is right-to-left.
+pub fn isRightToLeft(locale: []const u8) bool {
+    const tag = Locale.parse(locale) catch return false;
+    return tag.isRightToLeft();
+}
+
 /// Parsed BCP 47 language tag. Every slice borrows from the input tag.
 pub const Locale = struct {
     language: []const u8 = "",
@@ -625,6 +633,8 @@ pub const Locale = struct {
     variant_count: usize = 0,
     /// Extension and private-use subtags starting at the first singleton.
     tail: []const u8 = "",
+    /// Original tag text, used for likely-subtag lookups.
+    tag: []const u8 = "",
 
     pub fn parse(text: []const u8) Error!Locale {
         const tag = try parseTag(text);
@@ -635,6 +645,7 @@ pub const Locale = struct {
             .variants = tag.variants,
             .variant_count = tag.variant_count,
             .tail = tag.tail,
+            .tag = text,
         };
     }
 
@@ -644,6 +655,16 @@ pub const Locale = struct {
 
     pub fn variantAt(self: Locale, index: usize) []const u8 {
         return self.variants[index];
+    }
+
+    /// True when the tag's script (or likely script) is right-to-left.
+    pub fn isRightToLeft(self: Locale) bool {
+        const source = if (self.tag.len != 0) self.tag else self.language;
+        const script = if (self.script.len != 0)
+            self.script
+        else
+            likely_subtags.scriptForLocale(source) orelse return false;
+        return script_direction.isRightToLeft(script);
     }
 
     /// Value of a Unicode extension keyword, for example `nu` in
@@ -755,6 +776,15 @@ test "locale tag parsing" {
 
     try testing.expectError(error.InvalidLocale, Locale.parse(""));
     try testing.expectError(error.InvalidLocale, Locale.parse("123"));
+
+    try testing.expect((try Locale.parse("ar")).isRightToLeft());
+    try testing.expect((try Locale.parse("he-IL")).isRightToLeft());
+    try testing.expect((try Locale.parse("az-Arab")).isRightToLeft());
+    try testing.expect((try Locale.parse("pa-PK")).isRightToLeft());
+    try testing.expect(!(try Locale.parse("en")).isRightToLeft());
+    try testing.expect(!(try Locale.parse("pa-IN")).isRightToLeft());
+    try testing.expect(!(try Locale.parse("ku")).isRightToLeft());
+    try testing.expect(isRightToLeft("ckb"));
 }
 
 test "locale canonicalization" {
