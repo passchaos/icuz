@@ -28,6 +28,18 @@ pub const SignMode = enum {
 
 pub const GroupingMode = enum { auto, off, min2, on_aligned, thousands };
 
+/// ICU number-skeleton rounding modes. `unnecessary` is rejected by the
+/// skeleton parser because formatting has no per-call error channel for it.
+pub const RoundingMode = enum {
+    half_even,
+    half_up,
+    half_down,
+    up,
+    down,
+    ceiling,
+    floor,
+};
+
 pub const UnitStyle = enum { long, short, narrow };
 
 pub const Options = struct {
@@ -41,6 +53,7 @@ pub const Options = struct {
     max_fraction_digits: ?u8 = null,
     use_grouping: bool = true,
     grouping: GroupingMode = .auto,
+    rounding_mode: RoundingMode = .half_even,
     sign: SignMode = .auto,
     integer_min_digits: u8 = 0,
     scale: u32 = 1,
@@ -475,6 +488,7 @@ pub fn formatRangeAlloc(
             fraction_digits,
             fraction_digits,
             0,
+            number_options.rounding_mode,
         );
         const category = if (first == second)
             start_category
@@ -488,6 +502,7 @@ pub fn formatRangeAlloc(
                     fraction_digits,
                     fraction_digits,
                     0,
+                    number_options.rounding_mode,
                 ),
             );
         var name: []const u8 = code;
@@ -616,7 +631,7 @@ fn rangePluralCategory(
 ) plural.Category {
     // Match the compact rounding used for unit plural selection.
     const plural_value = if (options.style == .compact and @abs(value) >= 10)
-        roundHalfEven(value, 0)
+        roundSigned(value, 0, options.rounding_mode)
     else
         value;
     return misc.pluralCategory(locale_name, plural_value);
@@ -852,7 +867,12 @@ fn formatStandardAlloc(
     const magnitude = @abs(value) *
         @as(f64, @floatFromInt(pattern.multiplier));
 
-    var rounded_magnitude = roundHalfEven(magnitude, max_fraction);
+    var rounded_magnitude = roundMagnitude(
+        magnitude,
+        max_fraction,
+        options.rounding_mode,
+        negative,
+    );
     if (rounding_mantissa != 0) {
         const increment = @as(f64, @floatFromInt(
             rounding_mantissa,
@@ -861,7 +881,12 @@ fn formatStandardAlloc(
             10.0,
             @floatFromInt(rounding_magnitude),
         );
-        const steps = roundHalfEven(magnitude / increment, 0);
+        const steps = roundMagnitude(
+            magnitude / increment,
+            0,
+            options.rounding_mode,
+            negative,
+        );
         rounded_magnitude = steps * increment;
         const fraction: u8 = if (rounding_magnitude >= 0)
             0
@@ -877,6 +902,8 @@ fn formatStandardAlloc(
             magnitude,
             options.min_significant_digits,
             options.max_significant_digits,
+            options.rounding_mode,
+            negative,
         );
         min_fraction = significant.min_fraction;
         max_fraction = significant.max_fraction;
@@ -1028,7 +1055,7 @@ pub fn formatSkeletonAlloc(
         // ICU rounds compact operands before selecting the unit's plural
         // form; this matters for locales such as Arabic.
         const plural_value = if (inner.style == .compact and @abs(value) >= 10)
-            roundHalfEven(value, 0)
+            roundSigned(value, 0, options.rounding_mode)
         else
             value;
         return units.applyNumberAlloc(
@@ -1073,7 +1100,7 @@ pub fn formatSkeletonFieldsAlloc(
         );
         defer allocator.free(number_text);
         const plural_value = if (inner.style == .compact and @abs(value) >= 10)
-            roundHalfEven(value, 0)
+            roundSigned(value, 0, options.rounding_mode)
         else
             value;
         const result = try units.applyNumberAlloc(
@@ -1313,7 +1340,24 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
             options.max_fraction_digits = maximum;
             options.rounding_increment_mantissa = 0;
         } else if (std.mem.startsWith(u8, token, "rounding-mode-")) {
-            // Accepted for compatibility; HALF_EVEN is the only mode.
+            const mode = token["rounding-mode-".len..];
+            if (std.mem.eql(u8, mode, "half-even")) {
+                options.rounding_mode = .half_even;
+            } else if (std.mem.eql(u8, mode, "half-up")) {
+                options.rounding_mode = .half_up;
+            } else if (std.mem.eql(u8, mode, "half-down")) {
+                options.rounding_mode = .half_down;
+            } else if (std.mem.eql(u8, mode, "up")) {
+                options.rounding_mode = .up;
+            } else if (std.mem.eql(u8, mode, "down")) {
+                options.rounding_mode = .down;
+            } else if (std.mem.eql(u8, mode, "ceiling")) {
+                options.rounding_mode = .ceiling;
+            } else if (std.mem.eql(u8, mode, "floor")) {
+                options.rounding_mode = .floor;
+            } else {
+                return error.InvalidPattern;
+            }
         } else {
             return error.InvalidPattern;
         }
@@ -1386,7 +1430,12 @@ fn formatScientificAlloc(
     if (power == 0) return decimalFallback(allocator, value, locale_name, options);
     var mantissa = if (value == 0) 0.0 else value / power;
     const max_fraction = options.max_fraction_digits orelse 6;
-    if (roundHalfEven(@abs(mantissa), max_fraction) >= 10.0) {
+    if (roundMagnitude(
+        @abs(mantissa),
+        max_fraction,
+        options.rounding_mode,
+        mantissa < 0,
+    ) >= 10.0) {
         exponent += 1;
         mantissa /= 10.0;
         if (options.engineering) {
@@ -1516,10 +1565,16 @@ fn compactCategory(
     fraction_digits: u8,
     min_fraction: u8,
     exponent: u8,
+    rounding_mode: RoundingMode,
 ) plural.Category {
     const magnitude = @abs(value);
     const scale = pow10(fraction_digits);
-    const rounded = roundHalfEven(magnitude, fraction_digits);
+    const rounded = roundMagnitude(
+        magnitude,
+        fraction_digits,
+        rounding_mode,
+        value < 0,
+    );
     if (fraction_digits == 0) {
         return plural.category(locale_name, .{
             .n = rounded,
@@ -1654,6 +1709,7 @@ fn formatCompactAlloc(
         fraction_digits,
         if (options.skeleton) 0 else format_info.fraction_digits,
         @intCast(chosen_index + 3),
+        options.rounding_mode,
     );
     var pattern = entry.patterns[@intFromEnum(category)];
     if (pattern.len == 0) pattern = entry.patterns[@intFromEnum(plural.Category.other)];
@@ -1702,6 +1758,8 @@ fn significantDigits(
     value: f64,
     min_significant: u8,
     max_significant: u8,
+    rounding_mode: RoundingMode,
+    negative: bool,
 ) SignificantDigits {
     var exponent: i32 = 0;
     if (value != 0 and std.math.isFinite(value)) {
@@ -1726,9 +1784,19 @@ fn significantDigits(
             10.0,
             @floatFromInt(-max_fraction_signed),
         );
-        rounded = roundHalfEven(value / scale, 0) * scale;
+        rounded = roundMagnitude(
+            value / scale,
+            0,
+            rounding_mode,
+            negative,
+        ) * scale;
     } else {
-        rounded = roundHalfEven(value, max_fraction);
+        rounded = roundMagnitude(
+            value,
+            max_fraction,
+            rounding_mode,
+            negative,
+        );
     }
     return .{
         .magnitude = rounded,
@@ -1999,6 +2067,7 @@ fn formatCurrencyNameAlloc(
         fraction_digits,
         min_fraction,
         0,
+        options.rounding_mode,
     );
     var name: []const u8 = code;
     if (currencyEntry(locale, code)) |entry| {
@@ -2381,19 +2450,50 @@ fn pow10(digits: u8) f64 {
         std.math.pow(f64, 10.0, @floatFromInt(digits));
 }
 
-fn roundHalfEven(value: f64, digits: u8) f64 {
+fn roundMagnitude(
+    magnitude: f64,
+    digits: u8,
+    mode: RoundingMode,
+    negative: bool,
+) f64 {
     const scale = pow10(digits);
-    const scaled = value * scale;
-    if (!std.math.isFinite(scaled)) return value;
+    const scaled = magnitude * scale;
+    if (!std.math.isFinite(scaled)) return magnitude;
     const lower = @floor(scaled);
     const fraction = scaled - lower;
     var rounded = lower;
-    if (fraction > 0.5) {
-        rounded = lower + 1.0;
-    } else if (fraction == 0.5) {
-        if (@mod(lower, 2.0) != 0.0) rounded = lower + 1.0;
+    switch (mode) {
+        .half_even => {
+            if (fraction > 0.5 or
+                (fraction == 0.5 and @mod(lower, 2.0) != 0.0))
+            {
+                rounded = lower + 1.0;
+            }
+        },
+        .half_up => {
+            if (fraction >= 0.5) rounded = lower + 1.0;
+        },
+        .half_down => {
+            if (fraction > 0.5) rounded = lower + 1.0;
+        },
+        .up => {
+            if (fraction > 0) rounded = lower + 1.0;
+        },
+        .down => {},
+        .ceiling => {
+            if (!negative and fraction > 0) rounded = lower + 1.0;
+        },
+        .floor => {
+            if (negative and fraction > 0) rounded = lower + 1.0;
+        },
     }
     return rounded / scale;
+}
+
+fn roundSigned(value: f64, digits: u8, mode: RoundingMode) f64 {
+    const negative = value < 0;
+    const rounded = roundMagnitude(@abs(value), digits, mode, negative);
+    return if (negative) -rounded else rounded;
 }
 
 fn formatUnsigned(buffer: []u8, value: u64) usize {
@@ -3914,15 +4014,15 @@ test "compact plural exponent operand" {
 
     try testing.expectEqual(
         plural.Category.one,
-        compactCategory("es", 1, 0, 0, 6),
+        compactCategory("es", 1, 0, 0, 6, .half_even),
     );
     try testing.expectEqual(
         plural.Category.many,
-        compactCategory("es", 2, 0, 0, 6),
+        compactCategory("es", 2, 0, 0, 6, .half_even),
     );
     try testing.expectEqual(
         plural.Category.other,
-        compactCategory("es", 2, 0, 0, 0),
+        compactCategory("es", 2, 0, 0, 0, .half_even),
     );
 }
 
@@ -3953,4 +4053,39 @@ test "currency cash rounding" {
     });
     defer allocator.free(norwegian);
     try testing.expectEqualStrings("13\u{00a0}kr", norwegian);
+}
+
+test "number skeleton rounding modes" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const cases = [_]struct {
+        skeleton: []const u8,
+        value: f64,
+        expected: []const u8,
+    }{
+        .{ .skeleton = "precision-integer rounding-mode-half-even", .value = 2.5, .expected = "2" },
+        .{ .skeleton = "precision-integer rounding-mode-half-even", .value = 3.5, .expected = "4" },
+        .{ .skeleton = "precision-integer rounding-mode-half-up", .value = 2.5, .expected = "3" },
+        .{ .skeleton = "precision-integer rounding-mode-half-up", .value = -2.5, .expected = "-3" },
+        .{ .skeleton = "precision-integer rounding-mode-half-down", .value = 2.5, .expected = "2" },
+        .{ .skeleton = "precision-integer rounding-mode-half-down", .value = -2.5, .expected = "-2" },
+        .{ .skeleton = "precision-integer rounding-mode-up", .value = 1.1, .expected = "2" },
+        .{ .skeleton = "precision-integer rounding-mode-up", .value = -1.1, .expected = "-2" },
+        .{ .skeleton = "precision-integer rounding-mode-down", .value = 1.9, .expected = "1" },
+        .{ .skeleton = "precision-integer rounding-mode-down", .value = -1.9, .expected = "-1" },
+        .{ .skeleton = "precision-integer rounding-mode-ceiling", .value = 1.1, .expected = "2" },
+        .{ .skeleton = "precision-integer rounding-mode-ceiling", .value = -1.1, .expected = "-1" },
+        .{ .skeleton = "precision-integer rounding-mode-floor", .value = 1.9, .expected = "1" },
+        .{ .skeleton = "precision-integer rounding-mode-floor", .value = -1.9, .expected = "-2" },
+    };
+    for (cases) |case| {
+        const text = try formatSkeletonAlloc(
+            allocator,
+            case.value,
+            "en",
+            case.skeleton,
+        );
+        defer allocator.free(text);
+        try testing.expectEqualStrings(case.expected, text);
+    }
 }

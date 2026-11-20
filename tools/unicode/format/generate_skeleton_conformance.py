@@ -66,6 +66,14 @@ SKELETONS = (
     "precision-increment/1.5",
     "currency/USD precision-increment/0.05",
     "percent precision-increment/0.5",
+    "precision-integer rounding-mode-half-even",
+    "precision-integer rounding-mode-half-up",
+    "precision-integer rounding-mode-half-down",
+    "precision-integer rounding-mode-up",
+    "precision-integer rounding-mode-down",
+    "precision-integer rounding-mode-ceiling",
+    "precision-integer rounding-mode-floor",
+    ".0 rounding-mode-half-up",
 )
 
 VALUES = (0.0, 0.25, 5.0, -5.0, 1234.5, -1234.5, 1234567.0, 0.1234)
