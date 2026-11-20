@@ -38,6 +38,8 @@ class GeneratedText:
 BLOBS = (
     Blob("src/unicode/bidi/conformance.bin", b"CJBT", 1, "40d4b9145779f8aad815e1f5ea5201ccd9cc5daeb73c8bf73b06c6f1c76d9a26"),
     Blob("src/unicode/bidi/reorder_conformance.bin", b"CJRD", 1, "849e5808b9dc45372dea3552a9c8bed83489765d79bee240029679837ae3384d", version=(0, 0, 0)),
+    Blob("src/unicode/bidi/inverse_conformance.bin", b"CJIW", 1, "8d1cae2eea0fa2375cffb9ae136045ae0ede11435a87777587c2413eac1c5c97", version=(0, 0, 0)),
+    Blob("src/unicode/bidi/transform_conformance.bin", b"CJTF", 1, "d4a6c40e2285ab8261e0aea74f78c970c899e09dae3401d1ea8a1dc68e4bf715", version=(0, 0, 0)),
     Blob("src/unicode/normalization/boundary_data.bin", b"CJNB", 1, "45ae76d3e8268dcb286471ab3e8ae951c77b0bf9fa4905ef7d424eca0208e7c7"),
     Blob("src/unicode/shape/conformance.bin", b"CJSH", 1, "aa14145e977197c683e9991d8caa238ed13084008e42e5dfb71be238762a4ef2"),
     Blob("src/unicode/bidi/data.bin", b"CJB1", 1, "9e9f9937100d6019f7308743916c3606bdb31c9cc4f142eb605becf45a210c3f"),
@@ -453,6 +455,8 @@ GENERATORS = {
     "tools/unicode/spoof/generate_identifier_status.py": "d19db85b91e1933c0841ff7846b2d2e644fd78621eaccf6e5f81f8f07134b4f9",
     "tools/unicode/spoof/generate_check_conformance.py": "ece38f27ee33c56e67ebd7632c89d0cebb5d2859cbe675cd0493a2490884804b",
     "tools/unicode/bidi/generate_reorder_conformance.py": "e9850f69e21e8ec27e2e4fe142f50939c96564ad572dd6587be683da23b9857d",
+    "tools/unicode/bidi/generate_inverse_conformance.py": "87f4d6823171996d8f3104103eed50d78dcd66cec9837b42d2b32f9e96364ce9",
+    "tools/unicode/bidi/generate_transform_conformance.py": "b865063cc235f85bb9cb55196cea4be6a85acf013d8df41ce95c4f28b16b6f5f",
     "tools/unicode/format/generate_date_symbols_conformance.py": "1dc212912e7896c1c51e85e75cfe3ef33272875406a707a6b569e76602e4820e",
     "tools/unicode/text/generate_conformance.py": "ac0497c3336dd7f6546dd11062536763fa06e9728b85ac80549b89c70d52f89d",
     "tools/unicode/locale/generate_aliases.py": "455b791991d1b9a81a44ba7d84ff893ca26fb344c9816ffc5ca1085dda9ff625",
@@ -1613,6 +1617,20 @@ def check_layout(blob: Blob, data: bytes) -> None:
         for _ in range(case_count):
             input_len, output_len = struct.unpack_from("<HH", data, offset + 2)
             offset += 6 + input_len + output_len
+        assert offset == len(data)
+    elif magic == b"CJIW":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            input_len, level_count = struct.unpack_from("<HH", data, offset + 1)
+            offset += 5 + input_len + level_count
+        assert offset == len(data)
+    elif magic == b"CJTF":
+        case_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(case_count):
+            input_len, output_len = struct.unpack_from("<HH", data, offset + 9)
+            offset += 13 + input_len + output_len
         assert offset == len(data)
     else:
         assert len(data) >= (20 if magic == b"CJBT" else 12)

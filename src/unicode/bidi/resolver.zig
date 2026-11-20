@@ -689,6 +689,368 @@ fn adjustRemovedLevels(
     }
 }
 
+// ICU inverse bidi implicit resolution (UBIDI_REORDER_INVERSE_LIKE_DIRECT).
+// The tables below are transcribed from ICU's ubidi.cpp. `pc` encodes a
+// property-state-table cell (5-bit state, action in the high bits) and `lc`
+// a level-state-table cell (4-bit state, action in the high bits).
+
+fn pc(action: u8, state: u8) u8 {
+    return state + action * 32;
+}
+
+fn lc(action: u8, state: u8) u8 {
+    return state + action * 16;
+}
+
+const inverse_tab_l_default = [6][8]u8{
+    .{ 0, 1, 0, 2, 0, 0, 0, 0 },
+    .{ 0, 1, 3, 3, lc(1, 4), lc(1, 4), 0, 1 },
+    .{ 0, 1, 0, 2, lc(1, 5), lc(1, 5), 0, 2 },
+    .{ 0, 1, 3, 3, lc(1, 4), lc(1, 4), 0, 2 },
+    .{ 0, lc(2, 1), lc(3, 3), lc(3, 3), 4, 4, 0, 0 },
+    .{ 0, lc(2, 1), 0, lc(3, 2), 5, 5, 0, 0 },
+};
+
+const inverse_tab_r_like_direct = [7][8]u8{
+    .{ 1, 0, 2, 2, 0, 0, 0, 0 },
+    .{ 1, 0, 1, 2, lc(1, 3), lc(1, 3), 0, 1 },
+    .{ 1, 0, 2, 2, 0, 0, 0, 1 },
+    .{ lc(2, 1), lc(3, 0), 6, 4, 3, 3, lc(3, 0), 0 },
+    .{ lc(2, 1), lc(3, 0), 6, 4, 5, 5, lc(3, 0), 3 },
+    .{ lc(2, 1), lc(3, 0), 6, 4, 5, 5, lc(3, 0), 2 },
+    .{ lc(2, 1), lc(3, 0), 6, 4, 3, 3, lc(3, 0), 1 },
+};
+
+const inverse_act0 = [5]u8{ 0, 1, 2, 3, 4 };
+const inverse_act1 = [4]u8{ 0, 1, 13, 14 };
+
+const inverse_props = [24][16]u8{
+    .{ 1, 2, 4, 5, 7, 15, 17, 7, 9, 7, 0, 7, 3, 18, 21, 4 },
+    .{ 1, pc(1, 2), pc(1, 4), pc(1, 5), pc(1, 7), pc(1, 15), pc(1, 17), pc(1, 7), pc(1, 9), pc(1, 7), 1, 1, pc(1, 3), pc(1, 18), pc(1, 21), 0 },
+    .{ pc(1, 1), 2, pc(1, 4), pc(1, 5), pc(1, 7), pc(1, 15), pc(1, 17), pc(1, 7), pc(1, 9), pc(1, 7), 2, 2, pc(1, 3), pc(1, 18), pc(1, 21), 1 },
+    .{ pc(1, 1), pc(1, 2), pc(1, 6), pc(1, 6), pc(1, 8), pc(1, 16), pc(1, 17), pc(1, 8), pc(1, 8), pc(1, 8), 3, 3, 3, pc(1, 18), pc(1, 21), 1 },
+    .{ pc(1, 1), pc(1, 2), 4, pc(1, 5), pc(1, 7), pc(1, 15), pc(1, 17), pc(2, 10), 11, pc(2, 10), 4, 4, pc(1, 3), 18, 21, 2 },
+    .{ pc(1, 1), pc(1, 2), pc(1, 4), 5, pc(1, 7), pc(1, 15), pc(1, 17), pc(1, 7), pc(1, 9), pc(2, 12), 5, 5, pc(1, 3), pc(1, 18), pc(1, 21), 3 },
+    .{ pc(1, 1), pc(1, 2), 6, 6, pc(1, 8), pc(1, 16), pc(1, 17), pc(1, 8), pc(1, 8), pc(2, 13), 6, 6, pc(1, 3), 18, 21, 3 },
+    .{ pc(1, 1), pc(1, 2), pc(1, 4), pc(1, 5), 7, pc(1, 15), pc(1, 17), 7, pc(2, 14), 7, 7, 7, pc(1, 3), pc(1, 18), pc(1, 21), 4 },
+    .{ pc(1, 1), pc(1, 2), pc(1, 6), pc(1, 6), 8, pc(1, 16), pc(1, 17), 8, 8, 8, 8, 8, pc(1, 3), pc(1, 18), pc(1, 21), 4 },
+    .{ pc(1, 1), pc(1, 2), 4, pc(1, 5), 7, pc(1, 15), pc(1, 17), 7, 9, 7, 9, 9, pc(1, 3), 18, 21, 4 },
+    .{ pc(3, 1), pc(3, 2), 4, pc(3, 5), pc(4, 7), pc(3, 15), pc(3, 17), pc(4, 7), pc(4, 14), pc(4, 7), 10, pc(4, 7), pc(3, 3), 18, 21, 2 },
+    .{ pc(1, 1), pc(1, 2), 4, pc(1, 5), pc(1, 7), pc(1, 15), pc(1, 17), pc(1, 7), 11, pc(1, 7), 11, 11, pc(1, 3), 18, 21, 2 },
+    .{ pc(3, 1), pc(3, 2), pc(3, 4), 5, pc(4, 7), pc(3, 15), pc(3, 17), pc(4, 7), pc(4, 14), pc(4, 7), 12, pc(4, 7), pc(3, 3), pc(3, 18), pc(3, 21), 3 },
+    .{ pc(3, 1), pc(3, 2), 6, 6, pc(4, 8), pc(3, 16), pc(3, 17), pc(4, 8), pc(4, 8), pc(4, 8), 13, pc(4, 8), pc(3, 3), 18, 21, 3 },
+    .{ pc(1, 1), pc(1, 2), pc(4, 4), pc(1, 5), 7, pc(1, 15), pc(1, 17), 7, 14, 7, 14, 14, pc(1, 3), pc(4, 18), pc(4, 21), 4 },
+    .{ pc(1, 1), pc(1, 2), pc(1, 4), pc(1, 5), pc(1, 7), 15, pc(1, 17), pc(1, 7), pc(1, 9), pc(1, 7), 15, pc(1, 7), pc(1, 3), pc(1, 18), pc(1, 21), 5 },
+    .{ pc(1, 1), pc(1, 2), pc(1, 6), pc(1, 6), pc(1, 8), 16, pc(1, 17), pc(1, 8), pc(1, 8), pc(1, 8), 16, pc(1, 8), pc(1, 3), pc(1, 18), pc(1, 21), 5 },
+    .{ pc(1, 1), pc(1, 2), pc(1, 4), pc(1, 5), pc(1, 7), pc(1, 15), 17, pc(1, 7), pc(1, 9), pc(1, 7), 17, pc(1, 7), pc(1, 3), pc(1, 18), pc(1, 21), 6 },
+    .{ pc(1, 1), pc(1, 2), 18, pc(1, 5), pc(1, 7), pc(1, 15), pc(1, 17), pc(2, 19), 20, pc(2, 19), 18, 18, pc(1, 3), 18, 21, 0 },
+    .{ pc(3, 1), pc(3, 2), 18, pc(3, 5), pc(4, 7), pc(3, 15), pc(3, 17), pc(4, 7), pc(4, 14), pc(4, 7), 19, pc(4, 7), pc(3, 3), 18, 21, 0 },
+    .{ pc(1, 1), pc(1, 2), 18, pc(1, 5), pc(1, 7), pc(1, 15), pc(1, 17), pc(1, 7), 20, pc(1, 7), 20, 20, pc(1, 3), 18, 21, 0 },
+    .{ pc(1, 1), pc(1, 2), 21, pc(1, 5), pc(1, 7), pc(1, 15), pc(1, 17), pc(2, 22), 23, pc(2, 22), 21, 21, pc(1, 3), 18, 21, 3 },
+    .{ pc(3, 1), pc(3, 2), 21, pc(3, 5), pc(4, 7), pc(3, 15), pc(3, 17), pc(4, 7), pc(4, 14), pc(4, 7), 22, pc(4, 7), pc(3, 3), 18, 21, 3 },
+    .{ pc(1, 1), pc(1, 2), 21, pc(1, 5), pc(1, 7), pc(1, 15), pc(1, 17), pc(1, 7), 23, pc(1, 7), 23, 23, pc(1, 3), 18, 21, 3 },
+};
+
+fn inverseGroup(class: Class) u8 {
+    return switch (class) {
+        .l => 0,
+        .r => 1,
+        .en => 2,
+        .an => 3,
+        .ws, .on, .lri, .rli, .fsi, .pdi => 4,
+        .s => 5,
+        .b => 6,
+        .es => 7,
+        .et => 8,
+        .cs => 9,
+        .lre, .lro, .rle, .rlo, .pdf, .bn => 10,
+        .nsm => 11,
+        .al => 12,
+    };
+}
+
+const InverseState = struct {
+    imp_tab: []const [8]u8,
+    imp_act: []const u8,
+    state: u8 = 0,
+    start_on: i64 = -1,
+    run_level: u8,
+};
+
+fn setLevelRange(
+    levels: []u8,
+    start: usize,
+    limit: usize,
+    level: u8,
+) void {
+    if (start >= limit or start >= levels.len) return;
+    @memset(levels[start..@min(limit, levels.len)], level);
+}
+
+fn processInverseSequence(
+    levels: []u8,
+    state: *InverseState,
+    prop: u8,
+    start_input: usize,
+    limit: usize,
+) void {
+    const start0 = start_input;
+    const old_state = state.state;
+    const cell = state.imp_tab[old_state][prop];
+    state.state = cell & 0x0f;
+    const action = state.imp_act[cell >> 4];
+    const add_level = state.imp_tab[state.state][7];
+    var start = start_input;
+
+    switch (action) {
+        0 => {},
+        1 => state.start_on = @intCast(start0),
+        2 => if (state.start_on >= 0) {
+            start = @intCast(state.start_on);
+        },
+        3 => if (state.start_on >= 0) {
+            setLevelRange(
+                levels,
+                @intCast(state.start_on),
+                start0,
+                state.run_level + 1,
+            );
+        },
+        13 => {
+            const level = state.run_level;
+            var k: i64 = @as(i64, @intCast(start0)) - 1;
+            while (k >= state.start_on) : (k -= 1) {
+                if (levels[@intCast(k)] == level + 3) {
+                    while (k >= state.start_on and
+                        levels[@intCast(k)] == level + 3)
+                    {
+                        levels[@intCast(k)] -= 2;
+                        k -= 1;
+                    }
+                    while (k >= state.start_on and
+                        levels[@intCast(k)] == level)
+                    {
+                        k -= 1;
+                    }
+                }
+                if (k < state.start_on) break;
+                if (levels[@intCast(k)] == level + 2) {
+                    levels[@intCast(k)] = level;
+                    continue;
+                }
+                levels[@intCast(k)] = level + 1;
+            }
+        },
+        14 => {
+            const level = state.run_level + 1;
+            var k: i64 = @as(i64, @intCast(start0)) - 1;
+            while (k >= state.start_on) : (k -= 1) {
+                if (levels[@intCast(k)] > level) levels[@intCast(k)] -= 2;
+            }
+        },
+        else => {},
+    }
+
+    if (add_level != 0 or start < start0) {
+        setLevelRange(
+            levels,
+            start,
+            limit,
+            state.run_level + add_level,
+        );
+    }
+}
+
+/// Resolve a paragraph for ICU's inverse (visual to logical) bidi mode.
+///
+/// `levels` receives the levels ICU uses for `ubidi_writeReordered` in
+/// `UBIDI_REORDER_INVERSE_LIKE_DIRECT` mode. Explicit embeddings are ignored
+/// by ICU's inverse algorithm; they participate as BN at the paragraph level.
+fn inverseTextIsMixed(classes: []const Class, base_level: u8) bool {
+    var has_rtl = base_level & 1 != 0;
+    var has_ltr = base_level & 1 == 0;
+    var has_an = false;
+    var has_possible_n = false;
+    for (classes) |class| {
+        switch (class) {
+            .r, .al, .rle, .rlo, .rli => has_rtl = true,
+            .l, .en, .an, .lre, .lro, .lri => has_ltr = true,
+            else => {},
+        }
+        switch (class) {
+            .an => has_an = true,
+            .on,
+            .cs,
+            .es,
+            .et,
+            .b,
+            .s,
+            .ws,
+            .bn,
+            .lre,
+            .rle,
+            .lro,
+            .rlo,
+            .pdf,
+            .lri,
+            .rli,
+            .fsi,
+            .pdi,
+            => has_possible_n = true,
+            else => {},
+        }
+    }
+    const ltr = !has_rtl and !(has_an and has_possible_n);
+    const rtl = !ltr and !has_ltr;
+    return !(ltr or rtl);
+}
+
+/// Resolve a paragraph for ICU's inverse (visual to logical) bidi mode.
+///
+/// `levels` receives the levels ICU uses for `ubidi_writeReordered` in
+/// `UBIDI_REORDER_INVERSE_LIKE_DIRECT` mode. Explicit embeddings are ignored
+/// by ICU's inverse algorithm; they participate as BN at the paragraph level.
+pub fn resolveInverse(
+    classes: []const Class,
+    levels: []u8,
+    base_level: u8,
+) void {
+    @memset(levels, base_level);
+    if (!inverseTextIsMixed(classes, base_level)) return;
+
+    var last_arabic: ?usize = null;
+    for (classes, 0..) |class, index| {
+        if (class == .al) last_arabic = index;
+    }
+    const inverse_rtl = (base_level & 1 != 0) and
+        last_arabic != null and last_arabic.? > 0;
+
+    const sor: u8 = base_level & 1;
+    var state_imp: u8 = if (classes.len > 0 and classes[0] == .nsm)
+        1 + sor
+    else
+        0;
+    const imp_tab: []const [8]u8 = if (base_level & 1 == 0)
+        inverse_tab_l_default[0..]
+    else
+        inverse_tab_r_like_direct[0..];
+    const imp_act: []const u8 = if (base_level & 1 == 0)
+        inverse_act0[0..]
+    else
+        inverse_act1[0..];
+    var state = InverseState{
+        .imp_tab = imp_tab,
+        .imp_act = imp_act,
+        .run_level = base_level,
+    };
+    processInverseSequence(levels, &state, sor, 0, 0);
+
+    var start1: usize = 0;
+    var start2: usize = 0;
+    var next_strong_pos: usize = 0;
+    var next_strong_class: Class = .r;
+
+    var index: usize = 0;
+    while (index <= classes.len) : (index += 1) {
+        var prop: u8 = sor;
+        if (index == classes.len) {
+            var cursor = classes.len;
+            while (cursor > 0) {
+                cursor -= 1;
+                const class = classes[cursor];
+                if (isRemovedByX9(class)) continue;
+                if (class == .lri or class == .rli) {
+                    processInverseSequence(
+                        levels,
+                        &state,
+                        sor,
+                        classes.len,
+                        classes.len,
+                    );
+                    resetParagraphLevels(classes, levels, base_level);
+                    adjustRemovedLevels(classes, levels, base_level);
+                    return;
+                }
+                break;
+            }
+        } else {
+            var class = classes[index];
+            if (inverse_rtl) {
+                if (class == .al) {
+                    class = .r;
+                } else if (class == .en) {
+                    if (next_strong_pos <= index) {
+                        next_strong_class = .r;
+                        next_strong_pos = classes.len;
+                        var probe = index + 1;
+                        while (probe < classes.len) : (probe += 1) {
+                            const candidate = classes[probe];
+                            if (candidate == .l or candidate == .r or
+                                candidate == .al)
+                            {
+                                next_strong_class = candidate;
+                                next_strong_pos = probe;
+                                break;
+                            }
+                        }
+                    }
+                    if (next_strong_class == .al) class = .an;
+                }
+            }
+            prop = inverseGroup(class);
+        }
+
+        const old_state = state_imp;
+        const cell = inverse_props[old_state][prop];
+        state_imp = cell & 0x1f;
+        var action = cell >> 5;
+        if (index == classes.len and action == 0) action = 1;
+        if (action != 0) {
+            const resolved = inverse_props[old_state][15];
+            switch (action) {
+                1 => {
+                    processInverseSequence(
+                        levels,
+                        &state,
+                        resolved,
+                        start1,
+                        index,
+                    );
+                    start1 = index;
+                },
+                2 => start2 = index,
+                3 => {
+                    processInverseSequence(
+                        levels,
+                        &state,
+                        resolved,
+                        start1,
+                        start2,
+                    );
+                    processInverseSequence(levels, &state, 4, start2, index);
+                    start1 = index;
+                },
+                4 => {
+                    processInverseSequence(
+                        levels,
+                        &state,
+                        resolved,
+                        start1,
+                        start2,
+                    );
+                    start1 = start2;
+                    start2 = index;
+                },
+                else => {},
+            }
+        }
+    }
+
+    processInverseSequence(levels, &state, sor, classes.len, classes.len);
+    resetParagraphLevels(classes, levels, base_level);
+    adjustRemovedLevels(classes, levels, base_level);
+}
+
 fn resolveWeak(types: []Class, sos: Class, eos: Class) void {
     var previous = sos;
     var previous_strong = sos;
@@ -928,4 +1290,72 @@ test "isolating run links prefer nearest PDI and handle level limit" {
     try std.testing.expectEqual(@as(?usize, 2), runs[1].next);
     try std.testing.expect(runs[1].in_sequence);
     try std.testing.expect(runs[2].in_sequence);
+}
+
+test "ICU inverse bidi levels conformance fixture" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const fixture = @embedFile("inverse_conformance.bin");
+
+    try testing.expect(fixture.len >= 12);
+    try testing.expectEqualStrings("CJIW", fixture[0..4]);
+    try testing.expectEqual(@as(u8, 1), fixture[4]);
+    const case_count = std.mem.readInt(u32, fixture[8..12], .little);
+
+    var cursor: usize = 12;
+    var failures: usize = 0;
+    var case_index: usize = 0;
+    while (case_index < case_count) : (case_index += 1) {
+        const base_level = fixture[cursor];
+        const input_len = std.mem.readInt(
+            u16,
+            fixture[cursor + 1 ..][0..2],
+            .little,
+        );
+        const level_count = std.mem.readInt(
+            u16,
+            fixture[cursor + 3 ..][0..2],
+            .little,
+        );
+        cursor += 5;
+        const input = fixture[cursor..][0..input_len];
+        cursor += input_len;
+        const expected = fixture[cursor..][0..level_count];
+        cursor += level_count;
+
+        var classes = std.ArrayList(Class).empty;
+        defer classes.deinit(allocator);
+        var offset: usize = 0;
+        while (offset < input.len) {
+            const length = std.unicode.utf8ByteSequenceLength(
+                input[offset],
+            ) catch return error.InvalidFixture;
+            if (offset + length > input.len) return error.InvalidFixture;
+            const codepoint = std.unicode.utf8Decode(
+                input[offset..][0..length],
+            ) catch return error.InvalidFixture;
+            try classes.append(allocator, property_data.class(codepoint));
+            offset += length;
+        }
+        if (classes.items.len != level_count) return error.InvalidFixture;
+
+        const levels = try allocator.alloc(u8, classes.items.len);
+        defer allocator.free(levels);
+        resolveInverse(classes.items, levels, base_level);
+        if (!std.mem.eql(u8, levels, expected)) {
+            failures += 1;
+            if (failures <= 10) {
+                std.debug.print(
+                    "inverse level mismatch: {s} base={d} got={any} want={any}\n",
+                    .{ input, base_level, levels, expected },
+                );
+            }
+        }
+    }
+    try testing.expectEqual(fixture.len, cursor);
+    try testing.expectEqual(@as(usize, 0), failures);
+    std.debug.print(
+        "inverse bidi levels: {}/{} cases passed\n",
+        .{ case_count - failures, case_count },
+    );
 }

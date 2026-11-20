@@ -324,78 +324,13 @@ pub const Paragraph = struct {
             display_levels,
             self.base_level,
         );
-
-        const count = self.scalars.len;
-        const order = try allocator.alloc(usize, count);
-        defer allocator.free(order);
-        for (order, 0..) |*value, index| value.* = index;
-        reorderVisual(order, display_levels, 0);
-
-        // Units are scalars, or base+mark clusters when keeping combining
-        // marks. Output reversal flips unit order, never a cluster's interior.
-        var units = std.ArrayList(usize).empty;
-        defer units.deinit(allocator);
-        if (options.keep_base_combining) {
-            const cluster_start = try allocator.alloc(usize, count);
-            defer allocator.free(cluster_start);
-            const emitted = try allocator.alloc(bool, count);
-            defer allocator.free(emitted);
-            @memset(emitted, false);
-            var current: usize = 0;
-            for (self.scalars, 0..) |scalar, index| {
-                if (index == 0 or !isCombiningMark(scalar.codepoint)) {
-                    current = index;
-                }
-                cluster_start[index] = current;
-            }
-            for (order) |index| {
-                const start = cluster_start[index];
-                if (emitted[start]) continue;
-                emitted[start] = true;
-                try units.append(allocator, start);
-            }
-        } else {
-            try units.appendSlice(allocator, order);
-        }
-
-        var output = std.ArrayList(u8).empty;
-        errdefer output.deinit(allocator);
-        try output.ensureTotalCapacity(allocator, text.len);
-
-        var position: usize = 0;
-        while (position < units.items.len) : (position += 1) {
-            const index = if (options.output_reverse)
-                units.items[units.items.len - 1 - position]
-            else
-                units.items[position];
-            try appendScalar(
-                self.scalars,
-                allocator,
-                text,
-                &output,
-                index,
-                display_levels[index],
-                options,
-                true,
-            );
-            if (!options.keep_base_combining) continue;
-            var next = index + 1;
-            while (next < count and
-                isCombiningMark(self.scalars[next].codepoint)) : (next += 1)
-            {
-                try appendScalar(
-                    self.scalars,
-                    allocator,
-                    text,
-                    &output,
-                    next,
-                    display_levels[next],
-                    options,
-                    false,
-                );
-            }
-        }
-        return output.toOwnedSlice(allocator);
+        return reorderLevelsAlloc(
+            allocator,
+            text,
+            self.scalars,
+            display_levels,
+            options,
+        );
     }
 
     fn inheritedLevel(self: Paragraph, scalar_index: usize) u8 {
@@ -408,6 +343,89 @@ pub const Paragraph = struct {
         return self.base_level;
     }
 };
+
+/// Reorder UTF-8 text with caller-supplied levels. This is the shared core of
+/// `Paragraph.reorderAlloc` and inverse bidi, where levels come from ICU's
+/// inverse resolution rather than the UAX #9 direct pass.
+pub fn reorderLevelsAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    scalars: []const Scalar,
+    levels: []const u8,
+    options: Paragraph.ReorderOptions,
+) error{ InvalidUtf8, OutOfMemory }![]u8 {
+    const count = scalars.len;
+    const order = try allocator.alloc(usize, count);
+    defer allocator.free(order);
+    for (order, 0..) |*value, index| value.* = index;
+    reorderVisual(order, levels, 0);
+
+    // Units are scalars, or base+mark clusters when keeping combining
+    // marks. Output reversal flips unit order, never a cluster's interior.
+    var units = std.ArrayList(usize).empty;
+    defer units.deinit(allocator);
+    if (options.keep_base_combining) {
+        const cluster_start = try allocator.alloc(usize, count);
+        defer allocator.free(cluster_start);
+        const emitted = try allocator.alloc(bool, count);
+        defer allocator.free(emitted);
+        @memset(emitted, false);
+        var current: usize = 0;
+        for (scalars, 0..) |scalar, index| {
+            if (index == 0 or !isCombiningMark(scalar.codepoint)) {
+                current = index;
+            }
+            cluster_start[index] = current;
+        }
+        for (order) |index| {
+            const start = cluster_start[index];
+            if (emitted[start]) continue;
+            emitted[start] = true;
+            try units.append(allocator, start);
+        }
+    } else {
+        try units.appendSlice(allocator, order);
+    }
+
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try output.ensureTotalCapacity(allocator, text.len);
+
+    var position: usize = 0;
+    while (position < units.items.len) : (position += 1) {
+        const index = if (options.output_reverse)
+            units.items[units.items.len - 1 - position]
+        else
+            units.items[position];
+        try appendScalar(
+            scalars,
+            allocator,
+            text,
+            &output,
+            index,
+            levels[index],
+            options,
+            true,
+        );
+        if (!options.keep_base_combining) continue;
+        var next = index + 1;
+        while (next < count and
+            isCombiningMark(scalars[next].codepoint)) : (next += 1)
+        {
+            try appendScalar(
+                scalars,
+                allocator,
+                text,
+                &output,
+                next,
+                levels[next],
+                options,
+                false,
+            );
+        }
+    }
+    return output.toOwnedSlice(allocator);
+}
 
 pub fn resolve(
     allocator: std.mem.Allocator,

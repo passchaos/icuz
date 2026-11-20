@@ -14,6 +14,7 @@ const script_mod = @import("./script/root.zig");
 const script_extensions = @import("./script_extensions/root.zig");
 const vertical = @import("./vertical/root.zig");
 const bidi_paragraph = @import("./bidi/paragraph.zig");
+const bidi_transform = @import("./bidi/transform.zig");
 const canonical_combining_class = @import("./canonical/combining_class.zig");
 const canonical_decomposition = @import("./canonical/decomposition.zig");
 const normalization = @import("./normalization/root.zig");
@@ -139,6 +140,10 @@ pub const BidiParagraph = bidi_paragraph.Paragraph;
 pub const BidiRangeMode = bidi_paragraph.RangeMode;
 pub const BidiRange = bidi_paragraph.Range;
 pub const BidiReorderOptions = bidi_paragraph.ReorderOptions;
+pub const BidiTransformBaseLevel = bidi_transform.BaseLevel;
+pub const BidiTransformOrder = bidi_transform.Order;
+pub const BidiTransformMirroring = bidi_transform.Mirroring;
+pub const bidiTransformAlloc = bidi_transform.transformAlloc;
 pub const bidi_unicode_version = bidi_paragraph.unicode_version;
 
 pub const JoiningType = joining.Type;
@@ -806,6 +811,7 @@ test {
     _ = script_extensions;
     _ = vertical;
     _ = bidi_paragraph;
+    _ = bidi_transform;
     _ = canonical_combining_class;
     _ = canonical_decomposition;
     _ = normalization;

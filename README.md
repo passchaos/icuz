@@ -24,6 +24,10 @@ need without pulling in a font or layout engine.
   logical-to-visual output, including mirroring, bidi-control removal,
   base-combining preservation, output reversal, and explicit embedding
   controls, validated by a 900-case ICU 78 differential fixture.
+  `bidiTransformAlloc` implements all 16 ICU `ubiditransform` schemes,
+  including inverse visual-to-logical resolution, runs-only conversion,
+  Arabic shaping, mirroring, and default base-direction resolution,
+  validated by a 5,376-case ICU 78 differential fixture.
 - UAX #14 line-break opportunities.
 - UAX #15 normalization: NFC, NFD, NFKC, and NFKD, with `normalizeFormInto`,
   `spanQuickCheckYes`, code-point and UTF-16 forms, and a memory-bounded
