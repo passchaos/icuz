@@ -67,6 +67,84 @@ pub const Encoding = enum {
     replacement,
 };
 
+/// Canonical ICU-style converter name.
+pub fn encodingName(encoding: Encoding) []const u8 {
+    return switch (encoding) {
+        .utf8 => "UTF-8",
+        .utf16_le => "UTF-16LE",
+        .utf16_be => "UTF-16BE",
+        .utf32_le => "UTF-32LE",
+        .utf32_be => "UTF-32BE",
+        .ascii => "US-ASCII",
+        .latin1 => "ISO-8859-1",
+        .ibm866 => "IBM866",
+        .iso_8859_2 => "ISO-8859-2",
+        .iso_8859_3 => "ISO-8859-3",
+        .iso_8859_4 => "ISO-8859-4",
+        .iso_8859_5 => "ISO-8859-5",
+        .iso_8859_6 => "ISO-8859-6",
+        .iso_8859_7 => "ISO-8859-7",
+        .iso_8859_8 => "ISO-8859-8",
+        .iso_8859_8_i => "ISO-8859-8-I",
+        .iso_8859_10 => "ISO-8859-10",
+        .iso_8859_13 => "ISO-8859-13",
+        .iso_8859_14 => "ISO-8859-14",
+        .iso_8859_15 => "ISO-8859-15",
+        .iso_8859_16 => "ISO-8859-16",
+        .koi8_r => "KOI8-R",
+        .koi8_u => "KOI8-U",
+        .macintosh => "macintosh",
+        .windows_874 => "windows-874",
+        .windows_1250 => "windows-1250",
+        .windows_1251 => "windows-1251",
+        .windows_1252 => "windows-1252",
+        .windows_1253 => "windows-1253",
+        .windows_1254 => "windows-1254",
+        .windows_1255 => "windows-1255",
+        .windows_1256 => "windows-1256",
+        .windows_1257 => "windows-1257",
+        .windows_1258 => "windows-1258",
+        .x_mac_cyrillic => "x-mac-cyrillic",
+        .gbk => "GBK",
+        .gb18030 => "GB18030",
+        .big5 => "Big5",
+        .euc_jp => "EUC-JP",
+        .iso_2022_jp => "ISO-2022-JP",
+        .shift_jis => "Shift_JIS",
+        .euc_kr => "EUC-KR",
+        .x_user_defined => "x-user-defined",
+        .replacement => "replacement",
+    };
+}
+
+/// Maximum bytes a converter emits for one code point (ICU
+/// `ucnv_getMaxCharSize`).
+pub fn maxCharSize(encoding: Encoding) u8 {
+    return switch (encoding) {
+        .utf8, .utf16_le, .utf16_be, .utf32_le, .utf32_be => 4,
+        .ascii, .latin1, .ibm866, .iso_8859_2, .iso_8859_3, .iso_8859_4,
+        .iso_8859_5, .iso_8859_6, .iso_8859_7, .iso_8859_8, .iso_8859_8_i,
+        .iso_8859_10, .iso_8859_13, .iso_8859_14, .iso_8859_15,
+        .iso_8859_16, .koi8_r, .koi8_u, .macintosh, .windows_874,
+        .windows_1250, .windows_1251, .windows_1252, .windows_1253,
+        .windows_1254, .windows_1255, .windows_1256, .windows_1257,
+        .windows_1258, .x_mac_cyrillic, .replacement => 1,
+        .big5, .shift_jis, .euc_kr => 2,
+        .euc_jp => 3,
+        .gbk, .gb18030, .x_user_defined => 4,
+        .iso_2022_jp => 8,
+    };
+}
+
+/// Minimum bytes a converter emits for one code point.
+pub fn minCharSize(encoding: Encoding) u8 {
+    return switch (encoding) {
+        .utf16_le, .utf16_be => 2,
+        .utf32_le, .utf32_be => 4,
+        else => 1,
+    };
+}
+
 pub const ErrorMode = enum {
     /// Return `error.InvalidSequence` or `error.UnmappableCharacter`.
     strict,
@@ -1574,4 +1652,18 @@ test "replacement and user-defined encodings" {
     );
     defer allocator.free(encoded);
     try testing.expectEqualSlices(u8, &.{ 0x41, 0x80, 0xFF }, encoded);
+}
+
+test "converter metadata" {
+    const testing = @import("std").testing;
+    try testing.expectEqualStrings(
+        "windows-1252",
+        encodingName(.windows_1252),
+    );
+    try testing.expectEqualStrings("UTF-8", encodingName(.utf8));
+    try testing.expectEqual(@as(u8, 4), maxCharSize(.utf8));
+    try testing.expectEqual(@as(u8, 1), maxCharSize(.latin1));
+    try testing.expectEqual(@as(u8, 8), maxCharSize(.iso_2022_jp));
+    try testing.expectEqual(@as(u8, 2), minCharSize(.utf16_le));
+    try testing.expectEqual(@as(u8, 1), minCharSize(.utf8));
 }

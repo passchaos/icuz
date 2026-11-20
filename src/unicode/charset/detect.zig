@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const tables = @import("detect_tables.zig");
+const charset = @import("../charset.zig");
 
 pub const Match = struct {
     name: []const u8,
@@ -941,4 +942,114 @@ test "charset detection conformance" {
     );
     try testing.expectEqual(conformance.len, offset);
     try testing.expect(failures == 0);
+}
+
+const detectFree = detect;
+const detectAllFree = detectAll;
+
+/// Stateful `ucsdet`-style detector.
+pub const Detector = struct {
+    text: []const u8 = "",
+    declared: ?[]const u8 = null,
+    options: Options = .{},
+    input_filter: bool = false,
+
+    pub fn init() Detector {
+        return .{};
+    }
+
+    pub fn setText(self: *Detector, text: []const u8) void {
+        self.text = text;
+    }
+
+    /// Set a declared encoding. Returns false when the name is not a
+    /// converter label known to icuz.
+    pub fn setDeclaredEncoding(
+        self: *Detector,
+        name: []const u8,
+    ) bool {
+        if (charset.fromLabel(name) == null) {
+            self.declared = null;
+            return false;
+        }
+        self.declared = name;
+        return true;
+    }
+
+    pub fn setInputFilter(self: *Detector, enabled: bool) void {
+        self.input_filter = enabled;
+    }
+
+    pub fn detect(self: *const Detector) ?Match {
+        if (self.declared) |name| {
+            return .{ .name = name, .confidence = 100 };
+        }
+        var options = self.options;
+        options.strip_tags = self.input_filter;
+        return detectFree(self.text, options);
+    }
+
+    pub fn detectAll(
+        self: *const Detector,
+        allocator: std.mem.Allocator,
+    ) Error![]Match {
+        if (self.declared) |name| {
+            const result = try allocator.alloc(Match, 1);
+            result[0] = .{ .name = name, .confidence = 100 };
+            return result;
+        }
+        var options = self.options;
+        options.strip_tags = self.input_filter;
+        return detectAllFree(allocator, self.text, options);
+    }
+};
+
+/// Charset names that icuz's recognizers can report.
+pub const detectable_charsets = [_][]const u8{
+    "UTF-8",
+    "UTF-16LE",
+    "UTF-16BE",
+    "UTF-32LE",
+    "UTF-32BE",
+    "ISO-8859-1",
+    "ISO-8859-2",
+    "ISO-8859-5",
+    "ISO-8859-6",
+    "ISO-8859-7",
+    "ISO-8859-8",
+    "ISO-8859-9",
+    "windows-1250",
+    "windows-1251",
+    "windows-1252",
+    "windows-1253",
+    "windows-1254",
+    "windows-1255",
+    "windows-1256",
+    "KOI8-R",
+    "Shift_JIS",
+    "GB18030",
+    "EUC-JP",
+    "EUC-KR",
+    "Big5",
+    "ISO-2022-JP",
+    "ISO-2022-KR",
+    "ISO-2022-CN",
+    "IBM420",
+    "IBM424",
+};
+
+test "stateful charset detector" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var detector = Detector.init();
+    detector.setText("hello world");
+    try testing.expectEqualStrings("ISO-8859-1", detector.detect().?.name);
+    try testing.expect(detector.setDeclaredEncoding("UTF-8"));
+    try testing.expectEqualStrings("UTF-8", detector.detect().?.name);
+    try testing.expectEqual(@as(u8, 100), detector.detect().?.confidence);
+    const matches = try detector.detectAll(allocator);
+    defer allocator.free(matches);
+    try testing.expectEqual(@as(usize, 1), matches.len);
+    try testing.expect(!detector.setDeclaredEncoding("not-a-charset"));
 }

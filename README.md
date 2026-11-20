@@ -405,7 +405,10 @@ need without pulling in a font or layout engine.
   1252/1253/1254/1255/1256, KOI8-R, Shift_JIS, GB18030, EUC-JP, EUC-KR,
   Big5, ISO-2022-JP/KR/CN, and the legacy IBM420/IBM424 Arabic/Hebrew
   recognizers, with HTML/XML input filtering and ICU's confidence ordering,
-  validated by a 37-case PyICU differential fixture.
+  validated by a 37-case PyICU differential fixture. A stateful
+  `CharsetDetector` exposes `setText`, declared-encoding, and input-filter
+  controls, and `charsetEncodingName`/`charsetMaxCharSize`/
+  `charsetMinCharSize` provide `ucnv`-style converter metadata.
 - ICU `ucnvsel`-compatible converter selection (`ConverterSelector`): an
   ordered converter list, optional excluded code points, UTF-8 and UTF-16
   input, and per-converter encodability flags or names, validated by a
