@@ -232,6 +232,11 @@ need without pulling in a font or layout engine.
 - CLDR 48 weekend start/end data (`weekendForRegion`, `isWeekend`): 18
   regions with explicit rules plus the world Saturday-Sunday default,
   including single-day weekends such as IR and IN.
+- CLDR 48 region week data (`weekDataForRegion`, `firstDayOfWeek`,
+  `minimalDaysInFirstWeek`): 154 regions plus the world Monday/1 default,
+  with week-of-year (`weekOfYearForRegion`) and week-of-month
+  (`weekOfMonthForRegion`) calculations using the region's first-day and
+  minimal-days rules.
 - CLDR 48 list formatting for 87 locales, including and/or and unit list
   styles with narrow/short variants.
 - CLDR 48 relative time for 87 locales, including yesterday/today/tomorrow

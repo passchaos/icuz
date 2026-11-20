@@ -3,6 +3,7 @@
 const std = @import("std");
 const data = @import("dates_data.zig");
 const timezone = @import("../timezone/root.zig");
+const week = @import("week.zig");
 const timezone_names = @import("../timezone/names.zig");
 const calendar_mod = @import("calendar.zig");
 const calendars = @import("calendars.zig");
@@ -1749,7 +1750,7 @@ fn weekOneStart(year: i32, first_day: u8, min_days: u8) i64 {
     return start;
 }
 
-const WeekInfo = struct {
+pub const WeekInfo = struct {
     year: i32,
     week: u8,
 };
@@ -1787,6 +1788,19 @@ fn weekOfMonth(date_time: DateTime, first_day: u8, min_days: u8) u8 {
     if (days < week_one) return 0;
     const start = weekStart(days, first_day);
     return @intCast(@divFloor(start - week_one, 7) + 1);
+}
+
+/// Week-based year and week-of-year for a date under a region's CLDR rules.
+pub fn weekOfYearForRegion(date_time: DateTime, region: []const u8) WeekInfo {
+    const settings = week.weekDataForRegion(region);
+    return weekOfYear(date_time, settings.first_day, settings.minimal_days);
+}
+
+/// Week of month under a region's CLDR rules; days before the first full
+/// week are week 0.
+pub fn weekOfMonthForRegion(date_time: DateTime, region: []const u8) u8 {
+    const settings = week.weekDataForRegion(region);
+    return weekOfMonth(date_time, settings.first_day, settings.minimal_days);
 }
 
 fn daysFromCivil(year: i32, month: u8, day: u8) i64 {
@@ -3427,6 +3441,28 @@ test "date skeleton conformance" {
         case_count,
     });
     try testing.expect(failures == 0);
+}
+
+test "region week of year and month" {
+    const testing = @import("std").testing;
+
+    const jan1_2023 = DateTime{
+        .year = 2023,
+        .month = 1,
+        .day = 1,
+        .hour = 0,
+        .minute = 0,
+        .second = 0,
+    };
+    const us = weekOfYearForRegion(jan1_2023, "US");
+    try testing.expectEqual(@as(i32, 2023), us.year);
+    try testing.expectEqual(@as(u8, 1), us.week);
+    const gb = weekOfYearForRegion(jan1_2023, "GB");
+    try testing.expectEqual(@as(i32, 2022), gb.year);
+    try testing.expectEqual(@as(u8, 52), gb.week);
+
+    try testing.expectEqual(@as(u8, 1), weekOfMonthForRegion(jan1_2023, "US"));
+    try testing.expectEqual(@as(u8, 0), weekOfMonthForRegion(jan1_2023, "GB"));
 }
 
 test "quarter and week pattern fields" {

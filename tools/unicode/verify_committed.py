@@ -491,6 +491,7 @@ GENERATORS = {
     "tools/unicode/format/generate_date_skeleton_conformance.py": "0180072157ba234dea9af11cd401695cace6e6d399792743a76ace27c24b8246",
     "tools/unicode/format/generate_misc.py": "6f811f84eb654ea301ead14d178f9ef74b5f31d75c00e4a958ee887b60380af5",
     "tools/unicode/format/generate_weekend.py": "070f632b8a485a9ca9b5ef3399bfc193b0daeaf96bedf6dd8726d7bbec83e472",
+    "tools/unicode/format/generate_week.py": "0b50f890c53513a78eb93c5e59af694fc953461ff276cbf27e15dedb74d4b7f9",
     "tools/unicode/format/generate_plural_ranges.py": "acf5a3784e9d0d4e74bde3c673c79c47a517e1998fde8d0c6052b75bf3ded5ad",
     "tools/unicode/format/generate_currency_conformance.py": "d84c2f318fc73ea144d594c5ab4d53063497d2e2d6c739973bc9decef2f3d812",
     "tools/unicode/format/generate_skeleton_conformance.py": "aee73b644c32b78c3b67e183187021a7805d72a26f609b45a91daed0023bbfa0",
@@ -633,6 +634,11 @@ GENERATED_TEXT = (
         "src/unicode/format/weekend_data.zig",
         "tools/unicode/format/generate_weekend.py",
         "f2d02a7ada2c4dda4a661a89402a000ae7943a50491867dc4ad1eac357f88cc8",
+    ),
+    GeneratedText(
+        "src/unicode/format/week_data.zig",
+        "tools/unicode/format/generate_week.py",
+        "822d8f5d54e544084fb4dd80048ec31e9f98f38c556904479059ad6c88adce64",
     ),
     GeneratedText(
         "src/unicode/format/plural_ranges_data.zig",
