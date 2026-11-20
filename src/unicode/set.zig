@@ -1330,7 +1330,9 @@ pub fn fromAgeVersion(
     errdefer set.deinit();
     for (0..properties.age.rangeCount()) |index| {
         const range = properties.age.rangeAt(index);
-        if (range.version != version) continue;
+        // ICU's Age property is cumulative: Age=6.0 includes everything
+        // assigned in Unicode 6.0 or earlier.
+        if (range.version > version) continue;
         try set.addRange(range.first, range.last);
     }
     try set.finalize();
@@ -1391,10 +1393,10 @@ test "property-backed sets" {
     try testing.expect(age_1_1.contains('A'));
     try testing.expect(!age_1_1.contains(0x1fae8));
 
-    var age_15 = try parse(allocator, "\\p{Age=V15_0}");
+    var age_15 = try parse(allocator, "\\p{Age=15.0}");
     defer age_15.deinit();
     try testing.expect(age_15.contains(0x1fae8));
-    try testing.expect(!age_15.contains('A'));
+    try testing.expect(age_15.contains('A'));
 
     var decimal = try parse(allocator, "\\p{nt=Decimal}");
     defer decimal.deinit();

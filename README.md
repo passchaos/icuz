@@ -441,6 +441,19 @@ need without pulling in a font or layout engine.
   reverse-direction compilation via `compileRulesDirectionAlloc` (simple
   swapped rules without captures or context), validated by an 81-case
   PyICU differential fixture.
+- ICU `uregex`-compatible regular expressions (`Regex.compileAlloc`,
+  `RegexMatcher`): literals, `.`, character classes with `&&`/`--` set
+  operations, POSIX classes, `\p{...}` properties, greedy/reluctant/
+  possessive quantifiers, capturing and named groups, numeric and
+  `\k<name>` back references, lookahead and bounded lookbehind, atomic
+  groups, inline flags (`i`, `m`, `s`, `d`, `w`, `x`), `\A`/`\Z`/`\z`/
+  `\G`/`\b`/`\B` anchors, `\R` line breaks, `\X` grapheme clusters,
+  `\Q...\E`, named-character escapes, and full Unicode case folding
+  (including multi-scalar folds such as `ß` and `ss`). Region matching
+  honors transparent and anchoring bounds; find, replace (`$n`/`${name}`),
+  and split follow ICU's C API behavior, and `start16`/`end16` expose
+  ICU-compatible UTF-16 indices. Validated by a 97-case ICU 78 differential
+  fixture.
 - Embedded, version-pinned generated data plus conformance fixtures.
 
 ## Non-goals for 0.1
@@ -450,8 +463,8 @@ compiled rule-table engine covering the constructs listed above plus a
 runtime ICU-rule interpreter that runs embedded `::Transform;` (including
 normalization and Any-Case) directives as pipeline steps. In the reverse
 direction, rules with captures or context are rejected, matching ICU's rule
-parser, which also refuses to compile them. Regular expressions and display/layout
-tailoring are also out of scope. Collation supports root ordering plus CLDR
+parser, which also refuses to compile them. Display/layout tailoring is also
+out of scope. Collation supports root ordering plus CLDR
 standard and common
 non-standard tailorings, including locale `caseFirst`, backwards secondary
 ordering, and parametric script reordering. Consumers that need those
