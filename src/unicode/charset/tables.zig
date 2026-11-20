@@ -387,6 +387,55 @@ pub fn hkscsReverse(codepoint: u21) ?[2]u8 {
     return null;
 }
 
+pub const euctw_blob = @embedFile("euctw.bin");
+const euctw_plane_count = std.mem.readInt(u32, euctw_blob[8..12], .little);
+const euctw_plane_size = std.mem.readInt(u32, euctw_blob[12..16], .little);
+const euctw_forward_offset: usize = 16;
+const euctw_reverse_count_offset: usize = euctw_forward_offset +
+    @as(usize, euctw_plane_count) * euctw_plane_size * 4;
+const euctw_reverse_count = std.mem.readInt(
+    u32,
+    euctw_blob[euctw_reverse_count_offset..][0..4],
+    .little,
+);
+const euctw_reverse_offset: usize = euctw_reverse_count_offset + 4;
+
+pub fn euctwForward(plane: u8, row: u8, cell: u8) ?u21 {
+    if (plane >= euctw_plane_count or row >= 94 or cell >= 94) return null;
+    const pointer = @as(usize, plane) * euctw_plane_size +
+        @as(usize, row) * 94 + cell;
+    const value = std.mem.readInt(
+        u32,
+        euctw_blob[euctw_forward_offset + pointer * 4 ..][0..4],
+        .little,
+    );
+    if (value == 0 or value > 0x10FFFF) return null;
+    return @intCast(value);
+}
+
+pub fn euctwReverse(codepoint: u21) ?u32 {
+    var low: usize = 0;
+    var high: usize = euctw_reverse_count;
+    while (low < high) {
+        const mid = low + (high - low) / 2;
+        const record = euctw_reverse_offset + mid * 8;
+        const value = std.mem.readInt(
+            u32,
+            euctw_blob[record..][0..4],
+            .little,
+        );
+        if (value == codepoint) {
+            return std.mem.readInt(
+                u32,
+                euctw_blob[record + 4 ..][0..4],
+                .little,
+            );
+        }
+        if (value < codepoint) low = mid + 1 else high = mid;
+    }
+    return null;
+}
+
 test "charset tables are structurally valid" {
     const testing = @import("std").testing;
     try testing.expectEqual(@as(u16, 17), section_count);
