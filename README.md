@@ -395,10 +395,12 @@ need without pulling in a font or layout engine.
 - ICU `UCharsTrie` and `BytesTrie` readers and builders (`UCharsTrie`,
   `UCharsTrieBuilder`, `BytesTrie`, `BytesTrieBuilder`): ICU-serialized
   linear-match, branch, intermediate-value, and final-value nodes with
-  `first`, `next`, `nextString`, and code-point traversal. Readers are
-  validated against 18 ICU 78 tries and lookup traces; builder output is
-  accepted by ICU's readers, including binary branches, high bytes, and
-  supplementary code points.
+  `first`, `next`, `nextString`, code-point traversal,
+  `hasUniqueValue`, `getNextUChars`/`getNextBytes`, and
+  `getState64`/`resetToState64`. Readers are validated against 18 ICU 78
+  tries, lookup traces, and state snapshots; builder output is accepted by
+  ICU's readers, including binary branches, high bytes, and supplementary
+  code points.
 - ICU `UText`-style text abstraction (`UText`): UTF-8, UTF-16, and UTF-32
   storage with native indexes, backward boundary snapping on
   `setNativeIndex`, `next`/`previous`/`moveIndex32`, and range extraction,

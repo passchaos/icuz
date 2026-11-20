@@ -9,7 +9,9 @@
 // The fixture stores ICU-built tries and lookup traces produced by
 // UCharsTrie::first/next/nextString/firstForCodePoint/nextForCodePoint.
 
+#include <unicode/appendable.h>
 #include <unicode/ucharstriebuilder.h>
+#include <unicode/unistr.h>
 #include <unicode/ustringtrie.h>
 #include <cstdio>
 #include <cstring>
@@ -20,10 +22,12 @@ using namespace icu;
 
 struct Op {
     uint8_t kind;  // 0 first, 1 next, 2 firstForCodePoint, 3 nextForCodePoint,
-                   // 4 nextString
+                   // 4 nextString, 5 state snapshot
     uint16_t unit;
     uint32_t codepoint;
     std::u16string text;
+    std::u16string next_units;
+    uint64_t state64;
     uint8_t result;
     int32_t value;
 };
@@ -46,9 +50,33 @@ static void writeU32(FILE* f, uint32_t value) {
     std::fwrite(bytes, 1, 4, f);
 }
 
+static void writeU64(FILE* f, uint64_t value) {
+    writeU32(f, static_cast<uint32_t>(value & 0xffffffffu));
+    writeU32(f, static_cast<uint32_t>(value >> 32));
+}
+
+static Op snapshot(const UCharsTrie& trie) {
+    Op op{};
+    op.kind = 5;
+    int32_t unique_value = 0;
+    op.result = trie.hasUniqueValue(unique_value) ? 1 : 0;
+    op.value = unique_value;
+    UnicodeString buffer;
+    UnicodeStringAppendable app(buffer);
+    int32_t count = trie.getNextUChars(app);
+    op.next_units.assign(buffer.getBuffer(), static_cast<size_t>(count));
+    if (trie.current() != USTRINGTRIE_NO_MATCH) {
+        op.state64 = trie.getState64();
+    }
+    return op;
+}
+
 static std::vector<Op> trace(const UCharsTrie& trie,
                              const std::vector<std::u16string>& probes) {
     std::vector<Op> ops;
+    UCharsTrie root(trie);
+    root.reset();
+    ops.push_back(snapshot(root));
     for (const auto& probe : probes) {
         UCharsTrie copy(trie);
         copy.reset();
@@ -62,6 +90,9 @@ static std::vector<Op> trace(const UCharsTrie& trie,
             op.value = USTRINGTRIE_HAS_VALUE(result) ? copy.getValue() : 0;
             ops.push_back(op);
         }
+        if (!probe.empty()) {
+            ops.push_back(snapshot(copy));
+        }
 
         UCharsTrie copy2(trie);
         copy2.reset();
@@ -73,6 +104,7 @@ static std::vector<Op> trace(const UCharsTrie& trie,
         op.result = static_cast<uint8_t>(result);
         op.value = USTRINGTRIE_HAS_VALUE(result) ? copy2.getValue() : 0;
         ops.push_back(op);
+        ops.push_back(snapshot(copy2));
 
         UCharsTrie copy3(trie);
         copy3.reset();
@@ -87,6 +119,7 @@ static std::vector<Op> trace(const UCharsTrie& trie,
             cp_op.value = USTRINGTRIE_HAS_VALUE(r) ? copy3.getValue() : 0;
             ops.push_back(cp_op);
         }
+        ops.push_back(snapshot(copy3));
     }
     return ops;
 }
@@ -175,11 +208,17 @@ int main(int argc, char** argv) {
                     writeU16(out, op.unit);
                 } else if (op.kind == 2 || op.kind == 3) {
                     writeU32(out, op.codepoint);
-                } else {
+                } else if (op.kind == 4) {
                     writeU16(out, static_cast<uint16_t>(op.text.size()));
                     for (char16_t unit : op.text) {
                         writeU16(out, static_cast<uint16_t>(unit));
                     }
+                } else {
+                    writeU16(out, static_cast<uint16_t>(op.next_units.size()));
+                    for (char16_t unit : op.next_units) {
+                        writeU16(out, static_cast<uint16_t>(unit));
+                    }
+                    writeU64(out, op.state64);
                 }
                 std::fputc(op.result, out);
                 writeU32(out, static_cast<uint32_t>(op.value));

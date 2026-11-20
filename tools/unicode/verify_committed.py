@@ -445,8 +445,8 @@ BLOBS = (
     Blob("src/unicode/spoof/identifier_status.bin", b"CJXI", 1, "35b83562901ffce3efa1431809e482ad29411a02ac17297bce678192a481a63d"),
     Blob("src/unicode/spoof/check_conformance.bin", b"CJSP", 1, "036b8c1cd3e0fee0d25d6ab6ef79b183b176a44390505aea4c119b59eed3b845", version=(0, 0, 0)),
     Blob("src/unicode/text_conformance.bin", b"CJUT", 1, "6e7a35c76fbe9f483af39627b486127cd87bfb45b725d333d8c20815150cb9a4", version=(0, 0, 0)),
-    Blob("src/unicode/trie_conformance.bin", b"CJU2", 1, "edec996ea2b3268c40ce75a8d2473ef327d8ef1680d9e43c288bed43c1029094", version=(0, 0, 0)),
-    Blob("src/unicode/bytes_trie_conformance.bin", b"CJY2", 1, "51ff6d9ef373b53320c80b1149e9982941c2c7ede8653419e4ad05390e410f46", version=(0, 0, 0)),
+    Blob("src/unicode/trie_conformance.bin", b"CJU2", 1, "bd82dcb15c081c4e126757715b695d885dce3b35e6090794b091d2c70057d3b7", version=(0, 0, 0)),
+    Blob("src/unicode/bytes_trie_conformance.bin", b"CJY2", 1, "715d12bfee1137886550527fc58df76c9e044ff09966d1ba4da1d6147285ae76", version=(0, 0, 0)),
     Blob("src/unicode/format/parse_conformance.bin", b"CJXN", 1, "b0e146b50957aa4f34a916cb7cfa919eb83b7e719f8c92aa5b7c885e6a384629", version=(0, 0, 0)),
     Blob("src/unicode/format/date_parse_conformance.bin", b"CJXD", 1, "882b2ba49d502d56232c3e5fbcfa14c5173c45be8515e9ef7945519ac5584031", version=(0, 0, 0)),
 )
@@ -463,8 +463,8 @@ GENERATORS = {
     "tools/unicode/format/generate_date_symbols_conformance.py": "1dc212912e7896c1c51e85e75cfe3ef33272875406a707a6b569e76602e4820e",
     "tools/unicode/format/generate_calendar_object_conformance.py": "1935ed79c4b08455df9b822bcac6e23d1e8446f250740096f6eb4a7f17f9c2e0",
     "tools/unicode/text/generate_conformance.py": "ac0497c3336dd7f6546dd11062536763fa06e9728b85ac80549b89c70d52f89d",
-    "tools/unicode/trie/generate_conformance.cpp": "75fff938b83f3476c7596a9495a70086b18258023b3cbe6c64b7a2ef518a3fa5",
-    "tools/unicode/trie/generate_bytes_conformance.cpp": "bbf08bccefa290bcd07b549aaf912398c35ec9431ca8004bd192077944a930f0",
+    "tools/unicode/trie/generate_conformance.cpp": "6d23d00d7fc9cfee10fc166b5f5efe38afdb7f8250af2dda5991a7bf75de550d",
+    "tools/unicode/trie/generate_bytes_conformance.cpp": "a281ec56b27299a2094759ced3769be1437fecdc5880fda67284813a748fdce7",
     "tools/unicode/locale/generate_aliases.py": "455b791991d1b9a81a44ba7d84ff893ca26fb344c9816ffc5ca1085dda9ff625",
     "tools/unicode/format/generate_person_names.py": "cd7b44a5e613d06f21319e7cfc27c94093687acdb8bd9b4193091b7db9ee6771",
     "tools/unicode/format/generate_alphabetic_index.py": "8b04cee5bfe54bbfb05e0750adab2e81607057fc225c0c37ddfcc3fe61514d06",
@@ -907,9 +907,12 @@ def check_layout(blob: Blob, data: bytes) -> None:
                 offset += 1
                 if kind in (0, 1):
                     offset += 1
-                else:
+                elif kind == 2:
                     length = struct.unpack_from("<H", data, offset)[0]
                     offset += 2 + length
+                else:
+                    length = struct.unpack_from("<H", data, offset)[0]
+                    offset += 2 + length + 8
                 offset += 5
         assert offset == len(data)
     elif magic == b"CJU2":
@@ -927,9 +930,12 @@ def check_layout(blob: Blob, data: bytes) -> None:
                     offset += 2
                 elif kind in (2, 3):
                     offset += 4
-                else:
+                elif kind == 4:
                     length = struct.unpack_from("<H", data, offset)[0]
                     offset += 2 + length * 2
+                else:
+                    length = struct.unpack_from("<H", data, offset)[0]
+                    offset += 2 + length * 2 + 8
                 offset += 5
         assert offset == len(data)
     elif magic == b"CJUC":

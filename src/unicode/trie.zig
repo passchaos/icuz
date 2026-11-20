@@ -39,6 +39,8 @@ const max_two_unit_node_value: i32 =
 const max_one_unit_delta: i32 = 0xfbff;
 const min_two_unit_delta_lead: i32 = max_one_unit_delta + 1;
 const three_unit_delta_lead: i32 = 0xffff;
+const state64_remaining_shift: u6 = 59;
+const state64_pos_mask: u64 = (@as(u64, 1) << state64_remaining_shift) - 1;
 
 pub const UCharsTrie = struct {
     units: []const u16,
@@ -168,6 +170,173 @@ pub const UCharsTrie = struct {
             .final_value
         else
             .intermediate_value;
+    }
+
+    fn readValueChecked(units: []const u16, pos: usize, lead: i32) ?i32 {
+        const payload: usize = if (lead < min_two_unit_value_lead)
+            0
+        else if (lead < three_unit_value_lead)
+            1
+        else
+            2;
+        if (pos > units.len or payload > units.len - pos) return null;
+        return readValue(units, pos, lead);
+    }
+
+    fn readNodeValueChecked(units: []const u16, pos: usize, lead: i32) ?i32 {
+        const payload: usize = if (lead < min_two_unit_node_value_lead)
+            0
+        else if (lead < three_unit_node_value_lead)
+            1
+        else
+            2;
+        if (pos > units.len or payload > units.len - pos) return null;
+        return readNodeValue(units, pos, lead);
+    }
+
+    fn findUniqueValueFromBranch(
+        units: []const u16,
+        pos_start: usize,
+        length_input: i32,
+        have_unique_value: *bool,
+        unique_value: *i32,
+    ) ?usize {
+        var pos = pos_start;
+        var length = length_input;
+        while (length > max_branch_linear_sub_node_length) {
+            pos += 1; // Ignore the comparison unit.
+            const sub = jumpByDelta(units, pos) orelse return null;
+            pos = findUniqueValueFromBranch(
+                units,
+                sub,
+                length >> 1,
+                have_unique_value,
+                unique_value,
+            ) orelse return null;
+            length -= length >> 1;
+            pos = skipDelta(units, pos) orelse return null;
+        }
+        while (true) {
+            pos += 1; // Ignore the comparison unit.
+            if (pos >= units.len) return null;
+            var node: i32 = units[pos];
+            pos += 1;
+            const is_final = node & value_is_final != 0;
+            node &= 0x7fff;
+            const value = readValueChecked(units, pos, node) orelse return null;
+            pos = skipValue(pos, node);
+            if (pos > units.len) return null;
+            if (is_final) {
+                if (have_unique_value.*) {
+                    if (value != unique_value.*) return null;
+                } else {
+                    unique_value.* = value;
+                    have_unique_value.* = true;
+                }
+            } else {
+                const target = @as(i64, @intCast(pos)) + value;
+                if (target < 0 or target > units.len) return null;
+                if (findUniqueValue(
+                    units,
+                    @intCast(target),
+                    have_unique_value,
+                    unique_value,
+                ) == null) return null;
+                have_unique_value.* = true;
+            }
+            length -= 1;
+            if (length <= 1) break;
+        }
+        if (pos + 1 > units.len) return null;
+        return pos + 1; // Ignore the last comparison unit.
+    }
+
+    fn findUniqueValue(
+        units: []const u16,
+        pos_start: usize,
+        have_unique_value: *bool,
+        unique_value: *i32,
+    ) ?void {
+        var pos = pos_start;
+        if (pos >= units.len) return null;
+        var node: i32 = units[pos];
+        pos += 1;
+        while (true) {
+            if (node < min_linear_match) {
+                if (node == 0) {
+                    if (pos >= units.len) return null;
+                    node = units[pos];
+                    pos += 1;
+                }
+                pos = findUniqueValueFromBranch(
+                    units,
+                    pos,
+                    node + 1,
+                    have_unique_value,
+                    unique_value,
+                ) orelse return null;
+                have_unique_value.* = true;
+                if (pos >= units.len) return null;
+                node = units[pos];
+                pos += 1;
+            } else if (node < min_value_lead) {
+                // Skip the rest of a linear-match node.
+                const target = @as(i64, @intCast(pos)) +
+                    (node - min_linear_match + 1);
+                if (target < 0 or target > units.len) return null;
+                pos = @intCast(target);
+                if (pos >= units.len) return null;
+                node = units[pos];
+                pos += 1;
+            } else {
+                const is_final = node & value_is_final != 0;
+                const value = if (is_final)
+                    readValueChecked(units, pos, node & 0x7fff) orelse return null
+                else
+                    readNodeValueChecked(units, pos, node) orelse return null;
+                if (have_unique_value.*) {
+                    if (value != unique_value.*) return null;
+                } else {
+                    unique_value.* = value;
+                    have_unique_value.* = true;
+                }
+                if (is_final) return;
+                pos = skipNodeValue(pos, node);
+                if (pos > units.len) return null;
+                node &= node_type_mask;
+            }
+        }
+    }
+
+    fn getNextBranchUChars(
+        units: []const u16,
+        pos_start: usize,
+        length_input: i32,
+        out: *std.ArrayList(u16),
+        allocator: std.mem.Allocator,
+    ) !void {
+        var pos = pos_start;
+        var length = length_input;
+        while (length > max_branch_linear_sub_node_length) {
+            pos += 1; // Ignore the comparison unit.
+            const sub = jumpByDelta(units, pos) orelse return;
+            try getNextBranchUChars(units, sub, length >> 1, out, allocator);
+            length -= length >> 1;
+            pos = skipDelta(units, pos) orelse return;
+        }
+        while (true) {
+            if (pos >= units.len) return;
+            try out.append(allocator, units[pos]);
+            pos += 1;
+            if (pos >= units.len) return;
+            const lead: i32 = units[pos];
+            pos = skipValue(pos + 1, lead & 0x7fff);
+            if (pos > units.len) return;
+            length -= 1;
+            if (length <= 1) break;
+        }
+        if (pos >= units.len) return;
+        try out.append(allocator, units[pos]);
     }
 
     fn branchNext(
@@ -395,12 +564,86 @@ pub const UCharsTrie = struct {
         return readNodeValue(self.units, after, lead);
     }
 
+    /// ICU `UCharsTrie.getState64`. Returns 0 when there is no match state.
+    pub fn getState64(self: *const UCharsTrie) u64 {
+        const pos = self.pos orelse return 0;
+        const remaining: u64 = @intCast(self.remaining_match_length + 2);
+        return (remaining << state64_remaining_shift) | @as(u64, pos);
+    }
+
+    /// ICU `UCharsTrie.resetToState64`.
+    pub fn resetToState64(self: *UCharsTrie, state: u64) void {
+        if (state == 0) {
+            self.pos = null;
+            self.remaining_match_length = -1;
+            return;
+        }
+        self.remaining_match_length =
+            @as(i32, @intCast(state >> state64_remaining_shift)) - 2;
+        self.pos = std.math.cast(usize, state & state64_pos_mask);
+    }
+
+    /// ICU `UCharsTrie.hasUniqueValue`.
+    pub fn hasUniqueValue(self: *const UCharsTrie, unique_value: *i32) bool {
+        const pos = self.pos orelse return false;
+        const target = @as(i64, @intCast(pos)) +
+            self.remaining_match_length + 1;
+        if (target < 0 or target > self.units.len) return false;
+        var have_unique_value = false;
+        if (findUniqueValue(
+            self.units,
+            @intCast(target),
+            &have_unique_value,
+            unique_value,
+        ) == null) return false;
+        return have_unique_value;
+    }
+
+    /// ICU `UCharsTrie.getNextUChars`.
+    pub fn getNextUChars(
+        self: *const UCharsTrie,
+        out: *std.ArrayList(u16),
+        allocator: std.mem.Allocator,
+    ) !usize {
+        const start = self.pos orelse return 0;
+        if (self.remaining_match_length >= 0) {
+            if (start >= self.units.len) return 0;
+            try out.append(allocator, self.units[start]);
+            return 1;
+        }
+        var pos = start;
+        if (pos >= self.units.len) return 0;
+        var node: i32 = self.units[pos];
+        pos += 1;
+        if (node >= min_value_lead) {
+            if (node & value_is_final != 0) return 0;
+            pos = skipNodeValue(pos, node);
+            node &= node_type_mask;
+        }
+        if (node < min_linear_match) {
+            if (node == 0) {
+                if (pos >= self.units.len) return 0;
+                node = self.units[pos];
+                pos += 1;
+            }
+            const count: usize = @intCast(node + 1);
+            try getNextBranchUChars(self.units, pos, node + 1, out, allocator);
+            return count;
+        }
+        if (pos >= self.units.len) return 0;
+        try out.append(allocator, self.units[pos]);
+        return 1;
+    }
+
     /// ICU `UCharsTrie.next(ConstChar16Ptr, length)`.
     pub fn nextString(self: *UCharsTrie, text: []const u16) Result {
         if (text.len == 0) return self.current();
         var result = self.current();
         for (text) |unit| {
-            if (!result.hasNext()) return .no_match;
+            if (!result.hasNext()) {
+                self.stop();
+                return .no_match;
+            }
             result = self.next(unit);
         }
         return result;
@@ -756,6 +999,80 @@ test "UCharsTrie reader" {
     try testing.expectEqual(Result.no_value, trie.current());
 }
 
+test "UCharsTrie state64, unique value, and next units" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var builder = Builder.init(allocator);
+    defer builder.deinit();
+    try builder.add(&[_]u16{'a'}, 7);
+    try builder.add(&[_]u16{ 'a', 'b' }, 7);
+    try builder.add(&[_]u16{ 'a', 'b', 'c' }, 7);
+    try builder.add(&[_]u16{'b'}, 7);
+    const units = try builder.buildAlloc();
+    defer allocator.free(units);
+
+    var trie = UCharsTrie.init(units);
+    var unique: i32 = 0;
+    trie.reset();
+    try testing.expect(trie.hasUniqueValue(&unique));
+    try testing.expectEqual(@as(i32, 7), unique);
+
+    var next = std.ArrayList(u16).empty;
+    defer next.deinit(allocator);
+    try testing.expectEqual(
+        @as(usize, 2),
+        try trie.getNextUChars(&next, allocator),
+    );
+    try testing.expectEqualSlices(u16, &[_]u16{ 'a', 'b' }, next.items);
+
+    try testing.expectEqual(Result.intermediate_value, trie.first('a'));
+    next.clearRetainingCapacity();
+    try testing.expectEqual(
+        @as(usize, 1),
+        try trie.getNextUChars(&next, allocator),
+    );
+    try testing.expectEqualSlices(u16, &[_]u16{'b'}, next.items);
+    try testing.expect(trie.hasUniqueValue(&unique));
+    try testing.expectEqual(@as(i32, 7), unique);
+
+    const state = trie.getState64();
+    try testing.expect(state != 0);
+    try testing.expectEqual(Result.intermediate_value, trie.next('b'));
+    try testing.expectEqual(Result.final_value, trie.next('c'));
+
+    trie.resetToState64(state);
+    try testing.expectEqual(Result.intermediate_value, trie.current());
+    try testing.expectEqual(@as(i32, 7), trie.getValue());
+    try testing.expectEqual(Result.intermediate_value, trie.next('b'));
+    try testing.expectEqual(Result.final_value, trie.next('c'));
+    try testing.expectEqual(@as(i32, 7), trie.getValue());
+
+    next.clearRetainingCapacity();
+    try testing.expectEqual(
+        @as(usize, 0),
+        try trie.getNextUChars(&next, allocator),
+    );
+
+    try testing.expectEqual(Result.no_match, trie.next('x'));
+    try testing.expect(!trie.hasUniqueValue(&unique));
+    try testing.expectEqual(
+        @as(usize, 0),
+        try trie.getNextUChars(&next, allocator),
+    );
+    try testing.expectEqual(@as(u64, 0), trie.getState64());
+
+    var mixed = Builder.init(allocator);
+    defer mixed.deinit();
+    try mixed.add(&[_]u16{'x'}, 1);
+    try mixed.add(&[_]u16{ 'x', 'y' }, 2);
+    const mixed_units = try mixed.buildAlloc();
+    defer allocator.free(mixed_units);
+    var mixed_trie = UCharsTrie.init(mixed_units);
+    mixed_trie.reset();
+    try testing.expect(!mixed_trie.hasUniqueValue(&unique));
+}
+
 test "ICU UCharsTrie conformance fixture" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
@@ -795,6 +1112,7 @@ test "ICU UCharsTrie conformance fixture" {
         cursor += 2;
 
         var trie = UCharsTrie.init(units);
+        trie.reset();
         var op_index: usize = 0;
         while (op_index < op_count) : (op_index += 1) {
             const kind = fixture[cursor];
@@ -803,6 +1121,9 @@ test "ICU UCharsTrie conformance fixture" {
             var codepoint: u21 = 0;
             var text = std.ArrayList(u16).empty;
             defer text.deinit(allocator);
+            var expected_next = std.ArrayList(u16).empty;
+            defer expected_next.deinit(allocator);
+            var expected_state: u64 = 0;
             if (kind == 0 or kind == 1) {
                 unit = std.mem.readInt(
                     u16,
@@ -817,7 +1138,7 @@ test "ICU UCharsTrie conformance fixture" {
                     .little,
                 ));
                 cursor += 4;
-            } else {
+            } else if (kind == 4) {
                 const length = std.mem.readInt(
                     u16,
                     fixture[cursor..][0..2],
@@ -836,6 +1157,33 @@ test "ICU UCharsTrie conformance fixture" {
                     );
                     cursor += 2;
                 }
+            } else if (kind == 5) {
+                const length = std.mem.readInt(
+                    u16,
+                    fixture[cursor..][0..2],
+                    .little,
+                );
+                cursor += 2;
+                try expected_next.ensureTotalCapacity(allocator, length);
+                for (0..length) |_| {
+                    try expected_next.append(
+                        allocator,
+                        std.mem.readInt(
+                            u16,
+                            fixture[cursor..][0..2],
+                            .little,
+                        ),
+                    );
+                    cursor += 2;
+                }
+                expected_state = std.mem.readInt(
+                    u64,
+                    fixture[cursor..][0..8],
+                    .little,
+                );
+                cursor += 8;
+            } else {
+                return error.InvalidFixture;
             }
             const expected_result: Result = @enumFromInt(fixture[cursor]);
             cursor += 1;
@@ -845,6 +1193,74 @@ test "ICU UCharsTrie conformance fixture" {
                 .little,
             );
             cursor += 4;
+
+            if (kind == 5) {
+                var unique: i32 = 0;
+                const has_unique = trie.hasUniqueValue(&unique);
+                if (has_unique != (expected_result != .no_match)) {
+                    failures += 1;
+                    if (failures <= 10) {
+                        std.debug.print(
+                            "trie unique flag mismatch: case {d} option {d} op {d} got {} want {}\n",
+                            .{
+                                case_index,
+                                option,
+                                op_index,
+                                has_unique,
+                                expected_result != .no_match,
+                            },
+                        );
+                    }
+                } else if (has_unique and unique != expected_value) {
+                    failures += 1;
+                    if (failures <= 10) {
+                        std.debug.print(
+                            "trie unique value mismatch: case {d} op {d} got {d} want {d}\n",
+                            .{ case_index, op_index, unique, expected_value },
+                        );
+                    }
+                }
+                var next = std.ArrayList(u16).empty;
+                defer next.deinit(allocator);
+                const next_count = try trie.getNextUChars(&next, allocator);
+                if (next_count != expected_next.items.len or
+                    !std.mem.eql(u16, next.items, expected_next.items))
+                {
+                    failures += 1;
+                    if (failures <= 10) {
+                        std.debug.print(
+                            "trie next mismatch: case {d} op {d} got {any} want {any}\n",
+                            .{ case_index, op_index, next.items, expected_next.items },
+                        );
+                    }
+                }
+                const actual_state = trie.getState64();
+                if (actual_state != expected_state) {
+                    failures += 1;
+                    if (failures <= 10) {
+                        std.debug.print(
+                            "trie state mismatch: case {d} op {d} got {x} want {x}\n",
+                            .{ case_index, op_index, actual_state, expected_state },
+                        );
+                    }
+                } else if (expected_state != 0) {
+                    var restored = trie;
+                    restored.resetToState64(expected_state);
+                    if (restored.current() != trie.current() or
+                        (trie.current().hasValue() and
+                            restored.getValue() != trie.getValue()))
+                    {
+                        failures += 1;
+                        if (failures <= 10) {
+                            std.debug.print(
+                                "trie state restore mismatch: case {d} op {d}\n",
+                                .{ case_index, op_index },
+                            );
+                        }
+                    }
+                }
+                continue;
+            }
 
             const actual = switch (kind) {
                 0 => blk: {
@@ -1002,6 +1418,156 @@ pub const BytesTrie = struct {
 
     fn valueResult(node: i32) Result {
         return if (node & 1 != 0) .final_value else .intermediate_value;
+    }
+
+    fn readValueChecked(bytes: []const u8, pos: usize, lead: i32) ?i32 {
+        const payload: usize = if (lead < 0x51)
+            0
+        else if (lead < 0x6c)
+            1
+        else if (lead < 0x7e)
+            2
+        else if (lead == 0x7e)
+            3
+        else
+            4;
+        if (pos > bytes.len or payload > bytes.len - pos) return null;
+        return readValue(bytes, pos, lead);
+    }
+
+    fn findUniqueValueFromBranch(
+        bytes: []const u8,
+        pos_start: usize,
+        length_input: i32,
+        have_unique_value: *bool,
+        unique_value: *i32,
+    ) ?usize {
+        var pos = pos_start;
+        var length = length_input;
+        while (length > max_branch_linear_sub_node_length) {
+            pos += 1; // Ignore the comparison byte.
+            const sub = jumpByDelta(bytes, pos) orelse return null;
+            pos = findUniqueValueFromBranch(
+                bytes,
+                sub,
+                length >> 1,
+                have_unique_value,
+                unique_value,
+            ) orelse return null;
+            length -= length >> 1;
+            pos = skipDelta(bytes, pos) orelse return null;
+        }
+        while (true) {
+            pos += 1; // Ignore the comparison byte.
+            if (pos >= bytes.len) return null;
+            const node: i32 = bytes[pos];
+            pos += 1;
+            const is_final = node & 1 != 0;
+            const value = readValueChecked(bytes, pos, node >> 1) orelse
+                return null;
+            pos = skipValue(pos, node);
+            if (pos > bytes.len) return null;
+            if (is_final) {
+                if (have_unique_value.*) {
+                    if (value != unique_value.*) return null;
+                } else {
+                    unique_value.* = value;
+                    have_unique_value.* = true;
+                }
+            } else {
+                const target = @as(i64, @intCast(pos)) + value;
+                if (target < 0 or target > bytes.len) return null;
+                if (findUniqueValue(
+                    bytes,
+                    @intCast(target),
+                    have_unique_value,
+                    unique_value,
+                ) == null) return null;
+                have_unique_value.* = true;
+            }
+            length -= 1;
+            if (length <= 1) break;
+        }
+        if (pos + 1 > bytes.len) return null;
+        return pos + 1; // Ignore the last comparison byte.
+    }
+
+    fn findUniqueValue(
+        bytes: []const u8,
+        pos_start: usize,
+        have_unique_value: *bool,
+        unique_value: *i32,
+    ) ?void {
+        var pos = pos_start;
+        while (true) {
+            if (pos >= bytes.len) return null;
+            var node: i32 = bytes[pos];
+            pos += 1;
+            if (node < 0x10) {
+                if (node == 0) {
+                    if (pos >= bytes.len) return null;
+                    node = bytes[pos];
+                    pos += 1;
+                }
+                pos = findUniqueValueFromBranch(
+                    bytes,
+                    pos,
+                    node + 1,
+                    have_unique_value,
+                    unique_value,
+                ) orelse return null;
+                have_unique_value.* = true;
+            } else if (node < 0x20) {
+                // Skip the rest of a linear-match node.
+                const target = @as(i64, @intCast(pos)) + (node - 0x10 + 1);
+                if (target < 0 or target > bytes.len) return null;
+                pos = @intCast(target);
+            } else {
+                const is_final = node & 1 != 0;
+                const value = readValueChecked(bytes, pos, node >> 1) orelse
+                    return null;
+                if (have_unique_value.*) {
+                    if (value != unique_value.*) return null;
+                } else {
+                    unique_value.* = value;
+                    have_unique_value.* = true;
+                }
+                if (is_final) return;
+                pos = skipValue(pos, node);
+                if (pos > bytes.len) return null;
+            }
+        }
+    }
+
+    fn getNextBranchBytes(
+        bytes: []const u8,
+        pos_start: usize,
+        length_input: i32,
+        out: *std.ArrayList(u8),
+        allocator: std.mem.Allocator,
+    ) !void {
+        var pos = pos_start;
+        var length = length_input;
+        while (length > max_branch_linear_sub_node_length) {
+            pos += 1; // Ignore the comparison byte.
+            const sub = jumpByDelta(bytes, pos) orelse return;
+            try getNextBranchBytes(bytes, sub, length >> 1, out, allocator);
+            length -= length >> 1;
+            pos = skipDelta(bytes, pos) orelse return;
+        }
+        while (true) {
+            if (pos >= bytes.len) return;
+            try out.append(allocator, bytes[pos]);
+            pos += 1;
+            if (pos >= bytes.len) return;
+            const lead: i32 = bytes[pos];
+            pos = skipValue(pos + 1, lead);
+            if (pos > bytes.len) return;
+            length -= 1;
+            if (length <= 1) break;
+        }
+        if (pos >= bytes.len) return;
+        try out.append(allocator, bytes[pos]);
     }
 
     fn branchNext(
@@ -1222,13 +1788,89 @@ pub const BytesTrie = struct {
         return readValue(self.bytes, pos + 1, lead >> 1);
     }
 
+    /// ICU `BytesTrie.getState64`. Returns 0 when there is no match state.
+    pub fn getState64(self: *const BytesTrie) u64 {
+        const pos = self.pos orelse return 0;
+        const remaining: u64 = @intCast(self.remaining_match_length + 2);
+        return (remaining << state64_remaining_shift) | @as(u64, pos);
+    }
+
+    /// ICU `BytesTrie.resetToState64`.
+    pub fn resetToState64(self: *BytesTrie, state: u64) void {
+        if (state == 0) {
+            self.pos = null;
+            self.remaining_match_length = -1;
+            return;
+        }
+        self.remaining_match_length =
+            @as(i32, @intCast(state >> state64_remaining_shift)) - 2;
+        self.pos = std.math.cast(usize, state & state64_pos_mask);
+    }
+
+    /// ICU `BytesTrie.hasUniqueValue`.
+    pub fn hasUniqueValue(self: *const BytesTrie, unique_value: *i32) bool {
+        const pos = self.pos orelse return false;
+        const target = @as(i64, @intCast(pos)) +
+            self.remaining_match_length + 1;
+        if (target < 0 or target > self.bytes.len) return false;
+        var have_unique_value = false;
+        if (findUniqueValue(
+            self.bytes,
+            @intCast(target),
+            &have_unique_value,
+            unique_value,
+        ) == null) return false;
+        return have_unique_value;
+    }
+
+    /// ICU `BytesTrie.getNextBytes`.
+    pub fn getNextBytes(
+        self: *const BytesTrie,
+        out: *std.ArrayList(u8),
+        allocator: std.mem.Allocator,
+    ) !usize {
+        const start = self.pos orelse return 0;
+        if (self.remaining_match_length >= 0) {
+            if (start >= self.bytes.len) return 0;
+            try out.append(allocator, self.bytes[start]);
+            return 1;
+        }
+        var pos = start;
+        if (pos >= self.bytes.len) return 0;
+        var node: i32 = self.bytes[pos];
+        pos += 1;
+        if (node >= 0x20) {
+            if (node & 1 != 0) return 0;
+            pos = skipValue(pos, node);
+            if (pos >= self.bytes.len) return 0;
+            node = self.bytes[pos];
+            pos += 1;
+        }
+        if (node < 0x10) {
+            if (node == 0) {
+                if (pos >= self.bytes.len) return 0;
+                node = self.bytes[pos];
+                pos += 1;
+            }
+            const count: usize = @intCast(node + 1);
+            try getNextBranchBytes(self.bytes, pos, node + 1, out, allocator);
+            return count;
+        }
+        if (pos >= self.bytes.len) return 0;
+        try out.append(allocator, self.bytes[pos]);
+        return 1;
+    }
+
     /// ICU's byte-string traversal compares signed `char` values without
     /// normalizing them, so bytes >= 0x80 do not match through this method.
     pub fn nextString(self: *BytesTrie, text: []const u8) Result {
         if (text.len == 0) return self.current();
         var result = self.current();
         for (text) |byte| {
-            if (!result.hasNext()) return .no_match;
+            if (!result.hasNext()) {
+                self.stop();
+                return .no_match;
+            }
             result = self.nextRaw(@as(i8, @bitCast(byte)));
         }
         return result;
@@ -1266,6 +1908,7 @@ test "ICU BytesTrie conformance fixture" {
         cursor += 2;
 
         var trie = BytesTrie.init(bytes);
+        trie.reset();
         var op_index: usize = 0;
         while (op_index < op_count) : (op_index += 1) {
             const kind = fixture[cursor];
@@ -1273,10 +1916,13 @@ test "ICU BytesTrie conformance fixture" {
             var byte: i32 = 0;
             var text = std.ArrayList(u8).empty;
             defer text.deinit(allocator);
+            var expected_next = std.ArrayList(u8).empty;
+            defer expected_next.deinit(allocator);
+            var expected_state: u64 = 0;
             if (kind == 0 or kind == 1) {
                 byte = fixture[cursor];
                 cursor += 1;
-            } else {
+            } else if (kind == 2) {
                 const length = std.mem.readInt(
                     u16,
                     fixture[cursor..][0..2],
@@ -1285,6 +1931,26 @@ test "ICU BytesTrie conformance fixture" {
                 cursor += 2;
                 try text.appendSlice(allocator, fixture[cursor..][0..length]);
                 cursor += length;
+            } else if (kind == 3) {
+                const length = std.mem.readInt(
+                    u16,
+                    fixture[cursor..][0..2],
+                    .little,
+                );
+                cursor += 2;
+                try expected_next.appendSlice(
+                    allocator,
+                    fixture[cursor..][0..length],
+                );
+                cursor += length;
+                expected_state = std.mem.readInt(
+                    u64,
+                    fixture[cursor..][0..8],
+                    .little,
+                );
+                cursor += 8;
+            } else {
+                return error.InvalidFixture;
             }
             const expected_result: Result = @enumFromInt(fixture[cursor]);
             cursor += 1;
@@ -1294,6 +1960,74 @@ test "ICU BytesTrie conformance fixture" {
                 .little,
             );
             cursor += 4;
+
+            if (kind == 3) {
+                var unique: i32 = 0;
+                const has_unique = trie.hasUniqueValue(&unique);
+                if (has_unique != (expected_result != .no_match)) {
+                    failures += 1;
+                    if (failures <= 10) {
+                        std.debug.print(
+                            "bytes trie unique flag mismatch: case {d} option {d} op {d} got {} want {}\n",
+                            .{
+                                case_index,
+                                option,
+                                op_index,
+                                has_unique,
+                                expected_result != .no_match,
+                            },
+                        );
+                    }
+                } else if (has_unique and unique != expected_value) {
+                    failures += 1;
+                    if (failures <= 10) {
+                        std.debug.print(
+                            "bytes trie unique value mismatch: case {d} op {d} got {d} want {d}\n",
+                            .{ case_index, op_index, unique, expected_value },
+                        );
+                    }
+                }
+                var next = std.ArrayList(u8).empty;
+                defer next.deinit(allocator);
+                const next_count = try trie.getNextBytes(&next, allocator);
+                if (next_count != expected_next.items.len or
+                    !std.mem.eql(u8, next.items, expected_next.items))
+                {
+                    failures += 1;
+                    if (failures <= 10) {
+                        std.debug.print(
+                            "bytes trie next mismatch: case {d} op {d} got {any} want {any}\n",
+                            .{ case_index, op_index, next.items, expected_next.items },
+                        );
+                    }
+                }
+                const actual_state = trie.getState64();
+                if (actual_state != expected_state) {
+                    failures += 1;
+                    if (failures <= 10) {
+                        std.debug.print(
+                            "bytes trie state mismatch: case {d} op {d} got {x} want {x}\n",
+                            .{ case_index, op_index, actual_state, expected_state },
+                        );
+                    }
+                } else if (expected_state != 0) {
+                    var restored = trie;
+                    restored.resetToState64(expected_state);
+                    if (restored.current() != trie.current() or
+                        (trie.current().hasValue() and
+                            restored.getValue() != trie.getValue()))
+                    {
+                        failures += 1;
+                        if (failures <= 10) {
+                            std.debug.print(
+                                "bytes trie state restore mismatch: case {d} op {d}\n",
+                                .{ case_index, op_index },
+                            );
+                        }
+                    }
+                }
+                continue;
+            }
 
             const actual = switch (kind) {
                 0 => blk: {
@@ -1641,4 +2375,78 @@ test "BytesTrie builder" {
         try testing.expectEqual(@as(i32, @intCast(i)), wide_trie.getValue());
     }
     try testing.expectEqual(Result.no_match, wide_trie.first(0x80 + 80));
+}
+
+test "BytesTrie state64, unique value, and next bytes" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var builder = BytesTrieBuilder.init(allocator);
+    defer builder.deinit();
+    try builder.add("a", 7);
+    try builder.add("ab", 7);
+    try builder.add("abc", 7);
+    try builder.add("b", 7);
+    const bytes = try builder.buildAlloc();
+    defer allocator.free(bytes);
+
+    var trie = BytesTrie.init(bytes);
+    var unique: i32 = 0;
+    trie.reset();
+    try testing.expect(trie.hasUniqueValue(&unique));
+    try testing.expectEqual(@as(i32, 7), unique);
+
+    var next = std.ArrayList(u8).empty;
+    defer next.deinit(allocator);
+    try testing.expectEqual(
+        @as(usize, 2),
+        try trie.getNextBytes(&next, allocator),
+    );
+    try testing.expectEqualSlices(u8, "ab", next.items);
+
+    try testing.expectEqual(Result.intermediate_value, trie.first('a'));
+    next.clearRetainingCapacity();
+    try testing.expectEqual(
+        @as(usize, 1),
+        try trie.getNextBytes(&next, allocator),
+    );
+    try testing.expectEqualSlices(u8, "b", next.items);
+    try testing.expect(trie.hasUniqueValue(&unique));
+    try testing.expectEqual(@as(i32, 7), unique);
+
+    const state = trie.getState64();
+    try testing.expect(state != 0);
+    try testing.expectEqual(Result.intermediate_value, trie.next('b'));
+    try testing.expectEqual(Result.final_value, trie.next('c'));
+
+    trie.resetToState64(state);
+    try testing.expectEqual(Result.intermediate_value, trie.current());
+    try testing.expectEqual(@as(i32, 7), trie.getValue());
+    try testing.expectEqual(Result.intermediate_value, trie.next('b'));
+    try testing.expectEqual(Result.final_value, trie.next('c'));
+    try testing.expectEqual(@as(i32, 7), trie.getValue());
+
+    next.clearRetainingCapacity();
+    try testing.expectEqual(
+        @as(usize, 0),
+        try trie.getNextBytes(&next, allocator),
+    );
+
+    try testing.expectEqual(Result.no_match, trie.next('x'));
+    try testing.expect(!trie.hasUniqueValue(&unique));
+    try testing.expectEqual(
+        @as(usize, 0),
+        try trie.getNextBytes(&next, allocator),
+    );
+    try testing.expectEqual(@as(u64, 0), trie.getState64());
+
+    var mixed = BytesTrieBuilder.init(allocator);
+    defer mixed.deinit();
+    try mixed.add("x", 1);
+    try mixed.add("xy", 2);
+    const mixed_bytes = try mixed.buildAlloc();
+    defer allocator.free(mixed_bytes);
+    var mixed_trie = BytesTrie.init(mixed_bytes);
+    mixed_trie.reset();
+    try testing.expect(!mixed_trie.hasUniqueValue(&unique));
 }

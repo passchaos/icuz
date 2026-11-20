@@ -6,6 +6,7 @@
 //       -Wl,-rpath,$ICU_LIB -o generate_bytes_conformance
 //   ./generate_bytes_conformance src/unicode/bytes_trie_conformance.bin
 
+#include <unicode/bytestream.h>
 #include <unicode/bytestrie.h>
 #include <unicode/bytestriebuilder.h>
 #include <unicode/ustringtrie.h>
@@ -16,9 +17,11 @@
 using namespace icu;
 
 struct Op {
-    uint8_t kind;  // 0 first, 1 next, 2 nextString
+    uint8_t kind;  // 0 first, 1 next, 2 nextString, 3 state snapshot
     uint8_t byte;
     std::string text;
+    std::string next_bytes;
+    uint64_t state64;
     uint8_t result;
     int32_t value;
 };
@@ -41,9 +44,33 @@ static void writeU32(FILE* f, uint32_t value) {
     std::fwrite(bytes, 1, 4, f);
 }
 
+static void writeU64(FILE* f, uint64_t value) {
+    writeU32(f, static_cast<uint32_t>(value & 0xffffffffu));
+    writeU32(f, static_cast<uint32_t>(value >> 32));
+}
+
+static Op snapshot(const BytesTrie& trie) {
+    Op op{};
+    op.kind = 3;
+    int32_t unique_value = 0;
+    op.result = trie.hasUniqueValue(unique_value) ? 1 : 0;
+    op.value = unique_value;
+    std::string buffer;
+    StringByteSink<std::string> sink(&buffer);
+    trie.getNextBytes(sink);
+    op.next_bytes = buffer;
+    if (trie.current() != USTRINGTRIE_NO_MATCH) {
+        op.state64 = trie.getState64();
+    }
+    return op;
+}
+
 static std::vector<Op> trace(const BytesTrie& trie,
                              const std::vector<std::string>& probes) {
     std::vector<Op> ops;
+    BytesTrie root(trie);
+    root.reset();
+    ops.push_back(snapshot(root));
     for (const auto& probe : probes) {
         BytesTrie copy(trie);
         copy.reset();
@@ -58,6 +85,9 @@ static std::vector<Op> trace(const BytesTrie& trie,
             op.value = USTRINGTRIE_HAS_VALUE(result) ? copy.getValue() : 0;
             ops.push_back(op);
         }
+        if (!probe.empty()) {
+            ops.push_back(snapshot(copy));
+        }
 
         BytesTrie copy2(trie);
         copy2.reset();
@@ -70,6 +100,7 @@ static std::vector<Op> trace(const BytesTrie& trie,
         op.result = static_cast<uint8_t>(result);
         op.value = USTRINGTRIE_HAS_VALUE(result) ? copy2.getValue() : 0;
         ops.push_back(op);
+        ops.push_back(snapshot(copy2));
     }
     return ops;
 }
@@ -151,9 +182,17 @@ int main(int argc, char** argv) {
                 std::fputc(op.kind, out);
                 if (op.kind == 0 || op.kind == 1) {
                     std::fputc(op.byte, out);
-                } else {
+                } else if (op.kind == 2) {
                     writeU16(out, static_cast<uint16_t>(op.text.size()));
                     std::fwrite(op.text.data(), 1, op.text.size(), out);
+                } else {
+                    writeU16(out, static_cast<uint16_t>(op.next_bytes.size()));
+                    std::fwrite(
+                        op.next_bytes.data(),
+                        1,
+                        op.next_bytes.size(),
+                        out);
+                    writeU64(out, op.state64);
                 }
                 std::fputc(op.result, out);
                 writeU32(out, static_cast<uint32_t>(op.value));
