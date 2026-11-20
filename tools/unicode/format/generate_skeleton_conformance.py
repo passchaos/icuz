@@ -74,6 +74,7 @@ SKELETONS = (
     "precision-integer rounding-mode-ceiling",
     "precision-integer rounding-mode-floor",
     ".0 rounding-mode-half-up",
+    "precision-integer rounding-mode-unnecessary",
 )
 
 VALUES = (0.0, 0.25, 5.0, -5.0, 1234.5, -1234.5, 1234567.0, 0.1234)
@@ -185,7 +186,10 @@ def main() -> int:
     for locale in LOCALES:
         for skeleton in SKELETONS:
             for value in VALUES:
-                expected = format_skeleton(skeleton, locale, value)
+                try:
+                    expected = format_skeleton(skeleton, locale, value)
+                except SystemExit:
+                    continue
                 cases.append((locale, skeleton, value, expected))
 
     blob = bytearray(b"CJKS")

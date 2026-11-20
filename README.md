@@ -142,9 +142,9 @@ need without pulling in a font or layout engine.
   mantissa (1200 becomes `1.2K`) and selects plurals from the visible fraction
   digits and compact exponent, and ICU number skeletons (fraction and
   significant
-  precision including `precision-increment/` decimal increments, the seven
-  finite ICU `rounding-mode-*` modes (half-even, half-up, half-down, up,
-  down, ceiling, floor), sign modes, integer width with truncation,
+  precision including `precision-increment/` decimal increments, all eight
+  ICU `rounding-mode-*` modes (half-even, half-up, half-down, up, down,
+  ceiling, floor, unnecessary), sign modes, integer width with truncation,
   grouping modes, scale,
   percent/permille units, currency unit widths, compact significant-digit
   precision, scientific exponent widths, engineering notation, compact

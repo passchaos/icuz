@@ -38,6 +38,7 @@ pub const RoundingMode = enum {
     down,
     ceiling,
     floor,
+    unnecessary,
 };
 
 pub const UnitStyle = enum { long, short, narrow };
@@ -873,6 +874,31 @@ fn formatStandardAlloc(
     const magnitude = @abs(value) *
         @as(f64, @floatFromInt(pattern.multiplier));
 
+    if (options.rounding_mode == .unnecessary) {
+        if (rounding_mantissa != 0) {
+            const increment = @as(f64, @floatFromInt(
+                rounding_mantissa,
+            )) * std.math.pow(
+                f64,
+                10.0,
+                @floatFromInt(rounding_magnitude),
+            );
+            const steps = magnitude / increment;
+            if (steps != @floor(steps)) return error.InvalidPattern;
+        } else if (options.max_significant_digits > 0) {
+            const probe = significantDigits(
+                magnitude,
+                options.min_significant_digits,
+                options.max_significant_digits,
+                .half_even,
+                negative,
+            );
+            if (probe.magnitude != magnitude) return error.InvalidPattern;
+        } else if (roundingNeeded(magnitude, max_fraction)) {
+            return error.InvalidPattern;
+        }
+    }
+
     var rounded_magnitude = roundMagnitude(
         magnitude,
         max_fraction,
@@ -1361,6 +1387,8 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
                 options.rounding_mode = .ceiling;
             } else if (std.mem.eql(u8, mode, "floor")) {
                 options.rounding_mode = .floor;
+            } else if (std.mem.eql(u8, mode, "unnecessary")) {
+                options.rounding_mode = .unnecessary;
             } else {
                 return error.InvalidPattern;
             }
@@ -1465,6 +1493,7 @@ fn formatScientificAlloc(
             .min_fraction_digits = options.min_fraction_digits orelse 0,
             .max_fraction_digits = max_fraction,
             .use_grouping = false,
+            .rounding_mode = options.rounding_mode,
         },
         null,
     );
@@ -2465,6 +2494,12 @@ fn pow10(digits: u8) f64 {
         std.math.pow(f64, 10.0, @floatFromInt(digits));
 }
 
+fn roundingNeeded(magnitude: f64, digits: u8) bool {
+    const scaled = magnitude * pow10(digits);
+    if (!std.math.isFinite(scaled)) return false;
+    return scaled != @floor(scaled);
+}
+
 fn roundMagnitude(
     magnitude: f64,
     digits: u8,
@@ -2501,6 +2536,7 @@ fn roundMagnitude(
         .floor => {
             if (negative and fraction > 0) rounded = lower + 1.0;
         },
+        .unnecessary => {},
     }
     return rounded / scale;
 }
@@ -4140,4 +4176,19 @@ test "number skeleton rounding modes" {
         defer allocator.free(text);
         try testing.expectEqualStrings(case.expected, text);
     }
+}
+
+
+test "rounding mode unnecessary rejects inexact values" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    try testing.expectError(
+        error.InvalidPattern,
+        formatSkeletonAlloc(
+            allocator,
+            2.5,
+            "en",
+            "precision-integer rounding-mode-unnecessary",
+        ),
+    );
 }
