@@ -219,6 +219,7 @@ BLOBS = (
     Blob("src/unicode/normalization/casefold_data.bin", b"CJQF", 1, "a976281bf305c47711e7b9931ab5cea6d97ea5def08d7ce3f34f0f8ca0dbf85f"),
     Blob("src/unicode/properties/data.bin", b"CJP2", 2, "a7fde8a4eed944cb36af2b2fa8970307989eeca9f6168e0f2b2e69de26450dea"),
     Blob("src/unicode/properties/numeric_data.bin", b"CJNV", 1, "892f184f8ab49fc4fa5652a210885bba1a7a67f1637298f5e83966d899b57416"),
+    Blob("src/unicode/properties/age_data.bin", b"CJXV", 1, "c7f372417f296e578b5c20acaee2a81904a7d5ae74f911fa3eef670cfb7ab4e7"),
     Blob("src/unicode/script/data.bin", b"CJS1", 1, "568090d12531a38659e1e936779464ed05eb3610b443429928fc97eaf119dbdf"),
     Blob("src/unicode/script_extensions/data.bin", b"CJSE", 1, "43135c269af32f24e43b55c94c33205ec715e5f43dddb1ac5b218929e754016b"),
     Blob("src/unicode/sentence/conformance.bin", b"CJST", 1, "ad12cc4dc33a16ffe0da235ac34cb8f0ddfc3c9e85a62c657ee88bb3beeba5cc"),
@@ -451,6 +452,7 @@ GENERATORS = {
     "tools/unicode/collation/generate_tailorings.py": "5643f8a612263d31f4da50c73e9720c3739191d6d1d321489a04e8f2f99b2713",
     "tools/unicode/collation/generate_conformance.py": "70766ae8612ebcbe1299897ae24c928f1e39ffbe2c5f10ab5f6cff96c28480e3",
     "tools/unicode/properties/generate_numeric.py": "06a7eb949e18daf5c08a2cbe9a0747cfd29b1c6059a7e2f275a4db36b6cedaec",
+    "tools/unicode/properties/generate_age.py": "d923847013894f9a005893604f767539c7a9e20ec2f1e30f45ad711e8c509583",
     "tools/unicode/properties/generate_data.py": "2e55cb0f2aeae0367602e87ece0b8f8093fee1a18dacf38028ac732247874cb7",
     "tools/unicode/bidi/generate_conformance.py": "1ca3d3fd9fe5962f37192eb77d9aadfab6e5f9c670540a7ae691213682bb0425",
     "tools/unicode/bidi/generate_data.py": "ab6f9359af0f5d198b52d174041e35ffde11b0f8277a4bf5a8981a76c0a1cb05",
@@ -676,6 +678,9 @@ def check_layout(blob: Blob, data: bytes) -> None:
         assert removal_offset == mapping_offset + mapping_count * 12
         assert pool_offset == removal_offset + removal_count * 8
         assert pool_offset + pool_count * 4 == len(data)
+    elif magic == b"CJXV":
+        record_count = struct.unpack_from("<I", data, 8)[0]
+        assert 16 + record_count * 12 == len(data)
     elif magic == b"CJNV":
         record_count = struct.unpack_from("<I", data, 8)[0]
         assert 16 + record_count * 28 == len(data)

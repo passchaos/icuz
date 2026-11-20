@@ -12,7 +12,8 @@ need without pulling in a font or layout engine.
   emoji properties, Script, Script_Extensions, and variation selectors.
   `Numeric_Value` and `Numeric_Type` (`numericValue`, `numericType`,
   `digitValue`) cover all 2,023 numeric scalars as exact rationals,
-  including Han numerals and fractions.
+  including Han numerals and fractions. `Age` (`ageOf`, `ageVersion`)
+  reports the Unicode version that first assigned each scalar.
 - General_Category, Script, and binary-property alias resolution for
   `\p{...}`-style consumers.
 - UAX #9 bidirectional paragraph resolution.

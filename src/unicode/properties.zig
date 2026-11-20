@@ -51,6 +51,11 @@ pub const isNoncharacterCodePoint = general_category.isNoncharacterCodePoint;
 
 pub const isNonspacingMark = mark.isNonspacing;
 
+pub const age = @import("properties/age.zig");
+pub const Age = age.Age;
+pub const ageOf = age.age;
+pub const ageVersion = age.ageVersion;
+
 pub const numeric = @import("properties/numeric.zig");
 pub const NumericType = numeric.NumericType;
 pub const numericValue = numeric.numericValue;

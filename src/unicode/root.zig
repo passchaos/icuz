@@ -173,6 +173,9 @@ pub const isNormalizedUtf16 = normalization.isNormalizedUtf16;
 pub const Normalizer = normalization.Normalizer;
 pub const isNormalizedNfc = normalization.isNormalized;
 pub const isNormalizedNfcAssumeValid = normalization.isNormalizedAssumeValid;
+pub const Age = properties.Age;
+pub const ageOf = properties.ageOf;
+pub const ageVersion = properties.ageVersion;
 pub const NumericType = properties.NumericType;
 pub const numericValue = properties.numericValue;
 pub const numericType = properties.numericType;
@@ -665,6 +668,7 @@ test {
     _ = units_mod;
     _ = properties;
     _ = properties.numeric;
+    _ = properties.age;
     _ = scalar_value;
     _ = scalar_cursor;
     _ = word_cursor;
