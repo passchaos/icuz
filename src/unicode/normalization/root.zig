@@ -22,6 +22,22 @@ pub const Form = data.Form;
 pub const nfkcCasefoldAlloc = @import("casefold.zig").nfkcCasefoldAlloc;
 pub const nfkcSimpleCasefoldAlloc = @import("casefold.zig").nfkcSimpleCasefoldAlloc;
 
+/// Canonical decomposition mapping for one scalar, or null when it has none.
+/// Hangul syllables decompose algorithmically; use `decomposeInto` for those.
+pub fn decompositionFor(codepoint: u21) ?[]const u21 {
+    return decomposition.forCodepoint(codepoint);
+}
+
+/// Compatibility decomposition mapping for one scalar, or null.
+pub fn compatibilityDecompositionFor(codepoint: u21) ?[]const u21 {
+    return decomposition.compatibilityForCodepoint(codepoint);
+}
+
+/// Canonical combining class for one scalar.
+pub fn combiningClass(codepoint: u21) u8 {
+    return combining_class.forCodepoint(codepoint);
+}
+
 /// Return Unicode's per-scalar NFC_Quick_Check value.
 pub const quickCheckCodepoint = data.nfcQuickCheck;
 
@@ -1176,7 +1192,7 @@ fn isHangulVOrT(codepoint: u21) bool {
         (codepoint >= 0x11a8 and codepoint <= 0x11c2);
 }
 
-fn composePair(starter: u21, combining: u21) ?u21 {
+pub fn composePair(starter: u21, combining: u21) ?u21 {
     return composeHangul(starter, combining) orelse
         data.composePair(starter, combining);
 }
@@ -1255,6 +1271,18 @@ fn expectFormNormalized(source: []const u8, expected: []const u8, form: Form) !v
 
 fn expectNormalized(source: []const u8, expected: []const u8) !void {
     try expectFormNormalized(source, expected, .nfc);
+}
+
+test "normalizer scalar helpers" {
+    const testing = @import("std").testing;
+    try testing.expectEqual(@as(?u21, 0x00e9), composePair('e', 0x0301));
+    try testing.expectEqual(@as(?u21, 0xac00), composePair(0x1100, 0x1161));
+    try testing.expectEqual(@as(?u21, null), composePair(0x0915, 0x093c));
+    const mapping = decompositionFor(0x00e9).?;
+    try testing.expectEqualSlices(u21, &.{ 'e', 0x0301 }, mapping);
+    try testing.expectEqual(@as(?[]const u21, null), decompositionFor('a'));
+    try testing.expectEqual(@as(u8, 230), combiningClass(0x0301));
+    try testing.expectEqual(@as(u8, 0), combiningClass('a'));
 }
 
 test "normalization keeps ASCII and normalized UTF-8 allocation free" {

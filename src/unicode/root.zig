@@ -184,6 +184,11 @@ pub const nfkcCasefoldAlloc =
     @import("./normalization/casefold.zig").nfkcCasefoldAlloc;
 pub const nfkcSimpleCasefoldAlloc =
     @import("./normalization/casefold.zig").nfkcSimpleCasefoldAlloc;
+pub const composePair = normalization.composePair;
+pub const decompositionFor = normalization.decompositionFor;
+pub const compatibilityDecompositionFor =
+    normalization.compatibilityDecompositionFor;
+pub const combiningClass = normalization.combiningClass;
 
 pub const simpleLower = case_mod.simpleLower;
 pub const simpleUpper = case_mod.simpleUpper;

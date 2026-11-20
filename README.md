@@ -24,7 +24,9 @@ need without pulling in a font or layout engine.
   (`nfkcCasefoldAlloc`) and NFKC_Simple_Casefold
   (`nfkcSimpleCasefoldAlloc`) apply the derived NFKC_CF and NFKC_SCF
   mappings and the required final NFC pass, with an ASCII fast path and the
-  complete Unicode 17 mapping tables.
+  complete Unicode 17 mapping tables. Scalar helpers (`composePair`,
+  `decompositionFor`, `compatibilityDecompositionFor`, `combiningClass`)
+  expose the underlying normalization tables.
 - Simple lower/upper/title mappings, full case folding, and full
   lower/upper/title mappings with `Final_Sigma`, Turkic, and Lithuanian
   context rules. The `Edits` recorder (`fullLowerWithEditsAlloc`,
