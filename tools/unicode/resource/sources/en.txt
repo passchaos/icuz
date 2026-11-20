@@ -1,0 +1,5 @@
+en {
+    greeting { "hi" }
+    extra { "english only" }
+    shared { "common value" }
+}

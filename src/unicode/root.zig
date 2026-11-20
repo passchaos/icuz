@@ -58,6 +58,7 @@ const locale_data_mod = @import("./locale/data.zig");
 const locale_metadata_mod = @import("./locale/metadata.zig");
 const transliterate_mod = @import("./transliterate.zig");
 const shape_mod = @import("./shape/root.zig");
+const resource_mod = @import("./resource/res.zig");
 const properties = @import("./properties.zig");
 const scalar_value = @import("./scalar/root.zig");
 const scalar_cursor = @import("./scalar/cursor.zig");
@@ -548,6 +549,13 @@ pub const message2FormatAllocWithRegistry =
 pub const Message2Registry = message2_mod.Registry;
 pub const Message2Handler = message2_mod.Handler;
 
+pub const ResourceBundle = resource_mod.ResourceBundle;
+pub const ResourceStringRef = resource_mod.StringRef;
+pub const ResourceValue = resource_mod.Value;
+pub const ResourceTable = resource_mod.Table;
+pub const ResourceArray = resource_mod.Array;
+pub const ResourceIntVectorRef = resource_mod.IntVectorRef;
+
 pub const CharsetEncoding = charset_mod.Encoding;
 pub const CharsetErrorMode = charset_mod.ErrorMode;
 pub const CharsetMatch = charset_detect.Match;
@@ -865,6 +873,7 @@ test {
     _ = message_mod;
     _ = message2_mod;
     _ = choice_mod;
+    _ = resource_mod;
     _ = charset_mod;
     _ = locale_mod;
     _ = locale_mod.matcher;

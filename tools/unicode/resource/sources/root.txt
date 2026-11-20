@@ -1,0 +1,19 @@
+root {
+    greeting { "hello" }
+    count:int { 42 }
+    negative:int { -7 }
+    big:int { 123456789 }
+    nested {
+        sub { "value" }
+        deeper { inner { "deep" } }
+    }
+    strings {
+        "a", "b", "c"
+    }
+    ints:intvector { 1, 2, 3, -4 }
+    data:bin { 00 01 02 fe ff }
+    aliasTarget { "aliased" }
+    aliasClient:alias { "/LOCALE/aliasTarget" }
+    unicode { "\u00e9\u65e5\U0001F600" }
+    shared { "common value" }
+}

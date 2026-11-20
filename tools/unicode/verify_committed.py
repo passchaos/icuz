@@ -450,6 +450,7 @@ BLOBS = (
     Blob("src/unicode/format/parse_conformance.bin", b"CJXN", 1, "b0e146b50957aa4f34a916cb7cfa919eb83b7e719f8c92aa5b7c885e6a384629", version=(0, 0, 0)),
     Blob("src/unicode/format/choice_conformance.bin", b"CJGH", 1, "35cf10e4eca70b36c1197be1f3c7fcac7e11b0fce64eeeefde26bd879aec15c1", version=(0, 0, 0)),
     Blob("src/unicode/format/date_parse_conformance.bin", b"CJXD", 1, "882b2ba49d502d56232c3e5fbcfa14c5173c45be8515e9ef7945519ac5584031", version=(0, 0, 0)),
+    Blob("src/unicode/resource/res_conformance.bin", b"CJGM", 1, "050a2fdd6ef449cd70ffc49a33ceaec2a110cd37869f710157b42f84a5c27043", version=(0, 0, 0)),
 )
 
 GENERATORS = {
@@ -472,6 +473,8 @@ GENERATORS = {
     "tools/unicode/format/generate_parse_conformance.py": "3f3e74b9be26b36ba8f5c544801c791ccbc2e72de761bbc15ee57a8e4cc80192",
     "tools/unicode/format/generate_date_parse_conformance.py": "d32464d9c825652c04a0d8beae32f1fb32f5868c07c0a5cd29cdf51f598bfc41",
     "tools/unicode/format/generate_choice_conformance.cpp": "463a3b485ea30a01ef3c74c775cf0191d79554092ad3bea853525cbc7c014556",
+    "tools/unicode/resource/generate_conformance.cpp": "2c2b3977e7dd11d62894d2e48b523dcb781f619dcac2275896de62848737c518",
+    "tools/unicode/resource/generate_fixtures.sh": "4711d807ca3da07412f20f94312f68e64fe53129857ac30a38856a902956ab81",
     "tools/generate_canonical_decomposition.py": "450c932dbd278208bccd3ab8bb26f04f1b18a96051fc03944393f5d73e3ad6d8",
     "tools/generate_nonspacing_marks.py": "12d45f34ce2891ccf1b342bc8f44c6fe32e15e019d7a41489d8036dee9f8555c",
     "tools/unicode/normalization/generate_conformance.py": "c3e9f80b8fb410a2d142cfbb228941d01322672b28261c1e0c0de53eb662ee43",
@@ -959,6 +962,39 @@ def check_layout(blob: Blob, data: bytes) -> None:
             for _ in range(parse_count):
                 text_len = struct.unpack_from("<H", data, offset)[0]
                 offset += 2 + text_len + 1 + 8 + 4
+        assert offset == len(data)
+    elif magic == b"CJGM":
+        record_count = struct.unpack_from("<I", data, 8)[0]
+        offset = 12
+        for _ in range(record_count):
+            kind = data[offset + 1]
+            path_len = struct.unpack_from("<H", data, offset + 2)[0]
+            offset += 4 + path_len
+            if kind == 0:
+                length = struct.unpack_from("<H", data, offset)[0]
+                offset += 2 + length * 2
+            elif kind in (1, 2):
+                offset += 4
+            elif kind == 3:
+                length = struct.unpack_from("<I", data, offset)[0]
+                offset += 4 + length
+            elif kind == 4:
+                length = struct.unpack_from("<H", data, offset)[0]
+                offset += 2 + length * 4
+            elif kind == 5:
+                count = struct.unpack_from("<H", data, offset)[0]
+                offset += 2
+                for _ in range(count):
+                    length = struct.unpack_from("<H", data, offset)[0]
+                    offset += 2 + length * 2
+            elif kind == 6:
+                count = struct.unpack_from("<H", data, offset)[0]
+                offset += 2
+                for _ in range(count):
+                    length = struct.unpack_from("<H", data, offset)[0]
+                    offset += 2 + length
+            else:
+                raise AssertionError("invalid resource conformance record")
         assert offset == len(data)
     elif magic == b"CJUC":
         case_count = struct.unpack_from("<I", data, 8)[0]
