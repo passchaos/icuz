@@ -157,6 +157,60 @@ pub fn offsetAt(zone: Zone, unix_seconds: i64) Offset {
 }
 
 /// Convert a UTC timestamp to the zone's local seconds since the epoch.
+/// A zone transition: the instant, the offset in effect afterwards, and the
+/// abbreviation and daylight flag of the new offset.
+pub const TransitionInfo = struct {
+    at: i64,
+    offset: i32,
+    abbreviation: []const u8,
+    daylight: bool,
+};
+
+fn transitionInfo(transition: Transition) TransitionInfo {
+    return .{
+        .at = transition.at,
+        .offset = transition.offset,
+        .abbreviation = transition.abbreviation,
+        .daylight = transition.daylight,
+    };
+}
+
+/// First transition strictly after `unix_seconds`, or null when the zone has
+/// no later transition in the table.
+pub fn nextTransition(zone: Zone, unix_seconds: i64) ?TransitionInfo {
+    var low: usize = 0;
+    var high: usize = zone.transition_count;
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        const transition = transitionAt(zone.first_transition + middle);
+        if (@as(i64, transition.at) <= unix_seconds) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    if (low == zone.transition_count) return null;
+    return transitionInfo(transitionAt(zone.first_transition + low));
+}
+
+/// Last transition at or before `unix_seconds`, or null when the time is
+/// before the zone's first recorded transition.
+pub fn previousTransition(zone: Zone, unix_seconds: i64) ?TransitionInfo {
+    var low: usize = 0;
+    var high: usize = zone.transition_count;
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        const transition = transitionAt(zone.first_transition + middle);
+        if (@as(i64, transition.at) <= unix_seconds) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    if (low == 0) return null;
+    return transitionInfo(transitionAt(zone.first_transition + low - 1));
+}
+
 pub fn localSeconds(zone: Zone, unix_seconds: i64) i64 {
     return unix_seconds + offsetAt(zone, unix_seconds).seconds;
 }
@@ -416,4 +470,25 @@ pub fn usesDaylight(zone: Zone, unix_seconds: i64) bool {
         if (transition.at >= unix_seconds and transition.daylight) return true;
     }
     return false;
+}
+
+test "next and previous transitions" {
+    const testing = @import("std").testing;
+
+    const zone = find("America/New_York").?;
+    const spring = nextTransition(zone, 1772953199).?;
+    try testing.expectEqual(@as(i64, 1772953200), spring.at);
+    try testing.expectEqual(@as(i32, -4 * 3600), spring.offset);
+    try testing.expect(spring.daylight);
+    try testing.expectEqualStrings("EDT", spring.abbreviation);
+
+    const winter = previousTransition(zone, 1772953199).?;
+    try testing.expectEqual(@as(i32, -5 * 3600), winter.offset);
+    try testing.expect(!winter.daylight);
+    try testing.expect(winter.at < 1772953200);
+
+    const fall = nextTransition(zone, 1793512799).?;
+    try testing.expectEqual(@as(i64, 1793512800), fall.at);
+    try testing.expectEqual(@as(i32, -5 * 3600), fall.offset);
+    try testing.expect(!fall.daylight);
 }
