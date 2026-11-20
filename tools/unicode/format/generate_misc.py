@@ -110,14 +110,14 @@ def parse_locale(archive: zipfile.ZipFile, locale: str) -> dict:
         return {
             "list": {},
             "relative": {},
-            "units": {"long": {}, "short": {}},
+            "units": {"long": {}, "short": {}, "narrow": {}},
             "currencies": {},
         }
     root = ET.fromstring(text)
     data = {
         "list": {},
         "relative": {},
-        "units": {"long": {}, "short": {}},
+        "units": {"long": {}, "short": {}, "narrow": {}},
         "currencies": {},
     }
 
@@ -169,7 +169,7 @@ def parse_locale(archive: zipfile.ZipFile, locale: str) -> dict:
 
     for unit_length in root.findall(".//units/unitLength"):
         form = unit_length.get("type")
-        if form not in ("long", "short"):
+        if form not in ("long", "short", "narrow"):
             continue
         for unit in unit_length.findall("unit"):
             unit_id = unit.get("type")
@@ -321,7 +321,7 @@ def resolve_units(locale_data, parent_data, root_data, units):
     layers = [locale_data, parent_data, root_data]
     result = {}
     for unit_id in units:
-        entry = {"long": {}, "short": {}}
+        entry = {"long": {}, "short": {}, "narrow": {}}
         for category in CATEGORIES:
             long_value = unit_pattern(layers, "long", unit_id, category)
             if not long_value:
@@ -329,8 +329,12 @@ def resolve_units(locale_data, parent_data, root_data, units):
             short_value = unit_pattern(layers, "short", unit_id, category)
             if not short_value:
                 short_value = long_value
+            narrow_value = unit_pattern(layers, "narrow", unit_id, category)
+            if not narrow_value:
+                narrow_value = short_value
             entry["long"][category] = long_value
             entry["short"][category] = short_value
+            entry["narrow"][category] = narrow_value
         result[unit_id] = entry
     return result
 
@@ -600,12 +604,12 @@ def render_units_blob(compiled: dict[str, dict], units: list[str]) -> bytes:
         keys: list[tuple[int, str]] = []
         for unit_index, unit_id in enumerate(units):
             entry = compiled[locale]["units"][unit_id]
-            for style_index, form in enumerate(("long", "short")):
+            for style_index, form in enumerate(("long", "short", "narrow")):
                 for category_index, category in enumerate(CATEGORIES):
                     pattern = entry[form][category]
                     if not pattern:
                         continue
-                    key = (unit_index * 12) + style_index * 6 + category_index
+                    key = (unit_index * 18) + style_index * 6 + category_index
                     keys.append((key, pattern))
         for key, pattern in sorted(keys):
             entry_bytes += struct.pack("<HIH", key, intern(pattern), 0)
@@ -621,7 +625,7 @@ def render_units_blob(compiled: dict[str, dict], units: list[str]) -> bytes:
     header = bytearray(b"CJUN")
     header += struct.pack(
         "<B3xHHIII",
-        1,
+        2,
         len(compiled),
         len(units),
         entry_count,
@@ -657,7 +661,7 @@ def main() -> int:
             {
                 "list": {},
                 "relative": {},
-                "units": {"long": {}, "short": {}},
+                "units": {"long": {}, "short": {}, "narrow": {}},
                 "currencies": {},
             },
         )

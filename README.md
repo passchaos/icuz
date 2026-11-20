@@ -204,7 +204,7 @@ need without pulling in a font or layout engine.
   overrides) plus unit and unit-list composition for hours, minutes, and
   seconds with plural selection. `formatDurationUnitsAlloc` accepts a
   `Duration` with years through nanoseconds and composes every non-zero unit
-  through the locale's unit and unit-list patterns. Validated by a 312-case
+  through the locale's long, short, or narrow unit and unit-list patterns. Validated by a 312-case
   PyICU fixture.
 - CLDR 48 date and time interval formatting for 87 locales, using ICU's
   repeated-field pattern splitting, greatest-difference selection,
@@ -257,8 +257,8 @@ need without pulling in a font or layout engine.
 - CLDR 48 unit formatting for 87 locales and all 231 CLDR units across
   length, mass, temperature, speed, area, volume, duration, digital, energy,
   power, pressure, frequency, angle, light, electricity, torque, and
-  concentration, with long and short forms, CLDR unit identifiers, and a
-  3,063-case PyICU differential conformance fixture.
+  concentration, with long, short, and narrow forms, CLDR unit identifiers,
+  and a 3,063-case PyICU differential conformance fixture.
 - CLDR 48 RBNF rule-based number formatting for 112 locales, covering
   spellout and ordinal rule sets with negative, decimal, fraction, and
   optional rule branches, plural substitutions, Indian grouping, fraction

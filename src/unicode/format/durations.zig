@@ -165,7 +165,12 @@ fn formatUnits(
     defer {
         for (items[0..count]) |item| allocator.free(item);
     }
-    const unit_style: units.Style = if (style == .long) .long else .short;
+    const unit_style: units.Style = switch (style) {
+        .long => .long,
+        .short => .short,
+        .narrow => .narrow,
+        .numeric => .short,
+    };
     if (hours != 0) {
         items[count] = try units.formatAlloc(
             allocator,
@@ -243,7 +248,7 @@ pub fn formatDurationUnitsAlloc(
     const unit_style: units.Style = switch (style) {
         .long => .long,
         .short => .short,
-        .narrow => .short,
+        .narrow => .narrow,
         .numeric => .short,
     };
     var items: [values.len][]u8 = undefined;
@@ -436,4 +441,18 @@ test "multi-unit duration formatting" {
     );
     defer allocator.free(calendar);
     try testing.expectEqualStrings("1 year, 2 months, 3 days", calendar);
+}
+
+test "narrow duration units" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const text = try formatDurationUnitsAlloc(
+        allocator,
+        .{ .days = 1, .hours = 2 },
+        "en",
+        .narrow,
+    );
+    defer allocator.free(text);
+    try testing.expectEqualStrings("1d 2h", text);
 }

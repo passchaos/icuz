@@ -28,7 +28,7 @@ pub const SignMode = enum {
 
 pub const GroupingMode = enum { auto, off, min2, on_aligned, thousands };
 
-pub const UnitStyle = enum { long, short };
+pub const UnitStyle = enum { long, short, narrow };
 
 pub const Options = struct {
     style: Style = .decimal,
@@ -408,6 +408,7 @@ pub fn formatRangeAlloc(
                 switch (number_options.unit_style) {
                     .long => .long,
                     .short => .short,
+                    .narrow => .narrow,
                 },
             );
         }
@@ -1017,6 +1018,7 @@ pub fn formatSkeletonAlloc(
             switch (options.unit_style) {
                 .long => .long,
                 .short => .short,
+                .narrow => .narrow,
             },
         );
     }
@@ -1061,6 +1063,7 @@ pub fn formatSkeletonFieldsAlloc(
             switch (options.unit_style) {
                 .long => .long,
                 .short => .short,
+                .narrow => .narrow,
             },
         );
         if (std.mem.indexOf(u8, result, number_text)) |offset| {
@@ -1091,6 +1094,7 @@ pub fn formatSkeletonIntegerAlloc(
 
 fn parseSkeleton(skeleton: []const u8) Error!Options {
     var options = Options{ .skeleton = true };
+    var unit_width_set = false;
     var tokens = std.mem.tokenizeAny(u8, skeleton, " \t\r\n");
     while (tokens.next()) |token| {
         if (std.mem.eql(u8, token, "percent")) {
@@ -1198,7 +1202,7 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
             const unit_id = token["measure-unit/".len..];
             if (unit_id.len == 0) return error.InvalidPattern;
             options.unit_id = unit_id;
-            options.unit_style = .short;
+            if (!unit_width_set) options.unit_style = .short;
         } else if (std.mem.startsWith(u8, token, "unit-width-")) {
             const width = token["unit-width-".len..];
             if (std.mem.eql(u8, width, "iso-code")) {
@@ -1206,13 +1210,17 @@ fn parseSkeleton(skeleton: []const u8) Error!Options {
             } else if (std.mem.eql(u8, width, "full-name")) {
                 options.currency_display = .name;
                 options.unit_style = .long;
+                unit_width_set = true;
             } else if (std.mem.eql(u8, width, "hidden")) {
                 options.currency_display = .hidden;
-            } else if (std.mem.eql(u8, width, "short") or
-                std.mem.eql(u8, width, "narrow"))
-            {
+            } else if (std.mem.eql(u8, width, "short")) {
                 options.currency_display = .symbol;
                 options.unit_style = .short;
+                unit_width_set = true;
+            } else if (std.mem.eql(u8, width, "narrow")) {
+                options.currency_display = .symbol;
+                options.unit_style = .narrow;
+                unit_width_set = true;
             } else {
                 return error.InvalidPattern;
             }
@@ -3797,4 +3805,27 @@ test "number range conformance" {
         case_count,
     });
     try testing.expect(failures == 0);
+}
+
+test "narrow unit skeleton" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const text = try formatSkeletonAlloc(
+        allocator,
+        5,
+        "en",
+        "unit-width-narrow measure-unit/length-meter",
+    );
+    defer allocator.free(text);
+    try testing.expectEqualStrings("5m", text);
+
+    const reversed = try formatSkeletonAlloc(
+        allocator,
+        5,
+        "en",
+        "measure-unit/length-meter unit-width-narrow",
+    );
+    defer allocator.free(reversed);
+    try testing.expectEqualStrings("5m", reversed);
 }

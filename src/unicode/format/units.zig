@@ -24,7 +24,7 @@ const strings_offset = entry_offset + @as(usize, entry_count) * 8;
 
 comptime {
     if (blob.len < header_len or !std.mem.eql(u8, blob[0..4], "CJUN") or
-        blob[4] != 1)
+        blob[4] != 2)
     {
         @compileError("invalid unit data");
     }
@@ -78,7 +78,7 @@ fn localeRecord(locale_name: []const u8) ?usize {
     return findLocaleRecord("en");
 }
 
-pub const Style = enum { long, short };
+pub const Style = enum { long, short, narrow };
 
 pub const Options = struct {
     style: Style = .long,
@@ -120,7 +120,7 @@ fn patternAt(
     const base = locale_offset + record_index * 16;
     const start = readU32(base + 8);
     const count = readU16(base + 12);
-    const key: u16 = @as(u16, @intFromEnum(unit)) * 12 +
+    const key: u16 = @as(u16, @intFromEnum(unit)) * 18 +
         @as(u16, @intFromEnum(style)) * 6 +
         @as(u16, @intFromEnum(category));
     var low: usize = start;
@@ -403,4 +403,29 @@ test "unit conformance" {
     }
     std.debug.print("unit conformance: {d}/{d} passed\n", .{ total - failures, total });
     try testing.expect(failures == 0);
+}
+
+test "narrow unit patterns" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const meter = try formatAlloc(
+        allocator,
+        5,
+        .meter,
+        "en",
+        .{ .style = .narrow },
+    );
+    defer allocator.free(meter);
+    try testing.expectEqualStrings("5m", meter);
+
+    const german = try formatAlloc(
+        allocator,
+        5,
+        .meter,
+        "de",
+        .{ .style = .narrow },
+    );
+    defer allocator.free(german);
+    try testing.expectEqualStrings("5 m", german);
 }
