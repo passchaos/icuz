@@ -287,6 +287,7 @@ pub const Iterator = struct {
                 return self.consumeSimpleAsciiHardBreak(word_end);
             }
             if (rules.isAsciiProsePunctuation(self.text[word_end])) {
+                @branchHint(.unlikely);
                 switch (self.consumeAsciiWordPunctuation(start, word_end)) {
                     .unhandled => {},
                     .handoff => return null,
@@ -360,6 +361,7 @@ pub const Iterator = struct {
             punct_end += 1;
         }
         if (punct_end == self.text.len) {
+            @branchHint(.unlikely);
             self.commitAsciiWordPunctuation(start, word_end, punct_end);
             self.emitted_end = true;
             return .{ .emitted = .{
@@ -368,6 +370,7 @@ pub const Iterator = struct {
             } };
         }
         if (rules.isAsciiHardBreak(self.text[punct_end])) {
+            @branchHint(.unlikely);
             self.commitAsciiWordPunctuation(start, word_end, punct_end);
             return .{ .emitted = self.consumeSimpleAsciiHardBreak(punct_end) };
         }
