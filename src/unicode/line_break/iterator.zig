@@ -317,6 +317,12 @@ pub const Iterator = struct {
             return self.consumeSimpleAsciiHardBreak(next_word);
         }
         if (!rules.isAsciiWordByte(self.text[next_word])) {
+            // The word and space boundaries are settled even when the next
+            // scalar is not an ASCII word; commit them and let the generic
+            // path decide the next boundary.
+            self.state.consumeAsciiWordRun(self.text[start..word_end]);
+            self.state.consumeAsciiSpaceRun(next_word - word_end);
+            self.cursor = next_word;
             self.simple_ascii = false;
             return null;
         }
