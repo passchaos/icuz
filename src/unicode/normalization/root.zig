@@ -97,9 +97,9 @@ const cjk_lead_simple = blk: {
 };
 
 fn normalizeFusedInto(
+    comptime form: Form,
     allocator: std.mem.Allocator,
     text: []const u8,
-    form: Form,
     output: *std.ArrayList(u8),
 ) Error!bool {
     const ascii_end = asciiPrefixLen(text);
@@ -243,6 +243,24 @@ fn normalizeFusedInto(
     return true;
 }
 
+/// Specialize the fused scan per form so quick-check shifts, inert slots,
+/// and the compose/compatibility switches fold to constants.
+fn normalizeFused(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    form: Form,
+    output: *std.ArrayList(u8),
+) Error!bool {
+    return switch (form) {
+        inline else => |specialized| normalizeFusedInto(
+            specialized,
+            allocator,
+            text,
+            output,
+        ),
+    };
+}
+
 /// Return an allocator-owned string in `form` when `text` must change, or
 /// `null` when it is already normalized. Invalid UTF-8 is rejected before any
 /// allocation.
@@ -253,7 +271,7 @@ pub fn normalizeFormAlloc(
 ) Error!?[]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    if (!try normalizeFusedInto(allocator, text, form, &output)) {
+    if (!try normalizeFused(allocator, text, form, &output)) {
         output.deinit(allocator);
         return null;
     }
@@ -272,7 +290,7 @@ pub fn normalizeFormInto(
     output: *std.ArrayList(u8),
 ) Error!bool {
     const before = output.items.len;
-    const changed = normalizeFusedInto(allocator, text, form, output) catch |err| {
+    const changed = normalizeFused(allocator, text, form, output) catch |err| {
         output.shrinkRetainingCapacity(before);
         return err;
     };
