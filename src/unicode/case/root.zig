@@ -24,6 +24,42 @@ pub const foldWithEditsAlloc = full.foldWithEditsAlloc;
 
 /// Simple lowercase mapping. ASCII is handled arithmetically so prose case
 /// conversion does not enter the generated record search.
+const latin1_lower: [128]u21 = blk: {
+    @setEvalBranchQuota(100_000);
+    var table: [128]u21 = undefined;
+    for (&table, 0..) |*entry, index| {
+        entry.* = data.simpleLower(@intCast(0x80 + index));
+    }
+    break :blk table;
+};
+
+const latin1_upper: [128]u21 = blk: {
+    @setEvalBranchQuota(100_000);
+    var table: [128]u21 = undefined;
+    for (&table, 0..) |*entry, index| {
+        entry.* = data.simpleUpper(@intCast(0x80 + index));
+    }
+    break :blk table;
+};
+
+const latin1_title: [128]u21 = blk: {
+    @setEvalBranchQuota(100_000);
+    var table: [128]u21 = undefined;
+    for (&table, 0..) |*entry, index| {
+        entry.* = data.simpleTitle(@intCast(0x80 + index));
+    }
+    break :blk table;
+};
+
+const latin1_fold: [128]u21 = blk: {
+    @setEvalBranchQuota(100_000);
+    var table: [128]u21 = undefined;
+    for (&table, 0..) |*entry, index| {
+        entry.* = data.simpleFold(@intCast(0x80 + index));
+    }
+    break :blk table;
+};
+
 pub inline fn simpleLower(codepoint: u21) u21 {
     if (codepoint < 0x80) {
         return if (codepoint >= 'A' and codepoint <= 'Z')
@@ -31,6 +67,7 @@ pub inline fn simpleLower(codepoint: u21) u21 {
         else
             codepoint;
     }
+    if (codepoint < 0x100) return latin1_lower[codepoint - 0x80];
     return data.simpleLower(codepoint);
 }
 
@@ -41,6 +78,7 @@ pub inline fn simpleUpper(codepoint: u21) u21 {
         else
             codepoint;
     }
+    if (codepoint < 0x100) return latin1_upper[codepoint - 0x80];
     return data.simpleUpper(codepoint);
 }
 
@@ -51,6 +89,7 @@ pub inline fn simpleTitle(codepoint: u21) u21 {
         else
             codepoint;
     }
+    if (codepoint < 0x100) return latin1_title[codepoint - 0x80];
     return data.simpleTitle(codepoint);
 }
 
@@ -62,6 +101,7 @@ pub inline fn simpleFold(codepoint: u21) u21 {
         else
             codepoint;
     }
+    if (codepoint < 0x100) return latin1_fold[codepoint - 0x80];
     return data.simpleFold(codepoint);
 }
 

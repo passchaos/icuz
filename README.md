@@ -616,8 +616,9 @@ Normalization and case mapping also have direct ASCII paths. Pure-ASCII text is
 already normalized in every form and can be checked with a word-at-a-time scan;
 ASCII case conversion is a single byte loop instead of a generated record
 search, while non-ASCII case mapping decodes with the packed scalar decoder,
-maps ASCII runs in place, and resolves each scalar through a per-page index
-and mapped-codepoint mask before a short in-page search. Normalization runs per
+maps ASCII runs in place, resolves each scalar through a per-page index and
+mapped-codepoint mask before a short in-page search, and serves Latin-1
+mappings from compile-time tables. Normalization runs per
 starter segment: one-code-point segments skip
 canonical ordering and composition entirely, a composition-second page table
 keeps ordinary starters out of the composition binary search, and simple-page
