@@ -389,6 +389,43 @@ fn mapStreamingInner(
             continue;
         }
 
+        // A lead byte whose whole scalar range is identity needs no decoding:
+        // validate the sequence in place and copy it.
+        if (root and first >= 0x80) {
+            const skip_mask = switch (kind) {
+                .lower => &full_data.lower_lead_skip,
+                .upper, .title => &full_data.upper_lead_skip,
+            };
+            const skip_bit = @as(u8, 1) << @intCast(first & 7);
+            if (skip_mask[first >> 3] & skip_bit != 0) {
+                const bounds = full_data.lead_bounds[first];
+                const length: usize = (bounds >> 16) & 7;
+                if (cursor + length > text.len) return error.InvalidUtf8;
+                const second = text[cursor + 1];
+                if (second < @as(u8, @truncate(bounds)) or
+                    second > @as(u8, @truncate(bounds >> 8)))
+                {
+                    return error.InvalidUtf8;
+                }
+                if (length >= 3 and text[cursor + 2] & 0xc0 != 0x80) {
+                    return error.InvalidUtf8;
+                }
+                if (length == 4 and text[cursor + 3] & 0xc0 != 0x80) {
+                    return error.InvalidUtf8;
+                }
+                if (output.unusedCapacitySlice().len < length) {
+                    try output.ensureUnusedCapacity(allocator, length);
+                }
+                copySourceBytes(
+                    output.unusedCapacitySlice(),
+                    text[cursor..][0..length],
+                );
+                output.items.len += length;
+                cursor += length;
+                continue;
+            }
+        }
+
         const decoded = scalar.decodeValidatingPacked(text, cursor);
         if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
         const codepoint = scalar.packedCodepoint(decoded);
@@ -927,6 +964,44 @@ test "full case mapping rejects invalid UTF-8" {
         error.InvalidUtf8,
         fullUpperAlloc(std.testing.allocator, "\xff", .{}),
     );
+}
+
+test "identity skip path validates UTF-8 like std" {
+    const allocator = std.testing.allocator;
+    var text: [4]u8 = undefined;
+    for (0x80..0x100) |lead| {
+        text[0] = @intCast(lead);
+        for (0..0x100) |second| {
+            text[1] = @intCast(second);
+            for ([_]u8{ 0x7f, 0x80, 0xbf, 0xc0 }) |tail| {
+                text[2] = tail;
+                text[3] = 0x80;
+                try expectValidityMatches(allocator, text[0..2]);
+                try expectValidityMatches(allocator, text[0..3]);
+                try expectValidityMatches(allocator, text[0..4]);
+            }
+        }
+    }
+}
+
+fn expectValidityMatches(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+) !void {
+    const valid = std.unicode.utf8ValidateSlice(text);
+    inline for ([_]bool{ false, true }) |upper| {
+        const mapped = if (upper)
+            fullUpperAlloc(allocator, text, .{})
+        else
+            fullLowerAlloc(allocator, text, .{});
+        if (mapped) |output| {
+            defer allocator.free(output);
+            try std.testing.expect(valid);
+        } else |err| {
+            try std.testing.expectEqual(error.InvalidUtf8, err);
+            try std.testing.expect(!valid);
+        }
+    }
 }
 
 test "streaming and edit-tracking mappings agree" {

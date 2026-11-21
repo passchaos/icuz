@@ -273,19 +273,63 @@ def render(
     # Per-kind identity bitmaps: a clear bit means the simple and full root
     # mappings are both the identity, so the caller can copy the source bytes.
     # Astral code points stay conservative and always take the table path.
+    root_record_cps = {
+        record[0]
+        for record in records
+        if record[0] < INTEREST_PAGE_LIMIT and record[1] == 1
+    }
+    lower_set = set(lower_interest) | root_record_cps
+    upper_set = set(upper_interest) | root_record_cps
     lower_bitmap = bytearray(INTEREST_PAGE_LIMIT >> 3)
     upper_bitmap = bytearray(INTEREST_PAGE_LIMIT >> 3)
-    for codepoint in lower_interest:
+    for codepoint in lower_set:
         if codepoint < INTEREST_PAGE_LIMIT:
             lower_bitmap[codepoint >> 3] |= 1 << (codepoint & 7)
-    for codepoint in upper_interest:
+    for codepoint in upper_set:
         if codepoint < INTEREST_PAGE_LIMIT:
             upper_bitmap[codepoint >> 3] |= 1 << (codepoint & 7)
-    for record in records:
-        if record[0] >= INTEREST_PAGE_LIMIT or record[1] != 1:
-            continue
-        lower_bitmap[record[0] >> 3] |= 1 << (record[0] & 7)
-        upper_bitmap[record[0] >> 3] |= 1 << (record[0] & 7)
+
+    # Lead-byte tables let the streaming path validate and copy a whole
+    # identity sequence without decoding it. `lead_bounds` packs the minimum
+    # and maximum valid second byte plus the sequence length; `*_lead_skip`
+    # marks leads whose entire scalar range is identity for that kind.
+    lead_bounds = [0] * 256
+    for lead in range(0xC2, 0xF5):
+        if lead < 0xE0:
+            length, min_second, max_second = 2, 0x80, 0xBF
+        elif lead < 0xF0:
+            length = 3
+            min_second = 0xA0 if lead == 0xE0 else 0x80
+            max_second = 0x9F if lead == 0xED else 0xBF
+        else:
+            length = 4
+            min_second = 0x90 if lead == 0xF0 else 0x80
+            max_second = 0x8F if lead == 0xF4 else 0xBF
+        lead_bounds[lead] = min_second | (max_second << 8) | (length << 16)
+
+    def lead_skip_mask(interesting: set[int]) -> bytearray:
+        mask = bytearray(32)
+        for lead in range(0xC2, 0xF0):
+            bounds = lead_bounds[lead]
+            min_second = bounds & 0xFF
+            max_second = (bounds >> 8) & 0xFF
+            length = (bounds >> 16) & 7
+            if length == 2:
+                low = ((lead & 0x1F) << 6) | (min_second & 0x3F)
+                high = ((lead & 0x1F) << 6) | (max_second & 0x3F)
+            else:
+                shift = 6 if length == 3 else 12
+                tail = 0x3F if length == 3 else 0xFFF
+                low = ((lead & 0x0F) << 12) | ((min_second & 0x3F) << shift)
+                high = ((lead & 0x0F) << 12) | ((max_second & 0x3F) << shift) | tail
+            if not any(low <= codepoint <= high for codepoint in interesting):
+                mask[lead >> 3] |= 1 << (lead & 7)
+        # Astral code points are always treated as interesting at runtime, so
+        # four-byte leads never skip.
+        return mask
+
+    lower_skip = lead_skip_mask(lower_set)
+    upper_skip = lead_skip_mask(upper_set)
 
     lines.extend(
         [
@@ -310,6 +354,24 @@ def render(
             "    return false;",
             "}",
             "",
+            "/// Packed UTF-8 lead-byte metadata: minimum and maximum valid second",
+            "/// byte in the low 16 bits, sequence length in bits 16..18.",
+            "pub const lead_bounds = [_]u32{",
+        ]
+    )
+    for start in range(0, 256, 16):
+        chunk = ", ".join(f"0x{value:x}" for value in lead_bounds[start : start + 16])
+        lines.append(f"    {chunk},")
+    lines.extend(["};", ""])
+
+    def emit_skip(name: str, mask: bytearray) -> None:
+        chunk = ", ".join(str(value) for value in mask)
+        lines.extend([f"pub const {name} = [_]u8{{{chunk}}};", ""])
+
+    emit_skip("lower_lead_skip", lower_skip)
+    emit_skip("upper_lead_skip", upper_skip)
+    lines.extend(
+        [
             "/// SpecialCasing entries that only exist for the Turkic or Lithuanian",
             "/// locale families; the root bitmap excludes them on purpose.",
             "inline fn localeOnlyRecord(codepoint: u21) bool {",
