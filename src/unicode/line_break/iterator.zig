@@ -21,6 +21,30 @@ pub const Break = struct {
 
 pub const Error = error{InvalidUtf8};
 
+/// Properties shared by every scalar in U+4000..U+9FFF outside the Yijing
+/// block: ideographic, East Asian wide, not extended pictographic.
+const cjk_ideograph_properties = property_data.Properties{
+    .class = .ideographic,
+    .category = .other,
+    .east_asian = true,
+    .extended_pictographic = false,
+    .reserved = 0,
+};
+
+/// Return one past the last scalar of the ideographic run starting at
+/// `start`. The caller guarantees valid UTF-8, and U+4DC0..U+4DFF (Yijing)
+/// are alphabetic, so a three-byte lead test identifies the run.
+fn scanIdeographicRunEnd(text: []const u8, start: usize) usize {
+    var cursor = start;
+    while (cursor + 3 <= text.len) {
+        const lead = text[cursor];
+        if (lead < 0xe4 or lead > 0xe9) break;
+        if (lead == 0xe4 and text[cursor + 1] == 0xb7) break;
+        cursor += 3;
+    }
+    return cursor;
+}
+
 pub const Iterator = struct {
     text: []const u8,
     cursor: usize = 0,
@@ -28,6 +52,9 @@ pub const Iterator = struct {
     emitted_end: bool = false,
     simple_ascii: bool = true,
     suppress_break_at_cursor: bool = false,
+    /// Byte offset one past the ideographic run being replayed; interior
+    /// boundaries are all LB31 soft.
+    id_run_end: usize = 0,
 
     pub fn next(self: *Iterator) ?Break {
         while (!self.emitted_end) {
@@ -64,6 +91,30 @@ pub const Iterator = struct {
                     continue;
                 }
             } else {
+                // Interior boundaries of an ideographic run are all LB31
+                // soft, so replay them without a property lookup or rule
+                // evaluation.
+                if (self.cursor < self.id_run_end) {
+                    const decoded = rules.decodeValid(self.text, self.cursor);
+                    self.state.previous_raw = .ideographic;
+                    self.state.lb9_base = .ideographic;
+                    self.state.numeric_chain = false;
+                    self.state.numeric_close_suffix = false;
+                    self.state.regional_indicator_count = 0;
+                    self.state.previous_previous = self.state.previous;
+                    self.state.previous = self.state.last;
+                    self.state.last = .{
+                        .codepoint = decoded.codepoint,
+                        .properties = cjk_ideograph_properties,
+                        .class = .ideographic,
+                    };
+                    self.state.count += 1;
+                    self.cursor = decoded.next;
+                    return .{
+                        .byte_offset = decoded.start,
+                        .kind = .soft,
+                    };
+                }
                 // A Hangul run never starts with a word class, so skip the
                 // word-run scanner when the previous scalar is already
                 // inside one.
@@ -103,6 +154,14 @@ pub const Iterator = struct {
                     raw_properties,
                     effective,
                 );
+            // Every interior boundary of an ideographic run is LB31 soft, so
+            // find the run end once and replay the interior breaks cheaply.
+            if (break_kind == .soft and
+                raw_properties.class == .ideographic and
+                self.state.last.class == .ideographic)
+            {
+                self.id_run_end = scanIdeographicRunEnd(self.text, decoded.next);
+            }
             self.state.consume(raw_properties.class, effective);
             self.cursor = decoded.next;
             // Punctuation or non-ASCII input disables the prose scanner, but
