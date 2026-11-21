@@ -52,10 +52,12 @@ const Journal = struct {
 };
 
 /// Per-matcher regexz workspaces. The compiled program itself lives in
-/// `Regex`, so matchers stay independent and reusable.
+/// `Regex`, so matchers stay independent and reusable. Each engine is
+/// created on first use: boolean matching needs only the linear workspace,
+/// while searching needs the capture-aware one.
 const BackendState = struct {
-    workspace: regexz.Workspace,
-    search: regexz.ReplaceWorkspace,
+    workspace: ?regexz.Workspace = null,
+    search: ?regexz.ReplaceWorkspace = null,
 };
 
 pub const Runner = struct {
@@ -131,24 +133,7 @@ pub const Runner = struct {
         const progress = try allocator.alloc(usize, program_progress_count(program));
         errdefer allocator.free(progress);
 
-        var backend_state: ?BackendState = null;
-        if (backend) |backend_program| {
-            if (regexz.Workspace.init(allocator, backend_program.program)) |workspace_value| {
-                var workspace = workspace_value;
-                if (regexz.ReplaceWorkspace.init(
-                    allocator,
-                    backend_program.program,
-                    .{},
-                )) |search_value| {
-                    backend_state = .{
-                        .workspace = workspace,
-                        .search = search_value,
-                    };
-                } else |_| {
-                    workspace.deinit();
-                }
-            } else |_| {}
-        }
+        const backend_state: ?BackendState = if (backend != null) .{} else null;
 
         var runner = Runner{
             .allocator = allocator,
@@ -189,8 +174,8 @@ pub const Runner = struct {
 
     pub fn deinit(self: *Runner) void {
         if (self.backend_state) |*state| {
-            state.workspace.deinit();
-            state.search.deinit();
+            if (state.workspace) |*workspace| workspace.deinit();
+            if (state.search) |*search| search.deinit();
         }
         self.allocator.free(self.captures);
         self.allocator.free(self.counters);
@@ -570,17 +555,39 @@ pub const Runner = struct {
         return true;
     }
 
+    fn ensureBackendWorkspace(self: *Runner) error{OutOfMemory}!*regexz.Workspace {
+        const state = &self.backend_state.?;
+        if (state.workspace == null) {
+            state.workspace = try regexz.Workspace.init(
+                self.allocator,
+                self.backend.?.program,
+            );
+        }
+        return &state.workspace.?;
+    }
+
+    fn ensureBackendSearch(self: *Runner) error{OutOfMemory}!*regexz.ReplaceWorkspace {
+        const state = &self.backend_state.?;
+        if (state.search == null) {
+            state.search = try regexz.ReplaceWorkspace.init(
+                self.allocator,
+                self.backend.?.program,
+                .{},
+            );
+        }
+        return &state.search.?;
+    }
+
     fn backendMatches(self: *Runner) Error!?bool {
         const backend = self.backend.?;
-        const state = &self.backend_state.?;
         const region = self.text[self.region_start..self.region_end];
         const matched = if (backend.program.extended)
-            state.search.fullMatch(region) catch |err| switch (err) {
+            (try self.ensureBackendSearch()).fullMatch(region) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 else => return null,
             }
         else
-            state.workspace.matchesBorrowed(&backend.program, region);
+            (try self.ensureBackendWorkspace()).matchesBorrowed(&backend.program, region);
         if (matched) {
             self.captures[0] = self.region_start;
             self.captures[1] = self.region_end;
@@ -634,8 +641,15 @@ pub const Runner = struct {
         start: usize,
     ) regexz.Error!?regexz.Match {
         const state = &self.backend_state.?;
+        if (state.search == null) {
+            state.search = regexz.ReplaceWorkspace.init(
+                self.allocator,
+                self.backend.?.program,
+                .{},
+            ) catch return error.OutOfMemory;
+        }
         const region = self.text[self.region_start..self.region_end];
-        return state.search.find(region, start);
+        return state.search.?.find(region, start);
     }
 
     fn recordBackendMatch(self: *Runner, match: regexz.Match) void {
