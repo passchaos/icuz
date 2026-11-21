@@ -35,6 +35,14 @@ class GeneratedText:
     sha256: str
 
 
+@dataclass(frozen=True)
+class GeneratedBlob:
+    path: str
+    generator: str
+    sha256: str
+    size: int
+
+
 BLOBS = (
     Blob("src/unicode/bidi/conformance.bin", b"CJBT", 1, "40d4b9145779f8aad815e1f5ea5201ccd9cc5daeb73c8bf73b06c6f1c76d9a26"),
     Blob("src/unicode/bidi/reorder_conformance.bin", b"CJRD", 1, "849e5808b9dc45372dea3552a9c8bed83489765d79bee240029679837ae3384d", version=(0, 0, 0)),
@@ -499,7 +507,7 @@ GENERATORS = {
     "tools/unicode/locale/generate_extension_aliases.py": "5853caa458dca1ffc133ce165e40543648e2209ff446093b58d11dc05197589f",
     "tools/unicode/locale/generate_script_direction.py": "4eb044adfbf490197b2f22c04c16c997074f6a98426b885cf16e11796c878282",
     "tools/unicode/case/generate_data.py": "b933e9a2b807796310c1ca7d9edd8f33f063eff9438e7edf4d5cf198277cf474",
-    "tools/unicode/case/generate_full_data.py": "ac0b2ce2938d19da1c8b80289fcfbbcb0e7176a95736ca3cf0d6b0b9631a9ed8",
+    "tools/unicode/case/generate_full_data.py": "b6d8763105fbd1a4104c03962c8f0f1bb7fdf5e47740bc2c439407b32754b74e",
     "tools/unicode/collation/generate_data.py": "3e789930a4ee07357d7e89a26d9bf93fe598ce7555efdbd16c524e860f0e4c96",
     "tools/unicode/collation/generate_collation_options_conformance.py": "a75918f1082f562d53c1296eb1fb8916e14c7e946c2201539a967a7bc4444a12",
     "tools/unicode/collation/generate_tailorings.py": "5643f8a612263d31f4da50c73e9720c3739191d6d1d321489a04e8f2f99b2713",
@@ -622,7 +630,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/case/full_data.zig",
         "tools/unicode/case/generate_full_data.py",
-        "4409a03ce50d8cac29a4d7aa724a47e9e465223d39cf3ad79eead7cdbf0b8dc5",
+        "232442fb44c5511747fff278d49e8f0313ee5ec1f0b8609e7e4e68ffe01a0aea",
     ),
     GeneratedText(
         "src/unicode/collation/implicit.zig",
@@ -758,6 +766,20 @@ GENERATED_TEXT = (
         "src/unicode/locale/iso3_data.zig",
         "tools/unicode/locale/generate_iso3.py",
         "b2e4ef84739332a3a75c177e7dc642977f9c627b353cc6f656575d097d86bf40",
+    ),
+)
+GENERATED_BLOBS = (
+    GeneratedBlob(
+        "src/unicode/case/full_lower.bin",
+        "tools/unicode/case/generate_full_data.py",
+        "262c0b5f18a984e6e89a1ecea4a81f82ffe4717ec95feb9cc1e36df8349a9d1b",
+        8192,
+    ),
+    GeneratedBlob(
+        "src/unicode/case/full_upper.bin",
+        "tools/unicode/case/generate_full_data.py",
+        "06260e6928412c8223ff804154947e2765e7b0fb3857d1962145a3d9ff5da882",
+        8192,
     ),
 )
 SOURCE_SHA = re.compile(r"^// Source SHA-256: ([0-9a-f]{64})$", re.MULTILINE)
@@ -1892,6 +1914,17 @@ def main() -> None:
                 f"{generated.path}: missing {generated.generator} provenance"
             )
 
+    for generated in GENERATED_BLOBS:
+        if generated.generator not in GENERATORS:
+            raise SystemExit(
+                f"{generated.path}: unpinned generator {generated.generator}"
+            )
+        path = ROOT / generated.path
+        if path.stat().st_size != generated.size:
+            raise SystemExit(f"{generated.path}: committed generated size changed")
+        if digest(path) != generated.sha256:
+            raise SystemExit(f"{generated.path}: committed generated output changed")
+
     vertical = ROOT / "src/unicode/vertical/data.zig"
     text = vertical.read_text(encoding="utf-8")
     match = SOURCE_SHA.search(text)
@@ -1902,7 +1935,8 @@ def main() -> None:
 
     print(
         f"verified {len(BLOBS)} Unicode blobs, {len(GENERATED_TEXT)} "
-        f"generated sources, and {len(GENERATORS)} generators"
+        f"generated sources, {len(GENERATED_BLOBS)} generated bitmaps, and "
+        f"{len(GENERATORS)} generators"
     )
 
 

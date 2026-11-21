@@ -117,6 +117,7 @@ const fullwidth_text = "ＡＢＣ１２３！？　ｶﾞｷﾞｸﾞ " ** 8;
 const georgian_text = "საქართველო ქართული ენა " ** 8;
 const russian_text = "Москва Санкт-Петербург Россия " ** 8;
 const greek_text = "Ελλάδα Αθήνα ελληνική γλώσσα " ** 8;
+const greek_case_text = "ΟΔΟΣ ΣΟΦΟΣ ΑΘΗΝΑ " ** 8;
 const katakana_text = "ラーメン とうきょう カタカナ ﾃｽﾄ " ** 8;
 const amharic_text = "አማርኛ ግዕዝ ፊደል ቋንቋ " ** 8;
 const ukrainian_text = "Київ Україна українська мова " ** 8;
@@ -530,6 +531,31 @@ fn benchFold(name: []const u8, text: []const u8, allocator: std.mem.Allocator) v
         const start = now();
         for (0..rounds) |_| {
             const output = icuz.case.foldAlloc(allocator, text) catch unreachable;
+            sink +%= output.len;
+            allocator.free(output);
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * text.len, best);
+}
+
+fn benchFullCase(
+    name: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+    comptime kind: enum { lower, upper },
+) void {
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 4000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const output = switch (kind) {
+                .lower => icuz.case.fullLowerAlloc(allocator, text, .{}) catch unreachable,
+                .upper => icuz.case.fullUpperAlloc(allocator, text, .{}) catch unreachable,
+            };
             sink +%= output.len;
             allocator.free(output);
         }
@@ -1077,6 +1103,7 @@ pub fn main() !void {
     const georgian_runtime = try allocator.dupe(u8, georgian_text);
     const russian_runtime = try allocator.dupe(u8, russian_text);
     const greek_runtime = try allocator.dupe(u8, greek_text);
+    const greek_case_runtime = try allocator.dupe(u8, greek_case_text);
     const katakana_runtime = try allocator.dupe(u8, katakana_text);
     const amharic_runtime = try allocator.dupe(u8, amharic_text);
     const ukrainian_runtime = try allocator.dupe(u8, ukrainian_text);
@@ -1096,6 +1123,7 @@ pub fn main() !void {
     std.mem.doNotOptimizeAway(georgian_runtime.ptr);
     std.mem.doNotOptimizeAway(russian_runtime.ptr);
     std.mem.doNotOptimizeAway(greek_runtime.ptr);
+    std.mem.doNotOptimizeAway(greek_case_runtime.ptr);
     std.mem.doNotOptimizeAway(katakana_runtime.ptr);
     std.mem.doNotOptimizeAway(amharic_runtime.ptr);
     std.mem.doNotOptimizeAway(ukrainian_runtime.ptr);
@@ -1564,6 +1592,13 @@ pub fn main() !void {
     benchFold("case fold ASCII", ascii_runtime, allocator);
     benchCase("lower mixed", mixed_runtime, allocator);
     benchFold("case fold mixed", mixed_runtime, allocator);
+    benchFullCase("full lower ASCII", ascii_runtime, allocator, .lower);
+    benchFullCase("full upper ASCII", ascii_runtime, allocator, .upper);
+    benchFullCase("full lower mixed", mixed_runtime, allocator, .lower);
+    benchFullCase("full upper mixed", mixed_runtime, allocator, .upper);
+    benchFullCase("full lower German", german_runtime, allocator, .lower);
+    benchFullCase("full upper German", german_runtime, allocator, .upper);
+    benchFullCase("full lower Greek sigma", greek_case_runtime, allocator, .lower);
 
     std.debug.print("\nsink={d}\n", .{sink});
 }

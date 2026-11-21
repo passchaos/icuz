@@ -144,10 +144,9 @@ fn titleAlloc(
     options: Options,
     edits: ?*Edits,
 ) Error![]u8 {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
     if (edits) |value| value.clearRetainingCapacity();
 
-    var decoded = try decodeAlloc(allocator, text);
+    var decoded = try decodeAlloc(allocator, text, true);
     defer decoded.deinit(allocator);
 
     var output = std.ArrayList(u8).empty;
@@ -167,7 +166,7 @@ fn titleAlloc(
             try appendCodepoint(allocator, &output, decoded.codepoints.items[emitted]);
             try recordEdit(
                 edits,
-                sourceSlice(text, &decoded, emitted),
+                sourceSlice(text, decoded.offsets.items, emitted),
                 decoded.offsets.items[emitted],
                 output.items[before..],
             );
@@ -219,7 +218,7 @@ fn titleAlloc(
                 }
                 try recordEdit(
                     edits,
-                    sourceSlice(text, &decoded, index),
+                    sourceSlice(text, decoded.offsets.items, index),
                     decoded.offsets.items[index],
                     output.items[before..],
                 );
@@ -234,7 +233,7 @@ fn titleAlloc(
                 );
                 try recordEdit(
                     edits,
-                    sourceSlice(text, &decoded, index),
+                    sourceSlice(text, decoded.offsets.items, index),
                     decoded.offsets.items[index],
                     output.items[before..],
                 );
@@ -247,7 +246,7 @@ fn titleAlloc(
         try appendCodepoint(allocator, &output, decoded.codepoints.items[emitted]);
         try recordEdit(
             edits,
-            sourceSlice(text, &decoded, emitted),
+            sourceSlice(text, decoded.offsets.items, emitted),
             decoded.offsets.items[emitted],
             output.items[before..],
         );
@@ -268,19 +267,24 @@ const DecodedText = struct {
 fn decodeAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
-) error{OutOfMemory}!DecodedText {
+    need_offsets: bool,
+) Error!DecodedText {
     var codepoints = std.ArrayList(u21).empty;
     errdefer codepoints.deinit(allocator);
     var offsets = std.ArrayList(usize).empty;
     errdefer offsets.deinit(allocator);
     try codepoints.ensureTotalCapacity(allocator, text.len);
-    try offsets.ensureTotalCapacity(allocator, text.len);
+    if (need_offsets) {
+        try offsets.ensureTotalCapacity(allocator, text.len);
+    }
 
     var cursor: usize = 0;
-    while (scalar.decodeValid(text, cursor)) |decoded| {
-        try codepoints.append(allocator, decoded.codepoint);
-        try offsets.append(allocator, cursor);
-        cursor = decoded.next;
+    while (cursor < text.len) {
+        const decoded = scalar.decodeValidatingPacked(text, cursor);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        codepoints.appendAssumeCapacity(scalar.packedCodepoint(decoded));
+        if (need_offsets) offsets.appendAssumeCapacity(cursor);
+        cursor += scalar.packedLength(decoded);
     }
     return .{ .codepoints = codepoints, .offsets = offsets };
 }
@@ -306,19 +310,138 @@ fn mapAlloc(
     comptime kind: full_data.Kind,
     edits: ?*Edits,
 ) Error![]u8 {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
     if (edits) |value| value.clearRetainingCapacity();
+    if (edits == null) return mapStreaming(allocator, text, options, kind);
+    return mapWithEdits(allocator, text, options, kind, edits.?);
+}
 
-    var decoded = try decodeAlloc(allocator, text);
+/// Decode, map, and encode in one pass.
+///
+/// Context conditions are resolved from the UTF-8 bytes directly: backward
+/// scans decode the previous scalar on demand, and forward scans walk ahead of
+/// the cursor. The common case never touches either scan, so no intermediate
+/// code-point array is built.
+fn mapStreaming(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    options: Options,
+    comptime kind: full_data.Kind,
+) Error![]u8 {
+    if (options.locale == .root) {
+        return mapStreamingInner(allocator, text, .root, kind, true);
+    }
+    return mapStreamingInner(allocator, text, options.locale, kind, false);
+}
+
+fn mapStreamingInner(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    locale: Locale,
+    comptime kind: full_data.Kind,
+    comptime root: bool,
+) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try output.ensureTotalCapacity(allocator, text.len);
+
+    var cursor: usize = 0;
+    while (cursor < text.len) {
+        const first = text[cursor];
+        // Root-locale ASCII can never hit a SpecialCasing record, so an ASCII
+        // run maps byte-for-byte without decoding or table lookups.
+        if (root and first < 0x80) {
+            const ascii_chunk = 16;
+            while (cursor + ascii_chunk <= text.len) {
+                const chunk: @Vector(ascii_chunk, u8) =
+                    text[cursor..][0..ascii_chunk].*;
+                if (@reduce(.Or, chunk) & 0x80 != 0) break;
+                if (output.unusedCapacitySlice().len < ascii_chunk) {
+                    try output.ensureUnusedCapacity(allocator, ascii_chunk);
+                }
+                output.unusedCapacitySlice()[0..ascii_chunk].* =
+                    asciiMapVector(chunk, kind);
+                output.items.len += ascii_chunk;
+                cursor += ascii_chunk;
+            }
+            const spare = output.unusedCapacitySlice();
+            const limit = @min(spare.len, text.len - cursor);
+            var count: usize = 0;
+            while (count < limit) : (count += 1) {
+                const byte = text[cursor + count];
+                if (byte >= 0x80) break;
+                spare[count] = switch (kind) {
+                    .lower => if (byte >= 'A' and byte <= 'Z')
+                        byte + ('a' - 'A')
+                    else
+                        byte,
+                    .upper, .title => if (byte >= 'a' and byte <= 'z')
+                        byte - ('a' - 'A')
+                    else
+                        byte,
+                };
+            }
+            if (count == 0) {
+                try output.ensureUnusedCapacity(allocator, 4);
+                continue;
+            }
+            output.items.len += count;
+            cursor += count;
+            continue;
+        }
+
+        const decoded = scalar.decodeValidatingPacked(text, cursor);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        const codepoint = scalar.packedCodepoint(decoded);
+        const next = cursor + scalar.packedLength(decoded);
+        if (!full_data.interesting(codepoint, kind, root)) {
+            // The mapping is the identity, so the source bytes are the result.
+            const length = next - cursor;
+            if (output.unusedCapacitySlice().len < length) {
+                try output.ensureUnusedCapacity(allocator, length);
+            }
+            copySourceBytes(output.unusedCapacitySlice(), text[cursor..next]);
+            output.items.len += length;
+            cursor = next;
+            continue;
+        }
+        const mapping = if (root)
+            lookupRootStreaming(codepoint, kind, text, cursor, next)
+        else
+            lookupStreaming(codepoint, kind, locale, text, cursor, next);
+        if (mapping) |components| {
+            try appendMapping(allocator, &output, components);
+        } else {
+            const mapped = switch (kind) {
+                .lower => simpleLowerFast(codepoint),
+                .upper => simpleUpperFast(codepoint),
+                .title => simpleTitleFast(codepoint),
+            };
+            try appendCodepoint(allocator, &output, mapped);
+        }
+        cursor = next;
+    }
+    return output.toOwnedSlice(allocator);
+}
+
+fn mapWithEdits(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    options: Options,
+    comptime kind: full_data.Kind,
+    edits: *Edits,
+) Error![]u8 {
+    var decoded = try decodeAlloc(allocator, text, true);
     defer decoded.deinit(allocator);
 
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
     try output.ensureTotalCapacity(allocator, text.len);
 
-    for (decoded.codepoints.items, 0..) |codepoint, index| {
+    const codepoints = decoded.codepoints.items;
+    const offsets = decoded.offsets.items;
+    for (codepoints, 0..) |codepoint, index| {
         const before = output.items.len;
-        if (lookup(codepoint, kind, options.locale, decoded.codepoints.items, index)) |mapping| {
+        if (lookup(codepoint, kind, options.locale, codepoints, index)) |mapping| {
             try appendMapping(allocator, &output, mapping);
         } else {
             const mapped = switch (kind) {
@@ -330,18 +453,22 @@ fn mapAlloc(
         }
         try recordEdit(
             edits,
-            sourceSlice(text, &decoded, index),
-            decoded.offsets.items[index],
+            sourceSlice(text, offsets, index),
+            offsets[index],
             output.items[before..],
         );
     }
     return output.toOwnedSlice(allocator);
 }
 
-fn sourceSlice(text: []const u8, decoded: *const DecodedText, index: usize) []const u8 {
-    const start = decoded.offsets.items[index];
-    const end = if (index + 1 < decoded.offsets.items.len)
-        decoded.offsets.items[index + 1]
+fn sourceSlice(
+    text: []const u8,
+    offsets: []const usize,
+    index: usize,
+) []const u8 {
+    const start = offsets[index];
+    const end = if (index + 1 < offsets.len)
+        offsets[index + 1]
     else
         text.len;
     return text[start..end];
@@ -363,15 +490,15 @@ fn recordEdit(
     }
 }
 
-fn lookup(
+inline fn lookup(
     codepoint: u21,
     kind: full_data.Kind,
     locale: Locale,
     codepoints: []const u21,
     index: usize,
 ) ?[]const u21 {
+    if (!full_data.hasRecords(codepoint, locale == .root)) return null;
     const records = full_data.recordsFor(codepoint);
-    if (records.len == 0) return null;
 
     if (locale != .root) {
         const locale_bit: u3 = switch (locale) {
@@ -390,6 +517,58 @@ fn lookup(
     for (records) |record| {
         if (record.locale != locale_root) continue;
         if (!conditionsMatch(record.conditions, codepoints, index)) continue;
+        const mapping = full_data.componentsFor(record, kind);
+        return if (mapping.len == 0) null else mapping;
+    }
+    return null;
+}
+
+inline fn lookupRootStreaming(
+    codepoint: u21,
+    kind: full_data.Kind,
+    text: []const u8,
+    cursor: usize,
+    next: usize,
+) ?[]const u21 {
+    if (!full_data.hasRecords(codepoint, true)) return null;
+    for (full_data.recordsFor(codepoint)) |record| {
+        if (record.locale != locale_root) continue;
+        if (record.conditions != 0 and
+            !conditionsMatchAt(record.conditions, text, cursor, next)) continue;
+        const mapping = full_data.componentsFor(record, kind);
+        return if (mapping.len == 0) null else mapping;
+    }
+    return null;
+}
+
+inline fn lookupStreaming(
+    codepoint: u21,
+    kind: full_data.Kind,
+    locale: Locale,
+    text: []const u8,
+    cursor: usize,
+    next: usize,
+) ?[]const u21 {
+    if (!full_data.hasRecords(codepoint, locale == .root)) return null;
+    const records = full_data.recordsFor(codepoint);
+
+    if (locale != .root) {
+        const locale_bit: u3 = switch (locale) {
+            .root => locale_root,
+            .turkic => locale_turkic,
+            .lithuanian => locale_lithuanian,
+        };
+        for (records) |record| {
+            if (record.locale != locale_bit) continue;
+            if (!conditionsMatchAt(record.conditions, text, cursor, next)) continue;
+            const mapping = full_data.componentsFor(record, kind);
+            return if (mapping.len == 0) null else mapping;
+        }
+    }
+
+    for (records) |record| {
+        if (record.locale != locale_root) continue;
+        if (!conditionsMatchAt(record.conditions, text, cursor, next)) continue;
         const mapping = full_data.componentsFor(record, kind);
         return if (mapping.len == 0) null else mapping;
     }
@@ -479,16 +658,121 @@ fn afterI(codepoints: []const u21, index: usize) bool {
     return false;
 }
 
+fn conditionsMatchAt(
+    mask: u6,
+    text: []const u8,
+    cursor: usize,
+    next: usize,
+) bool {
+    if (mask & condition_final_sigma != 0 and
+        !finalSigmaAt(text, cursor, next)) return false;
+    if (mask & condition_after_soft_dotted != 0 and
+        !afterSoftDottedAt(text, cursor)) return false;
+    if (mask & condition_more_above != 0 and
+        !moreAboveAt(text, next)) return false;
+    if (mask & condition_before_dot != 0 and
+        !beforeDotAt(text, next)) return false;
+    if (mask & condition_not_before_dot != 0 and
+        beforeDotAt(text, next)) return false;
+    if (mask & condition_after_i != 0 and
+        !afterIAt(text, cursor)) return false;
+    return true;
+}
+
+/// Start offset of the scalar that ends at or before `offset`, or null when
+/// the text starts with a stray continuation byte.
+fn previousStart(text: []const u8, offset: usize) ?usize {
+    if (offset == 0) return null;
+    var start = offset - 1;
+    while (text[start] & 0xc0 == 0x80) {
+        if (start == 0) return null;
+        start -= 1;
+    }
+    return start;
+}
+
+fn finalSigmaAt(text: []const u8, cursor: usize, next: usize) bool {
+    var preceded_by_cased = false;
+    var at = cursor;
+    while (previousStart(text, at)) |start| {
+        at = start;
+        const decoded = scalar.decodeValid(text, start) orelse return false;
+        if (properties.isCaseIgnorable(decoded.codepoint)) continue;
+        preceded_by_cased = properties.isCased(decoded.codepoint);
+        break;
+    }
+    if (!preceded_by_cased) return false;
+
+    at = next;
+    while (at < text.len) {
+        const decoded = scalar.decodeValid(text, at) orelse break;
+        at = decoded.next;
+        if (properties.isCaseIgnorable(decoded.codepoint)) continue;
+        return !properties.isCased(decoded.codepoint);
+    }
+    return true;
+}
+
+fn afterSoftDottedAt(text: []const u8, cursor: usize) bool {
+    var at = cursor;
+    while (previousStart(text, at)) |start| {
+        at = start;
+        const decoded = scalar.decodeValid(text, start) orelse return false;
+        if (properties.isCaseIgnorable(decoded.codepoint)) continue;
+        return properties.isSoftDotted(decoded.codepoint);
+    }
+    return false;
+}
+
+fn afterIAt(text: []const u8, cursor: usize) bool {
+    var at = cursor;
+    while (previousStart(text, at)) |start| {
+        at = start;
+        const decoded = scalar.decodeValid(text, start) orelse return false;
+        if (properties.isCaseIgnorable(decoded.codepoint)) continue;
+        return decoded.codepoint == 'I';
+    }
+    return false;
+}
+
+fn moreAboveAt(text: []const u8, next: usize) bool {
+    var at = next;
+    while (at < text.len) {
+        const decoded = scalar.decodeValid(text, at) orelse break;
+        const combining = combining_class.forCodepoint(decoded.codepoint);
+        if (combining == 0) return false;
+        if (combining >= 230) return true;
+        at = decoded.next;
+    }
+    return false;
+}
+
+fn beforeDotAt(text: []const u8, next: usize) bool {
+    var at = next;
+    while (at < text.len) {
+        const decoded = scalar.decodeValid(text, at) orelse break;
+        if (decoded.codepoint == 0x0307) return true;
+        if (combining_class.forCodepoint(decoded.codepoint) == 0) return false;
+        at = decoded.next;
+    }
+    return false;
+}
+
 fn appendMapping(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
     mapping: []const u21,
 ) error{OutOfMemory}!void {
-    var encoded: [4]u8 = undefined;
-    for (mapping) |codepoint| {
-        const len = scalar.encodeUtf8(&encoded, codepoint);
-        try output.appendSlice(allocator, encoded[0..len]);
+    const needed = mapping.len * 4;
+    if (output.unusedCapacitySlice().len < needed) {
+        try output.ensureUnusedCapacity(allocator, needed);
     }
+    const dest = output.unusedCapacitySlice();
+    var written: usize = 0;
+    for (mapping) |codepoint| {
+        written += scalar.encodeUtf8(dest[written..][0..4], codepoint);
+    }
+    output.items.len += written;
 }
 
 fn appendCodepoint(
@@ -496,9 +780,58 @@ fn appendCodepoint(
     output: *std.ArrayList(u8),
     codepoint: u21,
 ) error{OutOfMemory}!void {
-    var encoded: [4]u8 = undefined;
-    const len = scalar.encodeUtf8(&encoded, codepoint);
-    try output.appendSlice(allocator, encoded[0..len]);
+    if (output.unusedCapacitySlice().len < 4) {
+        try output.ensureUnusedCapacity(allocator, 4);
+    }
+    const dest = output.unusedCapacitySlice();
+    const len = scalar.encodeUtf8(dest[0..4], codepoint);
+    output.items.len += len;
+}
+
+inline fn asciiMapVector(
+    chunk: @Vector(16, u8),
+    comptime kind: full_data.Kind,
+) @Vector(16, u8) {
+    const Vector = @Vector(16, u8);
+    const delta: Vector = @splat(0x20);
+    const zero: Vector = @splat(0);
+    return switch (kind) {
+        .lower => chunk +% @select(
+            u8,
+            (chunk >= @as(Vector, @splat('A'))) &
+                (chunk <= @as(Vector, @splat('Z'))),
+            delta,
+            zero,
+        ),
+        .upper, .title => chunk -% @select(
+            u8,
+            (chunk >= @as(Vector, @splat('a'))) &
+                (chunk <= @as(Vector, @splat('z'))),
+            delta,
+            zero,
+        ),
+    };
+}
+
+inline fn copySourceBytes(dest: []u8, source: []const u8) void {
+    switch (source.len) {
+        1 => dest[0] = source[0],
+        2 => {
+            dest[0] = source[0];
+            dest[1] = source[1];
+        },
+        3 => {
+            dest[0] = source[0];
+            dest[1] = source[1];
+            dest[2] = source[2];
+        },
+        else => {
+            dest[0] = source[0];
+            dest[1] = source[1];
+            dest[2] = source[2];
+            dest[3] = source[3];
+        },
+    }
 }
 
 inline fn simpleLowerFast(codepoint: u21) u21 {
@@ -594,6 +927,59 @@ test "full case mapping rejects invalid UTF-8" {
         error.InvalidUtf8,
         fullUpperAlloc(std.testing.allocator, "\xff", .{}),
     );
+}
+
+test "streaming and edit-tracking mappings agree" {
+    const allocator = std.testing.allocator;
+    var edits = Edits.init(allocator);
+    defer edits.deinit();
+    var buffer: [8]u8 = undefined;
+    var codepoint: u21 = 0;
+    // Astral code points always take the table path; sample them instead of
+    // paying for allocations on each of the million plane 1-16 scalars.
+    // U+0307 has locale-only records and is not root-interesting.
+    const extra_samples = [_]u21{
+        0x0307, 0x10400, 0x10428, 0x104b0, 0x10570, 0x10d50, 0x118a0,
+        0x16e40, 0x1e900, 0x1e921, 0x1f600,
+    };
+    while (true) : (codepoint += 1) {
+        if (codepoint >= 0xD800 and codepoint <= 0xDFFF) continue;
+        if (codepoint == 0x10000) {
+            for (extra_samples) |sample| {
+                try expectSameMapping(allocator, &edits, &buffer, sample);
+            }
+            break;
+        }
+        if (!full_data.interesting(codepoint, .lower, true) and
+            !full_data.interesting(codepoint, .upper, true)) continue;
+        try expectSameMapping(allocator, &edits, &buffer, codepoint);
+    }
+}
+
+fn expectSameMapping(
+    allocator: std.mem.Allocator,
+    edits: *Edits,
+    buffer: *[8]u8,
+    codepoint: u21,
+) !void {
+    const length = scalar.encodeUtf8(buffer, codepoint);
+    const text = buffer[0..length];
+    for ([_]Locale{ .root, .turkic, .lithuanian }) |locale| {
+        const options = Options{ .locale = locale };
+        inline for ([_]full_data.Kind{ .lower, .upper }) |kind| {
+            const mapped = if (kind == .lower)
+                try fullLowerAlloc(allocator, text, options)
+            else
+                try fullUpperAlloc(allocator, text, options);
+            defer allocator.free(mapped);
+            const tracked = if (kind == .lower)
+                try fullLowerWithEditsAlloc(allocator, text, edits, options)
+            else
+                try fullUpperWithEditsAlloc(allocator, text, edits, options);
+            defer allocator.free(tracked);
+            try std.testing.expectEqualStrings(mapped, tracked);
+        }
+    }
 }
 
 test "Final_Sigma ignores case-ignorable marks" {
