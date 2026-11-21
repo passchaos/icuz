@@ -1071,33 +1071,67 @@ pub fn isNormalizedUtf16(
     units: []const u16,
     form: Form,
 ) error{InvalidUtf16}!bool {
-    if (!utf16.validate(units)) return error.InvalidUtf16;
-
     var starter: ?u21 = null;
     var previous_input_class: u8 = 0;
-    var iterator = utf16.Iterator{ .units = units };
-    while (iterator.next()) |codepoint| {
-        if (codepoint < 0x80) {
-            starter = codepoint;
+    var cursor: usize = 0;
+    while (cursor < units.len) {
+        const unit = units[cursor];
+        if (unit < 0x80) {
+            var end = cursor;
+            while (end < units.len and units[end] < 0x80) end += 1;
+            starter = units[end - 1];
+            previous_input_class = 0;
+            cursor = end;
+            continue;
+        }
+        // CJK ideographs are simple starters in both canonical forms; the
+        // same run fast path keeps the UTF-8 scan out of the tables.
+        if (unit >= 0x4e00 and unit <= 0x9fff) {
+            cursor += 1;
+            while (cursor < units.len and
+                units[cursor] >= 0x4e00 and units[cursor] <= 0x9fff)
+            {
+                cursor += 1;
+            }
+            starter = null;
             previous_input_class = 0;
             continue;
         }
+        const decoded = utf16.decodePacked(units, cursor);
+        if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
+        const codepoint = utf16.packedCodepoint(decoded);
+        cursor += utf16.packedLength(decoded);
         const quick_check = data.quickCheck(codepoint, form);
-        if (quick_check == .no) return false;
+        if (quick_check == .no) {
+            return invalidSuffixOrFalse(units, cursor);
+        }
         const current_class = combining_class.forCodepoint(codepoint);
         if (current_class != 0 and
-            previous_input_class > current_class) return false;
+            previous_input_class > current_class)
+        {
+            return invalidSuffixOrFalse(units, cursor);
+        }
         if (quick_check == .maybe and starter != null and
             (previous_input_class == 0 or
                 previous_input_class < current_class) and
             pairChangesUnderForm(starter.?, codepoint, form))
         {
-            return false;
+            return invalidSuffixOrFalse(units, cursor);
         }
         if (current_class == 0) starter = codepoint;
         previous_input_class = current_class;
     }
     return true;
+}
+
+/// Report "not normalized" after checking that the unscanned UTF-16 suffix is
+/// still valid, preserving the API's InvalidUtf16 contract.
+inline fn invalidSuffixOrFalse(
+    units: []const u16,
+    index: usize,
+) error{InvalidUtf16}!bool {
+    if (!utf16.validate(units[index..])) return error.InvalidUtf16;
+    return false;
 }
 
 /// Incremental normalizer for chunked UTF-8 input.
@@ -2274,6 +2308,24 @@ test "UTF-16 normalization matches the UTF-8 path" {
         error.InvalidUtf16,
         normalizeUtf16Into(allocator, &.{ 0xd800, 0x41 }, .nfc, &buffer),
     );
+    // `isNormalizedUtf16` stops at the first change; an invalid suffix must
+    // still surface as InvalidUtf16.
+    try testing.expectError(
+        error.InvalidUtf16,
+        isNormalizedUtf16(&.{0xd800}, .nfc),
+    );
+    try testing.expectError(
+        error.InvalidUtf16,
+        isNormalizedUtf16(&.{ 0x41, 0x301, 0xd800 }, .nfc),
+    );
+    try testing.expectError(
+        error.InvalidUtf16,
+        isNormalizedUtf16(&.{ 0x41, 0xdc00 }, .nfc),
+    );
+    try testing.expect(try isNormalizedUtf16(
+        &.{ 0x4e16, 0x754c, 0x41 },
+        .nfc,
+    ));
 }
 
 test "streaming normalizer matches one-shot normalization" {

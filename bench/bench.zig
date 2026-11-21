@@ -346,6 +346,33 @@ fn benchNormalizationUtf16Alloc(
     reportBytes(name, rounds * text.len, best);
 }
 
+fn benchNormalizationUtf16Check(
+    name: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    const units = std.unicode.utf8ToUtf16LeAlloc(allocator, text) catch
+        unreachable;
+    defer allocator.free(units);
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 4000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            sink +%= @intFromBool(
+                icuz.normalization.isNormalizedUtf16(
+                    units,
+                    .nfc,
+                ) catch unreachable,
+            );
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * text.len, best);
+}
+
 fn benchNormalizationCodepoints(
     name: []const u8,
     codepoints: []const u21,
@@ -1480,6 +1507,17 @@ pub fn main() !void {
     );
     benchNormalizationUtf16Into(
         "NFC Chinese (utf16 reuse)",
+        chinese_runtime,
+        allocator,
+    );
+    benchNormalizationUtf16Check("isNormalized mixed (utf16)", mixed_runtime, allocator);
+    benchNormalizationUtf16Check(
+        "isNormalized e+marks (utf16)",
+        "e\u{0301}\u{0323} " ** 16,
+        allocator,
+    );
+    benchNormalizationUtf16Check(
+        "isNormalized Chinese (utf16)",
         chinese_runtime,
         allocator,
     );
