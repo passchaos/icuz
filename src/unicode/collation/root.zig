@@ -1178,10 +1178,18 @@ const EntryMatch = struct {
 };
 
 fn findContiguous(codepoints: []const u21, index: usize) ?EntryMatch {
+    return findContiguousFrom(codepoints, index, pageStart(codepoints[index]));
+}
+
+fn findContiguousFrom(
+    codepoints: []const u21,
+    index: usize,
+    entry_index: usize,
+) ?EntryMatch {
     const first = codepoints[index];
-    var entry_index = pageStart(first);
-    while (entry_index < @as(usize, entry_count)) : (entry_index += 1) {
-        const entry = entryAt(entry_index);
+    var cursor = entry_index;
+    while (cursor < @as(usize, entry_count)) : (cursor += 1) {
+        const entry = entryAt(cursor);
         if (entry.first != first) break;
 
         const length = @as(usize, entry.len);
@@ -1365,7 +1373,7 @@ fn appendElements(
         return 1;
     }
 
-    if (findContiguous(codepoints, index)) |matched| {
+    if (findContiguousFrom(codepoints, index, first_entry)) |matched| {
         entry = matched.entry;
         length = matched.length;
         if (length > 1) sequence[1] = codepoints[index + 1];

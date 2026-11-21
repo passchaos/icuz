@@ -231,13 +231,22 @@ int main() {
             static_cast<int32_t>(encoded.size()), u16.data(),
             static_cast<int32_t>(u16.size()), &status);
         std::vector<UChar> out(u16.size() + 32);
-        bench_bytes("GBK -> UTF-8 Chinese", texts[4].utf8.size(), 4000, [&] {
+        bench_bytes("GBK -> UTF-16 Chinese", texts[4].utf8.size(), 4000, [&] {
             status = U_ZERO_ERROR;
             ucnv_reset(conv);
             ucnv_toUChars(conv, out.data(), static_cast<int32_t>(out.size()),
                 encoded.data(), encoded_length, &status);
         });
         ucnv_close(conv);
+
+        // icuz's bench converts back to UTF-8, so compare the same target.
+        std::vector<char> utf8_out(u16.size() * 3 + 32);
+        bench_bytes("GBK -> UTF-8 Chinese", texts[4].utf8.size(), 4000, [&] {
+            status = U_ZERO_ERROR;
+            ucnv_convert("UTF-8", "GBK", utf8_out.data(),
+                static_cast<int32_t>(utf8_out.size()), encoded.data(),
+                encoded_length, &status);
+        });
     }
 
     std::printf("\n-- segmentation --\n");
