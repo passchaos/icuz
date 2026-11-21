@@ -7,6 +7,7 @@
 
 const std = @import("std");
 
+const scalar = @import("../scalar/root.zig");
 const property_data = @import("properties.zig");
 const rules = @import("rules.zig");
 
@@ -644,7 +645,7 @@ pub fn breaks(text: []const u8) Error!Iterator {
 }
 
 pub fn breaksAssumeValid(text: []const u8) Iterator {
-    std.debug.assert(std.unicode.utf8ValidateSlice(text));
+    scalar.assertValidUtf8(text);
     return .{ .text = text };
 }
 

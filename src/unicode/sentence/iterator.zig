@@ -104,7 +104,7 @@ pub fn segments(text: []const u8) Error!Iterator {
 }
 
 pub fn assumeValid(text: []const u8) Iterator {
-    std.debug.assert(std.unicode.utf8ValidateSlice(text));
+    scalar.assertValidUtf8(text);
     return .{ .text = text };
 }
 

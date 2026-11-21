@@ -1016,7 +1016,7 @@ pub fn isNormalizedAssumeValid(text: []const u8) bool {
 
 /// Report whether prevalidated UTF-8 is in `form` without allocating.
 pub fn isNormalizedFormAssumeValid(text: []const u8, form: Form) bool {
-    std.debug.assert(std.unicode.utf8ValidateSlice(text));
+    scalar.assertValidUtf8(text);
     return isNormalizedFormUnchecked(text, form);
 }
 

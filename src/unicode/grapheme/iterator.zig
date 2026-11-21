@@ -42,7 +42,7 @@ pub const BoundaryView = struct {
     }
 
     pub fn assumeValid(text: []const u8) BoundaryView {
-        std.debug.assert(std.unicode.utf8ValidateSlice(text));
+        scalar_value.assertValidUtf8(text);
         return .{ .text = text };
     }
 
@@ -50,7 +50,7 @@ pub const BoundaryView = struct {
         text: []const u8,
         tailoring: ScalarBreaker.Tailoring,
     ) BoundaryView {
-        std.debug.assert(std.unicode.utf8ValidateSlice(text));
+        scalar_value.assertValidUtf8(text);
         return .{ .text = text, .tailoring = tailoring };
     }
 
@@ -481,7 +481,7 @@ pub fn clustersWithTailoring(
 }
 
 pub fn assumeValid(text: []const u8) Iterator {
-    std.debug.assert(std.unicode.utf8ValidateSlice(text));
+    scalar_value.assertValidUtf8(text);
     return graphemeIterator(text);
 }
 
@@ -489,7 +489,7 @@ pub fn assumeValidWithTailoring(
     text: []const u8,
     tailoring: ScalarBreaker.Tailoring,
 ) Iterator {
-    std.debug.assert(std.unicode.utf8ValidateSlice(text));
+    scalar_value.assertValidUtf8(text);
     return .{ .text = text, .tailoring = tailoring };
 }
 

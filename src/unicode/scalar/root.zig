@@ -1,5 +1,7 @@
 //! Shared Unicode scalar-value validation and validated UTF-8 decoding.
 
+const std = @import("std");
+
 pub const Decoded = struct {
     codepoint: u21,
     next: usize,
@@ -197,8 +199,19 @@ pub inline fn isValid(value: u21) bool {
     return value <= 0x10ffff and !(value >= 0xd800 and value <= 0xdfff);
 }
 
+/// Check a prevalidated UTF-8 contract only in safe builds.
+///
+/// `std.debug.assert` is not enough here: even in ReleaseFast its condition
+/// still feeds an `unreachable` branch, so the whole validator call stays
+/// alive. The `*AssumeValid` entry points must not pay a second validation
+/// pass in release builds.
+pub inline fn assertValidUtf8(text: []const u8) void {
+    if (std.debug.runtime_safety) {
+        std.debug.assert(std.unicode.utf8ValidateSlice(text));
+    }
+}
+
 test "validated scalar decoding matches std for representative sequences" {
-    const std = @import("std");
     const samples = [_][]const u8{
         "A",
         "\u{00e9}",
@@ -220,7 +233,6 @@ test "validated scalar decoding matches std for representative sequences" {
 }
 
 test "Unicode scalar validation covers both invalid regions" {
-    const std = @import("std");
     try std.testing.expect(isValid(0));
     try std.testing.expect(isValid(0x10ffff));
     try std.testing.expect(!isValid(0xd800));
@@ -253,7 +265,6 @@ test "validating scalar decoding rejects invalid UTF-8" {
 }
 
 test "packed decoding matches the struct decoders" {
-    const std = @import("std");
     const testing = std.testing;
     const samples = [_][]const u8{
         "A",
