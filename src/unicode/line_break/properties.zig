@@ -94,6 +94,18 @@ const Header = struct {
 const header = parseHeader();
 const ascii_properties = buildAsciiProperties();
 
+/// Hangul jamo properties, materialized at compile time. Normalization and
+/// line-break runs traverse long jamo sequences, so a direct 256-entry table
+/// removes the page-index load from every scalar in the run.
+const hangul_properties: [256]Properties = blk: {
+    @setEvalBranchQuota(100_000);
+    var table: [256]Properties = undefined;
+    for (&table, 0..) |*entry, index| {
+        entry.* = lookupGenerated(@intCast(0x1100 + index));
+    }
+    break :blk table;
+};
+
 /// Looks up all UAX #14 inputs for one Unicode scalar.
 ///
 /// ASCII is materialized at compile time because prose scanning requests these
@@ -108,6 +120,13 @@ pub inline fn lookup(codepoint: u21) Properties {
     };
     if (codepoint < 0x80) return ascii_properties[codepoint];
     return lookupGenerated(codepoint);
+}
+
+/// Property lookup for a scalar already known to be a Hangul jamo
+/// (U+1100..U+11FF).
+pub inline fn lookupHangul(codepoint: u21) Properties {
+    std.debug.assert(codepoint >= 0x1100 and codepoint <= 0x11ff);
+    return hangul_properties[codepoint - 0x1100];
 }
 
 pub inline fn lookupDouble(first: u8, second: u8) Properties {

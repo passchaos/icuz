@@ -217,7 +217,10 @@ pub const Iterator = struct {
             const decoded = scalar.decodeValidPacked(self.text, cursor);
             const codepoint = scalar.packedCodepoint(decoded);
             const next_index = cursor + scalar.packedLength(decoded);
-            const raw = properties(codepoint);
+            const raw = if (codepoint >= 0x1100 and codepoint <= 0x11ff)
+                property_data.lookupHangul(codepoint)
+            else
+                properties(codepoint);
             if (raw.class != .hangul_l_jamo) return false;
             self.state.consume(raw.class, .{
                 .codepoint = codepoint,
@@ -235,7 +238,10 @@ pub const Iterator = struct {
             const decoded = scalar.decodeValidPacked(self.text, cursor);
             const codepoint = scalar.packedCodepoint(decoded);
             const next_index = cursor + scalar.packedLength(decoded);
-            const raw = properties(codepoint);
+            const raw = if (codepoint >= 0x1100 and codepoint <= 0x11ff)
+                property_data.lookupHangul(codepoint)
+            else
+                properties(codepoint);
             if (!rules.hangulNoBreak(last_class, raw.class)) break;
             self.state.consume(raw.class, .{
                 .codepoint = codepoint,

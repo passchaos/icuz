@@ -1550,32 +1550,36 @@ const HangulSyllable = struct {
 /// Compose the L jamo `l` with the scalars after `after_l`. Returns null
 /// when the next scalar is not a V jamo.
 fn hangulSyllableAt(text: []const u8, l: u21, after_l: usize) ?HangulSyllable {
-    const v = decodeJamo(text, after_l) orelse return null;
-    const lv = composeHangul(l, v.codepoint) orelse return null;
-    const t = decodeJamo(text, v.next) orelse
-        return .{ .composed = lv, .end = v.next };
-    if (composeHangul(lv, t.codepoint)) |lvt| {
-        return .{ .composed = lvt, .end = t.next };
+    const v_packed = decodeJamo(text, after_l);
+    if (v_packed == scalar.packed_invalid) return null;
+    const v = scalar.packedCodepoint(v_packed);
+    const lv = composeHangul(l, v) orelse return null;
+    const after_v = after_l + scalar.packedLength(v_packed);
+    const t_packed = decodeJamo(text, after_v);
+    if (t_packed != scalar.packed_invalid) {
+        if (composeHangul(lv, scalar.packedCodepoint(t_packed))) |lvt| {
+            return .{
+                .composed = lvt,
+                .end = after_v + scalar.packedLength(t_packed),
+            };
+        }
     }
-    return .{ .composed = lv, .end = v.next };
+    return .{ .composed = lv, .end = after_v };
 }
 
-/// Decode a three-byte Hangul jamo (U+1100..U+11FF) at `index`, or null when
-/// the bytes are not a valid jamo sequence.
-fn decodeJamo(
-    text: []const u8,
-    index: usize,
-) ?struct { codepoint: u21, next: usize } {
-    if (index + 3 > text.len) return null;
-    if (text[index] != 0xe1) return null;
+/// Decode a three-byte Hangul jamo (U+1100..U+11FF) at `index`, or return
+/// `packed_invalid` when the bytes are not a valid jamo sequence.
+fn decodeJamo(text: []const u8, index: usize) u32 {
+    if (index + 3 > text.len) return scalar.packed_invalid;
+    if (text[index] != 0xe1) return scalar.packed_invalid;
     const second = text[index + 1];
     const third = text[index + 2];
-    if (second & 0xfc != 0x84 or third & 0xc0 != 0x80) return null;
-    return .{
-        .codepoint = 0x1000 + (@as(u21, second & 0x3f) << 6) +
-            (third & 0x3f),
-        .next = index + 3,
-    };
+    if (second & 0xfc != 0x84 or third & 0xc0 != 0x80) {
+        return scalar.packed_invalid;
+    }
+    const codepoint: u32 = 0x1000 + (@as(u32, second & 0x3f) << 6) +
+        (third & 0x3f);
+    return ((codepoint + 1) << 3) | 2;
 }
 
 fn composeHangul(starter: u21, combining: u21) ?u21 {
