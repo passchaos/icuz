@@ -171,12 +171,12 @@ fn normalizeFusedInto(
                         text[stable_start..start],
                     );
                 }
-                var encoded: [4]u8 = undefined;
-                const encoded_len = std.unicode.utf8Encode(
-                    syllable.composed,
-                    &encoded,
-                ) catch unreachable;
-                try output.appendSlice(allocator, encoded[0..encoded_len]);
+                // A composed syllable is always U+AC00..U+D7A3, so it
+                // encodes to exactly three bytes; write them in place.
+                const slot = try output.addManyAsSlice(allocator, 3);
+                slot[0] = @intCast(0xe0 | (syllable.composed >> 12));
+                slot[1] = @intCast(0x80 | ((syllable.composed >> 6) & 0x3f));
+                slot[2] = @intCast(0x80 | (syllable.composed & 0x3f));
                 index = syllable.end;
                 stable_start = index;
                 starter = null;
@@ -1471,14 +1471,32 @@ const HangulSyllable = struct {
 /// Compose the L jamo `l` with the scalars after `after_l`. Returns null
 /// when the next scalar is not a V jamo.
 fn hangulSyllableAt(text: []const u8, l: u21, after_l: usize) ?HangulSyllable {
-    const v = scalar.decodeValidating(text, after_l) orelse return null;
+    const v = decodeJamo(text, after_l) orelse return null;
     const lv = composeHangul(l, v.codepoint) orelse return null;
-    const t = scalar.decodeValidating(text, v.next) orelse
+    const t = decodeJamo(text, v.next) orelse
         return .{ .composed = lv, .end = v.next };
     if (composeHangul(lv, t.codepoint)) |lvt| {
         return .{ .composed = lvt, .end = t.next };
     }
     return .{ .composed = lv, .end = v.next };
+}
+
+/// Decode a three-byte Hangul jamo (U+1100..U+11FF) at `index`, or null when
+/// the bytes are not a valid jamo sequence.
+fn decodeJamo(
+    text: []const u8,
+    index: usize,
+) ?struct { codepoint: u21, next: usize } {
+    if (index + 3 > text.len) return null;
+    if (text[index] != 0xe1) return null;
+    const second = text[index + 1];
+    const third = text[index + 2];
+    if (second & 0xfc != 0x84 or third & 0xc0 != 0x80) return null;
+    return .{
+        .codepoint = 0x1000 + (@as(u21, second & 0x3f) << 6) +
+            (third & 0x3f),
+        .next = index + 3,
+    };
 }
 
 fn composeHangul(starter: u21, combining: u21) ?u21 {
