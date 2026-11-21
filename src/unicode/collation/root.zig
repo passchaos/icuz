@@ -1539,27 +1539,9 @@ inline fn appendElements(
             }
         }
     }
-    return appendElementsSlow(
-        allocator,
-        ces,
-        codepoints,
-        index,
-        reorder,
-        shifted,
-        tables,
-    );
-}
-
-fn appendElementsSlow(
-    allocator: std.mem.Allocator,
-    ces: anytype,
-    codepoints: []const u21,
-    index: usize,
-    reorder: ?tailorings.Reorder,
-    shifted: bool,
-    tables: ?*const RootTables,
-) error{OutOfMemory}!usize {
-    const first = codepoints[index];
+    // Non-Latin scripts dominate mixed text. Resolve the direct and implicit
+    // cases here so they do not pay the contraction-path call; only complex
+    // entries reach the out-of-line routine.
     if (tables) |root| {
         if (first < direct_bmp_limit) {
             const entry = &root.direct[first];
@@ -1585,6 +1567,27 @@ fn appendElementsSlow(
             return 1;
         }
     }
+    return appendElementsSlow(
+        allocator,
+        ces,
+        codepoints,
+        index,
+        reorder,
+        shifted,
+        tables,
+    );
+}
+
+fn appendElementsSlow(
+    allocator: std.mem.Allocator,
+    ces: anytype,
+    codepoints: []const u21,
+    index: usize,
+    reorder: ?tailorings.Reorder,
+    shifted: bool,
+    tables: ?*const RootTables,
+) error{OutOfMemory}!usize {
+    const first = codepoints[index];
     var sequence: [3]u21 = .{ codepoints[index], 0, 0 };
     var length: usize = 1;
     var entry: ?Entry = null;
