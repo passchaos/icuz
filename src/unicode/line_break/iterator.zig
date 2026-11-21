@@ -117,12 +117,14 @@ pub const Iterator = struct {
                         .kind = .soft,
                     };
                 }
-                // A Hangul run never starts with a word class, so skip the
-                // word-run scanner when the previous scalar is already
-                // inside one.
+                // Jamo encode with a 0xE1 lead, which the word-run scanner
+                // would decode once only to reject. Try the Hangul run first;
+                // it rejects other leads with one comparison. A Hangul run
+                // never starts with a word class, so the word scanner cannot
+                // apply when the previous scalar is already inside one.
+                if (self.consumeHangulRun()) continue;
                 if (!rules.isHangulBlock(self.state.last.class) and
                     self.consumeUnicodeWordRun()) continue;
-                if (self.consumeHangulRun()) continue;
             }
 
             const start = self.cursor;
@@ -204,7 +206,8 @@ pub const Iterator = struct {
         if (self.text[self.cursor] < 0x80) return false;
         var last_class = self.state.last.class;
         var cursor = self.cursor;
-        var consumed = false;
+        var significant_count: usize = 0;
+        var tail: [3]rules.HistoryEntry = undefined;
         if (!rules.isHangulBlock(last_class)) {
             // Start a run at an L jamo only when the boundary before it is
             // already settled: start of text or an emitted break. The L-to-V
@@ -222,17 +225,15 @@ pub const Iterator = struct {
             else
                 properties(codepoint);
             if (raw.class != .hangul_l_jamo) return false;
-            self.state.consume(raw.class, .{
+            tail[0] = .{
                 .codepoint = codepoint,
                 .properties = raw,
                 .class = raw.class,
-                .start = cursor,
-                .next = next_index,
-            });
+            };
+            significant_count = 1;
             self.suppress_break_at_cursor = false;
             cursor = next_index;
             last_class = raw.class;
-            consumed = true;
         }
         while (cursor < self.text.len and self.text[cursor] >= 0x80) {
             const decoded = scalar.decodeValidPacked(self.text, cursor);
@@ -243,18 +244,20 @@ pub const Iterator = struct {
             else
                 properties(codepoint);
             if (!rules.hangulNoBreak(last_class, raw.class)) break;
-            self.state.consume(raw.class, .{
+            tail[significant_count % tail.len] = .{
                 .codepoint = codepoint,
                 .properties = raw,
                 .class = raw.class,
-                .start = cursor,
-                .next = next_index,
-            });
+            };
+            significant_count += 1;
             cursor = next_index;
-            consumed = true;
             last_class = raw.class;
         }
-        if (!consumed) return false;
+        if (significant_count == 0) return false;
+        // Every interior pair is prohibited, so the run needs the same
+        // bounded-history update as a word run rather than a full state
+        // transition per scalar.
+        self.state.consumeWordRun(last_class, significant_count, &tail);
         self.cursor = cursor;
         self.simple_ascii = false;
         return true;
