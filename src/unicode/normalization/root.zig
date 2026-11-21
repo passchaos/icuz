@@ -135,29 +135,32 @@ fn normalizeFusedInto(
         if (cjk_lead_simple and text[index] >= 0xe4 and
             text[index] <= 0xe9)
         {
-            // CJK prose dominates this scan; check two scalars per
-            // iteration so the loop runs half as often.
-            if (index + 6 <= text.len and
-                text[index + 3] >= 0xe4 and text[index + 3] <= 0xe9 and
-                ((text[index + 1] | text[index + 2] |
-                    text[index + 4] | text[index + 5]) & 0xc0) == 0x80)
+            // CJK prose dominates this scan. Every scalar in the run is a
+            // simple starter, so advance two scalars per check and commit the
+            // scan state once when the run ends.
+            var cursor = index;
+            while (cursor + 6 <= text.len and
+                text[cursor + 3] >= 0xe4 and text[cursor + 3] <= 0xe9 and
+                ((text[cursor + 1] | text[cursor + 2] |
+                    text[cursor + 4] | text[cursor + 5]) & 0xc0) == 0x80)
             {
-                starter = null;
-                starter_offset = start;
-                previous_input_class = 0;
-                index += 6;
-                continue;
+                cursor += 6;
             }
-            if (index + 3 > text.len) return error.InvalidUtf8;
-            if (text[index + 1] & 0xc0 != 0x80 or
-                text[index + 2] & 0xc0 != 0x80)
+            if (cursor < text.len and text[cursor] >= 0xe4 and
+                text[cursor] <= 0xe9)
             {
-                return error.InvalidUtf8;
+                if (cursor + 3 > text.len) return error.InvalidUtf8;
+                if (text[cursor + 1] & 0xc0 != 0x80 or
+                    text[cursor + 2] & 0xc0 != 0x80)
+                {
+                    return error.InvalidUtf8;
+                }
+                cursor += 3;
             }
             starter = null;
             starter_offset = start;
             previous_input_class = 0;
-            index += 3;
+            index = cursor;
             continue;
         }
         // CJK punctuation and fullwidth forms are inert under the canonical
@@ -184,10 +187,10 @@ fn normalizeFusedInto(
                 }
             }
         }
-        const decoded = scalar.decodeValidating(text, index) orelse
-            return error.InvalidUtf8;
-        const codepoint = decoded.codepoint;
-        index = decoded.next;
+        const decoded = scalar.decodeValidatingPacked(text, index);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        const codepoint = scalar.packedCodepoint(decoded);
+        index += scalar.packedLength(decoded);
 
         // Compose L+V+T jamo directly: the syllable index is arithmetic, so
         // the generic segment machinery (decompose, order, compose, encode)
@@ -848,10 +851,10 @@ fn normalizeSegmentInto(
             engine.pending = run[run.len - 1];
             continue;
         }
-        const decoded = scalar.decodeValidating(text, index) orelse
-            return error.InvalidUtf8;
-        index = decoded.next;
-        try engine.feed(decoded.codepoint);
+        const decoded = scalar.decodeValidatingPacked(text, index);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        index += scalar.packedLength(decoded);
+        try engine.feed(scalar.packedCodepoint(decoded));
     }
     try engine.flush();
 }
@@ -877,10 +880,10 @@ fn normalizeSegmentFastAt(
     var index = start;
     var first = true;
     while (index < text.len) {
-        const decoded = scalar.decodeValidating(text, index) orelse
-            return error.InvalidUtf8;
-        const codepoint = decoded.codepoint;
-        const sequence_len = decoded.next - index;
+        const decoded = scalar.decodeValidatingPacked(text, index);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        const codepoint = scalar.packedCodepoint(decoded);
+        const sequence_len = scalar.packedLength(decoded);
         if (!first) {
             const class = combining_class.forCodepoint(codepoint);
             if (class == 0 and !data.isCompositionSecond(codepoint) and
@@ -1050,23 +1053,36 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
         if (cjk_lead_simple and text[index] >= 0xe4 and
             text[index] <= 0xe9)
         {
-            if (index + 3 > text.len) {
-                return .{ .normalized = false, .valid_until = start };
-            }
-            if (text[index + 1] & 0xc0 != 0x80 or
-                text[index + 2] & 0xc0 != 0x80)
+            var cursor = index;
+            while (cursor + 6 <= text.len and
+                text[cursor + 3] >= 0xe4 and text[cursor + 3] <= 0xe9 and
+                ((text[cursor + 1] | text[cursor + 2] |
+                    text[cursor + 4] | text[cursor + 5]) & 0xc0) == 0x80)
             {
-                return .{ .normalized = false, .valid_until = start };
+                cursor += 6;
+            }
+            if (cursor < text.len and text[cursor] >= 0xe4 and
+                text[cursor] <= 0xe9)
+            {
+                if (cursor + 3 > text.len or
+                    text[cursor + 1] & 0xc0 != 0x80 or
+                    text[cursor + 2] & 0xc0 != 0x80)
+                {
+                    return .{ .normalized = false, .valid_until = cursor };
+                }
+                cursor += 3;
             }
             starter = null;
             previous_input_class = 0;
-            index += 3;
+            index = cursor;
             continue;
         }
-        const decoded = scalar.decodeValidating(text, index) orelse
+        const decoded = scalar.decodeValidatingPacked(text, index);
+        if (decoded == scalar.packed_invalid) {
             return .{ .normalized = false, .valid_until = start };
-        const codepoint = decoded.codepoint;
-        index = decoded.next;
+        }
+        const codepoint = scalar.packedCodepoint(decoded);
+        index += scalar.packedLength(decoded);
         if (data.isSimplePage(codepoint, compatibility)) {
             starter = codepoint;
             previous_input_class = 0;
@@ -1146,28 +1162,39 @@ fn spanQuickCheckYesImpl(
         if (cjk_lead_simple and text[index] >= 0xe4 and
             text[index] <= 0xe9)
         {
-            if (index + 3 > text.len) {
-                if (validating) return error.InvalidUtf8;
-                return text.len;
-            }
-            if (text[index + 1] & 0xc0 != 0x80 or
-                text[index + 2] & 0xc0 != 0x80)
+            var cursor = index;
+            while (cursor + 6 <= text.len and
+                text[cursor + 3] >= 0xe4 and text[cursor + 3] <= 0xe9 and
+                ((text[cursor + 1] | text[cursor + 2] |
+                    text[cursor + 4] | text[cursor + 5]) & 0xc0) == 0x80)
             {
-                if (validating) return error.InvalidUtf8;
-                return text.len;
+                cursor += 6;
+            }
+            if (cursor < text.len and text[cursor] >= 0xe4 and
+                text[cursor] <= 0xe9)
+            {
+                if (cursor + 3 > text.len or
+                    text[cursor + 1] & 0xc0 != 0x80 or
+                    text[cursor + 2] & 0xc0 != 0x80)
+                {
+                    if (validating) return error.InvalidUtf8;
+                    return text.len;
+                }
+                cursor += 3;
             }
             starter = null;
             starter_offset = start;
             previous_input_class = 0;
-            index += 3;
+            index = cursor;
             continue;
         }
-        const decoded = scalar.decodeValidating(text, index) orelse {
+        const decoded = scalar.decodeValidatingPacked(text, index);
+        if (decoded == scalar.packed_invalid) {
             if (validating) return error.InvalidUtf8;
             return text.len;
-        };
-        const codepoint = decoded.codepoint;
-        index = decoded.next;
+        }
+        const codepoint = scalar.packedCodepoint(decoded);
+        index += scalar.packedLength(decoded);
         if (codepoint >= 0x80 and inert.isInert(codepoint, form)) {
             starter = codepoint;
             starter_offset = start;
@@ -1203,9 +1230,10 @@ fn segmentEnd(text: []const u8, index: usize) usize {
     var cursor = index;
     var first = true;
     while (cursor < text.len) {
-        const decoded = scalar.decodeValidating(text, cursor) orelse return text.len;
-        const codepoint = decoded.codepoint;
-        const length = decoded.next - cursor;
+        const decoded = scalar.decodeValidatingPacked(text, cursor);
+        if (decoded == scalar.packed_invalid) return text.len;
+        const codepoint = scalar.packedCodepoint(decoded);
+        const length = scalar.packedLength(decoded);
         if (!first and combining_class.forCodepoint(codepoint) == 0 and
             !data.isCompositionSecond(codepoint) and
             !isHangulVOrT(codepoint))

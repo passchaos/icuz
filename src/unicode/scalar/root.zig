@@ -93,6 +93,103 @@ pub inline fn decodeValidating(text: []const u8, offset: usize) ?Decoded {
     return null;
 }
 
+/// Packed decoding: `(codepoint + 1) << 3 | (length - 1)`, or zero for an
+/// invalid sequence. Returning one `u32` keeps the decoded scalar and its
+/// length in a single register, while an `?Decoded` optional makes the
+/// compiler spill a 16-byte temporary to the stack in hot loops.
+pub const packed_invalid: u32 = 0;
+
+/// Recover the scalar from a value returned by a packed decoder.
+/// `value` must not be `packed_invalid`.
+pub inline fn packedCodepoint(value: u32) u21 {
+    return @intCast((value >> 3) - 1);
+}
+
+/// Recover the UTF-8 sequence length from a packed decoder result.
+/// `value` must not be `packed_invalid`.
+pub inline fn packedLength(value: u32) usize {
+    return (value & 7) + 1;
+}
+
+/// Packed counterpart of `decodeValid` for input already proven valid.
+pub inline fn decodeValidPacked(text: []const u8, offset: usize) u32 {
+    if (offset >= text.len) return packed_invalid;
+    const first = text[offset];
+    if (first < 0x80) return (@as(u32, first) + 1) << 3;
+    if (first < 0xc2) return packed_invalid;
+    if (first < 0xe0) {
+        if (offset + 2 > text.len) return packed_invalid;
+        const codepoint = (@as(u32, first & 0x1f) << 6) |
+            @as(u32, text[offset + 1] & 0x3f);
+        return ((codepoint + 1) << 3) | 1;
+    }
+    if (first < 0xf0) {
+        if (offset + 3 > text.len) return packed_invalid;
+        const codepoint = (@as(u32, first & 0x0f) << 12) |
+            (@as(u32, text[offset + 1] & 0x3f) << 6) |
+            @as(u32, text[offset + 2] & 0x3f);
+        return ((codepoint + 1) << 3) | 2;
+    }
+    if (first < 0xf5) {
+        if (offset + 4 > text.len) return packed_invalid;
+        const codepoint = (@as(u32, first & 0x07) << 18) |
+            (@as(u32, text[offset + 1] & 0x3f) << 12) |
+            (@as(u32, text[offset + 2] & 0x3f) << 6) |
+            @as(u32, text[offset + 3] & 0x3f);
+        return ((codepoint + 1) << 3) | 3;
+    }
+    return packed_invalid;
+}
+
+/// Packed counterpart of `decodeValidating`.
+pub inline fn decodeValidatingPacked(text: []const u8, offset: usize) u32 {
+    if (offset >= text.len) return packed_invalid;
+    const first = text[offset];
+    if (first < 0x80) return (@as(u32, first) + 1) << 3;
+    if (first < 0xc2) return packed_invalid;
+    if (first < 0xe0) {
+        if (offset + 2 > text.len) return packed_invalid;
+        const second = text[offset + 1];
+        if (second & 0xc0 != 0x80) return packed_invalid;
+        const codepoint = (@as(u32, first & 0x1f) << 6) |
+            @as(u32, second & 0x3f);
+        return ((codepoint + 1) << 3) | 1;
+    }
+    if (first < 0xf0) {
+        if (offset + 3 > text.len) return packed_invalid;
+        const second = text[offset + 1];
+        const third = text[offset + 2];
+        if (second & 0xc0 != 0x80 or third & 0xc0 != 0x80) {
+            return packed_invalid;
+        }
+        const codepoint = (@as(u32, first & 0x0f) << 12) |
+            (@as(u32, second & 0x3f) << 6) |
+            @as(u32, third & 0x3f);
+        if (codepoint < 0x800) return packed_invalid;
+        if (codepoint >= 0xd800 and codepoint <= 0xdfff) {
+            return packed_invalid;
+        }
+        return ((codepoint + 1) << 3) | 2;
+    }
+    if (first < 0xf5) {
+        if (offset + 4 > text.len) return packed_invalid;
+        const second = text[offset + 1];
+        const third = text[offset + 2];
+        const fourth = text[offset + 3];
+        if (second & 0xc0 != 0x80 or third & 0xc0 != 0x80 or
+            fourth & 0xc0 != 0x80) return packed_invalid;
+        const codepoint = (@as(u32, first & 0x07) << 18) |
+            (@as(u32, second & 0x3f) << 12) |
+            (@as(u32, third & 0x3f) << 6) |
+            @as(u32, fourth & 0x3f);
+        if (codepoint < 0x10000 or codepoint > 0x10ffff) {
+            return packed_invalid;
+        }
+        return ((codepoint + 1) << 3) | 3;
+    }
+    return packed_invalid;
+}
+
 /// Zig's `u21` can represent values above Unicode's U+10FFFF limit, and it
 /// also includes the surrogate range. Property lookup tables must use this
 /// predicate before indexing generated scalar pages.
@@ -153,4 +250,46 @@ test "validating scalar decoding rejects invalid UTF-8" {
     try testing.expectEqual(@as(u21, 'A'), decodeValidating("A", 0).?.codepoint);
     try testing.expectEqual(@as(usize, 4), decodeValidating("\u{1f600}", 0).?.next);
     try testing.expect(decodeValidating("", 0) == null);
+}
+
+test "packed decoding matches the struct decoders" {
+    const std = @import("std");
+    const testing = std.testing;
+    const samples = [_][]const u8{
+        "A",
+        "\u{00e9}",
+        "\u{0628}",
+        "\u{0939}",
+        "\u{20ac}",
+        "\u{1f600}",
+        "\u{10ffff}",
+    };
+    for (samples) |text| {
+        const valid = decodeValidPacked(text, 0);
+        const validating = decodeValidatingPacked(text, 0);
+        try testing.expectEqual(valid, validating);
+        try testing.expectEqual(@as(u21, try std.unicode.utf8Decode(text)), packedCodepoint(valid));
+        try testing.expectEqual(text.len, packedLength(valid));
+        try testing.expectEqual(@as(u21, 0), packedCodepoint(decodeValidPacked("\x00", 0)));
+    }
+    try testing.expectEqual(packed_invalid, decodeValidPacked("", 0));
+    try testing.expectEqual(packed_invalid, decodeValidPacked("\xe0\xa4", 0));
+    const invalid = [_][]const u8{
+        "\x80",
+        "\xc0\x80",
+        "\xc1\xbf",
+        "\xe0\x80\x80",
+        "\xed\xa0\x80",
+        "\xf0\x80\x80\x80",
+        "\xf4\x90\x80\x80",
+        "\xf5\x80\x80\x80",
+        "\xe2\x28\xa1",
+        "\xe2\x82",
+    };
+    for (invalid) |sample| {
+        try testing.expectEqual(
+            packed_invalid,
+            decodeValidatingPacked(sample, 0),
+        );
+    }
 }
