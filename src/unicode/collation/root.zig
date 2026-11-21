@@ -1442,6 +1442,46 @@ fn reorderedAsciiTable(map: tailorings.Reorder) ?*const [128]AsciiEntry {
     return &slot.entries;
 }
 
+/// Single-element Latin-1 entry for `first`, remapped by `map`. Script
+/// reordering also shifts these primary weights, and the root direct table is
+/// unavailable when a reorder is active, so the remapped element is cached per
+/// thread. Returns null for multi-element entries, which keep the full path.
+inline fn reorderedLatinElement(
+    first: u21,
+    map: tailorings.Reorder,
+) ?CollationElement {
+    if (!latin_elements.usable or first >= latin_limit) return null;
+    const tag = (@as(u64, 1) << 63) |
+        (@as(u64, map.index) << 21) | first;
+    const cached = tailorings.cachedElement(first);
+    if (cached.tag == tag + 1 and cached.kind == .single) {
+        return .{
+            .primary = cached.primary,
+            .secondary = cached.secondary,
+            .tertiary = cached.tertiary,
+            .variable = false,
+        };
+    }
+    const entry = latin_elements.table[@as(usize, first)];
+    if (entry.count != 1) return null;
+    const element = entry.elements[0];
+    const primary = reorderPrimary(map, element.primary);
+    cached.* = .{
+        .tag = tag + 1,
+        .primary = primary,
+        .secondary = element.secondary,
+        .tertiary = element.tertiary,
+        .kind = .single,
+        .variable = false,
+    };
+    return .{
+        .primary = primary,
+        .secondary = element.secondary,
+        .tertiary = element.tertiary,
+        .variable = false,
+    };
+}
+
 /// ASCII elements for `first`, remapped for `reorder` when one applies.
 inline fn asciiEntryFor(
     first: u21,
@@ -1488,6 +1528,14 @@ inline fn appendElements(
             });
         }
         return 1;
+    }
+    if (!shifted and first >= 128 and first < latin_limit) {
+        if (reorder) |map| {
+            if (reorderedLatinElement(first, map)) |element| {
+                try ces.append(allocator, element);
+                return 1;
+            }
+        }
     }
     return appendElementsSlow(
         allocator,
