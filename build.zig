@@ -74,6 +74,8 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("bench/bench.zig"),
             .target = target,
             .optimize = .ReleaseFast,
+            // The harness times with clock_gettime through std.c.
+            .link_libc = true,
             .imports = &.{
                 .{ .name = "icuz", .module = bench_icuz },
             },
