@@ -135,6 +135,19 @@ fn normalizeFusedInto(
         if (cjk_lead_simple and text[index] >= 0xe4 and
             text[index] <= 0xe9)
         {
+            // CJK prose dominates this scan; check two scalars per
+            // iteration so the loop runs half as often.
+            if (index + 6 <= text.len and
+                text[index + 3] >= 0xe4 and text[index + 3] <= 0xe9 and
+                ((text[index + 1] | text[index + 2] |
+                    text[index + 4] | text[index + 5]) & 0xc0) == 0x80)
+            {
+                starter = null;
+                starter_offset = start;
+                previous_input_class = 0;
+                index += 6;
+                continue;
+            }
             if (index + 3 > text.len) return error.InvalidUtf8;
             if (text[index + 1] & 0xc0 != 0x80 or
                 text[index + 2] & 0xc0 != 0x80)
