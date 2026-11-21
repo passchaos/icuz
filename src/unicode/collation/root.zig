@@ -928,18 +928,69 @@ fn buildElements(
             }
         }
         if (locale_tailoring) |tailoring| {
-            if (tailorings.couldMatch(tailoring_pages, source[index])) {
+            const first = source[index];
+            const tag = tailorings.cacheTag(tailoring, first);
+            const cached = tailorings.cachedElement(first);
+            if (cached.tag == tag) {
+                switch (cached.kind) {
+                    .single => {
+                        try ces.append(allocator, .{
+                            .primary = cached.primary,
+                            .secondary = cached.secondary,
+                            .tertiary = cached.tertiary,
+                            .variable = cached.variable,
+                        });
+                        index += 1;
+                        continue;
+                    },
+                    .absent => {
+                        index += try appendElements(
+                            allocator,
+                            ces,
+                            source,
+                            index,
+                            reorder,
+                            shifted,
+                            tables,
+                        );
+                        continue;
+                    },
+                    .complex, .empty => {},
+                }
+            }
+            if (tailorings.couldMatch(tailoring_pages, first)) {
                 if (tailorings.match(
                     tailoring,
                     tailoring_pages,
                     source,
                     index,
                 )) |matched| {
-                    try appendTailored(allocator, ces, matched.rule);
+                    const rule = matched.rule;
+                    if (rule.sequence_len == 1 and rule.ce_count == 1) {
+                        const element = tailorings.elementAt(rule, 0);
+                        cached.* = .{
+                            .tag = tag,
+                            .primary = element.primary,
+                            .secondary = element.secondary,
+                            .tertiary = element.tertiary,
+                            .kind = .single,
+                            .variable = element.variable,
+                        };
+                        try ces.append(allocator, .{
+                            .primary = element.primary,
+                            .secondary = element.secondary,
+                            .tertiary = element.tertiary,
+                            .variable = element.variable,
+                        });
+                    } else {
+                        cached.* = .{ .tag = tag, .kind = .complex };
+                        try appendTailored(allocator, ces, rule);
+                    }
                     index += matched.length;
                     continue;
                 }
             }
+            cached.* = .{ .tag = tag, .kind = .absent };
         }
         index += try appendElements(
             allocator,

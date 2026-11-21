@@ -221,6 +221,49 @@ pub fn elementAt(rule: Rule, index: usize) Element {
     };
 }
 
+/// Thread-local cache of collation elements for single-code-point,
+/// single-element rules. Tailored text repeats the same code points, so the
+/// cached weights replace the page lookup and the two dependent blob reads
+/// with one table load.
+pub const CachedElement = struct {
+    /// `cacheTag(tailoring, codepoint)`; 0 marks an empty slot.
+    tag: u64 = 0,
+    primary: u32 = 0,
+    secondary: u32 = 0,
+    tertiary: u32 = 0,
+    kind: Kind = .empty,
+    variable: bool = false,
+
+    pub const Kind = enum(u8) {
+        empty = 0,
+        /// The tailoring has no rule for the code point.
+        absent = 1,
+        /// A single-code-point rule with exactly one collation element.
+        single = 2,
+        /// Any other rule; callers fall back to `match`.
+        complex = 3,
+    };
+};
+
+const element_cache_len = 256;
+
+threadlocal var element_cache: [element_cache_len]CachedElement =
+    [_]CachedElement{.{}} ** element_cache_len;
+
+/// Cache slot for `codepoint`.
+pub inline fn cachedElement(codepoint: u21) *CachedElement {
+    const hash: usize = (@as(u32, codepoint) *% 0x9E3779B1) >> 24;
+    return &element_cache[hash & (element_cache_len - 1)];
+}
+
+/// Cache tag for `codepoint` under `tailoring`. The tag carries the rule
+/// range, so switching locales only misses; it never reuses another locale's
+/// rule. Zero is reserved for empty slots.
+pub inline fn cacheTag(tailoring: Tailoring, codepoint: u21) u64 {
+    return ((@as(u64, tailoring.rule_start) << 39) |
+        (@as(u64, tailoring.rule_count) << 21) | codepoint) + 1;
+}
+
 pub fn lookup(locale: []const u8, collation_type: []const u8) ?Tailoring {
     var low: usize = 0;
     var high: usize = locale_count;
