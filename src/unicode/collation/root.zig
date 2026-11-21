@@ -847,8 +847,6 @@ fn sortKeyUtf16Resolved(
     tailoring_pages: ?*tailorings.PageIndex,
     output: *std.ArrayList(u32),
 ) error{ InvalidUtf16, OutOfMemory }!void {
-    if (!utf16.validate(units)) return error.InvalidUtf16;
-
     var stack_codepoints: [512]u21 = undefined;
     if (units.len <= stack_codepoints.len) {
         var count: usize = 0;
@@ -857,6 +855,9 @@ fn sortKeyUtf16Resolved(
             stack_codepoints[count] = codepoint;
             count += 1;
         }
+        // The iterator stops at the first invalid surrogate pair; valid
+        // input consumes every unit.
+        if (iterator.index != units.len) return error.InvalidUtf16;
         return sortKeyCodepointsResolved(
             allocator,
             stack_codepoints[0..count],
@@ -874,6 +875,7 @@ fn sortKeyUtf16Resolved(
     while (iterator.next()) |codepoint| {
         try codepoints.append(allocator, codepoint);
     }
+    if (iterator.index != units.len) return error.InvalidUtf16;
     try sortKeyCodepointsResolved(
         allocator,
         codepoints.items,
