@@ -282,6 +282,70 @@ fn benchNormalizationInto(
     reportBytes(name, rounds * text.len, best);
 }
 
+/// Normalize UTF-16 into a caller-owned buffer, matching ICU's
+/// `unorm2_normalize` input and output units.
+fn benchNormalizationUtf16Into(
+    name: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    const units = std.unicode.utf8ToUtf16LeAlloc(allocator, text) catch
+        unreachable;
+    defer allocator.free(units);
+    var buffer = std.ArrayList(u16).empty;
+    defer buffer.deinit(allocator);
+    buffer.ensureTotalCapacity(allocator, units.len * 2) catch unreachable;
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 4000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const changed = icuz.normalization.normalizeUtf16Into(
+                allocator,
+                units,
+                .nfc,
+                &buffer,
+            ) catch unreachable;
+            sink +%= @intFromBool(changed);
+            buffer.clearRetainingCapacity();
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * text.len, best);
+}
+
+fn benchNormalizationUtf16Alloc(
+    name: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    const units = std.unicode.utf8ToUtf16LeAlloc(allocator, text) catch
+        unreachable;
+    defer allocator.free(units);
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 4000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const output = icuz.normalization.normalizeUtf16Alloc(
+                allocator,
+                units,
+                .nfc,
+            ) catch unreachable;
+            if (output) |owned| {
+                sink +%= owned.len;
+                allocator.free(owned);
+            }
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * text.len, best);
+}
+
 fn benchNormalizationCodepoints(
     name: []const u8,
     codepoints: []const u21,
@@ -1400,6 +1464,23 @@ pub fn main() !void {
     benchNormalizationInto(
         "NFC jamo (reuse)",
         "\u{1100}\u{1161}\u{11a8} " ** 12,
+        allocator,
+    );
+    benchNormalizationUtf16Into("NFC mixed (utf16 reuse)", mixed_runtime, allocator);
+    benchNormalizationUtf16Alloc("NFC mixed (utf16)", mixed_runtime, allocator);
+    benchNormalizationUtf16Into(
+        "NFC e+marks (utf16 reuse)",
+        "e\u{0301}\u{0323} " ** 16,
+        allocator,
+    );
+    benchNormalizationUtf16Into(
+        "NFC jamo (utf16 reuse)",
+        "\u{1100}\u{1161}\u{11a8} " ** 12,
+        allocator,
+    );
+    benchNormalizationUtf16Into(
+        "NFC Chinese (utf16 reuse)",
+        chinese_runtime,
         allocator,
     );
     {

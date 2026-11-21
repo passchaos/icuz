@@ -673,28 +673,422 @@ pub fn isNormalizedCodepoints(
     return true;
 }
 
+/// Append the normalized form of a UTF-16 slice to `output`.
+///
+/// Returns whether the normalized text differs from the input. The output
+/// receives the normalized text in both cases, so callers can reuse one buffer
+/// across calls.
+pub fn normalizeUtf16Into(
+    allocator: std.mem.Allocator,
+    units: []const u16,
+    form: Form,
+    output: *std.ArrayList(u16),
+) error{ InvalidUtf16, OutOfMemory }!bool {
+    const before = output.items.len;
+    const changed = normalizeUtf16Fused(allocator, units, form, output) catch |err| {
+        output.shrinkRetainingCapacity(before);
+        return err;
+    };
+    if (!changed) try output.appendSlice(allocator, units);
+    return changed;
+}
+
 /// Normalize a UTF-16 slice. Returns null when it is already normalized.
 pub fn normalizeUtf16Alloc(
     allocator: std.mem.Allocator,
     units: []const u16,
     form: Form,
 ) error{ InvalidUtf16, OutOfMemory }!?[]u16 {
-    const codepoints = utf16.decodeAlloc(allocator, units) catch |err| switch (err) {
-        error.InvalidUtf16 => return error.InvalidUtf16,
-        error.OutOfMemory => return error.OutOfMemory,
-        error.InvalidUtf8 => unreachable,
-    };
-    defer allocator.free(codepoints);
+    var output = std.ArrayList(u16).empty;
+    errdefer output.deinit(allocator);
+    if (!try normalizeUtf16Fused(allocator, units, form, &output)) {
+        output.deinit(allocator);
+        return null;
+    }
+    return try output.toOwnedSlice(allocator);
+}
 
-    const normalized = try normalizeCodepointsAlloc(allocator, codepoints, form);
-    const result = normalized orelse return null;
-    defer allocator.free(result);
-
-    return utf16.encodeAlloc(allocator, result) catch |err| switch (err) {
-        error.InvalidUtf16 => return error.InvalidUtf16,
-        error.OutOfMemory => return error.OutOfMemory,
-        error.InvalidUtf8 => unreachable,
+fn normalizeUtf16Fused(
+    allocator: std.mem.Allocator,
+    units: []const u16,
+    form: Form,
+    output: *std.ArrayList(u16),
+) error{ OutOfMemory, InvalidUtf16 }!bool {
+    return switch (form) {
+        inline else => |specialized| normalizeFusedUtf16Into(
+            specialized,
+            allocator,
+            units,
+            output,
+        ),
     };
+}
+
+const Utf16Sink = struct {
+    list: *std.ArrayList(u16),
+    allocator: std.mem.Allocator,
+
+    fn appendCodepoints(
+        self: *Utf16Sink,
+        codepoints: []const u21,
+    ) error{OutOfMemory}!void {
+        try self.list.ensureUnusedCapacity(
+            self.allocator,
+            codepoints.len * 2,
+        );
+        for (codepoints) |codepoint| {
+            if (codepoint <= 0xFFFF) {
+                self.list.appendAssumeCapacity(@intCast(codepoint));
+                continue;
+            }
+            const value = codepoint - 0x10000;
+            self.list.appendAssumeCapacity(
+                @intCast(0xD800 + (value >> 10)),
+            );
+            self.list.appendAssumeCapacity(
+                @intCast(0xDC00 + (value & 0x3FF)),
+            );
+        }
+    }
+
+    fn appendOne(
+        self: *Utf16Sink,
+        codepoint: u21,
+    ) error{OutOfMemory}!void {
+        if (codepoint <= 0xFFFF) {
+            try self.list.append(self.allocator, @intCast(codepoint));
+            return;
+        }
+        const value = codepoint - 0x10000;
+        try self.list.append(self.allocator, @intCast(0xD800 + (value >> 10)));
+        try self.list.append(self.allocator, @intCast(0xDC00 + (value & 0x3FF)));
+    }
+};
+
+/// Packed UTF-16 decode: `(codepoint + 1) << 1 | (length - 1)`, or zero for
+/// an invalid sequence. Returning one register avoids the optional-struct
+/// spill that the UTF-8 path also avoids.
+const utf16_packed_invalid: u32 = 0;
+
+inline fn decodeUtf16Packed(units: []const u16, index: usize) u32 {
+    const unit = units[index];
+    if (unit < 0xD800 or unit > 0xDFFF) {
+        return (@as(u32, unit) + 1) << 1;
+    }
+    if (unit > 0xDBFF or index + 1 >= units.len) {
+        return utf16_packed_invalid;
+    }
+    const low = units[index + 1];
+    if (low < 0xDC00 or low > 0xDFFF) return utf16_packed_invalid;
+    const value = (@as(u32, unit - 0xD800) << 10) | (low - 0xDC00);
+    return ((0x10000 + value + 1) << 1) | 1;
+}
+
+inline fn packedUtf16Codepoint(value: u32) u21 {
+    return @intCast((value >> 1) - 1);
+}
+
+inline fn packedUtf16Length(value: u32) usize {
+    return (value & 1) + 1;
+}
+
+/// Compose the L jamo `l` with the UTF-16 units after `after_l`.
+fn hangulSyllableAt16(
+    units: []const u16,
+    l: u21,
+    after_l: usize,
+    end: *usize,
+) ?u21 {
+    if (after_l >= units.len) return null;
+    const v = units[after_l];
+    if (v < 0x1161 or v > 0x1175) return null;
+    const lv = composeHangul(l, v) orelse return null;
+    const after_v = after_l + 1;
+    if (after_v < units.len) {
+        const t = units[after_v];
+        if (t >= 0x11a8 and t <= 0x11c2) {
+            if (composeHangulT(lv, t)) |lvt| {
+                end.* = after_v + 1;
+                return lvt;
+            }
+        }
+    }
+    end.* = after_v;
+    return lv;
+}
+
+/// Normalize one starter segment of UTF-16 units using stack storage.
+/// Returns the unit offset just past the segment, or null when the
+/// decomposed segment exceeds the stack buffer.
+fn normalizeSegmentFastAt16(
+    units: []const u16,
+    start: usize,
+    form: Form,
+    sink: *Utf16Sink,
+) error{ OutOfMemory, InvalidUtf16 }!?usize {
+    const compatibility = form == .nfkc or form == .nfkd;
+    const compose = form == .nfc or form == .nfkc;
+    var storage: [64]u21 = undefined;
+    var classes: [64]u8 = undefined;
+    var length: usize = 0;
+    var index = start;
+    var first = true;
+    while (index < units.len) {
+        const decoded = decodeUtf16Packed(units, index);
+        if (decoded == utf16_packed_invalid) return error.InvalidUtf16;
+        const codepoint = packedUtf16Codepoint(decoded);
+        const sequence_len = packedUtf16Length(decoded);
+        if (!first) {
+            const class = combining_class.forCodepoint(codepoint);
+            if (class == 0 and !data.isCompositionSecond(codepoint) and
+                !isHangulVOrT(codepoint))
+            {
+                break;
+            }
+        }
+        first = false;
+        index += sequence_len;
+        if (codepoint < 0x80) {
+            if (length == storage.len) return null;
+            storage[length] = codepoint;
+            classes[length] = 0;
+            length += 1;
+            continue;
+        }
+        if (data.isSimplePage(codepoint, compatibility)) {
+            if (length == storage.len) return null;
+            storage[length] = codepoint;
+            classes[length] = 0;
+            length += 1;
+            continue;
+        }
+        if (!compatibility and codepoint >= 0x300 and
+            codepoint < mark_decomposition_limit and
+            !mark_has_decomposition[codepoint - 0x300])
+        {
+            if (length == storage.len) return null;
+            storage[length] = codepoint;
+            classes[length] = combining_class.forCodepoint(codepoint);
+            length += 1;
+            continue;
+        }
+        var parts: [64]u21 = undefined;
+        const count = decomposeInto(&parts, codepoint, compatibility);
+        if (length + count > storage.len) return null;
+        for (parts[0..count]) |part| {
+            storage[length] = part;
+            classes[length] = combining_class.forCodepoint(part);
+            length += 1;
+        }
+    }
+    canonicalOrderWithClasses(storage[0..length], classes[0..length]);
+    const final_len = if (compose)
+        composeSliceWithClasses(storage[0..length], classes[0..length])
+    else
+        length;
+    try sink.appendCodepoints(storage[0..final_len]);
+    return index;
+}
+
+/// Unit offset of the next segment start at or after `index`.
+fn segmentEnd16(
+    units: []const u16,
+    index: usize,
+) error{InvalidUtf16}!usize {
+    var cursor = index;
+    var first = true;
+    while (cursor < units.len) {
+        const decoded = decodeUtf16Packed(units, cursor);
+        if (decoded == utf16_packed_invalid) return error.InvalidUtf16;
+        const codepoint = packedUtf16Codepoint(decoded);
+        if (!first and combining_class.forCodepoint(codepoint) == 0 and
+            !data.isCompositionSecond(codepoint) and
+            !isHangulVOrT(codepoint))
+        {
+            return cursor;
+        }
+        first = false;
+        cursor += packedUtf16Length(decoded);
+    }
+    return units.len;
+}
+
+fn normalizeSegmentFallback16(
+    allocator: std.mem.Allocator,
+    units: []const u16,
+    start: usize,
+    end: usize,
+    form: Form,
+    sink: *Utf16Sink,
+) error{ OutOfMemory, InvalidUtf16 }!void {
+    var codepoints = std.ArrayList(u21).empty;
+    defer codepoints.deinit(allocator);
+    try codepoints.ensureTotalCapacity(allocator, end - start);
+    var cursor = start;
+    while (cursor < end) {
+        const decoded = decodeUtf16Packed(units, cursor);
+        if (decoded == utf16_packed_invalid) return error.InvalidUtf16;
+        codepoints.appendAssumeCapacity(packedUtf16Codepoint(decoded));
+        cursor += packedUtf16Length(decoded);
+    }
+    var normalized = std.ArrayList(u21).empty;
+    defer normalized.deinit(allocator);
+    try normalizeCodepointsInto(allocator, codepoints.items, form, &normalized);
+    try sink.appendCodepoints(normalized.items);
+}
+
+/// Fused UTF-16 normalizer: the scan mirrors the UTF-8 path but decodes and
+/// emits UTF-16 units directly, avoiding a codepoint intermediate.
+fn normalizeFusedUtf16Into(
+    comptime form: Form,
+    allocator: std.mem.Allocator,
+    units: []const u16,
+    output: *std.ArrayList(u16),
+) error{ OutOfMemory, InvalidUtf16 }!bool {
+    if (units.len == 0) return false;
+    const compatibility = form == .nfkc or form == .nfkd;
+    const compose = form == .nfc or form == .nfkc;
+    var sink = Utf16Sink{ .list = output, .allocator = allocator };
+    var stable_start: usize = 0;
+    var changed = false;
+    var starter: ?u21 = null;
+    var starter_offset: usize = 0;
+    var previous_input_class: u8 = 0;
+    var index: usize = 0;
+    while (index < units.len) {
+        const unit = units[index];
+        if (unit < 0x80) {
+            var end = index;
+            while (end < units.len and units[end] < 0x80) end += 1;
+            starter = units[end - 1];
+            starter_offset = end - 1;
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
+        const start = index;
+        if (unit >= 0x4e00 and unit <= 0x9fff) {
+            var cursor = index + 1;
+            while (cursor < units.len and
+                units[cursor] >= 0x4e00 and units[cursor] <= 0x9fff)
+            {
+                cursor += 1;
+            }
+            starter = null;
+            starter_offset = start;
+            previous_input_class = 0;
+            index = cursor;
+            continue;
+        }
+        if (!compatibility) {
+            const inert_punctuation = (unit >= 0x3000 and unit <= 0x303f and
+                (unit < 0x302a or unit > 0x302f)) or
+                (unit >= 0xff00 and unit <= 0xffef);
+            if (inert_punctuation) {
+                starter = null;
+                starter_offset = start;
+                previous_input_class = 0;
+                index += 1;
+                continue;
+            }
+        }
+        const decoded = decodeUtf16Packed(units, index);
+        if (decoded == utf16_packed_invalid) return error.InvalidUtf16;
+        const codepoint = packedUtf16Codepoint(decoded);
+        index += packedUtf16Length(decoded);
+
+        if (compose and previous_input_class == 0 and
+            codepoint >= hangul_l_base and
+            codepoint < hangul_l_base + hangul_l_count)
+        {
+            var syllable_end: usize = undefined;
+            if (hangulSyllableAt16(
+                units,
+                codepoint,
+                index,
+                &syllable_end,
+            )) |composed| {
+                if (!changed) {
+                    try output.ensureUnusedCapacity(allocator, units.len + 16);
+                    changed = true;
+                }
+                if (start > stable_start) {
+                    try output.appendSlice(
+                        allocator,
+                        units[stable_start..start],
+                    );
+                }
+                try sink.appendOne(composed);
+                index = syllable_end;
+                stable_start = index;
+                starter = null;
+                starter_offset = index;
+                previous_input_class = 0;
+                continue;
+            }
+        }
+
+        if (codepoint >= 0x80 and inert.isInert(codepoint, form)) {
+            starter = codepoint;
+            starter_offset = start;
+            previous_input_class = 0;
+            continue;
+        }
+        const quick_check = data.quickCheck(codepoint, form);
+        const current_class = combining_class.forCodepoint(codepoint);
+        const edit = quick_check == .no or
+            (current_class != 0 and previous_input_class > current_class) or
+            (quick_check == .maybe and starter != null and
+                (previous_input_class == 0 or
+                    previous_input_class < current_class) and
+                pairChangesUnderForm(starter.?, codepoint, form));
+        if (edit) {
+            if (!changed) {
+                try output.ensureUnusedCapacity(allocator, units.len + 16);
+                changed = true;
+            }
+            if (starter_offset > stable_start) {
+                try output.appendSlice(
+                    allocator,
+                    units[stable_start..starter_offset],
+                );
+            }
+            const end = (try normalizeSegmentFastAt16(
+                units,
+                starter_offset,
+                form,
+                &sink,
+            )) orelse blk: {
+                const fallback_end = try segmentEnd16(
+                    units,
+                    starter_offset,
+                );
+                try normalizeSegmentFallback16(
+                    allocator,
+                    units,
+                    starter_offset,
+                    fallback_end,
+                    form,
+                    &sink,
+                );
+                break :blk fallback_end;
+            };
+            stable_start = end;
+            index = end;
+            starter = null;
+            starter_offset = end;
+            previous_input_class = 0;
+            continue;
+        }
+        if (current_class == 0) {
+            starter = codepoint;
+            starter_offset = start;
+        }
+        previous_input_class = current_class;
+    }
+    if (!changed) return false;
+    try output.appendSlice(allocator, units[stable_start..]);
+    return true;
 }
 
 /// Report whether a UTF-16 slice is in `form` without allocating.
@@ -1835,6 +2229,76 @@ test "UTF-16 normalization" {
     const text = try utf16.utf16ToUtf8Alloc(allocator, normalized);
     defer allocator.free(text);
     try std.testing.expectEqualStrings("caf\xc3\xa9", text);
+}
+
+test "UTF-16 normalization matches the UTF-8 path" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const inputs = [_][]const u8{
+        "",
+        "plain ASCII",
+        "cafe\u{0301}",
+        "A\u{0301}\u{0323}B",
+        "\u{1100}\u{1161}\u{11a8}",
+        "\u{ac00}\u{11a8}",
+        "\u{1f600}\u{1f469}\u{200d}\u{1f4bb}",
+        "Hello, 世界! café naïve Straße",
+        "\u{05e9}\u{05dc}\u{05d5}\u{05dd} \u{0645}\u{0631}\u{062d}\u{0628}\u{0627}",
+        "\u{0915}\u{094d}\u{0937}\u{093f}",
+        "\u{fb01}\u{212b}\u{1e9b}\u{0323}",
+        "e\u{0301}\u{0323} " ** 8,
+    };
+    const forms = [_]Form{ .nfc, .nfd, .nfkc, .nfkd };
+    for (forms) |form| {
+        for (inputs) |input| {
+            const units = try utf16.utf8ToUtf16Alloc(allocator, input);
+            defer allocator.free(units);
+
+            const expected = try normalizeFormAlloc(allocator, input, form);
+            defer if (expected) |owned| allocator.free(owned);
+            const expected_utf16 = try utf16.utf8ToUtf16Alloc(
+                allocator,
+                expected orelse input,
+            );
+            defer allocator.free(expected_utf16);
+
+            const actual = try normalizeUtf16Alloc(allocator, units, form);
+            defer if (actual) |owned| allocator.free(owned);
+            try testing.expectEqualSlices(
+                u16,
+                expected_utf16,
+                actual orelse units,
+            );
+
+            // The buffer-reuse API appends the same normalized units and
+            // reports the same change flag.
+            var buffer = std.ArrayList(u16).empty;
+            defer buffer.deinit(allocator);
+            const changed = try normalizeUtf16Into(
+                allocator,
+                units,
+                form,
+                &buffer,
+            );
+            try testing.expectEqual(expected != null, changed);
+            try testing.expectEqualSlices(u16, expected_utf16, buffer.items);
+        }
+    }
+    // Lone surrogates are rejected instead of decoded.
+    try testing.expectError(
+        error.InvalidUtf16,
+        normalizeUtf16Alloc(allocator, &.{0xd800}, .nfc),
+    );
+    try testing.expectError(
+        error.InvalidUtf16,
+        normalizeUtf16Alloc(allocator, &.{ 0xdc00, 0x41 }, .nfc),
+    );
+    var buffer = std.ArrayList(u16).empty;
+    defer buffer.deinit(allocator);
+    try testing.expectError(
+        error.InvalidUtf16,
+        normalizeUtf16Into(allocator, &.{ 0xd800, 0x41 }, .nfc, &buffer),
+    );
 }
 
 test "streaming normalizer matches one-shot normalization" {
