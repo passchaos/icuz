@@ -915,8 +915,8 @@ fn buildElements(
     ces: *CeBuffer,
 ) error{OutOfMemory}!void {
     try ces.ensureTotalCapacity(source.len + 8);
-    const direct: ?*const [direct_bmp_limit]DirectEntry =
-        if (reorder == null and !shifted) &direct_bmp_storage else null;
+    const tables: ?*const RootTables =
+        if (reorder == null and !shifted) &root_tables_storage else null;
     var index: usize = 0;
     while (index < source.len) {
         if (options.numeric) {
@@ -948,7 +948,7 @@ fn buildElements(
             index,
             reorder,
             shifted,
-            direct,
+            tables,
         );
     }
 }
@@ -972,7 +972,7 @@ fn sortKeyCodepointsResolved(
 
     const fast_conditions = !shifted and case_first == .off and !backwards and
         !options.numeric and !options.case_level;
-    ensureDirectBmp();
+    ensureRootTables();
     if (fast_conditions) {
         if (locale_tailoring) |tailoring| {
             if (try appendTailoredLatinSortKey(
@@ -1346,7 +1346,7 @@ fn appendElements(
     index: usize,
     reorder: ?tailorings.Reorder,
     shifted: bool,
-    direct: ?*const [direct_bmp_limit]DirectEntry,
+    tables: ?*const RootTables,
 ) error{OutOfMemory}!usize {
     const first = codepoints[index];
     // Root ASCII entries are precomputed; skip the page-table lookup unless
@@ -1366,9 +1366,9 @@ fn appendElements(
         }
         return 1;
     }
-    if (direct) |table| {
+    if (tables) |root| {
         if (first < direct_bmp_limit) {
-            const entry = &table[first];
+            const entry = &root.direct[first];
             switch (entry.kind) {
                 .direct => {
                     try ces.append(allocator, .{
@@ -1385,6 +1385,10 @@ fn appendElements(
                 },
                 .complex => {},
             }
+        }
+        if (!root.page_has_entries[first >> 8]) {
+            try appendImplicit(allocator, ces, first, reorder);
+            return 1;
         }
     }
     var sequence: [3]u21 = .{ codepoints[index], 0, 0 };
@@ -1458,7 +1462,7 @@ fn appendElements(
             skipped_offset,
             reorder,
             shifted,
-            direct,
+            tables,
         );
     }
     return cursor - index;
@@ -1537,7 +1541,7 @@ fn appendRootLevelsStrength(
             index,
             null,
             false,
-            &direct_bmp_storage,
+            &root_tables_storage,
         );
     }
 
@@ -1620,16 +1624,22 @@ const DirectEntry = struct {
     variable: bool = false,
 };
 
-var direct_bmp_storage: [direct_bmp_limit]DirectEntry = undefined;
-var direct_bmp_state = std.atomic.Value(u8).init(0);
+const RootTables = struct {
+    direct: [direct_bmp_limit]DirectEntry = undefined,
+    /// True when at least one root entry starts on the 256-scalar page.
+    page_has_entries: [0x1100]bool = undefined,
+};
 
-/// Build the direct-entry table once per process. Doing this at runtime
-/// keeps the table out of the comptime build cost while every later lookup
-/// is still a single table read.
-fn ensureDirectBmp() void {
-    if (direct_bmp_state.load(.acquire) == 2) return;
-    while (direct_bmp_state.cmpxchgStrong(0, 1, .acquire, .monotonic) != null) {
-        if (direct_bmp_state.load(.acquire) == 2) return;
+var root_tables_storage: RootTables = undefined;
+var root_tables_state = std.atomic.Value(u8).init(0);
+
+/// Build the root lookup tables once per process. Doing this at runtime
+/// keeps them out of the comptime build cost while every later lookup is
+/// still a single table read.
+fn ensureRootTables() void {
+    if (root_tables_state.load(.acquire) == 2) return;
+    while (root_tables_state.cmpxchgStrong(0, 1, .acquire, .monotonic) != null) {
+        if (root_tables_state.load(.acquire) == 2) return;
         std.atomic.spinLoopHint();
     }
     for (0..direct_bmp_limit) |codepoint| {
@@ -1647,16 +1657,16 @@ fn ensureDirectBmp() void {
             single = entry;
         }
         if (has_long) {
-            direct_bmp_storage[codepoint] = .{ .kind = .complex };
+            root_tables_storage.direct[codepoint] = .{ .kind = .complex };
             continue;
         }
         if (single) |entry| {
             if (entry.ce_count != 1) {
-                direct_bmp_storage[codepoint] = .{ .kind = .complex };
+                root_tables_storage.direct[codepoint] = .{ .kind = .complex };
                 continue;
             }
             const element = ceAt(entry.ce_offset);
-            direct_bmp_storage[codepoint] = .{
+            root_tables_storage.direct[codepoint] = .{
                 .kind = .direct,
                 .primary = element.primary,
                 .secondary = element.secondary,
@@ -1664,10 +1674,16 @@ fn ensureDirectBmp() void {
                 .variable = element.variable,
             };
         } else {
-            direct_bmp_storage[codepoint] = .{ .kind = .implicit };
+            root_tables_storage.direct[codepoint] = .{ .kind = .implicit };
         }
     }
-    direct_bmp_state.store(2, .release);
+    for (0..0x1100) |page| {
+        const entry_index = pageStart(@intCast(page << 8));
+        const page_end: u32 = @intCast((page + 1) << 8);
+        root_tables_storage.page_has_entries[page] =
+            entry_index < entry_count and entryAt(entry_index).first < page_end;
+    }
+    root_tables_state.store(2, .release);
 }
 
 const latin_elements = blk: {
@@ -3701,9 +3717,9 @@ test "collator attributes" {
 
 test "direct collation table matches the generic lookup" {
     const testing = @import("std").testing;
-    ensureDirectBmp();
+    ensureRootTables();
     for (0..direct_bmp_limit) |codepoint| {
-        const direct = direct_bmp_storage[codepoint];
+        const direct = root_tables_storage.direct[codepoint];
         var entry_index = pageStart(@intCast(codepoint));
         var single: ?Entry = null;
         var has_long = false;
@@ -3729,5 +3745,19 @@ test "direct collation table matches the generic lookup" {
         } else {
             try testing.expectEqual(DirectKind.implicit, direct.kind);
         }
+    }
+    for (0..0x1100) |page| {
+        const page_start: u32 = @intCast(page << 8);
+        const page_end = page_start + 256;
+        var entry_index = pageStart(@intCast(page_start));
+        var has_entry = false;
+        while (entry_index < entry_count) : (entry_index += 1) {
+            if (entryAt(entry_index).first >= page_end) break;
+            has_entry = true;
+        }
+        try testing.expectEqual(
+            has_entry,
+            root_tables_storage.page_has_entries[page],
+        );
     }
 }
