@@ -581,6 +581,26 @@ pub inline fn isAsciiHardBreak(byte: u8) bool {
     return byte == '\r' or byte == '\n' or byte == 0x0b or byte == 0x0c;
 }
 
+/// ASCII scalars whose boundary before them is always prohibited (LB13 for
+/// closing punctuation, exclamation, and symbols; LB15d for infix separators)
+/// and whose following space-to-word boundary is LB31 soft.
+const ascii_prose_punctuation = blk: {
+    var table = [_]bool{false} ** 256;
+    for (0..128) |byte| {
+        const class = property_data.lookup(@intCast(byte)).class;
+        table[byte] = class == .close_punctuation or
+            class == .close_parenthesis or
+            class == .exclamation or
+            class == .infix_separator or
+            class == .symbol;
+    }
+    break :blk table;
+};
+
+pub inline fn isAsciiProsePunctuation(byte: u8) bool {
+    return ascii_prose_punctuation[byte];
+}
+
 pub inline fn isWordClass(class: BreakClass) bool {
     return class == .alphabetic or class == .hebrew_letter or
         class == .numeric;
