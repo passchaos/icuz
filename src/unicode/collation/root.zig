@@ -628,6 +628,27 @@ fn sortKeyUtf8Resolved(
         var count: usize = 0;
         var cursor: usize = 0;
         while (cursor < text.len) {
+            if (text[cursor] < 0x80) {
+                // Widen ASCII runs eight scalars at a time; ASCII prose is a
+                // large share of sort keys and the scalar decoder would
+                // otherwise touch it one byte per iteration.
+                while (cursor + 8 <= text.len and
+                    count + 8 <= stack_codepoints.len)
+                {
+                    const bytes: @Vector(8, u8) = text[cursor..][0..8].*;
+                    if (@reduce(.Or, bytes) & 0x80 != 0) break;
+                    const wide: @Vector(8, u21) = @intCast(bytes);
+                    stack_codepoints[count..][0..8].* = wide;
+                    cursor += 8;
+                    count += 8;
+                }
+                while (cursor < text.len and text[cursor] < 0x80) {
+                    stack_codepoints[count] = text[cursor];
+                    count += 1;
+                    cursor += 1;
+                }
+                continue;
+            }
             const decoded = scalar.decodeValidatingPacked(text, cursor);
             if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
             stack_codepoints[count] = scalar.packedCodepoint(decoded);
