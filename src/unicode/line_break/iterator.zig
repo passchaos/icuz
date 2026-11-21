@@ -37,13 +37,20 @@ pub const Iterator = struct {
                 return .{ .byte_offset = self.text.len, .kind = .hard };
             }
 
-            // Try the non-ASCII run scanners first: they reject ASCII lead
-            // bytes with one comparison, and mixed-script text reaches them
-            // far more often than the ASCII prose shapes.
-            if (self.consumeUnicodeWordRun()) continue;
-            if (self.consumeHangulRun()) continue;
-            if (self.nextSimpleAscii()) |opportunity| return opportunity;
-            if (self.consumeAsciiWordRun()) continue;
+            // Dispatch on the lead byte: the ASCII prose scanners can only
+            // act on ASCII and the run scanners reject ASCII with one
+            // comparison, so a single branch replaces the cross-checks.
+            if (self.text[self.cursor] < 0x80) {
+                if (self.nextSimpleAscii()) |opportunity| return opportunity;
+                if (self.consumeAsciiWordRun()) continue;
+            } else {
+                // A Hangul run never starts with a word class, so skip the
+                // word-run scanner when the previous scalar is already
+                // inside one.
+                if (!rules.isHangulBlock(self.state.last.class) and
+                    self.consumeUnicodeWordRun()) continue;
+                if (self.consumeHangulRun()) continue;
+            }
 
             const decoded = rules.decodeValid(self.text, self.cursor);
             // A pending opportunity intentionally routes the first scalar of
@@ -103,11 +110,33 @@ pub const Iterator = struct {
     fn consumeHangulRun(self: *Iterator) bool {
         if (self.cursor >= self.text.len) return false;
         if (self.text[self.cursor] < 0x80) return false;
-        if (self.suppress_break_at_cursor) return false;
         var last_class = self.state.last.class;
-        if (!rules.isHangulBlock(last_class)) return false;
         var cursor = self.cursor;
         var consumed = false;
+        if (!rules.isHangulBlock(last_class)) {
+            // Start a run at an L jamo only when the boundary before it is
+            // already settled: start of text or an emitted break. The L-to-V
+            // boundary is then an internal LB26 pair. L jamo encode with a
+            // 0xE1 lead byte, so other scripts skip the decode entirely.
+            if (!(self.state.count == 0 or self.suppress_break_at_cursor)) {
+                return false;
+            }
+            if (self.text[self.cursor] != 0xe1) return false;
+            const decoded = rules.decodeValid(self.text, cursor);
+            const raw = properties(decoded.codepoint);
+            if (raw.class != .hangul_l_jamo) return false;
+            self.state.consume(raw.class, .{
+                .codepoint = decoded.codepoint,
+                .properties = raw,
+                .class = raw.class,
+                .start = cursor,
+                .next = decoded.next,
+            });
+            self.suppress_break_at_cursor = false;
+            cursor = decoded.next;
+            last_class = raw.class;
+            consumed = true;
+        }
         while (cursor < self.text.len and self.text[cursor] >= 0x80) {
             const decoded = rules.decodeValid(self.text, cursor);
             const raw = properties(decoded.codepoint);
