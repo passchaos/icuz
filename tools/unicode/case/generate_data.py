@@ -148,6 +148,40 @@ def render_page_masks(name: str, codepoints) -> list[str]:
     return lines
 
 
+DENSE_PAGE_MIN = 8
+
+
+def render_dense(name: str, codepoints) -> list[str]:
+    """Direct page tables for dense pages.
+
+    A 256-entry byte table per dense page replaces the page-local binary
+    search; values are record indices within the page plus one, zero meaning
+    "no mapping". Sparse pages keep the mask plus binary-search path.
+    """
+    pages = sorted({codepoint >> 8 for codepoint in codepoints})
+    slots = [0xFF] * PAGE_LIMIT
+    flat: list[int] = []
+    for page in pages:
+        page_cps = sorted(cp for cp in codepoints if cp >> 8 == page)
+        if len(page_cps) < DENSE_PAGE_MIN:
+            continue
+        slots[page] = len(flat) >> 8
+        table = [0] * 256
+        for local, codepoint in enumerate(page_cps):
+            table[codepoint & 0xFF] = local + 1
+        flat.extend(table)
+    lines = [f"const {name}_dense_slots = [_]u8{{"]
+    for start in range(0, len(slots), 16):
+        chunk = ", ".join(str(value) for value in slots[start : start + 16])
+        lines.append(f"    {chunk},")
+    lines.extend(["};", "", f"const {name}_dense = [_]u8{{"])
+    for start in range(0, len(flat), 32):
+        chunk = ", ".join(str(value) for value in flat[start : start + 32])
+        lines.append(f"    {chunk},")
+    lines.extend(["};", ""])
+    return lines
+
+
 def render(
     lower: dict[int, int],
     upper: dict[int, int],
@@ -175,18 +209,23 @@ def render(
     lines.extend(render_single("lower", lower))
     lines.extend(render_page_index("lower", lower))
     lines.extend(render_page_masks("lower", lower))
+    lines.extend(render_dense("lower", lower))
     lines.extend(render_single("upper", upper))
     lines.extend(render_page_index("upper", upper))
     lines.extend(render_page_masks("upper", upper))
+    lines.extend(render_dense("upper", upper))
     lines.extend(render_single("title", title))
     lines.extend(render_page_index("title", title))
     lines.extend(render_page_masks("title", title))
+    lines.extend(render_dense("title", title))
     lines.extend(render_single("simple_fold", simple_fold))
     lines.extend(render_page_index("simple_fold", simple_fold))
     lines.extend(render_page_masks("simple_fold", simple_fold))
+    lines.extend(render_dense("simple_fold", simple_fold))
     lines.extend(render_multi("full_fold", full_fold))
     lines.extend(render_page_index("full_fold", full_fold))
     lines.extend(render_page_masks("full_fold", full_fold))
+    lines.extend(render_dense("full_fold", full_fold))
     lines.extend(
         [
             "const page_limit = 0x200;",
@@ -196,6 +235,8 @@ def render(
             "    index: []const u16,",
             "    slots: []const u8,",
             "    masks: []const [32]u8,",
+            "    dense_slots: []const u8,",
+            "    dense: []const u8,",
             "};",
             "",
             "const MultiTable = struct {",
@@ -204,13 +245,15 @@ def render(
             "    index: []const u16,",
             "    slots: []const u8,",
             "    masks: []const [32]u8,",
+            "    dense_slots: []const u8,",
+            "    dense: []const u8,",
             "};",
             "",
-            "const lower_table = SingleTable{ .records = &lower_records, .index = &lower_index, .slots = &lower_slots, .masks = &lower_masks };",
-            "const upper_table = SingleTable{ .records = &upper_records, .index = &upper_index, .slots = &upper_slots, .masks = &upper_masks };",
-            "const title_table = SingleTable{ .records = &title_records, .index = &title_index, .slots = &title_slots, .masks = &title_masks };",
-            "const simple_fold_table = SingleTable{ .records = &simple_fold_records, .index = &simple_fold_index, .slots = &simple_fold_slots, .masks = &simple_fold_masks };",
-            "const full_fold_table = MultiTable{ .records = &full_fold_records, .components = &full_fold_components, .index = &full_fold_index, .slots = &full_fold_slots, .masks = &full_fold_masks };",
+            "const lower_table = SingleTable{ .records = &lower_records, .index = &lower_index, .slots = &lower_slots, .masks = &lower_masks, .dense_slots = &lower_dense_slots, .dense = &lower_dense };",
+            "const upper_table = SingleTable{ .records = &upper_records, .index = &upper_index, .slots = &upper_slots, .masks = &upper_masks, .dense_slots = &upper_dense_slots, .dense = &upper_dense };",
+            "const title_table = SingleTable{ .records = &title_records, .index = &title_index, .slots = &title_slots, .masks = &title_masks, .dense_slots = &title_dense_slots, .dense = &title_dense };",
+            "const simple_fold_table = SingleTable{ .records = &simple_fold_records, .index = &simple_fold_index, .slots = &simple_fold_slots, .masks = &simple_fold_masks, .dense_slots = &simple_fold_dense_slots, .dense = &simple_fold_dense };",
+            "const full_fold_table = MultiTable{ .records = &full_fold_records, .components = &full_fold_components, .index = &full_fold_index, .slots = &full_fold_slots, .masks = &full_fold_masks, .dense_slots = &full_fold_dense_slots, .dense = &full_fold_dense };",
             "",
             "inline fn mappedInPage(slots: []const u8, masks: []const [32]u8, codepoint: u21) bool {",
             "    const page = codepoint >> 8;",
@@ -222,8 +265,16 @@ def render(
             "}",
             "",
             "fn lookupSingle(table: SingleTable, codepoint: u21) ?u21 {",
-            "    if (!mappedInPage(table.slots, table.masks, codepoint)) return null;",
             "    const page = codepoint >> 8;",
+            "    if (page < page_limit) {",
+            "        const slot = table.dense_slots[page];",
+            "        if (slot != 0xFF) {",
+            "            const local = table.dense[(@as(usize, slot) << 8) | (codepoint & 0xFF)];",
+            "            if (local == 0) return null;",
+            "            return table.records[table.index[page] + local - 1].mapped;",
+            "        }",
+            "    }",
+            "    if (!mappedInPage(table.slots, table.masks, codepoint)) return null;",
             "    var low: usize = table.index[page];",
             "    var high: usize = if (page + 1 < page_limit) table.index[page + 1] else table.records.len;",
             "    while (low < high) {",
@@ -235,8 +286,17 @@ def render(
             "}",
             "",
             "fn lookupMulti(table: MultiTable, codepoint: u21) ?[]const u21 {",
-            "    if (!mappedInPage(table.slots, table.masks, codepoint)) return null;",
             "    const page = codepoint >> 8;",
+            "    if (page < page_limit) {",
+            "        const slot = table.dense_slots[page];",
+            "        if (slot != 0xFF) {",
+            "            const local = table.dense[(@as(usize, slot) << 8) | (codepoint & 0xFF)];",
+            "            if (local == 0) return null;",
+            "            const record = table.records[table.index[page] + local - 1];",
+            "            return table.components[record.offset .. record.offset + record.len];",
+            "        }",
+            "    }",
+            "    if (!mappedInPage(table.slots, table.masks, codepoint)) return null;",
             "    var low: usize = table.index[page];",
             "    var high: usize = if (page + 1 < page_limit) table.index[page + 1] else table.records.len;",
             "    while (low < high) {",

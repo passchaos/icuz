@@ -142,6 +142,11 @@ int main() {
         for (int i = 0; i < 8; i++) s += "\u4f60\u597d\uff0c\u4e16\u754c\uff01\u4e2d\u6587\u7f16\u7801\u8f6c\u6362\u57fa\u51c6\u6d4b\u8bd5\u3002";
         return s;
     }();
+    const std::string greek_case_text = [] {
+        std::string s;
+        for (int i = 0; i < 8; i++) s += "\u039f\u0394\u039f\u03a3 \u03a3\u039f\u03a6\u039f\u03a3 \u0391\u0398\u0397\u039d\u0391 ";
+        return s;
+    }();
 
     struct Text {
         const char* name;
@@ -162,6 +167,7 @@ int main() {
         {"japanese", japanese_text, {}},
         {"korean", korean_text, {}},
         {"chinese_long", chinese_long_text, {}},
+        {"greek_case", greek_case_text, {}},
     };
     for (auto& text : texts) text.u16 = to_u16(text.utf8);
 
@@ -241,6 +247,35 @@ int main() {
             UErrorCode status = U_ZERO_ERROR;
             u_strFoldCase(out.data(), static_cast<int32_t>(out.size()), u16.data(),
                 static_cast<int32_t>(u16.size()), U_FOLD_CASE_DEFAULT, &status);
+        });
+    }
+    {
+        const auto& u16 = texts[3].u16;
+        std::vector<UChar> out(u16.size() * 2 + 32);
+        bench_bytes("lower German", texts[3].utf8.size(), 8000, [&] {
+            UErrorCode status = U_ZERO_ERROR;
+            int32_t length = 0;
+            u_strToLower(out.data(), static_cast<int32_t>(out.size()), u16.data(),
+                static_cast<int32_t>(u16.size()), "de", &status);
+            (void)length;
+        });
+        bench_bytes("upper German", texts[3].utf8.size(), 8000, [&] {
+            UErrorCode status = U_ZERO_ERROR;
+            int32_t length = 0;
+            u_strToUpper(out.data(), static_cast<int32_t>(out.size()), u16.data(),
+                static_cast<int32_t>(u16.size()), "de", &status);
+            (void)length;
+        });
+    }
+    {
+        const auto& u16 = texts[13].u16;
+        std::vector<UChar> out(u16.size() * 2 + 32);
+        bench_bytes("lower Greek sigma", texts[13].utf8.size(), 8000, [&] {
+            UErrorCode status = U_ZERO_ERROR;
+            int32_t length = 0;
+            u_strToLower(out.data(), static_cast<int32_t>(out.size()), u16.data(),
+                static_cast<int32_t>(u16.size()), "el", &status);
+            (void)length;
         });
     }
 
