@@ -126,6 +126,7 @@ const cjk_word_text = "中华人民共和国 日本語 東京都 東京大学 " 
 const mixed_text = "Hello, 世界! café naïve Straße \u{1f600}\u{1f469}\u{200d}\u{1f4bb} " ++
     "e\u{0301}\u{0323} \u{05e9}\u{05dc}\u{05d5}\u{05dd} \u{0645}\u{0631}\u{062d}\u{0628}\u{0627} " ++
     "\u{0915}\u{094d}\u{0937}\u{093f} \u{1100}\u{1161}\u{11a8} text.\n";
+const rtl_text = "مرحبا بالعالم! هذا نص عربي للاختبار. " ** 4;
 
 fn benchGraphemes(name: []const u8, text: []const u8) void {
     var count: usize = 0;
@@ -536,6 +537,27 @@ fn benchFold(name: []const u8, text: []const u8, allocator: std.mem.Allocator) v
         if (elapsed < best) best = elapsed;
     }
     reportBytes(name, rounds * text.len, best);
+}
+
+fn benchBidi(name: []const u8, text: []const u8, allocator: std.mem.Allocator) void {
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 5000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            var paragraph = icuz.bidi.resolve(
+                allocator,
+                text,
+                .auto,
+            ) catch unreachable;
+            sink +%= paragraph.levels.len + paragraph.scalars.len;
+            paragraph.deinit();
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps(name, rounds, best);
 }
 
 fn benchSet(allocator: std.mem.Allocator, codepoints: []const u21) void {
@@ -1060,6 +1082,7 @@ pub fn main() !void {
     const ukrainian_runtime = try allocator.dupe(u8, ukrainian_text);
     const thai_word_runtime = try allocator.dupe(u8, thai_word_text);
     const cjk_word_runtime = try allocator.dupe(u8, cjk_word_text);
+    const rtl_runtime = try allocator.dupe(u8, rtl_text);
     std.mem.doNotOptimizeAway(ascii_runtime.ptr);
     std.mem.doNotOptimizeAway(mixed_runtime.ptr);
     std.mem.doNotOptimizeAway(chinese_runtime.ptr);
@@ -1372,6 +1395,11 @@ pub fn main() !void {
     benchRelative(allocator);
     benchUnits(allocator);
     benchDate(allocator);
+
+    std.debug.print("\n-- bidi --\n", .{});
+    benchBidi("bidi ASCII", ascii_runtime, allocator);
+    benchBidi("bidi mixed", mixed_runtime, allocator);
+    benchBidi("bidi RTL", rtl_runtime, allocator);
 
     std.debug.print("\n-- regular expressions --\n", .{});
     benchRegex(

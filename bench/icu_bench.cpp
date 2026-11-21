@@ -6,6 +6,7 @@
 //       -Wl,-rpath,$ICU_LIB -o /tmp/icu_bench
 //   /tmp/icu_bench
 
+#include <unicode/ubidi.h>
 #include <unicode/ubrk.h>
 #include <unicode/ucal.h>
 #include <unicode/ucnv.h>
@@ -240,6 +241,23 @@ int main() {
             u_strFoldCase(out.data(), static_cast<int32_t>(out.size()), u16.data(),
                 static_cast<int32_t>(u16.size()), U_FOLD_CASE_DEFAULT, &status);
         });
+    }
+
+    std::printf("\n-- bidi --\n");
+    {
+        UBiDi* bidi = ubidi_open();
+        for (int index : {0, 1}) {
+            const auto& u16 = texts[index].u16;
+            std::string label = std::string("bidi ") + texts[index].name;
+            bench_ops(label.c_str(), 50000, [&] {
+                UErrorCode status = U_ZERO_ERROR;
+                ubidi_setPara(bidi, u16.data(),
+                    static_cast<int32_t>(u16.size()), UBIDI_DEFAULT_LTR,
+                    nullptr, &status);
+                ubidi_getLevels(bidi, &status);
+            });
+        }
+        ubidi_close(bidi);
     }
 
     std::printf("\n-- charset conversion --\n");

@@ -105,7 +105,12 @@ pub const Scratch = struct {
         }
 
         resolveExplicit(self.types.items, self.levels.items, base_level);
+        // Runs and per-sequence scratch never exceed the scalar count, so
+        // reserve them once instead of growing inside the run loops.
+        try self.runs.ensureTotalCapacity(self.allocator, inputs.len + 1);
         try self.resolveRuns(base_level);
+        try self.indices.ensureTotalCapacity(self.allocator, inputs.len);
+        try self.sequence_types.ensureTotalCapacity(self.allocator, inputs.len);
         for (self.runs.items, 0..) |run, run_index| {
             if (run.in_sequence) continue;
             try self.resolveSequence(inputs, run_index);
@@ -158,7 +163,7 @@ pub const Scratch = struct {
         while (cursor < types.len) : (cursor += 1) {
             if (isRemovedByX9(types[cursor])) continue;
             if (levels[cursor] == level) continue;
-            try self.runs.append(self.allocator, .{
+            self.runs.appendAssumeCapacity(.{
                 .level = level,
                 .start = run_start,
                 .end = cursor,
@@ -166,7 +171,7 @@ pub const Scratch = struct {
             run_start = cursor;
             level = levels[cursor];
         }
-        try self.runs.append(self.allocator, .{
+        self.runs.appendAssumeCapacity(.{
             .level = level,
             .start = run_start,
             .end = types.len,
@@ -226,9 +231,8 @@ pub const Scratch = struct {
             var index = run.start;
             while (index < run.end) : (index += 1) {
                 if (isRemovedByX9(self.types.items[index])) continue;
-                try self.indices.append(self.allocator, index);
-                try self.sequence_types.append(
-                    self.allocator,
+                self.indices.appendAssumeCapacity(index);
+                self.sequence_types.appendAssumeCapacity(
                     self.types.items[index],
                 );
             }
@@ -368,19 +372,22 @@ pub const Scratch = struct {
 /// prescribed by BD13. Retaining that candidate per level avoids repeatedly
 /// scanning the same suffix for deeply nested isolates.
 fn linkIsolatingRuns(runs: []Run) void {
-    var next_pdi_by_level: [max_explicit_level + 1]?usize = @splat(null);
+    // Only levels that actually start a PDI are read, so a small presence
+    // bitmap replaces initializing the full 126-entry optional array.
+    var next_pdi_by_level: [max_explicit_level + 1]usize = undefined;
+    var has_next: [max_explicit_level + 1]bool = @splat(false);
     var run_index = runs.len;
     while (run_index != 0) {
         run_index -= 1;
         const run = &runs[run_index];
-        if (run.ends_with_isolate) {
-            if (next_pdi_by_level[run.level]) |next_index| {
-                run.next = next_index;
-                runs[next_index].in_sequence = true;
-            }
+        if (run.ends_with_isolate and has_next[run.level]) {
+            const next_index = next_pdi_by_level[run.level];
+            run.next = next_index;
+            runs[next_index].in_sequence = true;
         }
         if (run.starts_with_pdi) {
             next_pdi_by_level[run.level] = run_index;
+            has_next[run.level] = true;
         }
     }
 }

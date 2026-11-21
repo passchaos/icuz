@@ -7,6 +7,7 @@
 
 const std = @import("std");
 
+const scalar_value = @import("../scalar/root.zig");
 const property_data = @import("data.zig");
 const resolver = @import("resolver.zig");
 const properties = @import("../properties.zig");
@@ -432,23 +433,44 @@ pub fn resolve(
     text: []const u8,
     base_direction: BaseDirection,
 ) !Paragraph {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
-
     var scalar_list = std.ArrayList(Scalar).empty;
     defer scalar_list.deinit(allocator);
     var inputs = std.ArrayList(resolver.Input).empty;
     defer inputs.deinit(allocator);
+    // One scalar per byte is the upper bound; reserving once avoids the
+    // repeated growth that dominates short paragraph resolution.
+    try scalar_list.ensureTotalCapacity(allocator, text.len);
+    try inputs.ensureTotalCapacity(allocator, text.len);
 
     var cursor: usize = 0;
     while (cursor < text.len) {
         const start = cursor;
-        const codepoint = decodeValid(text, &cursor);
-        try scalar_list.append(allocator, .{
+        const first = text[cursor];
+        if (first < 0x80) {
+            scalar_list.appendAssumeCapacity(.{
+                .codepoint = first,
+                .byte_start = cursor,
+                .byte_len = 1,
+            });
+            inputs.appendAssumeCapacity(.{
+                .codepoint = first,
+                .class = property_data.class(first),
+            });
+            cursor += 1;
+            continue;
+        }
+        // Validation is fused into the decode, so the scan does not pay a
+        // separate UTF-8 pass.
+        const decoded = scalar_value.decodeValidatingPacked(text, cursor);
+        if (decoded == scalar_value.packed_invalid) return error.InvalidUtf8;
+        const codepoint = scalar_value.packedCodepoint(decoded);
+        cursor += scalar_value.packedLength(decoded);
+        scalar_list.appendAssumeCapacity(.{
             .codepoint = codepoint,
             .byte_start = start,
             .byte_len = @intCast(cursor - start),
         });
-        try inputs.append(allocator, .{
+        inputs.appendAssumeCapacity(.{
             .codepoint = codepoint,
             .class = property_data.class(codepoint),
         });
