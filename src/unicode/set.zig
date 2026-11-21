@@ -26,6 +26,9 @@ pub const Set = struct {
     /// Multi-code-point elements, sorted by byte order.
     strings: std.ArrayList([]u8) = .empty,
     bits: ?[]u64 = null,
+    /// Borrowed immutable membership bits, used for process-wide sets such
+    /// as the regex `\w` table. Mutating the set drops the borrow.
+    static_bits: ?[]const u64 = null,
 
     pub fn init(allocator: std.mem.Allocator) Set {
         return .{
@@ -33,6 +36,7 @@ pub const Set = struct {
             .ranges = .empty,
             .strings = .empty,
             .bits = null,
+            .static_bits = null,
         };
     }
 
@@ -50,7 +54,15 @@ pub const Set = struct {
         self.ranges.clearRetainingCapacity();
     }
 
+    /// Attach process-wide membership bits. The set must already describe
+    /// the same scalars; mutating operations drop the borrow.
+    pub fn useStaticBits(self: *Set, bits: []const u64) void {
+        self.invalidateBits();
+        self.static_bits = bits;
+    }
+
     fn invalidateBits(self: *Set) void {
+        self.static_bits = null;
         if (self.bits) |bits| {
             self.allocator.free(bits);
             self.bits = null;
@@ -63,7 +75,7 @@ pub const Set = struct {
     /// invalidate the bitset; call `finalize` again before heavy membership
     /// testing.
     pub fn finalize(self: *Set) !void {
-        if (self.bits != null) return;
+        if (self.bits != null or self.static_bits != null) return;
         if (self.count() < 4096) return;
 
         const words = try self.allocator.alloc(u64, 0x110000 / 64);
@@ -109,7 +121,8 @@ pub const Set = struct {
     }
 
     pub fn contains(self: Set, codepoint: u21) bool {
-        if (self.bits) |bits| {
+        if (self.static_bits orelse self.bits) |bits| {
+            if (codepoint > 0x10ffff) return false;
             const word = bits[@as(usize, codepoint) >> 6];
             const mask = @as(u64, 1) << @as(u6, @intCast(codepoint & 63));
             return (word & mask) != 0;

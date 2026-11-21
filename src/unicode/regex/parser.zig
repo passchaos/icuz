@@ -12,6 +12,7 @@
 const std = @import("std");
 const set_mod = @import("../set.zig");
 const properties = @import("../properties.zig");
+const trie = @import("../properties/trie.zig");
 const aliases = @import("../properties/aliases.zig");
 const name_mod = @import("../name.zig");
 
@@ -1361,24 +1362,91 @@ const Parser = struct {
     }
 };
 
-pub fn wordSet(allocator: std.mem.Allocator) Error!set_mod.Set {
-    // Alphabetic plus the mark, decimal-digit and connector-punctuation
-    // categories. Both live in the packed property word, so one page-mask
-    // pass covers the whole definition.
-    const category_mask = aliases.generalCategoryMaskFromAlias("M").? |
-        aliases.generalCategoryMaskFromAlias("Nd").? |
-        aliases.generalCategoryMaskFromAlias("Pc").?;
+/// ICU `\w`: Alphabetic plus the mark, decimal-digit and connector
+/// punctuation categories. The ranges and membership bits are built once per
+/// process so compiling a `\w` class neither rescans the packed property
+/// blob nor fills a private bitmap.
+const word_category_mask: u32 = properties.categoryMask(.Mn) |
+    properties.categoryMask(.Mc) |
+    properties.categoryMask(.Me) |
+    properties.categoryMask(.Nd) |
+    properties.categoryMask(.Pc);
+const word_property_mask: u64 =
+    @as(u64, 1) << @intFromEnum(properties.BinaryProperty.alphabetic);
 
+const word_bits_words = 0x110000 / 64;
+const word_range_limit = 1024;
+
+const WordTable = struct {
+    ranges: [word_range_limit]set_mod.Range = undefined,
+    range_count: usize = 0,
+    bits: [word_bits_words]u64 = undefined,
+};
+
+var word_table: WordTable = .{};
+var word_table_state = std.atomic.Value(u8).init(0);
+
+fn wordTable() *const WordTable {
+    if (word_table_state.load(.acquire) == 2) return &word_table;
+    while (word_table_state.cmpxchgStrong(0, 1, .acquire, .monotonic) != null) {
+        if (word_table_state.load(.acquire) == 2) return &word_table;
+        std.atomic.spinLoopHint();
+    }
+
+    const Context = struct {
+        fn emit(self: *usize, first: u21, last: u21) !void {
+            word_table.ranges[self.*] = .{ .first = first, .last = last };
+            self.* += 1;
+        }
+    };
+    var count: usize = 0;
+    trie.forEachRun(
+        word_category_mask,
+        word_property_mask,
+        &count,
+        Context.emit,
+    ) catch unreachable;
+    std.debug.assert(count != 0 and count <= word_range_limit);
+    word_table.range_count = count;
+
+    @memset(&word_table.bits, 0);
+    for (word_table.ranges[0..count]) |range| {
+        setBitsRange(&word_table.bits, range.first, range.last);
+    }
+    setBitsRange(&word_table.bits, 0x200c, 0x200d);
+
+    word_table_state.store(2, .release);
+    return &word_table;
+}
+
+pub fn wordSet(allocator: std.mem.Allocator) Error!set_mod.Set {
+    const table = wordTable();
     var set = set_mod.Set.init(allocator);
     errdefer set.deinit();
-    try set.addMasks(
-        category_mask,
-        @as(u64, 1) << @intFromEnum(properties.BinaryProperty.alphabetic),
-    );
+    try set.ranges.ensureTotalCapacity(allocator, table.range_count + 2);
+    for (table.ranges[0..table.range_count]) |range| {
+        set.ranges.appendAssumeCapacity(range);
+    }
     try set.add(0x200c);
     try set.add(0x200d);
-    try set.finalize();
+    set.useStaticBits(&table.bits);
     return set;
+}
+
+fn setBitsRange(words: *[word_bits_words]u64, first: u21, last: u21) void {
+    const end: u32 = last;
+    var codepoint: u32 = first;
+    while (codepoint <= end and (codepoint & 63) != 0) : (codepoint += 1) {
+        words[codepoint >> 6] |= @as(u64, 1) << @as(u6, @intCast(codepoint & 63));
+    }
+    if (codepoint > end) return;
+    const aligned_end = end - (end & 63);
+    while (codepoint < aligned_end) : (codepoint += 64) {
+        words[codepoint >> 6] = ~@as(u64, 0);
+    }
+    while (codepoint <= end) : (codepoint += 1) {
+        words[codepoint >> 6] |= @as(u64, 1) << @as(u6, @intCast(codepoint & 63));
+    }
 }
 
 fn horizontalSpaceSet(allocator: std.mem.Allocator) Error!set_mod.Set {

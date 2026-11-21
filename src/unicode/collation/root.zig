@@ -1347,6 +1347,14 @@ fn appendElements(
     var length: usize = 1;
     var entry: ?Entry = null;
 
+    // Without an explicit entry there is no contraction to extend, so the
+    // discontiguous-mark scan below cannot change the result.
+    const first_entry = pageStart(first);
+    if (first_entry >= entry_count or entryAt(first_entry).first != first) {
+        try appendImplicit(allocator, ces, first, reorder);
+        return 1;
+    }
+
     if (findContiguous(codepoints, index)) |matched| {
         entry = matched.entry;
         length = matched.length;
