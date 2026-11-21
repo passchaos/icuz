@@ -155,10 +155,10 @@ pub const Iterator = struct {
                     effective,
                 );
             // Every interior boundary of an ideographic run is LB31 soft, so
-            // find the run end once and replay the interior breaks cheaply.
+            // once a soft decision lands before an ideograph, find the run
+            // end and replay the interior breaks cheaply.
             if (break_kind == .soft and
-                raw_properties.class == .ideographic and
-                self.state.last.class == .ideographic)
+                raw_properties.class == .ideographic)
             {
                 self.id_run_end = scanIdeographicRunEnd(self.text, decoded.next);
             }
