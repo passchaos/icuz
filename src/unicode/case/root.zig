@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const data = @import("data.zig");
+const scalar = @import("../scalar/root.zig");
 
 pub const unicode_version = [3]u8{ 17, 0, 0 };
 pub const Error = error{ InvalidUtf8, OutOfMemory };
@@ -115,7 +116,6 @@ pub fn foldAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
 ) Error![]u8 {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
     if (asciiPrefixLen(text) == text.len) {
         const output = try allocator.alloc(u8, text.len);
         for (text, 0..) |byte, index| {
@@ -126,24 +126,50 @@ pub fn foldAlloc(
         }
         return output;
     }
-
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, text.len);
+    try output.ensureTotalCapacity(allocator, text.len + 8);
 
-    var encoded: [4]u8 = undefined;
-    var iterator = std.unicode.Utf8Iterator{ .bytes = text, .i = 0 };
-    while (iterator.nextCodepoint()) |codepoint| {
-        if (fullFold(codepoint)) |components| {
-            for (components) |component| {
-                const len = std.unicode.utf8Encode(component, &encoded) catch
-                    unreachable;
-                try output.appendSlice(allocator, encoded[0..len]);
+    var index: usize = 0;
+    while (index < text.len) {
+        const first = text[index];
+        if (first < 0x80) {
+            // Map ASCII runs straight into the spare capacity; folding only
+            // changes A-Z and never changes the byte length.
+            try output.ensureUnusedCapacity(allocator, 8);
+            const spare = output.unusedCapacitySlice();
+            var written: usize = 0;
+            while (index < text.len and text[index] < 0x80 and
+                written < spare.len)
+            {
+                const byte = text[index];
+                spare[written] = if (byte >= 'A' and byte <= 'Z')
+                    byte + ('a' - 'A')
+                else
+                    byte;
+                written += 1;
+                index += 1;
             }
+            output.items.len += written;
+            continue;
+        }
+        const decoded = scalar.decodeValidatingPacked(text, index);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        const codepoint = scalar.packedCodepoint(decoded);
+        index += scalar.packedLength(decoded);
+        if (fullFold(codepoint)) |components| {
+            // Unicode 17 folds expand to at most three scalars.
+            try output.ensureUnusedCapacity(allocator, 12);
+            const dest = output.unusedCapacitySlice();
+            var written: usize = 0;
+            for (components) |component| {
+                written += scalar.encodeUtf8(dest[written..], component);
+            }
+            output.items.len += written;
         } else {
-            const len = std.unicode.utf8Encode(codepoint, &encoded) catch
-                unreachable;
-            try output.appendSlice(allocator, encoded[0..len]);
+            try output.ensureUnusedCapacity(allocator, 4);
+            const dest = output.unusedCapacitySlice();
+            output.items.len += scalar.encodeUtf8(dest, codepoint);
         }
     }
     return try output.toOwnedSlice(allocator);
@@ -154,7 +180,6 @@ fn mapSimpleAlloc(
     text: []const u8,
     comptime kind: enum { lower, upper },
 ) Error![]u8 {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
     if (asciiPrefixLen(text) == text.len) {
         const output = try allocator.alloc(u8, text.len);
         for (text, 0..) |byte, index| {
@@ -171,21 +196,48 @@ fn mapSimpleAlloc(
         }
         return output;
     }
-
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, text.len);
+    try output.ensureTotalCapacity(allocator, text.len + 8);
 
-    var encoded: [4]u8 = undefined;
-    var iterator = std.unicode.Utf8Iterator{ .bytes = text, .i = 0 };
-    while (iterator.nextCodepoint()) |codepoint| {
+    var index: usize = 0;
+    while (index < text.len) {
+        const first = text[index];
+        if (first < 0x80) {
+            try output.ensureUnusedCapacity(allocator, 8);
+            const spare = output.unusedCapacitySlice();
+            var written: usize = 0;
+            while (index < text.len and text[index] < 0x80 and
+                written < spare.len)
+            {
+                const byte = text[index];
+                spare[written] = switch (kind) {
+                    .lower => if (byte >= 'A' and byte <= 'Z')
+                        byte + ('a' - 'A')
+                    else
+                        byte,
+                    .upper => if (byte >= 'a' and byte <= 'z')
+                        byte - ('a' - 'A')
+                    else
+                        byte,
+                };
+                written += 1;
+                index += 1;
+            }
+            output.items.len += written;
+            continue;
+        }
+        const decoded = scalar.decodeValidatingPacked(text, index);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        const codepoint = scalar.packedCodepoint(decoded);
+        index += scalar.packedLength(decoded);
         const mapped = switch (kind) {
             .lower => simpleLower(codepoint),
             .upper => simpleUpper(codepoint),
         };
-        const len = std.unicode.utf8Encode(mapped, &encoded) catch
-            unreachable;
-        try output.appendSlice(allocator, encoded[0..len]);
+        try output.ensureUnusedCapacity(allocator, 4);
+        const dest = output.unusedCapacitySlice();
+        output.items.len += scalar.encodeUtf8(dest, mapped);
     }
     return try output.toOwnedSlice(allocator);
 }

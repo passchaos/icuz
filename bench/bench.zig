@@ -1534,6 +1534,8 @@ pub fn main() !void {
     }
     benchCase("lower ASCII", ascii_runtime, allocator);
     benchFold("case fold ASCII", ascii_runtime, allocator);
+    benchCase("lower mixed", mixed_runtime, allocator);
+    benchFold("case fold mixed", mixed_runtime, allocator);
 
     std.debug.print("\nsink={d}\n", .{sink});
 }

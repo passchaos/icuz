@@ -120,13 +120,11 @@ pub fn foldWithEditsAlloc(
         const before = output.items.len;
         if (data.fullFold(decoded.codepoint)) |components| {
             for (components) |component| {
-                const length = std.unicode.utf8Encode(component, &encoded) catch
-                    unreachable;
+                const length = scalar.encodeUtf8(&encoded, component);
                 try output.appendSlice(allocator, encoded[0..length]);
             }
         } else {
-            const length = std.unicode.utf8Encode(decoded.codepoint, &encoded) catch
-                unreachable;
+            const length = scalar.encodeUtf8(&encoded, decoded.codepoint);
             try output.appendSlice(allocator, encoded[0..length]);
         }
         try recordEdit(
@@ -488,7 +486,7 @@ fn appendMapping(
 ) error{OutOfMemory}!void {
     var encoded: [4]u8 = undefined;
     for (mapping) |codepoint| {
-        const len = std.unicode.utf8Encode(codepoint, &encoded) catch unreachable;
+        const len = scalar.encodeUtf8(&encoded, codepoint);
         try output.appendSlice(allocator, encoded[0..len]);
     }
 }
@@ -499,7 +497,7 @@ fn appendCodepoint(
     codepoint: u21,
 ) error{OutOfMemory}!void {
     var encoded: [4]u8 = undefined;
-    const len = std.unicode.utf8Encode(codepoint, &encoded) catch unreachable;
+    const len = scalar.encodeUtf8(&encoded, codepoint);
     try output.appendSlice(allocator, encoded[0..len]);
 }
 

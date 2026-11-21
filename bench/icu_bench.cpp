@@ -225,6 +225,22 @@ int main() {
                 static_cast<int32_t>(u16.size()), U_FOLD_CASE_DEFAULT, &status);
         });
     }
+    {
+        const auto& u16 = texts[1].u16;
+        std::vector<UChar> out(u16.size() * 2 + 32);
+        bench_bytes("lower mixed", texts[1].utf8.size(), 8000, [&] {
+            UErrorCode status = U_ZERO_ERROR;
+            int32_t length = 0;
+            u_strToLower(out.data(), static_cast<int32_t>(out.size()), u16.data(),
+                static_cast<int32_t>(u16.size()), "en", &status);
+            (void)length;
+        });
+        bench_bytes("case fold mixed", texts[1].utf8.size(), 8000, [&] {
+            UErrorCode status = U_ZERO_ERROR;
+            u_strFoldCase(out.data(), static_cast<int32_t>(out.size()), u16.data(),
+                static_cast<int32_t>(u16.size()), U_FOLD_CASE_DEFAULT, &status);
+        });
+    }
 
     std::printf("\n-- charset conversion --\n");
     const struct { const char* label; const char* converter; int text; } conv_cases[] = {

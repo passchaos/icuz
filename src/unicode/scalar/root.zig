@@ -211,6 +211,32 @@ pub inline fn assertValidUtf8(text: []const u8) void {
     }
 }
 
+/// Encode one valid scalar into `dest`, which must have at least four bytes.
+/// Inlines the length branches that `std.unicode.utf8Encode` keeps out of
+/// line in hot mapping loops.
+pub inline fn encodeUtf8(dest: []u8, codepoint: u21) usize {
+    if (codepoint < 0x80) {
+        dest[0] = @intCast(codepoint);
+        return 1;
+    }
+    if (codepoint < 0x800) {
+        dest[0] = @intCast(0xC0 | (codepoint >> 6));
+        dest[1] = @intCast(0x80 | (codepoint & 0x3F));
+        return 2;
+    }
+    if (codepoint < 0x10000) {
+        dest[0] = @intCast(0xE0 | (codepoint >> 12));
+        dest[1] = @intCast(0x80 | ((codepoint >> 6) & 0x3F));
+        dest[2] = @intCast(0x80 | (codepoint & 0x3F));
+        return 3;
+    }
+    dest[0] = @intCast(0xF0 | (codepoint >> 18));
+    dest[1] = @intCast(0x80 | ((codepoint >> 12) & 0x3F));
+    dest[2] = @intCast(0x80 | ((codepoint >> 6) & 0x3F));
+    dest[3] = @intCast(0x80 | (codepoint & 0x3F));
+    return 4;
+}
+
 test "validated scalar decoding matches std for representative sequences" {
     const samples = [_][]const u8{
         "A",

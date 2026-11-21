@@ -100,6 +100,54 @@ def render_multi(name: str, entries: dict[int, tuple[int, ...]]) -> list[str]:
     return lines
 
 
+PAGE_LIMIT = 0x200
+
+
+def render_page_index(name: str, codepoints) -> list[str]:
+    keys = sorted(codepoints)
+    index = []
+    record = 0
+    for page in range(PAGE_LIMIT):
+        page_start = page << 8
+        while record < len(keys) and keys[record] < page_start:
+            record += 1
+        index.append(record)
+    if any(codepoint >> 8 >= PAGE_LIMIT for codepoint in keys):
+        raise SystemExit(f"{name} mapping exceeds the page index")
+    lines = [f"const {name}_index = [_]u16{{"]
+    for start in range(0, len(index), 16):
+        chunk = ", ".join(str(value) for value in index[start : start + 16])
+        lines.append(f"    {chunk},")
+    lines.extend(["};", ""])
+    return lines
+
+
+def render_page_masks(name: str, codepoints) -> list[str]:
+    pages = sorted({codepoint >> 8 for codepoint in codepoints})
+    if any(page >= PAGE_LIMIT for page in pages):
+        raise SystemExit(f"{name} mapping exceeds the page index")
+    slots = [0xFF] * PAGE_LIMIT
+    masks: list[list[int]] = []
+    for slot, page in enumerate(pages):
+        slots[page] = slot
+        mask = [0] * 32
+        for codepoint in codepoints:
+            if codepoint >> 8 == page:
+                low = codepoint & 0xFF
+                mask[low >> 3] |= 1 << (low & 7)
+        masks.append(mask)
+    lines = [f"const {name}_slots = [_]u8{{"]
+    for start in range(0, len(slots), 16):
+        chunk = ", ".join(str(value) for value in slots[start : start + 16])
+        lines.append(f"    {chunk},")
+    lines.extend(["};", "", f"const {name}_masks = [_][32]u8{{"])
+    for mask in masks:
+        chunk = ", ".join(str(byte) for byte in mask)
+        lines.append(f"    .{{{chunk}}},")
+    lines.extend(["};", ""])
+    return lines
+
+
 def render(
     lower: dict[int, int],
     upper: dict[int, int],
@@ -125,54 +173,100 @@ def render(
         "",
     ]
     lines.extend(render_single("lower", lower))
+    lines.extend(render_page_index("lower", lower))
+    lines.extend(render_page_masks("lower", lower))
     lines.extend(render_single("upper", upper))
+    lines.extend(render_page_index("upper", upper))
+    lines.extend(render_page_masks("upper", upper))
     lines.extend(render_single("title", title))
+    lines.extend(render_page_index("title", title))
+    lines.extend(render_page_masks("title", title))
     lines.extend(render_single("simple_fold", simple_fold))
+    lines.extend(render_page_index("simple_fold", simple_fold))
+    lines.extend(render_page_masks("simple_fold", simple_fold))
     lines.extend(render_multi("full_fold", full_fold))
+    lines.extend(render_page_index("full_fold", full_fold))
+    lines.extend(render_page_masks("full_fold", full_fold))
     lines.extend(
         [
-            "fn lookupSingle(records: []const SingleRecord, codepoint: u21) ?u21 {",
-            "    var low: usize = 0;",
-            "    var high: usize = records.len;",
+            "const page_limit = 0x200;",
+            "",
+            "const SingleTable = struct {",
+            "    records: []const SingleRecord,",
+            "    index: []const u16,",
+            "    slots: []const u8,",
+            "    masks: []const [32]u8,",
+            "};",
+            "",
+            "const MultiTable = struct {",
+            "    records: []const MultiRecord,",
+            "    components: []const u21,",
+            "    index: []const u16,",
+            "    slots: []const u8,",
+            "    masks: []const [32]u8,",
+            "};",
+            "",
+            "const lower_table = SingleTable{ .records = &lower_records, .index = &lower_index, .slots = &lower_slots, .masks = &lower_masks };",
+            "const upper_table = SingleTable{ .records = &upper_records, .index = &upper_index, .slots = &upper_slots, .masks = &upper_masks };",
+            "const title_table = SingleTable{ .records = &title_records, .index = &title_index, .slots = &title_slots, .masks = &title_masks };",
+            "const simple_fold_table = SingleTable{ .records = &simple_fold_records, .index = &simple_fold_index, .slots = &simple_fold_slots, .masks = &simple_fold_masks };",
+            "const full_fold_table = MultiTable{ .records = &full_fold_records, .components = &full_fold_components, .index = &full_fold_index, .slots = &full_fold_slots, .masks = &full_fold_masks };",
+            "",
+            "inline fn mappedInPage(slots: []const u8, masks: []const [32]u8, codepoint: u21) bool {",
+            "    const page = codepoint >> 8;",
+            "    if (page >= page_limit) return false;",
+            "    const slot = slots[page];",
+            "    if (slot == 0xFF) return false;",
+            "    const low = codepoint & 0xFF;",
+            "    return (masks[slot][low >> 3] & (@as(u8, 1) << @intCast(low & 7))) != 0;",
+            "}",
+            "",
+            "fn lookupSingle(table: SingleTable, codepoint: u21) ?u21 {",
+            "    if (!mappedInPage(table.slots, table.masks, codepoint)) return null;",
+            "    const page = codepoint >> 8;",
+            "    var low: usize = table.index[page];",
+            "    var high: usize = if (page + 1 < page_limit) table.index[page + 1] else table.records.len;",
             "    while (low < high) {",
             "        const mid = low + (high - low) / 2;",
-            "        const record = records[mid];",
+            "        const record = table.records[mid];",
             "        if (codepoint < record.codepoint) high = mid else if (codepoint > record.codepoint) low = mid + 1 else return record.mapped;",
             "    }",
             "    return null;",
             "}",
             "",
-            "fn lookupMulti(records: []const MultiRecord, components: []const u21, codepoint: u21) ?[]const u21 {",
-            "    var low: usize = 0;",
-            "    var high: usize = records.len;",
+            "fn lookupMulti(table: MultiTable, codepoint: u21) ?[]const u21 {",
+            "    if (!mappedInPage(table.slots, table.masks, codepoint)) return null;",
+            "    const page = codepoint >> 8;",
+            "    var low: usize = table.index[page];",
+            "    var high: usize = if (page + 1 < page_limit) table.index[page + 1] else table.records.len;",
             "    while (low < high) {",
             "        const mid = low + (high - low) / 2;",
-            "        const record = records[mid];",
-            "        if (codepoint < record.codepoint) high = mid else if (codepoint > record.codepoint) low = mid + 1 else return components[record.offset .. record.offset + record.len];",
+            "        const record = table.records[mid];",
+            "        if (codepoint < record.codepoint) high = mid else if (codepoint > record.codepoint) low = mid + 1 else return table.components[record.offset .. record.offset + record.len];",
             "    }",
             "    return null;",
             "}",
             "",
             "pub fn simpleLower(codepoint: u21) u21 {",
-            "    return lookupSingle(&lower_records, codepoint) orelse codepoint;",
+            "    return lookupSingle(lower_table, codepoint) orelse codepoint;",
             "}",
             "",
             "pub fn simpleUpper(codepoint: u21) u21 {",
-            "    return lookupSingle(&upper_records, codepoint) orelse codepoint;",
+            "    return lookupSingle(upper_table, codepoint) orelse codepoint;",
             "}",
             "",
             "pub fn simpleTitle(codepoint: u21) u21 {",
-            "    return lookupSingle(&title_records, codepoint) orelse codepoint;",
+            "    return lookupSingle(title_table, codepoint) orelse codepoint;",
             "}",
             "",
             "/// Simple case folding for caseless matching.",
             "pub fn simpleFold(codepoint: u21) u21 {",
-            "    return lookupSingle(&simple_fold_records, codepoint) orelse codepoint;",
+            "    return lookupSingle(simple_fold_table, codepoint) orelse codepoint;",
             "}",
             "",
             "/// Full case folding. Returns null when the scalar folds to itself.",
             "pub fn fullFold(codepoint: u21) ?[]const u21 {",
-            "    return lookupMulti(&full_fold_records, &full_fold_components, codepoint);",
+            "    return lookupMulti(full_fold_table, codepoint);",
             "}",
             "",
             'test "generated case mappings" {',

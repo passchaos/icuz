@@ -494,8 +494,7 @@ const Utf8Sink = struct {
         try self.list.ensureUnusedCapacity(self.allocator, codepoints.len * 4);
         var encoded: [4]u8 = undefined;
         for (codepoints) |codepoint| {
-            const length = std.unicode.utf8Encode(codepoint, &encoded) catch
-                unreachable;
+            const length = scalar.encodeUtf8(&encoded, codepoint);
             self.list.appendSliceAssumeCapacity(encoded[0..length]);
         }
     }
@@ -505,8 +504,7 @@ const Utf8Sink = struct {
         codepoint: u21,
     ) error{OutOfMemory}!void {
         var encoded: [4]u8 = undefined;
-        const length = std.unicode.utf8Encode(codepoint, &encoded) catch
-            unreachable;
+        const length = scalar.encodeUtf8(&encoded, codepoint);
         try self.list.appendSlice(self.allocator, encoded[0..length]);
     }
 
@@ -1233,8 +1231,7 @@ pub const Normalizer = struct {
             self.normalized.items.len * 4,
         );
         for (self.normalized.items) |codepoint| {
-            const len = std.unicode.utf8Encode(codepoint, &encoded) catch
-                unreachable;
+            const len = scalar.encodeUtf8(&encoded, codepoint);
             try output.appendSlice(self.allocator, encoded[0..len]);
         }
         self.pending.clearRetainingCapacity();
@@ -1351,10 +1348,7 @@ fn normalizeSegmentFastAt(
     const dest = output.unusedCapacitySlice();
     var written: usize = 0;
     for (storage[0..final_len]) |codepoint| {
-        written += std.unicode.utf8Encode(
-            codepoint,
-            dest[written..],
-        ) catch unreachable;
+        written += scalar.encodeUtf8(dest[written..], codepoint);
     }
     output.items.len += written;
     return index;
