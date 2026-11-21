@@ -253,10 +253,10 @@ pub fn collationElementsAlloc(
     try codepoints.ensureTotalCapacity(allocator, text.len);
     var cursor: usize = 0;
     while (cursor < text.len) {
-        const decoded = scalar.decodeValidating(text, cursor) orelse
-            return error.InvalidUtf8;
-        try codepoints.append(allocator, decoded.codepoint);
-        cursor = decoded.next;
+        const decoded = scalar.decodeValidatingPacked(text, cursor);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        try codepoints.append(allocator, scalar.packedCodepoint(decoded));
+        cursor += scalar.packedLength(decoded);
     }
     const collator = Collator.init(options);
     return collator.elementsAlloc(allocator, codepoints.items);
@@ -628,11 +628,11 @@ fn sortKeyUtf8Resolved(
         var count: usize = 0;
         var cursor: usize = 0;
         while (cursor < text.len) {
-            const decoded = scalar.decodeValidating(text, cursor) orelse
-                return error.InvalidUtf8;
-            stack_codepoints[count] = decoded.codepoint;
+            const decoded = scalar.decodeValidatingPacked(text, cursor);
+            if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+            stack_codepoints[count] = scalar.packedCodepoint(decoded);
             count += 1;
-            cursor = decoded.next;
+            cursor += scalar.packedLength(decoded);
         }
         return sortKeyCodepointsResolved(
             allocator,
@@ -650,10 +650,10 @@ fn sortKeyUtf8Resolved(
 
     var cursor: usize = 0;
     while (cursor < text.len) {
-        const decoded = scalar.decodeValidating(text, cursor) orelse
-            return error.InvalidUtf8;
-        try codepoints.append(allocator, decoded.codepoint);
-        cursor = decoded.next;
+        const decoded = scalar.decodeValidatingPacked(text, cursor);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        try codepoints.append(allocator, scalar.packedCodepoint(decoded));
+        cursor += scalar.packedLength(decoded);
     }
     try sortKeyCodepointsResolved(
         allocator,
