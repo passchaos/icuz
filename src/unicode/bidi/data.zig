@@ -95,8 +95,21 @@ pub inline fn class(codepoint: u21) Class {
     return classGenerated(codepoint);
 }
 
-pub fn bracket(codepoint: u21) ?Bracket {
+pub inline fn bracket(codepoint: u21) ?Bracket {
+    if (codepoint < 0x80) return ascii_brackets[codepoint];
     if (!scalar_value.isValid(codepoint)) return null;
+    // Brackets are sparse; a page bitmap rejects almost every scalar with one
+    // load instead of a binary search over the table.
+    const page = @as(usize, codepoint) >> 8;
+    if (page >= bracket_page_count or
+        (bracket_page_bits[page / 64] >> @intCast(page % 64)) & 1 == 0)
+    {
+        return null;
+    }
+    return bracketGenerated(codepoint);
+}
+
+fn bracketGenerated(codepoint: u21) ?Bracket {
     var low: usize = 0;
     var high: usize = bracket_count;
     while (low < high) {
@@ -115,6 +128,31 @@ pub fn bracket(codepoint: u21) ?Bracket {
         }
     }
     return null;
+}
+
+const bracket_page_count = 0x1100;
+const bracket_page_bits = buildBracketPageBits();
+
+fn buildBracketPageBits() [bracket_page_count / 64]u64 {
+    @setEvalBranchQuota(100_000);
+    var result = [_]u64{0} ** (bracket_page_count / 64);
+    for (0..bracket_count) |index| {
+        const codepoint = readU32(brackets_offset + index * 12);
+        const page = codepoint >> 8;
+        result[page / 64] |= @as(u64, 1) << @intCast(page % 64);
+    }
+    return result;
+}
+
+const ascii_brackets = buildAsciiBrackets();
+
+fn buildAsciiBrackets() [128]?Bracket {
+    @setEvalBranchQuota(100_000);
+    var result: [128]?Bracket = undefined;
+    for (&result, 0..) |*entry, codepoint| {
+        entry.* = bracketGenerated(@intCast(codepoint));
+    }
+    return result;
 }
 
 pub fn mirrored(codepoint: u21) u21 {
