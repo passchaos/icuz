@@ -43,6 +43,26 @@ pub const Iterator = struct {
             if (self.text[self.cursor] < 0x80) {
                 if (self.nextSimpleAscii()) |opportunity| return opportunity;
                 if (self.consumeAsciiWordRun()) continue;
+                // LB7 forbids a break before a space, so an ASCII space run
+                // can be consumed without consulting the rule engine. A
+                // pending break was already returned at this cursor, and a
+                // hard break (LB4/LB5) is emitted before the run, so those
+                // two cases take the generic path.
+                if (!self.suppress_break_at_cursor and
+                    self.text[self.cursor] == ' ' and
+                    self.state.previous_raw != .mandatory and
+                    self.state.previous_raw != .carriage_return and
+                    self.state.previous_raw != .line_feed and
+                    self.state.previous_raw != .next_line)
+                {
+                    var end = self.cursor + 1;
+                    while (end < self.text.len and self.text[end] == ' ') {
+                        end += 1;
+                    }
+                    self.state.consumeAsciiSpaceRun(end - self.cursor);
+                    self.cursor = end;
+                    continue;
+                }
             } else {
                 // A Hangul run never starts with a word class, so skip the
                 // word-run scanner when the previous scalar is already
