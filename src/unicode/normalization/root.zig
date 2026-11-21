@@ -832,13 +832,18 @@ fn normalizeSegmentFastAt(
         composeSliceWithClasses(storage[0..length], classes[0..length])
     else
         length;
+    // Encode straight into the list's spare capacity instead of appending
+    // one scalar at a time.
     try output.ensureUnusedCapacity(allocator, final_len * 4);
-    var encoded: [4]u8 = undefined;
+    const dest = output.unusedCapacitySlice();
+    var written: usize = 0;
     for (storage[0..final_len]) |codepoint| {
-        const encoded_len = std.unicode.utf8Encode(codepoint, &encoded) catch
-            unreachable;
-        output.appendSliceAssumeCapacity(encoded[0..encoded_len]);
+        written += std.unicode.utf8Encode(
+            codepoint,
+            dest[written..],
+        ) catch unreachable;
     }
+    output.items.len += written;
     return index;
 }
 
@@ -1341,7 +1346,37 @@ fn isHangulVOrT(codepoint: u21) bool {
         (codepoint >= 0x11a8 and codepoint <= 0x11c2);
 }
 
+/// Direct composition results for Latin-1 starters, which dominate
+/// precomposed Latin text. Every canonical pair with a starter below U+0100
+/// uses a combining mark in U+0300..U+0342, so a small table replaces the
+/// generated page-indexed binary search in the hottest composition path.
+const latin_compose_first_mark: u21 = 0x300;
+const latin_compose_mark_count: usize = 0x43;
+
+const latin_compose: [0x100][latin_compose_mark_count]u16 = blk: {
+    @setEvalBranchQuota(10_000_000);
+    var table: [0x100][latin_compose_mark_count]u16 =
+        [_][latin_compose_mark_count]u16{
+            [_]u16{0} ** latin_compose_mark_count,
+        } ** 0x100;
+    for (0..0x100) |starter| {
+        for (0..latin_compose_mark_count) |mark_index| {
+            const combining = latin_compose_first_mark + mark_index;
+            if (data.composePair(@intCast(starter), @intCast(combining))) |composed| {
+                table[starter][mark_index] = @intCast(composed);
+            }
+        }
+    }
+    break :blk table;
+};
+
 pub fn composePair(starter: u21, combining: u21) ?u21 {
+    if (starter < 0x100 and combining >= latin_compose_first_mark and
+        combining < latin_compose_first_mark + latin_compose_mark_count)
+    {
+        const composed = latin_compose[starter][combining - latin_compose_first_mark];
+        return if (composed == 0) null else composed;
+    }
     return composeHangul(starter, combining) orelse
         data.composePair(starter, combining);
 }

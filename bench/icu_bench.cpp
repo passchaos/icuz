@@ -156,7 +156,9 @@ int main() {
         UErrorCode status = U_ZERO_ERROR;
         UCollator* coll = ucol_open(item.locale, &status);
         if (U_FAILURE(status)) { std::printf("ucol_open %s failed\n", item.locale); continue; }
-        ucol_setStrength(coll, UCOL_PRIMARY);
+        // Match icuz's default sort-key strength so both sides emit the same
+        // number of levels.
+        ucol_setStrength(coll, UCOL_TERTIARY);
         const auto& u16 = texts[item.text].u16;
         std::vector<uint8_t> key(u16.size() * 8 + 64);
         bench_bytes(item.label, texts[item.text].utf8.size(), 4000, [&] {
