@@ -42,6 +42,8 @@ pub const Iterator = struct {
         const first = decode(self.text, start) orelse unreachable;
         var end = first.next;
         const first_properties = properties(first.codepoint);
+        var previous = first;
+        var previous_properties = first_properties;
         var is_word = first_properties.word_anchor;
         var regional_indicator_count: usize =
             if (first_properties.class == .regional_indicator) 1 else 0;
@@ -50,23 +52,34 @@ pub const Iterator = struct {
                 if (should_break) break;
                 if (asciiIsWordAnchor(self.text[end])) is_word = true;
                 regional_indicator_count = 0;
+                previous = .{
+                    .codepoint = self.text[end],
+                    .start = end,
+                    .next = end + 1,
+                };
+                previous_properties = properties(self.text[end]);
                 end += 1;
                 continue;
             }
             const current = decode(self.text, end) orelse unreachable;
+            const current_properties = properties(current.codepoint);
             if (breaksAt(
                 self.text,
                 end,
+                previous,
+                previous_properties,
                 current,
+                current_properties,
                 regional_indicator_count,
             )) break;
-            const current_properties = properties(current.codepoint);
             is_word = is_word or current_properties.word_anchor;
             if (current_properties.class == .regional_indicator) {
                 regional_indicator_count += 1;
             } else if (!isIgnored(current_properties.class)) {
                 regional_indicator_count = 0;
             }
+            previous = current;
+            previous_properties = current_properties;
             end = current.next;
         }
         self.cursor = end;
@@ -283,23 +296,25 @@ pub fn assumeValidWithDictionaries(text: []const u8) DictionaryIterator {
 fn breaksAt(
     text: []const u8,
     offset: usize,
+    previous_actual: Decoded,
+    previous_actual_properties: rules.Properties,
     current: Decoded,
+    current_properties: rules.Properties,
     regional_indicator_count: usize,
 ) bool {
-    const previous_actual = decodeBefore(text, offset) orelse unreachable;
-    const previous_actual_properties = properties(previous_actual.codepoint);
-    const current_properties = properties(current.codepoint);
-
     if (rules.adjacentBreak(previous_actual_properties, current_properties)) |decision|
         return decision;
 
-    // The previous scalar is usually not ignored, so the backward skip scan
-    // can reuse the decode that already happened above.
+    // The previous scalar is usually not ignored, so the caller's decode and
+    // property lookup can be reused for the significant-neighbour scan.
     const previous = if (isIgnored(previous_actual_properties.class))
         previousSignificant(text, offset) orelse return true
     else
         previous_actual;
-    const previous_properties = properties(previous.codepoint);
+    const previous_properties = if (previous.start == previous_actual.start)
+        previous_actual_properties
+    else
+        properties(previous.codepoint);
     if (isNewline(previous_properties.class)) return true;
     const previous_previous = previousSignificant(text, previous.start);
     const previous_previous_class = if (previous_previous) |decoded|
@@ -393,7 +408,6 @@ test "dictionary word segmentation iterator" {
         .{ .text = "ดีๆ", .expected = &.{"ดีๆ"} },
         .{ .text = "アイウエオ", .expected = &.{"アイウエオ"} },
         .{ .text = "テストデータ", .expected = &.{ "テスト", "データ" } },
-
     };
     for (cases) |case| {
         var iterator = assumeValidWithDictionaries(case.text);
