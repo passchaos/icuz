@@ -106,12 +106,13 @@ fn normalizeFusedInto(
     if (ascii_end == text.len) return false;
 
     const compatibility = form == .nfkc or form == .nfkd;
+    const compose = form == .nfc or form == .nfkc;
     var engine = SegmentEngine(Utf8Sink){
         .allocator = allocator,
         .sink = .{ .list = output, .allocator = allocator },
         .form = form,
         .compatibility = compatibility,
-        .compose = form == .nfc or form == .nfkc,
+        .compose = compose,
     };
     defer engine.deinit();
     var stable_start: usize = 0;
@@ -150,6 +151,41 @@ fn normalizeFusedInto(
             return error.InvalidUtf8;
         const codepoint = decoded.codepoint;
         index = decoded.next;
+
+        // Compose L+V+T jamo directly: the syllable index is arithmetic, so
+        // the generic segment machinery (decompose, order, compose, encode)
+        // has nothing to add. A preceding mark keeps the generic path, which
+        // tracks ordering against the earlier starter.
+        if (compose and previous_input_class == 0 and
+            codepoint >= hangul_l_base and
+            codepoint < hangul_l_base + hangul_l_count)
+        {
+            if (hangulSyllableAt(text, codepoint, index)) |syllable| {
+                if (!changed) {
+                    try output.ensureUnusedCapacity(allocator, text.len + 16);
+                    changed = true;
+                }
+                if (start > stable_start) {
+                    try output.appendSlice(
+                        allocator,
+                        text[stable_start..start],
+                    );
+                }
+                var encoded: [4]u8 = undefined;
+                const encoded_len = std.unicode.utf8Encode(
+                    syllable.composed,
+                    &encoded,
+                ) catch unreachable;
+                try output.appendSlice(allocator, encoded[0..encoded_len]);
+                index = syllable.end;
+                stable_start = index;
+                starter = null;
+                starter_offset = index;
+                previous_input_class = 0;
+                continue;
+            }
+        }
+
         if (codepoint >= 0x80 and inert.isInert(codepoint, form)) {
             starter = codepoint;
             starter_offset = start;
@@ -1342,6 +1378,24 @@ fn decomposeHangul(codepoint: u21) ?HangulDecomposition {
         .{ .values = .{ l, v, hangul_t_base + t }, .len = 3 };
 }
 
+const HangulSyllable = struct {
+    composed: u21,
+    end: usize,
+};
+
+/// Compose the L jamo `l` with the scalars after `after_l`. Returns null
+/// when the next scalar is not a V jamo.
+fn hangulSyllableAt(text: []const u8, l: u21, after_l: usize) ?HangulSyllable {
+    const v = scalar.decodeValidating(text, after_l) orelse return null;
+    const lv = composeHangul(l, v.codepoint) orelse return null;
+    const t = scalar.decodeValidating(text, v.next) orelse
+        return .{ .composed = lv, .end = v.next };
+    if (composeHangul(lv, t.codepoint)) |lvt| {
+        return .{ .composed = lvt, .end = t.next };
+    }
+    return .{ .composed = lv, .end = v.next };
+}
+
 fn composeHangul(starter: u21, combining: u21) ?u21 {
     const l_index = starter -% hangul_l_base;
     if (l_index < hangul_l_count) {
@@ -1421,6 +1475,33 @@ test "NFC performs canonical ordering composition and Hangul composition" {
     try expectNormalized("\u{1100}\u{1161}\u{11a8}", "\u{ac01}");
     try expectNormalized("\u{212b}", "\u{00c5}");
     try expectNormalized("\u{0958}", "\u{0915}\u{093c}");
+}
+
+test "Hangul jamo runs compose directly" {
+    // LV and LVT, with trailing text and marks that must stay intact.
+    try expectNormalized("\u{1100}\u{1161}", "\u{ac00}");
+    try expectNormalized("\u{1100}\u{1161}\u{11a8}", "\u{ac01}");
+    try expectNormalized(
+        "\u{1100}\u{1161}\u{11a8} x",
+        "\u{ac01} x",
+    );
+    try expectNormalized(
+        "\u{1100}\u{1161}\u{0301}",
+        "\u{ac00}\u{0301}",
+    );
+    try expectNormalized(
+        "\u{1100}\u{1161}\u{11a8}\u{0301}",
+        "\u{ac01}\u{0301}",
+    );
+    // A lone L jamo and an L followed by another V start fresh.
+    try expectNormalized("\u{1100}", "\u{1100}");
+    try expectNormalized("\u{1100}\u{1161}\u{1161}", "\u{ac00}\u{1161}");
+    // NFD still decomposes syllables back to jamo.
+    try expectFormNormalized(
+        "\u{ac01}",
+        "\u{1100}\u{1161}\u{11a8}",
+        .nfd,
+    );
 }
 
 test "NFC does not apply display-only Vietnamese mark reordering" {
@@ -1674,9 +1755,6 @@ test "Unicode 17 NFC normalization conformance" {
     }
     try std.testing.expectEqual(conformance.len, fixture_offset);
 }
-
-
-
 
 test "isNormalized validates the unscanned suffix" {
     const testing = @import("std").testing;

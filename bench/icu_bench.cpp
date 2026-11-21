@@ -111,6 +111,16 @@ int main() {
         for (int i = 0; i < 8; i++) s += "中华人民共和国 ";
         return s;
     }();
+    const std::string e_marks_text = [] {
+        std::string s;
+        for (int i = 0; i < 16; i++) s += "e\u0301\u0323 ";
+        return s;
+    }();
+    const std::string jamo_text = [] {
+        std::string s;
+        for (int i = 0; i < 12; i++) s += "\u1100\u1161\u11a8 ";
+        return s;
+    }();
 
     struct Text {
         const char* name;
@@ -126,6 +136,8 @@ int main() {
         {"chinese_collation", chinese_collation_text, {}},
         {"thai", thai_text, {}},
         {"cjk_word", cjk_word_text, {}},
+        {"e_marks", e_marks_text, {}},
+        {"jamo", jamo_text, {}},
     };
     for (auto& text : texts) text.u16 = to_u16(text.utf8);
 
@@ -160,7 +172,7 @@ int main() {
     {
         UErrorCode status = U_ZERO_ERROR;
         const UNormalizer2* nfc = unorm2_getNFCInstance(&status);
-        for (int index : {0, 1, 4}) {
+        for (int index : {0, 1, 4, 8, 9}) {
             const auto& u16 = texts[index].u16;
             std::vector<UChar> out(u16.size() * 3 + 32);
             std::string label = std::string("NFC ") + texts[index].name;
