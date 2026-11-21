@@ -630,7 +630,10 @@ as one packed `u32`, avoiding the stack temporaries an optional struct return
 would create, and combining marks that are their own decomposition are copied
 straight into the segment. The quick-check scan doubles as UTF-8 validation, so
 a text that is already normalized never pays a second validation pass; when the
-scan stops early, only the unscanned suffix is validated. `*AssumeValid` entry
+scan stops early, only the unscanned suffix is validated. UTF-16 input runs the
+same segment scan directly: surrogate pairs decode into a packed register,
+canonical segments are built on the stack, and the result is emitted as UTF-16
+units, so no codepoint intermediate is allocated. `*AssumeValid` entry
 points run their UTF-8 assertion only in safe builds, so release callers do not
 pay for a second validation pass.
 
