@@ -901,9 +901,7 @@ fn benchLocaleCanonicalize(
 }
 
 pub fn main() !void {
-    var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena_state.deinit();
-    const allocator = arena_state.allocator();
+    const allocator = std.heap.smp_allocator;
 
     const codepoints = try allocator.alloc(u21, 1 << 20);
     var state: u32 = 0x12345678;
