@@ -1499,7 +1499,7 @@ const latin_compose: [0x100][latin_compose_mark_count]u16 = blk: {
     break :blk table;
 };
 
-pub fn composePair(starter: u21, combining: u21) ?u21 {
+pub inline fn composePair(starter: u21, combining: u21) ?u21 {
     if (starter < 0x100 and combining >= latin_compose_first_mark and
         combining < latin_compose_first_mark + latin_compose_mark_count)
     {
