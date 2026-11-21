@@ -325,6 +325,48 @@ pub fn decide(
     const before_before_spaces = state.beforeBeforeSpaceRun();
     const right_class = right.class;
 
+    // Pair decisions that no rule above or below can override. Both sides
+    // are non-space, non-punctuation classes here, so the space-run and
+    // lookahead state does not participate.
+    if (left.class == .ideographic and right_class == .ideographic) {
+        return .soft; // LB31: ideographs break by default.
+    }
+    if (right_class == .ideographic) {
+        // LB31 for CJK prose: these left classes have no prohibition before
+        // an ideograph (LB23a only blocks prefix, and LB11/LB12/LB14/LB19
+        // need a joiner, glue, open punctuation, or quotation on the left).
+        switch (left.class) {
+            .close_punctuation,
+            .close_parenthesis,
+            .exclamation,
+            .symbol,
+            .infix_separator,
+            .alphabetic,
+            .hebrew_letter,
+            .numeric,
+            .postfix,
+            => return .soft,
+            else => {},
+        }
+    }
+    if (isAlphabetic(left.class) and isAlphabetic(right_class)) {
+        return null; // LB28.
+    }
+    if (isHangulBlock(left.class) and right_class == .postfix) return null;
+    if (left.class == .prefix and isHangulBlock(right_class)) return null;
+    if (left.class == .hangul_l_jamo and
+        (right_class == .hangul_l_jamo or
+            right_class == .hangul_v_jamo or
+            right_class == .hangul_lv_syllable or
+            right_class == .hangul_lvt_syllable)) return null;
+    if ((left.class == .hangul_v_jamo or
+        left.class == .hangul_lv_syllable) and
+        (right_class == .hangul_v_jamo or
+            right_class == .hangul_t_jamo)) return null;
+    if ((left.class == .hangul_t_jamo or
+        left.class == .hangul_lvt_syllable) and
+        right_class == .hangul_t_jamo) return null;
+
     // LB8.
     if (before_spaces.class == .zero_width_space) return .soft;
     // LB11–LB14.

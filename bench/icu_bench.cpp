@@ -246,6 +246,9 @@ int main() {
         {"word mixed", UBRK_WORD, 1},
         {"line break ASCII", UBRK_LINE, 0},
         {"line break mixed", UBRK_LINE, 1},
+        {"line break chinese", UBRK_LINE, 4},
+        {"line break e_marks", UBRK_LINE, 8},
+        {"line break jamo", UBRK_LINE, 9},
     };
     for (const auto& item : break_cases) {
         UErrorCode status = U_ZERO_ERROR;
