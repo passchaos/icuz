@@ -7,11 +7,15 @@
 //   /tmp/icu_bench
 
 #include <unicode/ubrk.h>
+#include <unicode/ucal.h>
 #include <unicode/ucnv.h>
 #include <unicode/ucol.h>
+#include <unicode/udat.h>
+#include <unicode/ulistformatter.h>
 #include <unicode/unorm2.h>
 #include <unicode/unum.h>
 #include <unicode/uregex.h>
+#include <unicode/ureldatefmt.h>
 #include <unicode/ustring.h>
 #include <unicode/utypes.h>
 #include <cstdio>
@@ -364,6 +368,57 @@ int main() {
         }
     }
 
+    std::printf("\n-- locale formatting --\n");
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        UListFormatter* formatter = ulistfmt_open("en", &status);
+        std::vector<std::vector<UChar>> items;
+        for (const char* text : {"alpha", "beta", "gamma", "delta"}) {
+            items.push_back(to_u16(text));
+        }
+        std::vector<const UChar*> pointers;
+        std::vector<int32_t> lengths;
+        for (const auto& item : items) {
+            pointers.push_back(item.data());
+            lengths.push_back(static_cast<int32_t>(item.size()));
+        }
+        UChar out[128];
+        bench_ops("list format 4 items", 20000, [&] {
+            status = U_ZERO_ERROR;
+            ulistfmt_format(formatter, pointers.data(), lengths.data(), 4,
+                out, 128, &status);
+        });
+        ulistfmt_close(formatter);
+    }
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        URelativeDateTimeFormatter* formatter = ureldatefmt_open(
+            "en", nullptr, UDAT_STYLE_LONG, UDISPCTX_CAPITALIZATION_NONE,
+            &status);
+        UChar out[128];
+        bench_ops("relative time", 20000, [&] {
+            status = U_ZERO_ERROR;
+            ureldatefmt_format(formatter, -3, UDAT_REL_UNIT_DAY, out, 128,
+                &status);
+        });
+        ureldatefmt_close(formatter);
+    }
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        UDateFormat* format = udat_open(UDAT_FULL, UDAT_FULL, "en", nullptr, 0,
+            nullptr, 0, &status);
+        UCalendar* calendar = ucal_open(nullptr, 0, "en", UCAL_DEFAULT, &status);
+        ucal_setDateTime(calendar, 2026, UCAL_NOVEMBER, 19, 13, 45, 30, &status);
+        const UDate when = ucal_getMillis(calendar, &status);
+        UChar out[128];
+        bench_ops("date full format", 20000, [&] {
+            status = U_ZERO_ERROR;
+            udat_format(format, when, out, 128, nullptr, &status);
+        });
+        ucal_close(calendar);
+        udat_close(format);
+    }
+
     std::printf("\n-- number formatting --\n");
     {
         UErrorCode status = U_ZERO_ERROR;
@@ -372,6 +427,18 @@ int main() {
         bench_ops("decimal number", 20000, [&] {
             status = U_ZERO_ERROR;
             unum_formatDouble(format, 1234.5, out, 128, nullptr, &status);
+        });
+        unum_close(format);
+    }
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        UNumberFormat* format = unum_open(UNUM_DECIMAL, nullptr, 0, "en", nullptr, &status);
+        const std::vector<UChar> text = to_u16("1,234,567.89");
+        bench_ops("parse decimal", 200000, [&] {
+            status = U_ZERO_ERROR;
+            int32_t position = 0;
+            unum_parseDouble(format, text.data(),
+                static_cast<int32_t>(text.size()), &position, &status);
         });
         unum_close(format);
     }
