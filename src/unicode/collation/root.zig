@@ -1390,7 +1390,7 @@ fn appendSingle(
     return appendImplicit(allocator, ces, codepoint, reorder);
 }
 
-fn appendElements(
+inline fn appendElements(
     allocator: std.mem.Allocator,
     ces: anytype,
     codepoints: []const u21,
@@ -1400,8 +1400,8 @@ fn appendElements(
     tables: ?*const RootTables,
 ) error{OutOfMemory}!usize {
     const first = codepoints[index];
-    // Root ASCII entries are precomputed; skip the page-table lookup unless
-    // the character starts a contraction or needs shifted variable weights.
+    // Root ASCII entries are precomputed; keep that hot path inline and let
+    // the contraction, mark, and implicit cases pay a call.
     if (reorder == null and !shifted and first < 128 and
         ascii_elements.usable and
         !ascii_contractions[@as(usize, first)])
@@ -1417,6 +1417,27 @@ fn appendElements(
         }
         return 1;
     }
+    return appendElementsSlow(
+        allocator,
+        ces,
+        codepoints,
+        index,
+        reorder,
+        shifted,
+        tables,
+    );
+}
+
+fn appendElementsSlow(
+    allocator: std.mem.Allocator,
+    ces: anytype,
+    codepoints: []const u21,
+    index: usize,
+    reorder: ?tailorings.Reorder,
+    shifted: bool,
+    tables: ?*const RootTables,
+) error{OutOfMemory}!usize {
+    const first = codepoints[index];
     if (tables) |root| {
         if (first < direct_bmp_limit) {
             const entry = &root.direct[first];
