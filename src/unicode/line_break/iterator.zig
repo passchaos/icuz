@@ -73,6 +73,23 @@ pub const Iterator = struct {
             );
             self.state.consume(raw_properties.class, effective);
             self.cursor = decoded.next;
+            // Punctuation or non-ASCII input disables the prose scanner, but
+            // after a word scalar the scanner's committed history is again
+            // consistent with the shape it models: the boundary before the
+            // next word byte is a word pair (never a break), and the scanner
+            // only emits the boundary after the following space run. A space
+            // is not resumable because the scanner would skip the pending
+            // space-to-word break.
+            if (effective) |significant| {
+                if (!self.simple_ascii and
+                    rules.isWordClass(significant.class) and
+                    self.cursor < self.text.len and
+                    self.text[self.cursor] < 0x80 and
+                    rules.isAsciiWordByte(self.text[self.cursor]))
+                {
+                    self.simple_ascii = true;
+                }
+            }
             if (break_kind) |kind| {
                 return .{ .byte_offset = decoded.start, .kind = kind };
             }
@@ -118,9 +135,9 @@ pub const Iterator = struct {
 
         const start = self.cursor;
         // This scanner commits state only after recognizing a complete
-        // `word SP+ word`, hard-break, or end-of-text shape. Punctuation makes
-        // it return without consuming the candidate word, preserving LB30
-        // lookbehind for cases such as `book(s)`.
+        // `word SP+ word`, hard-break, or end-of-text shape. Punctuation
+        // commits the word run and hands the punctuation boundary to the
+        // generic path, so no partial shape is ever decided here.
         if (!self.simple_ascii) {
             if (rules.isAsciiHardBreak(self.text[start])) {
                 const previous = self.state.previous_raw;
@@ -156,6 +173,11 @@ pub const Iterator = struct {
                 self.state.consumeAsciiWordRun(self.text[start..word_end]);
                 return self.consumeSimpleAsciiHardBreak(word_end);
             }
+            // The word cannot complete a `word SP+ word` shape, but the
+            // boundary before it is already settled, so commit the run and
+            // let the generic path decide the punctuation boundary.
+            self.state.consumeAsciiWordRun(self.text[start..word_end]);
+            self.cursor = word_end;
             self.simple_ascii = false;
             return null;
         }
