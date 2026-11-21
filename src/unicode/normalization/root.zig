@@ -365,6 +365,21 @@ pub fn appendCanonicalDecompositionInto(
     try appendDecomposition(allocator, output, codepoint, false);
 }
 
+/// Combining Diacritical Marks with no canonical decomposition. The
+/// generated decomposition lookup is page-indexed, but its binary search
+/// still costs more than a bitmap test for the marks that dominate segment
+/// normalization.
+const mark_decomposition_limit = 0x370;
+const mark_has_decomposition: [mark_decomposition_limit - 0x300]bool = blk: {
+    @setEvalBranchQuota(200_000);
+    var table: [mark_decomposition_limit - 0x300]bool = undefined;
+    for (0x300..mark_decomposition_limit) |codepoint| {
+        table[codepoint - 0x300] =
+            decomposition.forCodepoint(@intCast(codepoint)) != null;
+    }
+    break :blk table;
+};
+
 /// Decompose one code point into `buffer` and return the component count.
 pub fn decomposeInto(
     buffer: *[64]u21,
@@ -379,6 +394,13 @@ pub fn decomposeInto(
         const slice = parts.slice();
         @memcpy(buffer[0..slice.len], slice);
         return slice.len;
+    }
+    if (!compatibility and codepoint >= 0x300 and
+        codepoint < mark_decomposition_limit and
+        !mark_has_decomposition[codepoint - 0x300])
+    {
+        buffer[0] = codepoint;
+        return 1;
     }
     const mapping = if (compatibility)
         decomposition.compatibilityForCodepoint(codepoint)
