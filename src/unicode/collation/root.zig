@@ -915,6 +915,8 @@ fn buildElements(
     ces: *CeBuffer,
 ) error{OutOfMemory}!void {
     try ces.ensureTotalCapacity(source.len + 8);
+    const direct: ?*const [direct_bmp_limit]DirectEntry =
+        if (reorder == null and !shifted) &direct_bmp_storage else null;
     var index: usize = 0;
     while (index < source.len) {
         if (options.numeric) {
@@ -946,6 +948,7 @@ fn buildElements(
             index,
             reorder,
             shifted,
+            direct,
         );
     }
 }
@@ -969,6 +972,7 @@ fn sortKeyCodepointsResolved(
 
     const fast_conditions = !shifted and case_first == .off and !backwards and
         !options.numeric and !options.case_level;
+    ensureDirectBmp();
     if (fast_conditions) {
         if (locale_tailoring) |tailoring| {
             if (try appendTailoredLatinSortKey(
@@ -1342,6 +1346,7 @@ fn appendElements(
     index: usize,
     reorder: ?tailorings.Reorder,
     shifted: bool,
+    direct: ?*const [direct_bmp_limit]DirectEntry,
 ) error{OutOfMemory}!usize {
     const first = codepoints[index];
     // Root ASCII entries are precomputed; skip the page-table lookup unless
@@ -1360,6 +1365,27 @@ fn appendElements(
             });
         }
         return 1;
+    }
+    if (direct) |table| {
+        if (first < direct_bmp_limit) {
+            const entry = &table[first];
+            switch (entry.kind) {
+                .direct => {
+                    try ces.append(allocator, .{
+                        .primary = entry.primary,
+                        .secondary = entry.secondary,
+                        .tertiary = entry.tertiary,
+                        .variable = entry.variable,
+                    });
+                    return 1;
+                },
+                .implicit => {
+                    try appendImplicit(allocator, ces, first, reorder);
+                    return 1;
+                },
+                .complex => {},
+            }
+        }
     }
     var sequence: [3]u21 = .{ codepoints[index], 0, 0 };
     var length: usize = 1;
@@ -1432,6 +1458,7 @@ fn appendElements(
             skipped_offset,
             reorder,
             shifted,
+            direct,
         );
     }
     return cursor - index;
@@ -1510,6 +1537,7 @@ fn appendRootLevelsStrength(
             index,
             null,
             false,
+            &direct_bmp_storage,
         );
     }
 
@@ -1575,6 +1603,72 @@ const latin_nfd: [latin_limit]LatinNfd = blk: {
     }
     break :blk table;
 };
+
+/// Direct root-collation results for the first 4096 scalars. Most letters in
+/// the BMP scripts that dominate mixed text (Hebrew, Arabic, Indic) have
+/// exactly one single-element entry, so the page lookup, contraction scan,
+/// and skipped-mark loop can be bypassed with one table read.
+const direct_bmp_limit: usize = 0x1000;
+
+const DirectKind = enum(u2) { complex, direct, implicit };
+
+const DirectEntry = struct {
+    kind: DirectKind = .complex,
+    primary: u32 = 0,
+    secondary: u32 = 0,
+    tertiary: u32 = 0,
+    variable: bool = false,
+};
+
+var direct_bmp_storage: [direct_bmp_limit]DirectEntry = undefined;
+var direct_bmp_state = std.atomic.Value(u8).init(0);
+
+/// Build the direct-entry table once per process. Doing this at runtime
+/// keeps the table out of the comptime build cost while every later lookup
+/// is still a single table read.
+fn ensureDirectBmp() void {
+    if (direct_bmp_state.load(.acquire) == 2) return;
+    while (direct_bmp_state.cmpxchgStrong(0, 1, .acquire, .monotonic) != null) {
+        if (direct_bmp_state.load(.acquire) == 2) return;
+        std.atomic.spinLoopHint();
+    }
+    for (0..direct_bmp_limit) |codepoint| {
+        var entry_index = pageStart(@intCast(codepoint));
+        var single: ?Entry = null;
+        var has_long = false;
+        while (entry_index < entry_count) : (entry_index += 1) {
+            const entry = entryAt(entry_index);
+            if (entry.first != codepoint) break;
+            if (entry.len > 1) {
+                has_long = true;
+                continue;
+            }
+            if (single != null) has_long = true;
+            single = entry;
+        }
+        if (has_long) {
+            direct_bmp_storage[codepoint] = .{ .kind = .complex };
+            continue;
+        }
+        if (single) |entry| {
+            if (entry.ce_count != 1) {
+                direct_bmp_storage[codepoint] = .{ .kind = .complex };
+                continue;
+            }
+            const element = ceAt(entry.ce_offset);
+            direct_bmp_storage[codepoint] = .{
+                .kind = .direct,
+                .primary = element.primary,
+                .secondary = element.secondary,
+                .tertiary = element.tertiary,
+                .variable = element.variable,
+            };
+        } else {
+            direct_bmp_storage[codepoint] = .{ .kind = .implicit };
+        }
+    }
+    direct_bmp_state.store(2, .release);
+}
 
 const latin_elements = blk: {
     @setEvalBranchQuota(2_000_000);
@@ -3603,4 +3697,37 @@ test "collator attributes" {
     try testing.expectEqual(@as(u32, 1), french.getAttribute(.french_collation));
     french.setAttribute(.french_collation, 0);
     try testing.expectEqual(@as(u32, 0), french.getAttribute(.french_collation));
+}
+
+test "direct collation table matches the generic lookup" {
+    const testing = @import("std").testing;
+    ensureDirectBmp();
+    for (0..direct_bmp_limit) |codepoint| {
+        const direct = direct_bmp_storage[codepoint];
+        var entry_index = pageStart(@intCast(codepoint));
+        var single: ?Entry = null;
+        var has_long = false;
+        while (entry_index < entry_count) : (entry_index += 1) {
+            const entry = entryAt(entry_index);
+            if (entry.first != codepoint) break;
+            if (entry.len > 1) {
+                has_long = true;
+                continue;
+            }
+            if (single != null) has_long = true;
+            single = entry;
+        }
+        if (has_long or (single != null and single.?.ce_count != 1)) {
+            try testing.expectEqual(DirectKind.complex, direct.kind);
+        } else if (single) |entry| {
+            try testing.expectEqual(DirectKind.direct, direct.kind);
+            const element = ceAt(entry.ce_offset);
+            try testing.expectEqual(element.primary, direct.primary);
+            try testing.expectEqual(element.secondary, direct.secondary);
+            try testing.expectEqual(element.tertiary, direct.tertiary);
+            try testing.expectEqual(element.variable, direct.variable);
+        } else {
+            try testing.expectEqual(DirectKind.implicit, direct.kind);
+        }
+    }
 }
