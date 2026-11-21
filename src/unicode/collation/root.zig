@@ -2524,11 +2524,17 @@ const ImplicitWeights = struct {
 };
 
 fn implicitWeights(codepoint: u21) ImplicitWeights {
-    // Han text is the common implicit case; test it before the rare-range
-    // and category lookups.
+    // U+4E00..U+9FFF are all unified ideographs and dominate implicit
+    // lookups, so they skip the property lookup.
+    if (codepoint >= 0x4e00 and codepoint <= 0x9fff) {
+        return .{
+            .first = (0xFB40 + @as(u32, codepoint >> 15)) << 12,
+            .second = ((@as(u32, codepoint) & 0x7fff) | 0x8000) << 12,
+            .unified = true,
+        };
+    }
     if (properties.isUnifiedIdeograph(codepoint)) {
-        const core = (codepoint >= 0x4e00 and codepoint <= 0x9fff) or
-            (codepoint >= 0xf900 and codepoint <= 0xfaff);
+        const core = codepoint >= 0xf900 and codepoint <= 0xfaff;
         const base: u32 = if (core) 0xFB40 else 0xFB80;
         return .{
             .first = (base + @as(u32, codepoint >> 15)) << 12,
@@ -2537,7 +2543,10 @@ fn implicitWeights(codepoint: u21) ImplicitWeights {
         };
     }
 
-    if (properties.category(codepoint) != .Cn) {
+    // Only the Tangut, Khitan, and Nushu ranges consult the range table.
+    if (codepoint >= 0x17000 and codepoint <= 0x1b2ff and
+        properties.category(codepoint) != .Cn)
+    {
         for (implicit.ranges) |range| {
             if (codepoint < range.first or codepoint > range.last) continue;
             const bbbb: u32 = @as(u32, codepoint) - @as(u32, range.origin);
