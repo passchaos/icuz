@@ -665,8 +665,9 @@ decisions take the boundary offsets directly; CJK runs replay interior
 boundaries without property lookups, and a space run followed by an L jamo
 resolves its LB31 boundary without the rule engine. Bidi resolution reserves
 the run and per-sequence scratch arrays once per paragraph, links isolating
-runs through a presence bitmap instead of clearing a 126-entry table, and fuses
-UTF-8 validation into the scalar scan.
+runs through a presence bitmap instead of clearing a 126-entry table, fuses
+UTF-8 validation into the scalar scan, and skips the European-separator and
+number follow-up passes when the sequence contains none.
 Charset
 reverse indexes carry compile-time page indexes and a split layout (sorted
 `u32` code points, then parallel `u16` pointers), so DBCS encoders

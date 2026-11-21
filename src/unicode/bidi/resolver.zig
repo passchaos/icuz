@@ -1061,6 +1061,8 @@ pub fn resolveInverse(
 fn resolveWeak(types: []Class, sos: Class, eos: Class) void {
     var previous = sos;
     var previous_strong = sos;
+    var saw_et = false;
+    var saw_weak = false;
     for (types, 0..) |*value, index| {
         var current = value.*;
         if (current == .nsm) {
@@ -1098,20 +1100,31 @@ fn resolveWeak(types: []Class, sos: Class, eos: Class) void {
             }
             previous = current;
         }
+        if (current == .et) saw_et = true;
+        if (current == .es or current == .et or current == .cs or
+            current == .en)
+        {
+            saw_weak = true;
+        }
     }
 
-    var cursor: usize = 0;
-    while (cursor < types.len) {
-        if (types[cursor] != .et) {
-            cursor += 1;
-            continue;
+    // Most prose sequences contain no European separators, terminators, or
+    // numbers; skip the two follow-up passes unless the first pass saw one.
+    if (saw_et) {
+        var cursor: usize = 0;
+        while (cursor < types.len) {
+            if (types[cursor] != .et) {
+                cursor += 1;
+                continue;
+            }
+            const start = cursor;
+            while (cursor < types.len and types[cursor] == .et) : (cursor += 1) {}
+            const before = if (start == 0) sos else types[start - 1];
+            const after = if (cursor == types.len) eos else types[cursor];
+            if (before == .en or after == .en) @memset(types[start..cursor], .en);
         }
-        const start = cursor;
-        while (cursor < types.len and types[cursor] == .et) : (cursor += 1) {}
-        const before = if (start == 0) sos else types[start - 1];
-        const after = if (cursor == types.len) eos else types[cursor];
-        if (before == .en or after == .en) @memset(types[start..cursor], .en);
     }
+    if (!saw_weak) return;
 
     previous_strong = sos;
     for (types) |*value| {
