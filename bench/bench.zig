@@ -1306,6 +1306,9 @@ pub fn main() !void {
     benchDictionaryWords("word CJK dictionary", cjk_word_runtime);
     benchLines("line break ASCII", ascii_runtime);
     benchLines("line break mixed", mixed_runtime);
+    benchLines("line break Chinese", "你好，世界！" ** 8);
+    benchLines("line break e+marks", "e\u{0301}\u{0323} " ** 16);
+    benchLines("line break jamo", "\u{1100}\u{1161}\u{11a8} " ** 12);
     benchSentences("sentence ASCII", ascii_runtime);
     benchSentences("sentence mixed", mixed_runtime);
 
