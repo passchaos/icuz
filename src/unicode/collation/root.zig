@@ -1624,7 +1624,7 @@ fn appendRootLevelsStrength(
         (if (need_secondary) secondary.items().len + 1 else 0) +
         (if (need_tertiary) tertiary.items().len + 1 else 0) +
         @as(usize, @intFromBool(separator));
-    try output.ensureTotalCapacity(allocator, total);
+    try output.ensureTotalCapacityPrecise(allocator, total);
     output.appendSliceAssumeCapacity(primary.items());
     output.appendAssumeCapacity(0);
     if (need_secondary) {
@@ -1917,7 +1917,7 @@ fn appendAsciiLevels(
         (if (need_secondary) secondary_len + 1 else 0) +
         (if (need_tertiary) tertiary_len + 1 else 0) +
         @as(usize, @intFromBool(separator));
-    try output.ensureTotalCapacity(allocator, total);
+    try output.ensureTotalCapacityPrecise(allocator, total);
     output.appendSliceAssumeCapacity(primary[0..primary_len]);
     output.appendAssumeCapacity(0);
     if (need_secondary) {
@@ -2212,7 +2212,7 @@ fn appendLatinCesLevels(
         (if (need_secondary) secondary_len + 1 else 0) +
         (if (need_tertiary) tertiary_len + 1 else 0) +
         @as(usize, @intFromBool(separator));
-    try output.ensureTotalCapacity(allocator, total);
+    try output.ensureTotalCapacityPrecise(allocator, total);
     output.appendSliceAssumeCapacity(primary[0..primary_len]);
     output.appendAssumeCapacity(0);
     if (need_secondary) {
@@ -2407,7 +2407,7 @@ fn appendLatinLevels(
         (if (need_secondary) secondary_len + 1 else 0) +
         (if (need_tertiary) tertiary_len + 1 else 0) +
         @as(usize, @intFromBool(separator));
-    try output.ensureTotalCapacity(allocator, total);
+    try output.ensureTotalCapacityPrecise(allocator, total);
     output.appendSliceAssumeCapacity(primary[0..primary_len]);
     output.appendAssumeCapacity(0);
     if (need_secondary) {
@@ -2682,7 +2682,7 @@ fn appendLevelElementsAll(
         (if (need_secondary) secondary_len + 1 else 0) +
         (if (need_tertiary) tertiary_len + 1 else 0) +
         @as(usize, @intFromBool(separator));
-    try output.ensureTotalCapacity(allocator, total);
+    try output.ensureTotalCapacityPrecise(allocator, total);
     output.appendSliceAssumeCapacity(primary[0..primary_len]);
     output.appendAssumeCapacity(0);
     if (need_secondary) {
