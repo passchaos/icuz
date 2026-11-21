@@ -328,13 +328,11 @@ pub fn decide(
     // Pair decisions that no rule above or below can override. Both sides
     // are non-space, non-punctuation classes here, so the space-run and
     // lookahead state does not participate.
-    if (left.class == .ideographic and right_class == .ideographic) {
-        return .soft; // LB31: ideographs break by default.
-    }
-    if (right_class == .ideographic) {
-        // LB31 for CJK prose: these left classes have no prohibition before
-        // an ideograph (LB23a only blocks prefix, and LB11/LB12/LB14/LB19
-        // need a joiner, glue, open punctuation, or quotation on the left).
+    if (right_class == .ideographic or right_class == .emoji_base) {
+        // LB31 for CJK and emoji prose: these left classes have no
+        // prohibition before an ideograph or emoji base (LB23a only blocks
+        // prefix, and LB11/LB12/LB14/LB19 need a joiner, glue, open
+        // punctuation, or quotation on the left).
         switch (left.class) {
             .close_punctuation,
             .close_parenthesis,
@@ -345,9 +343,15 @@ pub fn decide(
             .hebrew_letter,
             .numeric,
             .postfix,
+            .ideographic,
+            .emoji_base,
+            .emoji_modifier,
             => return .soft,
             else => {},
         }
+    }
+    if (left.class == .emoji_base and right_class == .emoji_modifier) {
+        return null; // LB30b.
     }
     if (isAlphabetic(left.class) and isAlphabetic(right_class)) {
         return null; // LB28.
