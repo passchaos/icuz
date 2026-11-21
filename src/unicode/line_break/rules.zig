@@ -55,6 +55,22 @@ pub const StreamState = struct {
             self.last;
     }
 
+    /// True when the class before the current space run forces the general
+    /// rules to inspect the next boundary; otherwise a `space → JL` pair is
+    /// LB31 soft and the iterator can decide it directly.
+    pub fn spaceRunNeedsRules(self: StreamState) bool {
+        const before = self.beforeSpaceRun();
+        return switch (before.class) {
+            .open_punctuation,
+            .quotation,
+            .close_punctuation,
+            .close_parenthesis,
+            .before_and_after,
+            => true,
+            else => false,
+        };
+    }
+
     fn beforeBeforeSpaceRun(self: StreamState) HistoryEntry {
         return if (self.count != 0 and self.last.class == .space)
             self.before_spaces_previous

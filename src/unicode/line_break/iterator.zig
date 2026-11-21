@@ -89,6 +89,35 @@ pub const Iterator = struct {
                     }
                     self.state.consumeAsciiSpaceRun(end - self.cursor);
                     self.cursor = end;
+                    // `space → JL` is LB31 soft unless the run follows
+                    // opening punctuation or a quotation. Consume the L jamo
+                    // and return the boundary without the general rule
+                    // engine; the next call resumes at its V jamo.
+                    if (end + 3 <= self.text.len and
+                        self.text[end] == 0xe1 and
+                        !self.state.spaceRunNeedsRules())
+                    {
+                        const decoded = scalar.decodeValidPacked(
+                            self.text,
+                            end,
+                        );
+                        const codepoint = scalar.packedCodepoint(decoded);
+                        if (codepoint >= 0x1100 and codepoint <= 0x1112) {
+                            const next_index =
+                                end + scalar.packedLength(decoded);
+                            const raw = property_data.lookupHangul(codepoint);
+                            self.state.consume(raw.class, .{
+                                .codepoint = codepoint,
+                                .properties = raw,
+                                .class = raw.class,
+                                .start = end,
+                                .next = next_index,
+                            });
+                            self.cursor = next_index;
+                            self.simple_ascii = false;
+                            return .{ .byte_offset = end, .kind = .soft };
+                        }
+                    }
                     continue;
                 }
             } else {
