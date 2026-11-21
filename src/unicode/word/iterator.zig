@@ -315,22 +315,29 @@ fn breaksAt(
         previous_actual_properties
     else
         properties(previous.codepoint);
-    if (isNewline(previous_properties.class)) return true;
-    const previous_previous = previousSignificant(text, previous.start);
-    const previous_previous_class = if (previous_previous) |decoded|
-        properties(decoded.codepoint).class
-    else
-        Class.other;
-    const next = nextSignificant(text, current.next);
-    const next_class = if (next) |decoded|
-        properties(decoded.codepoint).class
-    else
-        Class.other;
+    const previous_class = previous_properties.class;
+    if (isNewline(previous_class)) return true;
+    const current_class = current_properties.class;
+    // Only the mid-letter and Hebrew double-quote rules look at the scalars
+    // beyond the pair; ordinary letters, numbers, and spaces decide without
+    // the two extra decodes and property lookups.
+    const previous_previous_class = if (isLetterMid(previous_class) or
+        isNumericMid(previous_class) or previous_class == .double_quote)
+    previous: {
+        const decoded = previousSignificant(text, previous.start) orelse
+            break :previous Class.other;
+        break :previous properties(decoded.codepoint).class;
+    } else Class.other;
+    const next_class = if (rules.needsLookahead(previous_class, current_class)) next: {
+        const decoded = nextSignificant(text, current.next) orelse
+            break :next Class.other;
+        break :next properties(decoded.codepoint).class;
+    } else Class.other;
 
     return rules.significantBreak(
-        previous_properties.class,
+        previous_class,
         previous_previous_class,
-        current_properties.class,
+        current_class,
         next_class,
         regional_indicator_count % 2 == 1,
     );
