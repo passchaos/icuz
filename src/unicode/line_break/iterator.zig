@@ -353,18 +353,25 @@ pub const Iterator = struct {
         {
             punct_end += 1;
         }
-        if (punct_end >= self.text.len or self.text[punct_end] != ' ') {
-            return .unhandled;
+        if (punct_end == self.text.len) {
+            self.commitAsciiWordPunctuation(start, word_end, punct_end);
+            self.emitted_end = true;
+            return .{ .emitted = .{
+                .byte_offset = punct_end,
+                .kind = .hard,
+            } };
         }
+        if (rules.isAsciiHardBreak(self.text[punct_end])) {
+            self.commitAsciiWordPunctuation(start, word_end, punct_end);
+            return .{ .emitted = self.consumeSimpleAsciiHardBreak(punct_end) };
+        }
+        if (self.text[punct_end] != ' ') return .unhandled;
         var next_word = punct_end + 1;
         while (next_word < self.text.len and self.text[next_word] == ' ') {
             next_word += 1;
         }
 
-        self.state.consumeAsciiWordRun(self.text[start..word_end]);
-        for (self.text[word_end..punct_end], word_end..) |byte, offset| {
-            self.consumeAsciiPunctuation(byte, offset);
-        }
+        self.commitAsciiWordPunctuation(start, word_end, punct_end);
         self.state.consumeAsciiSpaceRun(next_word - punct_end);
         self.cursor = next_word;
         self.simple_ascii = false;
@@ -381,6 +388,18 @@ pub const Iterator = struct {
             .byte_offset = next_word,
             .kind = .soft,
         } };
+    }
+
+    fn commitAsciiWordPunctuation(
+        self: *Iterator,
+        start: usize,
+        word_end: usize,
+        punct_end: usize,
+    ) void {
+        self.state.consumeAsciiWordRun(self.text[start..word_end]);
+        for (self.text[word_end..punct_end], word_end..) |byte, offset| {
+            self.consumeAsciiPunctuation(byte, offset);
+        }
     }
 
     fn consumeAsciiPunctuation(
