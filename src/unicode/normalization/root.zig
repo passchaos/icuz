@@ -160,6 +160,30 @@ fn normalizeFusedInto(
             index += 3;
             continue;
         }
+        // CJK punctuation and fullwidth forms are inert under the canonical
+        // forms and start no composition pair, so their blocks skip the table
+        // lookups. The compatibility forms decompose them and keep the
+        // generic path; U+302A..U+302F are tone marks with non-zero
+        // combining classes and also stay generic.
+        if (!compatibility) {
+            const lead = text[index];
+            if ((lead | 0x0c) == 0xef and index + 3 <= text.len) {
+                @branchHint(.unlikely);
+                const second = text[index + 1];
+                const third = text[index + 2];
+                if ((lead == 0xe3 and second == 0x80 and
+                    (third < 0xaa or third > 0xaf)) or
+                    (lead == 0xef and second == 0xbc))
+                {
+                    if (third & 0xc0 != 0x80) return error.InvalidUtf8;
+                    starter = null;
+                    starter_offset = start;
+                    previous_input_class = 0;
+                    index += 3;
+                    continue;
+                }
+            }
+        }
         const decoded = scalar.decodeValidating(text, index) orelse
             return error.InvalidUtf8;
         const codepoint = decoded.codepoint;
