@@ -39,10 +39,12 @@ pub const Iterator = struct {
         if (self.cursor >= self.text.len) return null;
 
         const start = self.cursor;
-        const first = decode(self.text, start) orelse unreachable;
-        var end = first.next;
-        const first_properties = properties(first.codepoint);
-        var previous = first;
+        const first_packed = scalar.decodeValidPacked(self.text, start);
+        const first_codepoint = scalar.packedCodepoint(first_packed);
+        var end = start + scalar.packedLength(first_packed);
+        const first_properties = properties(first_codepoint);
+        var previous_codepoint = first_codepoint;
+        var previous_start = start;
         var previous_properties = first_properties;
         var is_word = first_properties.word_anchor;
         var regional_indicator_count: usize =
@@ -52,23 +54,23 @@ pub const Iterator = struct {
                 if (should_break) break;
                 if (asciiIsWordAnchor(self.text[end])) is_word = true;
                 regional_indicator_count = 0;
-                previous = .{
-                    .codepoint = self.text[end],
-                    .start = end,
-                    .next = end + 1,
-                };
+                previous_codepoint = self.text[end];
+                previous_start = end;
                 previous_properties = properties(self.text[end]);
                 end += 1;
                 continue;
             }
-            const current = decode(self.text, end) orelse unreachable;
-            const current_properties = properties(current.codepoint);
+            const current_packed = scalar.decodeValidPacked(self.text, end);
+            const current_codepoint = scalar.packedCodepoint(current_packed);
+            const current_next = end + scalar.packedLength(current_packed);
+            const current_properties = properties(current_codepoint);
             if (breaksAt(
                 self.text,
                 end,
-                previous,
+                previous_codepoint,
+                previous_start,
                 previous_properties,
-                current,
+                current_next,
                 current_properties,
                 regional_indicator_count,
             )) break;
@@ -78,9 +80,10 @@ pub const Iterator = struct {
             } else if (!isIgnored(current_properties.class)) {
                 regional_indicator_count = 0;
             }
-            previous = current;
+            previous_codepoint = current_codepoint;
+            previous_start = end;
             previous_properties = current_properties;
-            end = current.next;
+            end = current_next;
         }
         self.cursor = end;
         return .{
@@ -296,9 +299,10 @@ pub fn assumeValidWithDictionaries(text: []const u8) DictionaryIterator {
 fn breaksAt(
     text: []const u8,
     offset: usize,
-    previous_actual: Decoded,
+    previous_actual_codepoint: u21,
+    previous_actual_start: usize,
     previous_actual_properties: rules.Properties,
-    current: Decoded,
+    current_next: usize,
     current_properties: rules.Properties,
     regional_indicator_count: usize,
 ) bool {
@@ -310,8 +314,12 @@ fn breaksAt(
     const previous = if (isIgnored(previous_actual_properties.class))
         previousSignificant(text, offset) orelse return true
     else
-        previous_actual;
-    const previous_properties = if (previous.start == previous_actual.start)
+        Decoded{
+            .codepoint = previous_actual_codepoint,
+            .start = previous_actual_start,
+            .next = offset,
+        };
+    const previous_properties = if (previous.start == previous_actual_start)
         previous_actual_properties
     else
         properties(previous.codepoint);
@@ -329,7 +337,7 @@ fn breaksAt(
         break :previous properties(decoded.codepoint).class;
     } else Class.other;
     const next_class = if (rules.needsLookahead(previous_class, current_class)) next: {
-        const decoded = nextSignificant(text, current.next) orelse
+        const decoded = nextSignificant(text, current_next) orelse
             break :next Class.other;
         break :next properties(decoded.codepoint).class;
     } else Class.other;
