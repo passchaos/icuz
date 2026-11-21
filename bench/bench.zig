@@ -1192,6 +1192,12 @@ pub fn main() !void {
         allocator,
     );
     benchNumber(
+        "currency standard",
+        1234.5,
+        .{ .style = .currency, .currency = "USD" },
+        allocator,
+    );
+    benchNumber(
         "accounting currency",
         -1234.5,
         .{ .style = .currency, .currency = "USD", .accounting = true },

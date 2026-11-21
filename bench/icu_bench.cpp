@@ -375,5 +375,45 @@ int main() {
         });
         unum_close(format);
     }
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        UNumberFormat* format = unum_open(UNUM_SCIENTIFIC, nullptr, 0, "en", nullptr, &status);
+        UChar out[128];
+        bench_ops("scientific number", 20000, [&] {
+            status = U_ZERO_ERROR;
+            unum_formatDouble(format, 1234.5, out, 128, nullptr, &status);
+        });
+        unum_close(format);
+    }
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        UNumberFormat* format = unum_open(UNUM_CURRENCY, nullptr, 0, "en", nullptr, &status);
+        UChar out[128];
+        bench_ops("currency standard", 20000, [&] {
+            status = U_ZERO_ERROR;
+            unum_formatDouble(format, 1234.5, out, 128, nullptr, &status);
+        });
+        unum_close(format);
+    }
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        UNumberFormat* format = unum_open(UNUM_CURRENCY_ACCOUNTING, nullptr, 0, "en", nullptr, &status);
+        UChar out[128];
+        bench_ops("accounting currency", 20000, [&] {
+            status = U_ZERO_ERROR;
+            unum_formatDouble(format, 1234.5, out, 128, nullptr, &status);
+        });
+        unum_close(format);
+    }
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        UNumberFormat* format = unum_open(UNUM_CURRENCY_PLURAL, nullptr, 0, "en", nullptr, &status);
+        UChar out[128];
+        bench_ops("currency name", 20000, [&] {
+            status = U_ZERO_ERROR;
+            unum_formatDouble(format, 1234.5, out, 128, nullptr, &status);
+        });
+        unum_close(format);
+    }
     return 0;
 }

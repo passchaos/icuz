@@ -253,7 +253,7 @@ fn rangeAffix(
         );
         if (display.len == 0) return null;
         const pattern_text = currencyPatternText(locale, options, display);
-        const pattern = parsePattern(pattern_text) orelse return null;
+        const pattern = parsePatternCached(pattern_text) orelse return null;
         const prefix = try buildAffixTextAlloc(
             allocator,
             pattern.positive_prefix,
@@ -284,7 +284,7 @@ fn rangeAffix(
     }
     if (options.style == .percent) {
         const symbol = if (options.permille) "\u{2030}" else locale.percent;
-        const pattern = parsePattern(locale.percent_pattern) orelse return null;
+        const pattern = parsePatternCached(locale.percent_pattern) orelse return null;
         const prefix = try buildAffixTextAlloc(
             allocator,
             pattern.positive_prefix,
@@ -824,8 +824,10 @@ fn formatStandardAlloc(
         .currency => currencyPatternText(locale, options, currency_display_text),
         .scientific, .compact => unreachable,
     };
-    var pattern = parsePattern(pattern_text) orelse
-        return error.InvalidPattern;
+    var pattern = (if (pattern_override == null)
+        parsePatternCached(pattern_text)
+    else
+        parsePattern(pattern_text)) orelse return error.InvalidPattern;
     if (options.style == .percent and !options.percent_scale) {
         pattern.multiplier = 1;
     }
@@ -1188,7 +1190,7 @@ pub fn formatIntegerAlloc(
         .currency => currencyPatternText(locale, &options, currency_display_text),
         .scientific, .compact => unreachable,
     };
-    const pattern = parsePattern(pattern_text) orelse
+    const pattern = parsePatternCached(pattern_text) orelse
         return error.InvalidPattern;
 
     var min_fraction = options.min_fraction_digits orelse
@@ -2052,7 +2054,7 @@ fn wrapCurrencyAlloc(
         options.currency_display;
     const display_text = currencyDisplayText(locale, code, display);
     const pattern_text = currencyPatternText(locale, options, display_text);
-    const pattern = parsePattern(pattern_text) orelse
+    const pattern = parsePatternCached(pattern_text) orelse
         return error.InvalidPattern;
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
@@ -2558,6 +2560,24 @@ const Subpattern = struct {
     group_primary: u8,
     group_secondary: u8,
 };
+
+/// Last parsed pattern on this thread. Locale patterns are immutable
+/// generated slices, so pointer equality is a sufficient cache key and
+/// avoids re-scanning the pattern on every format call.
+threadlocal var cached_pattern_text: ?[]const u8 = null;
+threadlocal var cached_pattern: Pattern = undefined;
+
+fn parsePatternCached(text: []const u8) ?Pattern {
+    if (cached_pattern_text) |cached| {
+        if (cached.ptr == text.ptr and cached.len == text.len) {
+            return cached_pattern;
+        }
+    }
+    const pattern = parsePattern(text) orelse return null;
+    cached_pattern_text = text;
+    cached_pattern = pattern;
+    return pattern;
+}
 
 fn parsePattern(text: []const u8) ?Pattern {
     var positive = text;
