@@ -88,16 +88,21 @@ pub const Iterator = struct {
                 raw_properties,
                 self.state.lb9_base,
             );
+            // An LB9-folded mark cannot start a line, so only a pending
+            // suppressed break can hide the decision.
             const break_kind = if (self.suppress_break_at_cursor) suppress: {
                 self.suppress_break_at_cursor = false;
                 break :suppress null;
-            } else rules.decide(
-                self.text,
-                self.state,
-                decoded,
-                raw_properties,
-                effective,
-            );
+            } else if (effective == null)
+                null
+            else
+                rules.decide(
+                    self.text,
+                    self.state,
+                    decoded,
+                    raw_properties,
+                    effective,
+                );
             self.state.consume(raw_properties.class, effective);
             self.cursor = decoded.next;
             // Punctuation or non-ASCII input disables the prose scanner, but

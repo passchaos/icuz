@@ -318,6 +318,12 @@ pub fn decide(
     if (effective == null) return null; // LB9.
 
     const right = effective.?;
+    // Hangul-to-Hangul pairs are fully decided by LB26/LB27: either an
+    // internal syllable pair or LB31. Every rule between LB4 and LB25 needs
+    // a non-Hangul class on one side.
+    if (isHangulBlock(state.last.class) and isHangulBlock(right.class)) {
+        return if (hangulNoBreak(state.last.class, right.class)) null else .soft;
+    }
     var lookahead_cache: ?Lookahead = null;
     const left = state.last;
     const previous = state.previous;
