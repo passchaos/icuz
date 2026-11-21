@@ -3,7 +3,9 @@
     .version = "0.1.0",
     .fingerprint = 0xcf63_077d_c29e_7f76,
     .minimum_zig_version = "0.16.0",
-    .dependencies = .{},
+    .dependencies = .{
+        .regexz = .{ .path = "../regexz" },
+    },
     .paths = .{
         ".gitignore",
         "LICENSE",

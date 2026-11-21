@@ -9,6 +9,7 @@ const std = @import("std");
 const parser = @import("parser.zig");
 const compiler = @import("compiler.zig");
 const vm = @import("vm.zig");
+const regexz_backend = @import("regexz_backend.zig");
 const set_mod = @import("../set.zig");
 
 pub const Flags = parser.Flags;
@@ -59,8 +60,9 @@ pub const Regex = struct {
     names: []parser.NamedGroup,
     group_count: u16,
     flags: parser.Flags,
-    word_set: set_mod.Set,
     pattern_text: []u8,
+    /// Lowered regexz program when the pattern fits its exact subset.
+    backend: ?regexz_backend.Program = null,
 
     pub fn compileAlloc(
         allocator: std.mem.Allocator,
@@ -117,14 +119,11 @@ pub const Regex = struct {
         const pattern_text = try allocator.dupe(u8, pattern);
         errdefer allocator.free(pattern_text);
 
-        const word_set = parser.wordSet(allocator) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.InvalidPattern => return error.InvalidPattern,
-        };
-        errdefer {
-            var mutable = word_set;
+        const backend = try regexz_backend.lower(allocator, &parsed);
+        errdefer if (backend) |value| {
+            var mutable = value;
             mutable.deinit();
-        }
+        };
 
         const sets = parsed.sets;
         parsed_owned = false;
@@ -138,18 +137,18 @@ pub const Regex = struct {
             .names = names,
             .group_count = parsed.group_count,
             .flags = flags,
-            .word_set = word_set,
             .pattern_text = pattern_text,
+            .backend = backend,
         };
     }
 
     pub fn deinit(self: *Regex) void {
+        if (self.backend) |*backend| backend.deinit();
         self.program.deinit(self.allocator);
         for (self.sets) |*set| set.deinit();
         self.allocator.free(self.sets);
         for (self.names) |name| self.allocator.free(name.name);
         self.allocator.free(self.names);
-        self.word_set.deinit();
         self.allocator.free(self.pattern_text);
     }
 
@@ -388,15 +387,16 @@ pub const Matcher = struct {
             regex.sets,
             regex.program.exact,
             regex.program.folded,
-            &regex.word_set,
             regex.flags,
             text,
             regex.group_count,
             regex.program.first_byte_bitmap,
             regex.program.literal_prefix,
+            regex.program.folded_prefix,
             regex.program.required_literal,
             regex.program.full_literal,
             regex.program.literal_alternatives,
+            if (regex.backend) |*backend| backend else null,
             .{
                 .transparent_bounds = options.transparent_bounds,
                 .anchoring_bounds = options.anchoring_bounds,

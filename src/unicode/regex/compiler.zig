@@ -75,6 +75,15 @@ pub const Inst = union(enum) {
     match,
 };
 
+/// A mandatory case-folded literal at the start of every match. `first` is
+/// the first folded scalar; `offset`/`len` point into `Program.folded` when
+/// the literal spans more than one scalar (`len == 0` for `char_ci`).
+pub const FoldedPrefix = struct {
+    first: u21,
+    offset: u32 = 0,
+    len: u32 = 0,
+};
+
 pub const Program = struct {
     insts: []Inst,
     exact: []u8,
@@ -86,6 +95,8 @@ pub const Program = struct {
     first_byte_bitmap: ?[4]u64,
     /// Exact literal prefix required at the start of every match.
     literal_prefix: ?[]u8,
+    /// Mandatory case-folded literal prefix, when one starts every match.
+    folded_prefix: ?FoldedPrefix,
     /// Exact literal substring that every match must contain.
     required_literal: ?[]u8,
     /// Exact literal covering the whole pattern, when no VM is needed.
@@ -121,6 +132,7 @@ pub fn compile(allocator: std.mem.Allocator, parsed: *const parser.Parsed) Error
     const first_byte_bitmap = compiler.computeFirstByteBitmap();
     const literal_prefix = try compiler.computeLiteralPrefix();
     errdefer if (literal_prefix) |prefix| allocator.free(prefix);
+    const folded_prefix = compiler.computeFoldedPrefix();
     const required_literal = try compiler.computeRequiredLiteral();
     errdefer if (required_literal) |literal| allocator.free(literal);
     const full_literal = try compiler.computeFullLiteral();
@@ -136,6 +148,7 @@ pub fn compile(allocator: std.mem.Allocator, parsed: *const parser.Parsed) Error
         .progress_count = compiler.progress_count,
         .first_byte_bitmap = first_byte_bitmap,
         .literal_prefix = literal_prefix,
+        .folded_prefix = folded_prefix,
         .required_literal = required_literal,
         .full_literal = full_literal,
         .literal_alternatives = literal_alternatives,
@@ -434,6 +447,42 @@ const Compiler = struct {
             .look_match,
             => null,
         };
+    }
+
+    /// Walk past zero-width bookkeeping to the first mandatory consumer.
+    /// Only a case-folded literal yields a usable prefix; alternations and
+    /// nullable loops have no single mandatory first scalar.
+    fn computeFoldedPrefix(self: *Compiler) ?FoldedPrefix {
+        var pc: u32 = 0;
+        var steps: u32 = 0;
+        while (steps < 256 and pc < self.insts.items.len) : (steps += 1) {
+            switch (self.insts.items[pc]) {
+                .char_ci => |scalar| return .{ .first = scalar },
+                .string_ci => |ref| {
+                    if (ref.len == 0) return null;
+                    return .{
+                        .first = self.folded.items[ref.offset],
+                        .offset = ref.offset,
+                        .len = ref.len,
+                    };
+                },
+                .save_start,
+                .save_end,
+                .atomic_start,
+                .atomic_end,
+                .repeat_init,
+                .progress_save,
+                .anchor,
+                => pc += 1,
+                .jmp => |target| pc = target,
+                .repeat_decide => |decide| {
+                    if (decide.min == 0) return null;
+                    pc = decide.body;
+                },
+                else => return null,
+            }
+        }
+        return null;
     }
 
     fn computeLiteralPrefix(self: *Compiler) Error!?[]u8 {

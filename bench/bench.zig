@@ -335,6 +335,53 @@ fn benchRegexMatches(
     sink +%= matched;
 }
 
+fn benchRegexCompile(
+    name: []const u8,
+    pattern: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    const rounds = 2_000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            var regex = icuz.Regex.compileAlloc(allocator, pattern, .{}) catch return;
+            regex.deinit();
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    std.debug.print("{s:<32} {d:>8.3} ns/op\n", .{
+        name,
+        @as(f64, @floatFromInt(best)) / @as(f64, @floatFromInt(rounds)),
+    });
+}
+
+fn benchRegexMatcherCreate(
+    name: []const u8,
+    pattern: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    var regex = icuz.Regex.compileAlloc(allocator, pattern, .{}) catch return;
+    defer regex.deinit();
+    const rounds = 20_000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            var matcher = regex.matcher(text) catch return;
+            matcher.deinit();
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    std.debug.print("{s:<32} {d:>8.3} ns/op\n", .{
+        name,
+        @as(f64, @floatFromInt(best)) / @as(f64, @floatFromInt(rounds)),
+    });
+}
+
 fn benchCase(name: []const u8, text: []const u8, allocator: std.mem.Allocator) void {
     var best: u64 = std.math.maxInt(u64);
     const trials = 5;
@@ -1211,6 +1258,24 @@ pub fn main() !void {
         "class matches miss",
         "[0-9]+",
         "abcdef",
+        allocator,
+    );
+    benchRegexCompile("compile literal", "needle", allocator);
+    benchRegexCompile("compile class", "[0-9]{3}-[0-9]{4}", allocator);
+    benchRegexCompile("compile alternation", "needle|pin", allocator);
+    benchRegexCompile("compile lookbehind", "(?<=x)abc", allocator);
+    benchRegexCompile("compile word boundary", "\\bneedle\\b", allocator);
+    benchRegexCompile("compile word class", "\\w+needle", allocator);
+    benchRegexMatcherCreate(
+        "matcher create",
+        "needle",
+        "some text before needle and after needle " ** 8,
+        allocator,
+    );
+    benchRegexMatcherCreate(
+        "matcher create class",
+        "[0-9]{3}-[0-9]{4}",
+        "call 555-1234 for details",
         allocator,
     );
 

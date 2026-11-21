@@ -11,6 +11,7 @@
 #include <unicode/ucol.h>
 #include <unicode/unorm2.h>
 #include <unicode/unum.h>
+#include <unicode/uregex.h>
 #include <unicode/ustring.h>
 #include <unicode/utypes.h>
 #include <cstdio>
@@ -245,6 +246,96 @@ int main() {
             while (ubrk_next(iterator) != UBRK_DONE) {}
         });
         ubrk_close(iterator);
+    }
+
+    std::printf("\n-- regular expressions --\n");
+    {
+        struct RegexCase {
+            const char* label;
+            const char* pattern;
+            const char* text;
+        };
+        const RegexCase cases[] = {
+            {"literal find", "needle",
+                "some text before needle and after needle "},
+            {"class find", "[0-9]{3}-[0-9]{4}",
+                "call 555-1234 or 555-9876 for details "},
+            {"case-insensitive find", "(?i)needle",
+                "some text before Needle and after NEEDLE "},
+            {"required literal miss", ".*needle",
+                "some text without the required token "},
+            {"literal alternation find", "needle|pin",
+                "some text with needle or pin in it "},
+        };
+        for (const auto& item : cases) {
+            std::string text;
+            for (int i = 0; i < 8; i++) text += item.text;
+            const std::vector<UChar> pattern = to_u16(item.pattern);
+            const std::vector<UChar> subject = to_u16(text);
+            UErrorCode status = U_ZERO_ERROR;
+            UParseError parse_error;
+            URegularExpression* regex = uregex_open(pattern.data(),
+                static_cast<int32_t>(pattern.size()), 0, &parse_error, &status);
+            if (U_FAILURE(status)) {
+                std::printf("%-32s open failed\n", item.label);
+                continue;
+            }
+            uregex_setText(regex, subject.data(),
+                static_cast<int32_t>(subject.size()), &status);
+            bench_ops(item.label, 400, [&] {
+                status = U_ZERO_ERROR;
+                uregex_reset(regex, 0, &status);
+                while (uregex_findNext(regex, &status)) {}
+            });
+            uregex_close(regex);
+        }
+
+        struct MatchCase {
+            const char* label;
+            const char* pattern;
+            const char* text;
+        };
+        const MatchCase match_cases[] = {
+            {"literal matches", "needle", "needle"},
+            {"literal matches miss", "needle", "some other text"},
+            {"class matches miss", "[0-9]+", "abcdef"},
+        };
+        for (const auto& item : match_cases) {
+            const std::vector<UChar> pattern = to_u16(item.pattern);
+            const std::vector<UChar> subject = to_u16(item.text);
+            UErrorCode status = U_ZERO_ERROR;
+            UParseError parse_error;
+            URegularExpression* regex = uregex_open(pattern.data(),
+                static_cast<int32_t>(pattern.size()), 0, &parse_error, &status);
+            if (U_FAILURE(status)) continue;
+            uregex_setText(regex, subject.data(),
+                static_cast<int32_t>(subject.size()), &status);
+            bench_ops(item.label, 20000, [&] {
+                status = U_ZERO_ERROR;
+                uregex_matches(regex, 0, &status);
+            });
+            uregex_close(regex);
+        }
+
+        const struct { const char* label; const char* pattern; } compile_cases[] = {
+            {"compile literal", "needle"},
+            {"compile class", "[0-9]{3}-[0-9]{4}"},
+            {"compile alternation", "needle|pin"},
+            {"compile lookbehind", "(?<=x)abc"},
+            {"compile word boundary", "\\bneedle\\b"},
+            {"compile word class", "\\w+needle"},
+        };
+        for (const auto& item : compile_cases) {
+            const std::vector<UChar> pattern = to_u16(item.pattern);
+            bench_ops(item.label, 2000, [&] {
+                UErrorCode status = U_ZERO_ERROR;
+                UParseError parse_error;
+                URegularExpression* regex = uregex_open(pattern.data(),
+                    static_cast<int32_t>(pattern.size()), 0, &parse_error,
+                    &status);
+                if (U_SUCCESS(status)) uregex_close(regex);
+            });
+        }
     }
 
     std::printf("\n-- number formatting --\n");

@@ -87,6 +87,32 @@ test "regex full case folding" {
     try expectFull("(?i)(a)\\1", "aA");
 }
 
+test "regex case folding preimages" {
+    // Non-ASCII single-scalar fold peers.
+    try expectFull("(?i)k", "\u{212a}");
+    try expectFull("(?i)s", "\u{017f}");
+    // Multi-scalar folds only match the complete folded sequence.
+    try expectNoFull("(?i)i", "\u{0130}");
+    try expectFull("(?i)ss", "\u{00df}");
+    try expectFull("(?i)st", "\u{fb05}");
+    try expectFull("(?i)ffi", "\u{fb03}");
+    try expectFull("(?i)\u{00df}", "ss");
+    // A mandatory case-folded prefix still finds later matches.
+    try expectFind("(?i)needle", "xx NEedle yy", 3, 9);
+    try expectNoFind("(?i)needle", "xx nee dle yy");
+    try expectFind("(?i)needle\\d+", "NEEDLE42", 0, 8);
+}
+
+test "regex lookingAt failure keeps find usable" {
+    var re = try compile("needle");
+    defer re.deinit();
+    var m = try re.matcher("x needle");
+    defer m.deinit();
+    try std.testing.expect(!(try m.lookingAt()));
+    try std.testing.expect(try m.find());
+    try std.testing.expectEqual(@as(?usize, 2), m.start(0));
+}
+
 test "regex lookaround and back references" {
     try expectFind("(?<=ab)c", "abc", 2, 3);
     try expectFind("(?<=a|bc)d", "bcd", 2, 3);

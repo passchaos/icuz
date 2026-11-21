@@ -5,10 +5,13 @@
 //! offsets when callers need ICU-compatible indices.
 
 const std = @import("std");
+const regexz = @import("regexz");
+const regexz_backend = @import("regexz_backend.zig");
 const compiler = @import("compiler.zig");
 const parser = @import("parser.zig");
 const set_mod = @import("../set.zig");
 const properties = @import("../properties.zig");
+const trie = @import("../properties/trie.zig");
 const case_data = @import("../case/data.zig");
 const grapheme = @import("../grapheme/iterator.zig");
 const word = @import("../word/iterator.zig");
@@ -48,20 +51,29 @@ const Journal = struct {
     old: usize,
 };
 
+/// Per-matcher regexz workspaces. The compiled program itself lives in
+/// `Regex`, so matchers stay independent and reusable.
+const BackendState = struct {
+    workspace: regexz.Workspace,
+    search: regexz.ReplaceWorkspace,
+};
+
 pub const Runner = struct {
     allocator: std.mem.Allocator,
     program: []const compiler.Inst,
     sets: []const set_mod.Set,
     exact: []const u8,
     folded: []const u21,
-    word_set: *const set_mod.Set,
     flags: parser.Flags,
     text: []const u8,
     first_byte_bitmap: ?[4]u64,
     literal_prefix: ?[]const u8,
+    folded_prefix: ?compiler.FoldedPrefix,
     required_literal: ?[]const u8,
     full_literal: ?[]const u8,
     literal_alternatives: ?[]const compiler.LiteralAlt,
+    backend: ?*const regexz_backend.Program,
+    backend_state: ?BackendState,
 
     region_start: usize,
     region_end: usize,
@@ -99,15 +111,16 @@ pub const Runner = struct {
         sets: []const set_mod.Set,
         exact: []const u8,
         folded: []const u21,
-        word_set: *const set_mod.Set,
         flags: parser.Flags,
         text: []const u8,
         group_count: u16,
         first_byte_bitmap: ?[4]u64,
         literal_prefix: ?[]const u8,
+        folded_prefix: ?compiler.FoldedPrefix,
         required_literal: ?[]const u8,
         full_literal: ?[]const u8,
         literal_alternatives: ?[]const compiler.LiteralAlt,
+        backend: ?*const regexz_backend.Program,
         options: Options,
     ) error{OutOfMemory}!Runner {
         const capture_slots = (@as(usize, group_count) + 1) * 2;
@@ -118,20 +131,41 @@ pub const Runner = struct {
         const progress = try allocator.alloc(usize, program_progress_count(program));
         errdefer allocator.free(progress);
 
+        var backend_state: ?BackendState = null;
+        if (backend) |backend_program| {
+            if (regexz.Workspace.init(allocator, backend_program.program)) |workspace_value| {
+                var workspace = workspace_value;
+                if (regexz.ReplaceWorkspace.init(
+                    allocator,
+                    backend_program.program,
+                    .{},
+                )) |search_value| {
+                    backend_state = .{
+                        .workspace = workspace,
+                        .search = search_value,
+                    };
+                } else |_| {
+                    workspace.deinit();
+                }
+            } else |_| {}
+        }
+
         var runner = Runner{
             .allocator = allocator,
             .program = program,
             .sets = sets,
             .exact = exact,
             .folded = folded,
-            .word_set = word_set,
             .flags = flags,
             .text = text,
             .first_byte_bitmap = first_byte_bitmap,
             .literal_prefix = literal_prefix,
+            .folded_prefix = folded_prefix,
             .required_literal = required_literal,
             .full_literal = full_literal,
             .literal_alternatives = literal_alternatives,
+            .backend = backend,
+            .backend_state = backend_state,
             .region_start = 0,
             .region_end = text.len,
             .anchor_start = 0,
@@ -154,6 +188,10 @@ pub const Runner = struct {
     }
 
     pub fn deinit(self: *Runner) void {
+        if (self.backend_state) |*state| {
+            state.workspace.deinit();
+            state.search.deinit();
+        }
         self.allocator.free(self.captures);
         self.allocator.free(self.counters);
         self.allocator.free(self.progress);
@@ -229,6 +267,11 @@ pub const Runner = struct {
         self.beginOperation();
         self.had_match = false;
         self.exhausted = false;
+        // A full match needs capture recovery, which regexz only exposes for
+        // searches; group-free patterns can use its linear boolean engine.
+        if (self.backendActive() and self.captures.len == 2) {
+            if (try self.backendMatches()) |result| return result;
+        }
         if (self.literal_alternatives) |alternatives| {
             const region = self.text[self.region_start..self.region_end];
             for (alternatives) |alternative| {
@@ -275,6 +318,9 @@ pub const Runner = struct {
         self.beginOperation();
         self.had_match = false;
         self.exhausted = false;
+        if (self.backendActive()) {
+            if (try self.backendLookingAt()) |result| return result;
+        }
         if (self.literal_alternatives) |alternatives| {
             for (alternatives) |alternative| {
                 const literal = self.exact[alternative.offset..][0..alternative.len];
@@ -359,6 +405,9 @@ pub const Runner = struct {
     }
 
     fn searchFrom(self: *Runner, start: usize) Error!bool {
+        if (self.backendActive()) {
+            if (try self.backendSearch(start)) |result| return result;
+        }
         self.beginOperation();
         self.exhausted = false;
         var position = snapForward(self.text, @max(start, self.region_start));
@@ -433,6 +482,10 @@ pub const Runner = struct {
             return false;
         }
 
+        if (self.folded_prefix) |prefix| {
+            if (try self.searchFoldedPrefix(prefix, position)) |result| return result;
+        }
+
         while (position <= self.region_end) {
             if (self.first_byte_bitmap) |bits| {
                 if (!skipToCandidate(self.text, &position, self.region_end, bits)) break;
@@ -448,6 +501,158 @@ pub const Runner = struct {
         self.had_match = false;
         self.exhausted = true;
         return false;
+    }
+
+    /// Scan for the ASCII preimages of a folded prefix's first scalar and
+    /// run the VM only at those candidates. Returns null when the scalar can
+    /// also come from a non-ASCII or multi-scalar fold, where a byte scan
+    /// would miss valid starts.
+    fn searchFoldedPrefix(
+        self: *Runner,
+        prefix: compiler.FoldedPrefix,
+        start: usize,
+    ) Error!?bool {
+        const bytes = foldedCandidateBytes(prefix.first) orelse return null;
+        const match_pc: u32 = @intCast(self.program.len - 1);
+        const haystack = self.text[0..self.region_end];
+        var first_position: ?usize = std.mem.findScalarPos(u8, haystack, start, bytes[0]);
+        var second_position: ?usize = if (bytes[0] != bytes[1])
+            std.mem.findScalarPos(u8, haystack, start, bytes[1])
+        else
+            null;
+
+        while (true) {
+            var candidate: usize = undefined;
+            if (first_position) |first| {
+                candidate = if (second_position) |second| @min(first, second) else first;
+            } else if (second_position) |second| {
+                candidate = second;
+            } else break;
+
+            if (try self.execRange(0, match_pc, candidate, null)) |end| {
+                self.last_match_end = end;
+                self.had_match = true;
+                return true;
+            }
+            if (first_position) |first| {
+                if (first == candidate) {
+                    first_position = std.mem.findScalarPos(u8, haystack, candidate + 1, bytes[0]);
+                }
+            }
+            if (second_position) |second| {
+                if (second == candidate) {
+                    second_position = std.mem.findScalarPos(u8, haystack, candidate + 1, bytes[1]);
+                }
+            }
+        }
+        self.had_match = false;
+        self.exhausted = true;
+        return false;
+    }
+
+    /// The regexz engine may only stand in for the VM when ICU's opaque,
+    /// anchoring region bounds are in effect: the region is then exactly the
+    /// subject slice handed to regexz. Lookaround can read outside the
+    /// region even with opaque bounds, so those programs additionally need a
+    /// region that spans the whole subject.
+    fn backendActive(self: *const Runner) bool {
+        const backend = self.backend orelse return false;
+        if (self.backend_state == null or
+            self.transparent_bounds or !self.anchoring_bounds)
+        {
+            return false;
+        }
+        if (backend.needs_context and
+            (self.region_start != 0 or self.region_end != self.text.len))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    fn backendMatches(self: *Runner) Error!?bool {
+        const backend = self.backend.?;
+        const state = &self.backend_state.?;
+        const region = self.text[self.region_start..self.region_end];
+        const matched = if (backend.program.extended)
+            state.search.fullMatch(region) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => return null,
+            }
+        else
+            state.workspace.matchesBorrowed(&backend.program, region);
+        if (matched) {
+            self.captures[0] = self.region_start;
+            self.captures[1] = self.region_end;
+            self.last_match_end = self.region_end;
+            self.had_match = true;
+            self.hit_end = true;
+            self.require_end = true;
+        }
+        return matched;
+    }
+
+    fn backendLookingAt(self: *Runner) Error!?bool {
+        const found = self.backendSearchFromRegion(0) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return null,
+        };
+        const match = found orelse return false;
+        if (match.start != 0) {
+            self.had_match = false;
+            return false;
+        }
+        self.recordBackendMatch(match);
+        return true;
+    }
+
+    fn backendSearch(self: *Runner, start: usize) Error!?bool {
+        const position = snapForward(self.text, @max(start, self.region_start));
+        if (position > self.region_end) {
+            self.beginOperation();
+            self.had_match = false;
+            self.exhausted = true;
+            return false;
+        }
+        const found = self.backendSearchFromRegion(position - self.region_start) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return null,
+        };
+        self.beginOperation();
+        self.exhausted = false;
+        const match = found orelse {
+            self.had_match = false;
+            self.exhausted = true;
+            return false;
+        };
+        self.recordBackendMatch(match);
+        return true;
+    }
+
+    fn backendSearchFromRegion(
+        self: *Runner,
+        start: usize,
+    ) regexz.Error!?regexz.Match {
+        const state = &self.backend_state.?;
+        const region = self.text[self.region_start..self.region_end];
+        return state.search.find(region, start);
+    }
+
+    fn recordBackendMatch(self: *Runner, match: regexz.Match) void {
+        const base = self.region_start;
+        for (self.captures, 0..) |*slot, index| {
+            const value = if (index < match.slots.len)
+                match.slots[index]
+            else
+                no_position;
+            slot.* = if (value == no_position) no_position else value + base;
+        }
+        self.captures[0] = match.start + base;
+        self.captures[1] = match.end + base;
+        self.last_match_end = match.end + base;
+        self.had_match = true;
+        self.hit_end = match.end + base >= self.region_end;
+        self.require_end = self.hit_end;
     }
 
     pub fn groupSpan(self: *const Runner, group_index: u16) ?Span {
@@ -1011,7 +1216,7 @@ pub const Runner = struct {
                 {
                     return false;
                 }
-                current_is_word = self.word_set.contains(decoded.cp);
+                current_is_word = isWordScalar(decoded.cp);
             }
         }
 
@@ -1029,7 +1234,7 @@ pub const Runner = struct {
             {
                 continue;
             }
-            previous_is_word = self.word_set.contains(previous.cp);
+            previous_is_word = isWordScalar(previous.cp);
             break;
         }
         return current_is_word != previous_is_word;
@@ -1162,6 +1367,24 @@ fn asciiWord(byte: u8) bool {
         (byte >= '0' and byte <= '9') or byte == '_';
 }
 
+/// ICU's `\w`: Alphabetic plus the mark, decimal-digit and connector
+/// punctuation categories, plus the two join controls.
+fn isWordScalar(codepoint: u21) bool {
+    if (codepoint == 0x200c or codepoint == 0x200d) return true;
+    const value = trie.value(codepoint);
+    return (value & alphabetic_bit) != 0 or
+        ((@as(u64, 1) << @as(u6, @intCast(value & 0x1f))) & word_category_mask) != 0;
+}
+
+const alphabetic_bit: u64 = @as(u64, 1) << @intFromEnum(
+    properties.BinaryProperty.alphabetic,
+);
+const word_category_mask: u64 = properties.categoryMask(.Mn) |
+    properties.categoryMask(.Mc) |
+    properties.categoryMask(.Me) |
+    properties.categoryMask(.Nd) |
+    properties.categoryMask(.Pc);
+
 const Folded = struct {
     items: [4]u21 = undefined,
     len: u3 = 0,
@@ -1216,6 +1439,23 @@ fn nextGraphemeBoundary(text: []const u8, pos: usize, limit: usize) usize {
         cursor = decoded.next;
     }
     return @min(cursor, limit);
+}
+
+fn foldedCandidateBytes(first: u21) ?[2]u8 {
+    if (first >= 0x80) return null;
+    const lower: u8 = @intCast(std.ascii.toLower(@intCast(first)));
+    switch (lower) {
+        // These folded scalars can also begin a non-ASCII or multi-scalar
+        // full fold, so a plain byte scan would miss valid input starts:
+        // ẚ -> aʾ, ﬀ/ﬁ/ﬂ/ﬃ/ﬄ -> f..., ẖ -> ẖ, İ -> i̇, ǰ -> ǰ,
+        // K (Kelvin) -> k, ß/ẞ/ﬅ/ﬆ -> s..., ẗ -> ẗ, ẘ -> ẘ, ẙ -> ẙ.
+        'a', 'f', 'h', 'i', 'j', 'k', 's', 't', 'w', 'y' => return null,
+        else => {},
+    }
+    if (std.ascii.isAlphabetic(lower)) {
+        return .{ lower, lower - ('a' - 'A') };
+    }
+    return .{ lower, lower };
 }
 
 fn skipToCandidate(

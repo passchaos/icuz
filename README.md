@@ -562,7 +562,10 @@ need without pulling in a font or layout engine.
   honors transparent and anchoring bounds; find, replace (`$n`/`${name}`),
   and split follow ICU's C API behavior, and `start16`/`end16` expose
   ICU-compatible UTF-16 indices. Validated by a 97-case ICU 78 differential
-  fixture.
+  fixture. Patterns whose AST lowers exactly onto the `regexz` program
+  model run on its linear NFA/DFA engines; every other construct keeps the
+  local backtracking VM. `-Dregexz-backend=false` forces the VM for
+  differential benchmarking.
 - Embedded, version-pinned generated data plus conformance fixtures.
 
 ## Non-goals for 0.1

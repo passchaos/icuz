@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const properties = @import("properties.zig");
+const trie = @import("properties/trie.zig");
 const aliases = @import("properties/aliases.zig");
 const script = @import("script/root.zig");
 const script_extensions = @import("script_extensions/root.zig");
@@ -69,10 +70,21 @@ pub const Set = struct {
         errdefer self.allocator.free(words);
         @memset(words, 0);
         for (self.ranges.items) |range| {
+            const end: u32 = range.last;
             var codepoint: u32 = range.first;
-            while (codepoint <= @as(u32, range.last)) : (codepoint += 1) {
-                words[@as(usize, codepoint) >> 6] |=
-                    @as(u64, 1) << @as(u6, @intCast(codepoint & 63));
+            // Head: complete the first partial word one bit at a time.
+            while (codepoint <= end and (codepoint & 63) != 0) : (codepoint += 1) {
+                words[codepoint >> 6] |= @as(u64, 1) << @as(u6, @intCast(codepoint & 63));
+            }
+            if (codepoint > end) continue;
+            // Middle: every full word inside the range is all ones.
+            const aligned_end = end - (end & 63);
+            while (codepoint < aligned_end) : (codepoint += 64) {
+                words[codepoint >> 6] = ~@as(u64, 0);
+            }
+            // Tail: the final partial word.
+            while (codepoint <= end) : (codepoint += 1) {
+                words[codepoint >> 6] |= @as(u64, 1) << @as(u6, @intCast(codepoint & 63));
             }
         }
         self.bits = words;
@@ -138,6 +150,18 @@ pub const Set = struct {
 
     pub fn add(self: *Set, codepoint: u21) !void {
         return self.addRange(codepoint, codepoint);
+    }
+
+    /// Append every scalar selected by a category mask and/or a
+    /// binary-property mask. See `trie.forEachRun`.
+    ///
+    /// The set must be empty. Runs arrive already coalesced and sorted, so
+    /// this avoids the per-range insertion scan that `addRange` performs.
+    pub fn addMasks(self: *Set, category_mask: u32, property_mask: u64) !void {
+        std.debug.assert(self.ranges.items.len == 0);
+        std.debug.assert(self.strings.items.len == 0);
+        self.invalidateBits();
+        try trie.forEachRun(category_mask, property_mask, self, appendValueRun);
     }
 
     pub fn addRange(self: *Set, first: u21, last: u21) !void {
@@ -943,6 +967,10 @@ pub const RangeIterator = struct {
     }
 };
 
+fn appendValueRun(set: *Set, first: u21, last: u21) !void {
+    try set.ranges.append(set.allocator, .{ .first = first, .last = last });
+}
+
 pub fn fromRange(
     allocator: std.mem.Allocator,
     first: u21,
@@ -963,42 +991,29 @@ pub fn fromProperty(
     allocator: std.mem.Allocator,
     property: properties.BinaryProperty,
 ) !Set {
-    var set = Set.init(allocator);
-    errdefer set.deinit();
-
-    var start: ?u21 = null;
-    var codepoint: u21 = 0;
-    while (codepoint <= 0x10ffff) : (codepoint += 1) {
-        const present = properties.has(codepoint, property);
-        if (present and start == null) start = codepoint;
-        if (!present and start != null) {
-            try set.addRange(start.?, codepoint - 1);
-            start = null;
-        }
-    }
-    if (start != null) try set.addRange(start.?, 0x10ffff);
-    try set.finalize();
-    return set;
+    return fromMasks(
+        allocator,
+        0,
+        @as(u64, 1) << @intFromEnum(property),
+    );
 }
 
 pub fn fromCategoryMask(
     allocator: std.mem.Allocator,
     mask: u32,
 ) !Set {
+    return fromMasks(allocator, mask, 0);
+}
+
+/// Build a set from a `General_Category` mask and/or a binary-property mask.
+pub fn fromMasks(
+    allocator: std.mem.Allocator,
+    category_mask: u32,
+    property_mask: u64,
+) !Set {
     var set = Set.init(allocator);
     errdefer set.deinit();
-
-    var start: ?u21 = null;
-    var codepoint: u21 = 0;
-    while (codepoint <= 0x10ffff) : (codepoint += 1) {
-        const present = properties.matchesCategoryMask(codepoint, mask);
-        if (present and start == null) start = codepoint;
-        if (!present and start != null) {
-            try set.addRange(start.?, codepoint - 1);
-            start = null;
-        }
-    }
-    if (start != null) try set.addRange(start.?, 0x10ffff);
+    try set.addMasks(category_mask, property_mask);
     try set.finalize();
     return set;
 }
@@ -1588,6 +1603,54 @@ test "property-backed sets" {
     defer numeric.deinit();
     try testing.expect(numeric.contains(0x00bd));
     try testing.expect(!numeric.contains('5'));
+}
+
+test "value-mask ranges match the packed property data" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const cases = [_]struct { category_mask: u32, property_mask: u64 }{
+        .{ .category_mask = 0, .property_mask = @as(u64, 1) << @intFromEnum(properties.BinaryProperty.alphabetic) },
+        .{ .category_mask = 0, .property_mask = @as(u64, 1) << @intFromEnum(properties.BinaryProperty.emoji) },
+        .{ .category_mask = 0, .property_mask = @as(u64, 1) << @intFromEnum(properties.BinaryProperty.white_space) },
+        .{ .category_mask = 0x1f, .property_mask = 0 }, // Every letter category.
+        .{
+            .category_mask = aliases.generalCategoryMaskFromAlias("M").?,
+            .property_mask = @as(u64, 1) << @intFromEnum(properties.BinaryProperty.alphabetic),
+        },
+    };
+    for (cases) |case| {
+        var set = try fromMasks(allocator, case.category_mask, case.property_mask);
+        defer set.deinit();
+        try testing.expect(set.ranges.items.len != 0);
+
+        var previous_end: u32 = 0;
+        for (set.ranges.items, 0..) |range, index| {
+            if (index != 0) {
+                try testing.expect(@as(u32, range.first) > previous_end + 1);
+            }
+            previous_end = range.last;
+            try testing.expect(selected(case.category_mask, case.property_mask, range.first));
+            try testing.expect(selected(case.category_mask, case.property_mask, range.last));
+            if (range.first > 0) {
+                try testing.expect(!selected(case.category_mask, case.property_mask, range.first - 1));
+            }
+            if (range.last < 0x10ffff) {
+                try testing.expect(!selected(case.category_mask, case.property_mask, range.last + 1));
+            }
+            // Interior samples catch a dropped split inside a long run.
+            var codepoint: u32 = range.first;
+            while (codepoint <= range.last) : (codepoint += 97) {
+                try testing.expect(selected(case.category_mask, case.property_mask, @intCast(codepoint)));
+            }
+        }
+    }
+}
+
+fn selected(category_mask: u32, property_mask: u64, codepoint: u21) bool {
+    const value = trie.value(codepoint);
+    return (value & property_mask) != 0 or
+        ((@as(u64, 1) << @as(u6, @intCast(value & 0x1f))) & category_mask) != 0;
 }
 
 test "pattern parser" {

@@ -1362,17 +1362,19 @@ const Parser = struct {
 };
 
 pub fn wordSet(allocator: std.mem.Allocator) Error!set_mod.Set {
-    var set = try set_mod.fromProperty(allocator, .alphabetic);
-    errdefer set.deinit();
+    // Alphabetic plus the mark, decimal-digit and connector-punctuation
+    // categories. Both live in the packed property word, so one page-mask
+    // pass covers the whole definition.
+    const category_mask = aliases.generalCategoryMaskFromAlias("M").? |
+        aliases.generalCategoryMaskFromAlias("Nd").? |
+        aliases.generalCategoryMaskFromAlias("Pc").?;
 
-    inline for ([_][]const u8{ "M", "Nd", "Pc" }) |category| {
-        var part = try set_mod.fromCategoryMask(
-            allocator,
-            aliases.generalCategoryMaskFromAlias(category).?,
-        );
-        defer part.deinit();
-        try set.unionWith(part);
-    }
+    var set = set_mod.Set.init(allocator);
+    errdefer set.deinit();
+    try set.addMasks(
+        category_mask,
+        @as(u64, 1) << @intFromEnum(properties.BinaryProperty.alphabetic),
+    );
     try set.add(0x200c);
     try set.add(0x200d);
     try set.finalize();

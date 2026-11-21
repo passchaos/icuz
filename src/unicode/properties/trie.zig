@@ -123,6 +123,86 @@ pub inline fn matchesMask(codepoint: u21, mask: u32) bool {
     return (categoryMask(category(codepoint)) & mask) != 0;
 }
 
+/// Emit the inclusive scalar ranges selected by a category mask and/or
+/// binary-property mask, in ascending order.
+///
+/// The packed word stores the `General_Category` ordinal in bits 0..4, so
+/// category selection tests a one-hot bit derived from that ordinal, while
+/// binary properties test their own bit directly.
+///
+/// Pages are deduplicated in the blob, so membership is materialized once
+/// per distinct page instead of once per scalar. Run extraction then works
+/// on the 256-bit page masks, which keeps whole-property set construction
+/// proportional to the number of ranges rather than to the 1.1M scalars.
+///
+/// `emit` must append the ranges unchanged: they are already coalesced and
+/// non-adjacent.
+pub fn forEachRun(
+    category_mask: u32,
+    property_mask: u64,
+    context: anytype,
+    comptime emit: anytype,
+) !void {
+    var slot_words: [page_count][4]u64 = undefined;
+    var slot_ready = [_]bool{false} ** page_count;
+    var run_start: u32 = 0;
+    var run_open = false;
+
+    var page: usize = 0;
+    while (page < index_count) : (page += 1) {
+        const slot = readU16(index_offset + page * 2);
+        if (!slot_ready[slot]) {
+            const base = pages_offset + @as(usize, slot) * 256 * 8;
+            var words: [4]u64 = .{ 0, 0, 0, 0 };
+            var index: usize = 0;
+            while (index < 256) : (index += 1) {
+                const word_value = readU64(base + index * 8);
+                const selected = (word_value & property_mask) != 0 or
+                    ((@as(u64, 1) << @as(u6, @intCast(word_value & 0x1f))) &
+                        category_mask) != 0;
+                if (selected) {
+                    words[index >> 6] |= @as(u64, 1) << @intCast(index & 63);
+                }
+            }
+            slot_words[slot] = words;
+            slot_ready[slot] = true;
+        }
+
+        const page_base: u32 = @intCast(page * 256);
+        for (slot_words[slot], 0..) |word, word_index| {
+            const word_base = page_base + @as(u32, @intCast(word_index)) * 64;
+            if (run_open and (word & 1) == 0) {
+                try emit(context, @intCast(run_start), @intCast(word_base - 1));
+                run_open = false;
+            }
+            var remaining = word;
+            while (remaining != 0) {
+                const start: u32 = @ctz(remaining);
+                const tail = remaining >> @intCast(start);
+                const len: u32 = @ctz(~tail);
+                if (!run_open) {
+                    run_start = word_base + start;
+                    run_open = true;
+                }
+                if (start + len < 64) {
+                    try emit(
+                        context,
+                        @intCast(run_start),
+                        @intCast(word_base + start + len - 1),
+                    );
+                    run_open = false;
+                    remaining &= ~((@as(u64, 1) << @intCast(start + len)) - 1);
+                } else {
+                    remaining = 0;
+                }
+            }
+        }
+    }
+    if (run_open) {
+        try emit(context, @intCast(run_start), 0x10ffff);
+    }
+}
+
 fn readU16(offset: usize) u16 {
     return std.mem.readInt(u16, data[offset..][0..2], .little);
 }
