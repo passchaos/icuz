@@ -251,6 +251,37 @@ fn benchNormalization(
     reportBytes(name, rounds * text.len, best);
 }
 
+/// Normalize into a caller-owned buffer, matching ICU's `unorm2_normalize`
+/// buffer API, so the comparison does not include returning owned memory.
+fn benchNormalizationInto(
+    name: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    var buffer = std.ArrayList(u8).empty;
+    defer buffer.deinit(allocator);
+    buffer.ensureTotalCapacity(allocator, text.len * 4) catch unreachable;
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 4000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const changed = icuz.normalization.normalizeFormInto(
+                allocator,
+                text,
+                .nfc,
+                &buffer,
+            ) catch unreachable;
+            sink +%= @intFromBool(changed);
+            buffer.clearRetainingCapacity();
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * text.len, best);
+}
+
 fn benchNormalizationCodepoints(
     name: []const u8,
     codepoints: []const u21,
@@ -1317,6 +1348,8 @@ pub fn main() !void {
     benchNormalization("isNormalized Chinese", chinese_runtime, allocator, true);
     benchNormalization("NFC Chinese", chinese_runtime, allocator, false);
     benchNormalization("NFC mixed", mixed_runtime, allocator, false);
+    benchNormalizationInto("NFC mixed (reuse)", mixed_runtime, allocator);
+    benchNormalizationInto("NFC Chinese (reuse)", chinese_runtime, allocator);
     benchNormalization(
         "NFC precomposed",
         "\u{00e9} \u{00ef} \u{00df} \u{4e16}\u{754c} " ** 8,
