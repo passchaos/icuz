@@ -254,21 +254,28 @@ int main() {
     }
 
     std::printf("\n-- segmentation --\n");
-    const struct { const char* label; UBreakIteratorType type; int text; } break_cases[] = {
-        {"grapheme ASCII", UBRK_CHARACTER, 0},
-        {"grapheme mixed", UBRK_CHARACTER, 1},
-        {"word ASCII", UBRK_WORD, 0},
-        {"word mixed", UBRK_WORD, 1},
-        {"line break ASCII", UBRK_LINE, 0},
-        {"line break mixed", UBRK_LINE, 1},
-        {"line break chinese", UBRK_LINE, 4},
-        {"line break e_marks", UBRK_LINE, 8},
-        {"line break jamo", UBRK_LINE, 9},
+    const struct {
+        const char* label;
+        UBreakIteratorType type;
+        int text;
+        const char* locale;
+    } break_cases[] = {
+        {"grapheme ASCII", UBRK_CHARACTER, 0, "en"},
+        {"grapheme mixed", UBRK_CHARACTER, 1, "en"},
+        {"word ASCII", UBRK_WORD, 0, "en"},
+        {"word mixed", UBRK_WORD, 1, "en"},
+        {"word Thai dictionary", UBRK_WORD, 6, "th"},
+        {"word CJK dictionary", UBRK_WORD, 7, "zh"},
+        {"line break ASCII", UBRK_LINE, 0, "en"},
+        {"line break mixed", UBRK_LINE, 1, "en"},
+        {"line break chinese", UBRK_LINE, 4, "en"},
+        {"line break e_marks", UBRK_LINE, 8, "en"},
+        {"line break jamo", UBRK_LINE, 9, "en"},
     };
     for (const auto& item : break_cases) {
         UErrorCode status = U_ZERO_ERROR;
         const auto& u16 = texts[item.text].u16;
-        UBreakIterator* iterator = ubrk_open(item.type, "en", u16.data(),
+        UBreakIterator* iterator = ubrk_open(item.type, item.locale, u16.data(),
             static_cast<int32_t>(u16.size()), &status);
         if (U_FAILURE(status)) continue;
         bench_bytes(item.label, texts[item.text].utf8.size(), 4000, [&] {
