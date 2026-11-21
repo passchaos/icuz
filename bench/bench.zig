@@ -1012,6 +1012,18 @@ pub fn main() !void {
         .{ .locale = "zh", .collation = "pinyin" },
         allocator,
     );
+    benchCollation(
+        "UCA sort key Chinese stroke",
+        chinese_collation_runtime,
+        .{ .locale = "zh", .collation = "stroke" },
+        allocator,
+    );
+    benchCollation(
+        "UCA sort key Chinese zhuyin",
+        chinese_collation_runtime,
+        .{ .locale = "zh", .collation = "zhuyin" },
+        allocator,
+    );
     benchCollationCodepoints(
         "UCA sort key Chinese root (cp)",
         chinese_collation_runtime,

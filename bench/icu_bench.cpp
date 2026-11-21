@@ -155,6 +155,8 @@ int main() {
         {"UCA sort key Swedish", "sv", 2},
         {"UCA sort key German phonebook", "de@collation=phonebook", 3},
         {"UCA sort key Chinese pinyin", "zh@collation=pinyin", 5},
+        {"UCA sort key Chinese stroke", "zh@collation=stroke", 5},
+        {"UCA sort key Chinese zhuyin", "zh@collation=zhuyin", 5},
     };
     for (const auto& item : coll_cases) {
         UErrorCode status = U_ZERO_ERROR;
