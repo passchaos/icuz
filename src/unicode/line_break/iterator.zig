@@ -96,7 +96,8 @@ pub const Iterator = struct {
                 // soft, so replay them without a property lookup or rule
                 // evaluation.
                 if (self.cursor < self.id_run_end) {
-                    const decoded = rules.decodeValid(self.text, self.cursor);
+                    const start = self.cursor;
+                    const decoded = scalar.decodeValidPacked(self.text, start);
                     self.state.previous_raw = .ideographic;
                     self.state.lb9_base = .ideographic;
                     self.state.numeric_chain = false;
@@ -105,14 +106,14 @@ pub const Iterator = struct {
                     self.state.previous_previous = self.state.previous;
                     self.state.previous = self.state.last;
                     self.state.last = .{
-                        .codepoint = decoded.codepoint,
+                        .codepoint = scalar.packedCodepoint(decoded),
                         .properties = cjk_ideograph_properties,
                         .class = .ideographic,
                     };
                     self.state.count += 1;
-                    self.cursor = decoded.next;
+                    self.cursor = start + scalar.packedLength(decoded);
                     return .{
-                        .byte_offset = decoded.start,
+                        .byte_offset = start,
                         .kind = .soft,
                     };
                 }
@@ -124,19 +125,24 @@ pub const Iterator = struct {
                 if (self.consumeHangulRun()) continue;
             }
 
-            const decoded = rules.decodeValid(self.text, self.cursor);
+            const start = self.cursor;
+            const decoded = scalar.decodeValidPacked(self.text, start);
+            const codepoint = scalar.packedCodepoint(decoded);
+            const next_index = start + scalar.packedLength(decoded);
             // A pending opportunity intentionally routes the first scalar of
             // the next ASCII word through the complete rule engine. Preserve
             // prose scanning after that scalar; punctuation or non-ASCII input
             // permanently leaves this narrow fast path for the current run.
-            if (decoded.codepoint >= 0x80 or
-                rules.asciiWordClass(@intCast(decoded.codepoint)) == null)
+            if (codepoint >= 0x80 or
+                rules.asciiWordClass(@intCast(codepoint)) == null)
             {
                 self.simple_ascii = false;
             }
-            const raw_properties = properties(decoded.codepoint);
+            const raw_properties = properties(codepoint);
             const effective = rules.effectiveSignificant(
-                decoded,
+                codepoint,
+                start,
+                next_index,
                 raw_properties,
                 self.state.lb9_base,
             );
@@ -151,7 +157,8 @@ pub const Iterator = struct {
                 rules.decide(
                     self.text,
                     self.state,
-                    decoded,
+                    start,
+                    next_index,
                     raw_properties,
                     effective,
                 );
@@ -161,10 +168,10 @@ pub const Iterator = struct {
             if (break_kind == .soft and
                 raw_properties.class == .ideographic)
             {
-                self.id_run_end = scanIdeographicRunEnd(self.text, decoded.next);
+                self.id_run_end = scanIdeographicRunEnd(self.text, next_index);
             }
             self.state.consume(raw_properties.class, effective);
-            self.cursor = decoded.next;
+            self.cursor = next_index;
             // Punctuation or non-ASCII input disables the prose scanner, but
             // after a word scalar the scanner's committed history is again
             // consistent with the shape it models: the boundary before the
@@ -183,7 +190,7 @@ pub const Iterator = struct {
                 }
             }
             if (break_kind) |kind| {
-                return .{ .byte_offset = decoded.start, .kind = kind };
+                return .{ .byte_offset = start, .kind = kind };
             }
         }
         return null;
@@ -207,33 +214,37 @@ pub const Iterator = struct {
                 return false;
             }
             if (self.text[self.cursor] != 0xe1) return false;
-            const decoded = rules.decodeValid(self.text, cursor);
-            const raw = properties(decoded.codepoint);
+            const decoded = scalar.decodeValidPacked(self.text, cursor);
+            const codepoint = scalar.packedCodepoint(decoded);
+            const next_index = cursor + scalar.packedLength(decoded);
+            const raw = properties(codepoint);
             if (raw.class != .hangul_l_jamo) return false;
             self.state.consume(raw.class, .{
-                .codepoint = decoded.codepoint,
+                .codepoint = codepoint,
                 .properties = raw,
                 .class = raw.class,
                 .start = cursor,
-                .next = decoded.next,
+                .next = next_index,
             });
             self.suppress_break_at_cursor = false;
-            cursor = decoded.next;
+            cursor = next_index;
             last_class = raw.class;
             consumed = true;
         }
         while (cursor < self.text.len and self.text[cursor] >= 0x80) {
-            const decoded = rules.decodeValid(self.text, cursor);
-            const raw = properties(decoded.codepoint);
+            const decoded = scalar.decodeValidPacked(self.text, cursor);
+            const codepoint = scalar.packedCodepoint(decoded);
+            const next_index = cursor + scalar.packedLength(decoded);
+            const raw = properties(codepoint);
             if (!rules.hangulNoBreak(last_class, raw.class)) break;
             self.state.consume(raw.class, .{
-                .codepoint = decoded.codepoint,
+                .codepoint = codepoint,
                 .properties = raw,
                 .class = raw.class,
                 .start = cursor,
-                .next = decoded.next,
+                .next = next_index,
             });
-            cursor = decoded.next;
+            cursor = next_index;
             consumed = true;
             last_class = raw.class;
         }

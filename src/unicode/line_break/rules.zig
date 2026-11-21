@@ -259,7 +259,9 @@ pub inline fn decodeValid(text: []const u8, start: usize) Decoded {
 }
 
 pub inline fn effectiveSignificant(
-    decoded: Decoded,
+    codepoint: u21,
+    start: usize,
+    next: usize,
     raw: Properties,
     lb9_base: ?BreakClass,
 ) ?Significant {
@@ -276,11 +278,11 @@ pub inline fn effectiveSignificant(
         class = .alphabetic; // LB10.
     }
     return .{
-        .codepoint = decoded.codepoint,
+        .codepoint = codepoint,
         .properties = raw,
         .class = class,
-        .start = decoded.start,
-        .next = decoded.next,
+        .start = start,
+        .next = next,
     };
 }
 
@@ -292,11 +294,12 @@ pub inline fn effectiveSignificant(
 pub fn decide(
     text: []const u8,
     state: StreamState,
-    current: Decoded,
+    current_start: usize,
+    current_next: usize,
     raw_properties: Properties,
     effective: ?Significant,
 ) ?BreakKind {
-    if (current.start == 0) return null; // LB2.
+    if (current_start == 0) return null; // LB2.
     if (asciiCommonDecision(state, raw_properties.class)) |fast| {
         return fast.kind;
     }
@@ -431,7 +434,7 @@ pub fn decide(
         right.properties.category == .final_punctuation and
         isFinalQuotationFollower(nextClass(
             text,
-            current.next,
+            current_next,
             right.class,
             &lookahead_cache,
         )))
@@ -441,7 +444,7 @@ pub fn decide(
     if (left.class == .space and right_class == .infix_separator and
         nextClass(
             text,
-            current.next,
+            current_next,
             right.class,
             &lookahead_cache,
         ) == .numeric) return .soft;
@@ -464,7 +467,7 @@ pub fn decide(
     if (right_class == .quotation and
         !nextIsEastAsian(
             text,
-            current.next,
+            current_next,
             right.class,
             &lookahead_cache,
         )) return null;
@@ -506,7 +509,7 @@ pub fn decide(
             right_class,
             ensureLookahead(
                 text,
-                current.next,
+                current_next,
                 right.class,
                 &lookahead_cache,
             ),
@@ -529,7 +532,7 @@ pub fn decide(
     if (isAksaraBaseEntry(left) and isAksaraBase(right) and
         nextClass(
             text,
-            current.next,
+            current_next,
             right.class,
             &lookahead_cache,
         ) == .virama_final) return null;
@@ -677,7 +680,13 @@ fn lookaheadSignificant(
     while (cursor < text.len and result.second == null) {
         const decoded = decodeValid(text, cursor);
         const raw = property_data.lookup(decoded.codepoint);
-        if (effectiveSignificant(decoded, raw, lb9_base)) |entry| {
+        if (effectiveSignificant(
+            decoded.codepoint,
+            decoded.start,
+            decoded.next,
+            raw,
+            lb9_base,
+        )) |entry| {
             lb9_base = entry.class;
             if (result.first == null) {
                 result.first = entry;
