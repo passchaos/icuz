@@ -384,6 +384,17 @@ pub const Iterator = struct {
     pub fn next(self: *Iterator) ?Cluster {
         if (self.cursor >= self.text.len) return null;
         const start = self.cursor;
+        // ASCII prose is a run of one-byte clusters; only CR LF joins. Skip
+        // the decoder and property lookup entirely for that case.
+        if (self.pending == null and self.text[start] < 0x80 and
+            (start + 1 == self.text.len or
+                (self.text[start + 1] < 0x80 and
+                    !(self.text[start] == '\r' and
+                        self.text[start + 1] == '\n'))))
+        {
+            self.cursor = start + 1;
+            return .{ .byte_start = start, .byte_len = 1 };
+        }
         const first = self.pending orelse decode(self.text, self.cursor) orelse unreachable;
         self.pending = null;
         self.cursor = first.next;
