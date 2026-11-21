@@ -623,11 +623,16 @@ lookups. UTF-8 validation is fused into the quick check through an inlined
 scalar decoder that rejects truncation, overlongs, and surrogates without the
 generic `std.unicode` helpers, the quick check bulk-skips interior ASCII
 runs, CJK scalars whose whole 3-byte lead range is simple are validated and
-skipped without decoding, stable spans before and between changes are copied
-verbatim, and the segment engine streams UTF-8 straight to the output sink
-with ASCII runs bulk-copied. The quick-check scan doubles as UTF-8 validation, so a text that
-is already normalized never pays a second validation pass; when the scan
-stops early, only the unscanned suffix is validated.
+skipped in runs without decoding, stable spans before and between changes are
+copied verbatim, and the segment engine streams UTF-8 straight to the output
+sink with ASCII runs bulk-copied. Decoded scalars and their byte lengths travel
+as one packed `u32`, avoiding the stack temporaries an optional struct return
+would create, and combining marks that are their own decomposition are copied
+straight into the segment. The quick-check scan doubles as UTF-8 validation, so
+a text that is already normalized never pays a second validation pass; when the
+scan stops early, only the unscanned suffix is validated. `*AssumeValid` entry
+points run their UTF-8 assertion only in safe builds, so release callers do not
+pay for a second validation pass.
 
 Collation keeps five fast paths: a 128-entry ASCII table, a compile-time table
 for Latin-1 and Latin Extended-A/B (decomposed on the stack) that bypasses the
@@ -644,7 +649,11 @@ a stack buffer, so typical sort keys allocate only the returned key, and the
 NFD pass over Latin text handles ASCII without a decomposition lookup.
 UAX #29 word and sentence segmentation classify ASCII bytes through
 compile-time tables and decode ASCII bytes directly, so prose runs skip the
-general property lookup and the UTF-8 decoder.
+general property lookup and the UTF-8 decoder. The word and line-break
+iterators carry scalars, offsets, and properties as separate registers instead
+of decoded-struct temporaries, and line-break decisions take the boundary
+offsets directly; CJK runs replay interior boundaries without property
+lookups.
 Charset
 reverse indexes carry compile-time page indexes and a split layout (sorted
 `u32` code points, then parallel `u16` pointers), so DBCS encoders
@@ -652,8 +661,10 @@ binary-search only one 256-code-point page; hot stateless conversion pairs
 run comptime-specialized loops that append into reserved capacity with no
 per-character dispatch or capacity checks, each DBCS encoder keeps a small
 atomic cache of recent reverse lookups, UTF-8 to DBCS pairs use a fused
-decode/encode loop, and DBCS to UTF-8 pairs write UTF-8 bytes directly;
-both fall back to the generic converter on any error.
+decode/encode loop, and DBCS to UTF-8 pairs write UTF-8 bytes directly; GBK
+decoding is fused into the UTF-8 converter so two-byte prose pays no decoder
+call or result-union dispatch. Both paths fall back to the generic converter
+on any error.
 
 Transliteration passes precompute their literal-entry bounds and store a
 parallel `u32` first-code-point array, so per-character rule lookup

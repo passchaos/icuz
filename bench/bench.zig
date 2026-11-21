@@ -1101,6 +1101,18 @@ pub fn main() !void {
         .{ .locale = "zh", .collation = "pinyin" },
         allocator,
     );
+    benchCollationUtf16(
+        "UCA sort key mixed (utf16)",
+        mixed_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationUtf16(
+        "UCA sort key Swedish (utf16)",
+        swedish_runtime,
+        .{ .locale = "sv" },
+        allocator,
+    );
     benchCollationCollator(
         "UCA sort key Swedish (collator)",
         swedish_runtime,
@@ -1374,11 +1386,21 @@ pub fn main() !void {
         allocator,
         false,
     );
+    benchNormalizationInto(
+        "NFC e+marks (reuse)",
+        "e\u{0301}\u{0323} " ** 16,
+        allocator,
+    );
     benchNormalization(
         "NFC jamo",
         "\u{1100}\u{1161}\u{11a8} " ** 12,
         allocator,
         false,
+    );
+    benchNormalizationInto(
+        "NFC jamo (reuse)",
+        "\u{1100}\u{1161}\u{11a8} " ** 12,
+        allocator,
     );
     {
         var decoded: [256]u21 = undefined;
