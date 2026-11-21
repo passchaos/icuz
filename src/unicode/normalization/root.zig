@@ -908,6 +908,20 @@ fn normalizeSegmentFastAt(
             length += 1;
             continue;
         }
+        // Combining Diacritical Marks are the dominant decomposition input
+        // for accent-heavy text, and almost all of them are their own
+        // decomposition. Copying them directly avoids the out-of-line
+        // decompose call and its stack parts array.
+        if (!compatibility and codepoint >= 0x300 and
+            codepoint < mark_decomposition_limit and
+            !mark_has_decomposition[codepoint - 0x300])
+        {
+            if (length == storage.len) return null;
+            storage[length] = codepoint;
+            classes[length] = combining_class.forCodepoint(codepoint);
+            length += 1;
+            continue;
+        }
         var parts: [64]u21 = undefined;
         const count = decomposeInto(&parts, codepoint, compatibility);
         if (length + count > storage.len) return null;
