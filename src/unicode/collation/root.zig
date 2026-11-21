@@ -116,7 +116,7 @@ fn ElementBuffer(comptime T: type) type {
             self.len = 0;
         }
 
-        fn append(
+        inline fn append(
             self: *Self,
             allocator: std.mem.Allocator,
             element: T,
@@ -1341,7 +1341,7 @@ fn appendTailored(
     }
 }
 
-fn appendImplicit(
+inline fn appendImplicit(
     allocator: std.mem.Allocator,
     ces: anytype,
     codepoint: u21,
@@ -2666,7 +2666,7 @@ const ImplicitWeights = struct {
     unified: bool,
 };
 
-fn implicitWeights(codepoint: u21) ImplicitWeights {
+inline fn implicitWeights(codepoint: u21) ImplicitWeights {
     // U+4E00..U+9FFF are all unified ideographs and dominate implicit
     // lookups, so they skip the property lookup.
     if (codepoint >= 0x4e00 and codepoint <= 0x9fff) {
