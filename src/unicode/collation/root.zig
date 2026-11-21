@@ -415,7 +415,7 @@ pub const Collator = struct {
 
     /// True when the ASCII root fast paths are available.
     pub fn asciiFastPathUsable(self: *const Collator) bool {
-        return self.tailoring == null and ascii_elements.usable;
+        return self.tailoring == null and ascii_usable;
     }
 
     /// Primary weights of one ASCII scalar under the root collation.
@@ -426,11 +426,11 @@ pub const Collator = struct {
 
     pub fn asciiPrimaryWeights(self: *const Collator, codepoint: u21) AsciiPrimary {
         if (self.tailoring != null or codepoint >= 128 or
-            !ascii_elements.usable)
+            !ascii_usable)
         {
             return .{};
         }
-        const entry = ascii_elements.table[codepoint];
+        const entry = ascii_elements_table[codepoint];
         var result = AsciiPrimary{};
         for (entry.elements[0..entry.count]) |element| {
             if (element.primary != 0 and result.count < result.values.len) {
@@ -447,8 +447,8 @@ pub const Collator = struct {
     pub fn asciiFirstPrimary(self: *const Collator, codepoint: u21) ?u32 {
         if (self.tailoring != null) return null;
         if (codepoint >= 128) return null;
-        if (!ascii_elements.usable) return null;
-        const entry = ascii_elements.table[codepoint];
+        if (!ascii_usable) return null;
+        const entry = ascii_elements_table[codepoint];
         if (entry.count == 0) return null;
         for (entry.elements[0..entry.count]) |element| {
             if (element.primary != 0) return element.primary;
@@ -1424,7 +1424,7 @@ fn reorderedAsciiTable(map: tailorings.Reorder) ?*const [128]AsciiEntry {
         return null;
     }
     for (0..128) |codepoint| {
-        const entry = ascii_elements.table[codepoint];
+        const entry = ascii_elements_table[codepoint];
         var stored = AsciiEntry{ .count = entry.count, .elements = undefined };
         for (entry.elements[0..entry.count], 0..) |element, element_index| {
             stored.elements[element_index] = .{
@@ -1483,15 +1483,17 @@ inline fn reorderedLatinElement(
 }
 
 /// ASCII elements for `first`, remapped for `reorder` when one applies.
+/// Returns a pointer so the caller iterates the entry in place instead of
+/// copying the multi-element record.
 inline fn asciiEntryFor(
     first: u21,
     reorder: ?tailorings.Reorder,
-) ?AsciiEntry {
+) ?*const AsciiEntry {
     if (reorder) |map| {
         const table = reorderedAsciiTable(map) orelse return null;
-        return table[@as(usize, first)];
+        return &table[@as(usize, first)];
     }
-    return ascii_elements.table[@as(usize, first)];
+    return &ascii_elements_table[@as(usize, first)];
 }
 
 inline fn appendElements(
@@ -1506,7 +1508,7 @@ inline fn appendElements(
     const first = codepoints[index];
     // Root ASCII entries are precomputed; keep that hot path inline and let
     // the contraction, mark, and implicit cases pay a call.
-    if (!shifted and first < 128 and ascii_elements.usable and
+    if (!shifted and first < 128 and ascii_usable and
         !ascii_contractions[@as(usize, first)])
     {
         const ascii_entry = asciiEntryFor(first, reorder) orelse
@@ -1928,6 +1930,11 @@ const latin_elements = blk: {
     break :blk .{ .usable = usable, .table = table };
 };
 
+const ascii_usable = ascii_layout.usable;
+/// Runtime copy so the hot path can take a pointer into the table instead of
+/// copying an entry by value.
+var ascii_elements_table: [128]AsciiEntry = ascii_layout.table;
+
 const AsciiEntry = struct {
     count: u8,
     elements: [2]LatinElement,
@@ -1936,7 +1943,7 @@ const AsciiEntry = struct {
 /// Compact table for pure-ASCII text. Latin-1/Extended entries need up to
 /// four elements and would quadruple the cache footprint of the hottest
 /// collation path.
-const ascii_elements = blk: {
+const ascii_layout = blk: {
     @setEvalBranchQuota(2_000_000);
     var table: [128]AsciiEntry = undefined;
     var usable = true;
@@ -2013,7 +2020,7 @@ fn appendAsciiLevels(
     const need_secondary = strength != .primary;
     const need_tertiary = strength != .primary and strength != .secondary;
     for (codepoints) |codepoint| {
-        const entry = ascii_elements.table[codepoint];
+        const entry = ascii_elements_table[codepoint];
         for (entry.elements[0..entry.count]) |element| {
             if (element.primary != 0) {
                 if (primary_len == primary.len) return false;
@@ -2059,7 +2066,7 @@ fn appendAsciiLevel(
     level: Level,
 ) error{OutOfMemory}!void {
     for (codepoints) |codepoint| {
-        const entry = ascii_elements.table[codepoint];
+        const entry = ascii_elements_table[codepoint];
         for (entry.elements[0..entry.count]) |element| {
             const weight = switch (level) {
                 .primary => element.primary,
@@ -2115,7 +2122,7 @@ fn appendLatinSortKey(
         if (codepoint >= 0x80) all_ascii = false;
     }
 
-    if (all_ascii and ascii_elements.usable) {
+    if (all_ascii and ascii_usable) {
         try appendAsciiSortKey(allocator, output, codepoints, strength);
         return true;
     }
@@ -2218,7 +2225,7 @@ fn appendTailoredLatinSortKey(
     }
     // ASCII text sorts like the root collation when the tailoring has no
     // rule starting with an ASCII code point.
-    if (all_ascii and ascii_elements.usable) {
+    if (all_ascii and ascii_usable) {
         if (pages) |page_index| {
             if (page_index.ascii_untailored) {
                 try appendAsciiSortKey(allocator, output, codepoints, strength);
