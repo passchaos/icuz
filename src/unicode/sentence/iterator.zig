@@ -35,20 +35,22 @@ pub const Iterator = struct {
     pub fn next(self: *Iterator) ?Segment {
         if (self.cursor >= self.text.len) return null;
         const start = self.cursor;
-        const first = decode(self.text, start) orelse unreachable;
+        const first = scalar.decodeValidPacked(self.text, start);
         var state = BoundaryState{};
-        state.consume(classForCodepoint(first.codepoint));
+        state.consume(classForCodepoint(scalar.packedCodepoint(first)));
 
-        var end = first.next;
+        var end = start + scalar.packedLength(first);
         while (end < self.text.len) {
-            const current = if (self.text[end] < 0x80)
-                Decoded{
-                    .codepoint = self.text[end],
-                    .start = end,
-                    .next = end + 1,
-                }
-            else
-                decode(self.text, end) orelse unreachable;
+            // ASCII prose dominates sentence scanning; classify the byte
+            // directly and keep the decoded-struct path for other scripts.
+            if (self.text[end] < 0x80) {
+                const current_class = classForCodepoint(self.text[end]);
+                if (self.breaksAt(end, current_class, state)) break;
+                state.consume(current_class);
+                end += 1;
+                continue;
+            }
+            const current = decode(self.text, end) orelse unreachable;
             const current_class = classForCodepoint(current.codepoint);
             if (self.breaksAt(end, current_class, state)) break;
             state.consume(current_class);
