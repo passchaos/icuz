@@ -765,32 +765,7 @@ const Utf16Sink = struct {
     }
 };
 
-/// Packed UTF-16 decode: `(codepoint + 1) << 1 | (length - 1)`, or zero for
-/// an invalid sequence. Returning one register avoids the optional-struct
-/// spill that the UTF-8 path also avoids.
-const utf16_packed_invalid: u32 = 0;
 
-inline fn decodeUtf16Packed(units: []const u16, index: usize) u32 {
-    const unit = units[index];
-    if (unit < 0xD800 or unit > 0xDFFF) {
-        return (@as(u32, unit) + 1) << 1;
-    }
-    if (unit > 0xDBFF or index + 1 >= units.len) {
-        return utf16_packed_invalid;
-    }
-    const low = units[index + 1];
-    if (low < 0xDC00 or low > 0xDFFF) return utf16_packed_invalid;
-    const value = (@as(u32, unit - 0xD800) << 10) | (low - 0xDC00);
-    return ((0x10000 + value + 1) << 1) | 1;
-}
-
-inline fn packedUtf16Codepoint(value: u32) u21 {
-    return @intCast((value >> 1) - 1);
-}
-
-inline fn packedUtf16Length(value: u32) usize {
-    return (value & 1) + 1;
-}
 
 /// Compose the L jamo `l` with the UTF-16 units after `after_l`.
 fn hangulSyllableAt16(
@@ -834,10 +809,10 @@ fn normalizeSegmentFastAt16(
     var index = start;
     var first = true;
     while (index < units.len) {
-        const decoded = decodeUtf16Packed(units, index);
-        if (decoded == utf16_packed_invalid) return error.InvalidUtf16;
-        const codepoint = packedUtf16Codepoint(decoded);
-        const sequence_len = packedUtf16Length(decoded);
+        const decoded = utf16.decodePacked(units, index);
+        if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
+        const codepoint = utf16.packedCodepoint(decoded);
+        const sequence_len = utf16.packedLength(decoded);
         if (!first) {
             const class = combining_class.forCodepoint(codepoint);
             if (class == 0 and !data.isCompositionSecond(codepoint) and
@@ -898,9 +873,9 @@ fn segmentEnd16(
     var cursor = index;
     var first = true;
     while (cursor < units.len) {
-        const decoded = decodeUtf16Packed(units, cursor);
-        if (decoded == utf16_packed_invalid) return error.InvalidUtf16;
-        const codepoint = packedUtf16Codepoint(decoded);
+        const decoded = utf16.decodePacked(units, cursor);
+        if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
+        const codepoint = utf16.packedCodepoint(decoded);
         if (!first and combining_class.forCodepoint(codepoint) == 0 and
             !data.isCompositionSecond(codepoint) and
             !isHangulVOrT(codepoint))
@@ -908,7 +883,7 @@ fn segmentEnd16(
             return cursor;
         }
         first = false;
-        cursor += packedUtf16Length(decoded);
+        cursor += utf16.packedLength(decoded);
     }
     return units.len;
 }
@@ -926,10 +901,10 @@ fn normalizeSegmentFallback16(
     try codepoints.ensureTotalCapacity(allocator, end - start);
     var cursor = start;
     while (cursor < end) {
-        const decoded = decodeUtf16Packed(units, cursor);
-        if (decoded == utf16_packed_invalid) return error.InvalidUtf16;
-        codepoints.appendAssumeCapacity(packedUtf16Codepoint(decoded));
-        cursor += packedUtf16Length(decoded);
+        const decoded = utf16.decodePacked(units, cursor);
+        if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
+        codepoints.appendAssumeCapacity(utf16.packedCodepoint(decoded));
+        cursor += utf16.packedLength(decoded);
     }
     var normalized = std.ArrayList(u21).empty;
     defer normalized.deinit(allocator);
@@ -992,10 +967,10 @@ fn normalizeFusedUtf16Into(
                 continue;
             }
         }
-        const decoded = decodeUtf16Packed(units, index);
-        if (decoded == utf16_packed_invalid) return error.InvalidUtf16;
-        const codepoint = packedUtf16Codepoint(decoded);
-        index += packedUtf16Length(decoded);
+        const decoded = utf16.decodePacked(units, index);
+        if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
+        const codepoint = utf16.packedCodepoint(decoded);
+        index += utf16.packedLength(decoded);
 
         if (compose and previous_input_class == 0 and
             codepoint >= hangul_l_base and

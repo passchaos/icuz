@@ -65,6 +65,31 @@ pub fn codepointCount(units: []const u16) ?usize {
     return count;
 }
 
+/// Packed UTF-16 decode: `(codepoint + 1) << 1 | (length - 1)`, or zero for
+/// an invalid sequence. Returning one register keeps the scalar and its unit
+/// length out of an optional-struct temporary.
+pub const packed_invalid: u32 = 0;
+
+pub inline fn decodePacked(units: []const u16, index: usize) u32 {
+    const unit = units[index];
+    if (unit < 0xD800 or unit > 0xDFFF) {
+        return (@as(u32, unit) + 1) << 1;
+    }
+    if (unit > 0xDBFF or index + 1 >= units.len) return packed_invalid;
+    const low = units[index + 1];
+    if (low < 0xDC00 or low > 0xDFFF) return packed_invalid;
+    const value = (@as(u32, unit - 0xD800) << 10) | (low - 0xDC00);
+    return ((0x10000 + value + 1) << 1) | 1;
+}
+
+pub inline fn packedCodepoint(value: u32) u21 {
+    return @intCast((value >> 1) - 1);
+}
+
+pub inline fn packedLength(value: u32) usize {
+    return (value & 1) + 1;
+}
+
 /// Decode a validated UTF-16 slice into code points.
 pub fn decodeAlloc(
     allocator: std.mem.Allocator,
@@ -182,4 +207,33 @@ test "UTF-8 and UTF-16 round trip" {
     const round_trip = try utf16ToUtf8Alloc(testing.allocator, units);
     defer testing.allocator.free(round_trip);
     try testing.expectEqualStrings(text, round_trip);
+}
+
+test "packed UTF-16 decoding matches the iterator" {
+    const testing = @import("std").testing;
+    const samples = [_][]const u16{
+        &.{0x0041},
+        &.{0x00e9},
+        &.{ 0x1100, 0x1161, 0x11a8 },
+        &.{ 0xD83D, 0xDE00 },
+        &.{ 0x0041, 0xD83D, 0xDE00, 0x42 },
+        &.{ 0xDBFF, 0xDFFF },
+    };
+    for (samples) |units| {
+        var cursor: usize = 0;
+        var expected = Iterator{ .units = units };
+        while (expected.next()) |codepoint| {
+            const decoded = decodePacked(units, cursor);
+            try testing.expect(decoded != packed_invalid);
+            try testing.expectEqual(codepoint, packedCodepoint(decoded));
+            cursor += packedLength(decoded);
+        }
+        try testing.expectEqual(units.len, cursor);
+    }
+    try testing.expectEqual(packed_invalid, decodePacked(&.{0xD800}, 0));
+    try testing.expectEqual(
+        packed_invalid,
+        decodePacked(&.{ 0xD800, 0x0041 }, 0),
+    );
+    try testing.expectEqual(packed_invalid, decodePacked(&.{0xDC00}, 0));
 }
