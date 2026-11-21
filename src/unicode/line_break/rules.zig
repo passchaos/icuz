@@ -352,6 +352,45 @@ pub fn decide(
     if (isAlphabetic(left.class) and isAlphabetic(right_class)) {
         return null; // LB28.
     }
+    // LB15d: an infix separator never starts a line. The only exceptions are
+    // the numeric lookahead form handled at LB15c, which needs a space on
+    // the left, and LB8, which allows a break after a zero-width space.
+    if (right_class == .infix_separator and left.class != .space and
+        left.class != .zero_width_space) return null;
+    // LB18: a space run ends the line unless an earlier rule prohibits the
+    // break. Exclude the right classes those rules cover and the quotation /
+    // opening / closing contexts carried by the space run.
+    if (left.class == .space) {
+        switch (right_class) {
+            .word_joiner,
+            .non_breaking_glue,
+            .close_punctuation,
+            .close_parenthesis,
+            .exclamation,
+            .symbol,
+            .nonstarter,
+            .before_and_after,
+            .quotation,
+            .hyphen,
+            .unambiguous_hyphen,
+            .after,
+            .infix_separator,
+            .inseparable,
+            .numeric,
+            .postfix,
+            .prefix,
+            => {},
+            else => switch (before_spaces.class) {
+                .open_punctuation,
+                .quotation,
+                .close_punctuation,
+                .close_parenthesis,
+                .before_and_after,
+                => {},
+                else => return .soft,
+            },
+        }
+    }
     if (isHangulBlock(left.class) and right_class == .postfix) return null;
     if (left.class == .prefix and isHangulBlock(right_class)) return null;
     if (left.class == .hangul_l_jamo and
