@@ -287,8 +287,10 @@ pub const Iterator = struct {
                 return self.consumeSimpleAsciiHardBreak(word_end);
             }
             if (rules.isAsciiProsePunctuation(self.text[word_end])) {
-                if (self.consumeAsciiWordPunctuation(start, word_end)) |break_| {
-                    return break_;
+                switch (self.consumeAsciiWordPunctuation(start, word_end)) {
+                    .unhandled => {},
+                    .handoff => return null,
+                    .emitted => |break_| return break_,
                 }
             }
             // The word cannot complete a `word SP+ word` shape, but the
@@ -326,15 +328,25 @@ pub const Iterator = struct {
         return .{ .byte_offset = next_word, .kind = .soft };
     }
 
-    /// Commit `word PUNCT+ SP+ word` in one step. LB13 and LB15d prohibit a
-    /// break inside the punctuation run, and the space-to-word boundary is
-    /// LB31 soft for these classes. Shapes the scanner cannot prove fall back
-    /// to the generic path with nothing committed.
+    const PunctuationOutcome = union(enum) {
+        /// The shape did not match; nothing was committed.
+        unhandled,
+        /// The punctuation and spaces were committed; the generic path
+        /// decides the next boundary.
+        handoff,
+        /// A break at the end of the committed shape.
+        emitted: Break,
+    };
+
+    /// Commit `word PUNCT+ SP+` in one step. LB13 and LB15d prohibit a break
+    /// inside the punctuation run and LB7 prohibits one before the spaces.
+    /// When an ASCII word follows, the space-to-word boundary is LB31 soft
+    /// and the break is returned here; otherwise the generic path decides it.
     fn consumeAsciiWordPunctuation(
         self: *Iterator,
         start: usize,
         word_end: usize,
-    ) ?Break {
+    ) PunctuationOutcome {
         var punct_end = word_end;
         while (punct_end < self.text.len and
             rules.isAsciiProsePunctuation(self.text[punct_end]))
@@ -342,16 +354,11 @@ pub const Iterator = struct {
             punct_end += 1;
         }
         if (punct_end >= self.text.len or self.text[punct_end] != ' ') {
-            return null;
+            return .unhandled;
         }
         var next_word = punct_end + 1;
         while (next_word < self.text.len and self.text[next_word] == ' ') {
             next_word += 1;
-        }
-        if (next_word < self.text.len and
-            !rules.isAsciiWordByte(self.text[next_word]))
-        {
-            return null;
         }
 
         self.state.consumeAsciiWordRun(self.text[start..word_end]);
@@ -360,12 +367,20 @@ pub const Iterator = struct {
         }
         self.state.consumeAsciiSpaceRun(next_word - punct_end);
         self.cursor = next_word;
+        self.simple_ascii = false;
         if (next_word == self.text.len) {
             self.emitted_end = true;
-            return .{ .byte_offset = next_word, .kind = .hard };
+            return .{ .emitted = .{
+                .byte_offset = next_word,
+                .kind = .hard,
+            } };
         }
+        if (!rules.isAsciiWordByte(self.text[next_word])) return .handoff;
         self.suppress_break_at_cursor = true;
-        return .{ .byte_offset = next_word, .kind = .soft };
+        return .{ .emitted = .{
+            .byte_offset = next_word,
+            .kind = .soft,
+        } };
     }
 
     fn consumeAsciiPunctuation(
