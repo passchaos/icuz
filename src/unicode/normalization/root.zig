@@ -200,7 +200,13 @@ fn normalizeFusedInto(
             codepoint >= hangul_l_base and
             codepoint < hangul_l_base + hangul_l_count)
         {
-            if (hangulSyllableAt(text, codepoint, index)) |syllable| {
+            var syllable_end: usize = undefined;
+            if (hangulSyllableAt(
+                text,
+                codepoint,
+                index,
+                &syllable_end,
+            )) |composed| {
                 if (!changed) {
                     try output.ensureUnusedCapacity(allocator, text.len + 16);
                     changed = true;
@@ -214,10 +220,10 @@ fn normalizeFusedInto(
                 // A composed syllable is always U+AC00..U+D7A3, so it
                 // encodes to exactly three bytes; write them in place.
                 const slot = try output.addManyAsSlice(allocator, 3);
-                slot[0] = @intCast(0xe0 | (syllable.composed >> 12));
-                slot[1] = @intCast(0x80 | ((syllable.composed >> 6) & 0x3f));
-                slot[2] = @intCast(0x80 | (syllable.composed & 0x3f));
-                index = syllable.end;
+                slot[0] = @intCast(0xe0 | (composed >> 12));
+                slot[1] = @intCast(0x80 | ((composed >> 6) & 0x3f));
+                slot[2] = @intCast(0x80 | (composed & 0x3f));
+                index = syllable_end;
                 stable_start = index;
                 starter = null;
                 starter_offset = index;
@@ -1542,14 +1548,16 @@ fn decomposeHangul(codepoint: u21) ?HangulDecomposition {
         .{ .values = .{ l, v, hangul_t_base + t }, .len = 3 };
 }
 
-const HangulSyllable = struct {
-    composed: u21,
-    end: usize,
-};
-
 /// Compose the L jamo `l` with the scalars after `after_l`. Returns null
-/// when the next scalar is not a V jamo.
-fn hangulSyllableAt(text: []const u8, l: u21, after_l: usize) ?HangulSyllable {
+/// when the next scalar is not a V jamo. On success `end` receives the byte
+/// offset just past the consumed jamo; returning the composed scalar alone
+/// keeps the result in a register instead of an out-of-line struct.
+fn hangulSyllableAt(
+    text: []const u8,
+    l: u21,
+    after_l: usize,
+    end: *usize,
+) ?u21 {
     const v_packed = decodeJamo(text, after_l);
     if (v_packed == scalar.packed_invalid) return null;
     const v = scalar.packedCodepoint(v_packed);
@@ -1557,14 +1565,13 @@ fn hangulSyllableAt(text: []const u8, l: u21, after_l: usize) ?HangulSyllable {
     const after_v = after_l + scalar.packedLength(v_packed);
     const t_packed = decodeJamo(text, after_v);
     if (t_packed != scalar.packed_invalid) {
-        if (composeHangul(lv, scalar.packedCodepoint(t_packed))) |lvt| {
-            return .{
-                .composed = lvt,
-                .end = after_v + scalar.packedLength(t_packed),
-            };
+        if (composeHangulT(lv, scalar.packedCodepoint(t_packed))) |lvt| {
+            end.* = after_v + scalar.packedLength(t_packed);
+            return lvt;
         }
     }
-    return .{ .composed = lv, .end = after_v };
+    end.* = after_v;
+    return lv;
 }
 
 /// Decode a three-byte Hangul jamo (U+1100..U+11FF) at `index`, or return
@@ -1598,6 +1605,15 @@ fn composeHangul(starter: u21, combining: u21) ?u21 {
             return starter + t_index;
         }
     }
+    return null;
+}
+
+/// Compose a trailing T jamo onto an LV syllable. The caller already
+/// established that `lv` is the result of an L+V composition, so its T index
+/// is zero and the general range/modulo checks are unnecessary.
+inline fn composeHangulT(lv: u21, t: u21) ?u21 {
+    const t_index = t -% hangul_t_base;
+    if (t_index > 0 and t_index < hangul_t_count) return lv + t_index;
     return null;
 }
 
