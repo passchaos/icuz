@@ -655,7 +655,8 @@ compile-time tables, and ASCII grapheme clusters are returned without decoding;
 the word, sentence, and line-break iterators carry scalars and offsets as
 separate registers instead of decoded-struct temporaries, and line-break
 decisions take the boundary offsets directly; CJK runs replay interior
-boundaries without property lookups.
+boundaries without property lookups, and a space run followed by an L jamo
+resolves its LB31 boundary without the rule engine.
 Charset
 reverse indexes carry compile-time page indexes and a split layout (sorted
 `u32` code points, then parallel `u16` pointers), so DBCS encoders
