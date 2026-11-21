@@ -393,18 +393,7 @@ pub fn decide(
     }
     if (isHangulBlock(left.class) and right_class == .postfix) return null;
     if (left.class == .prefix and isHangulBlock(right_class)) return null;
-    if (left.class == .hangul_l_jamo and
-        (right_class == .hangul_l_jamo or
-            right_class == .hangul_v_jamo or
-            right_class == .hangul_lv_syllable or
-            right_class == .hangul_lvt_syllable)) return null;
-    if ((left.class == .hangul_v_jamo or
-        left.class == .hangul_lv_syllable) and
-        (right_class == .hangul_v_jamo or
-            right_class == .hangul_t_jamo)) return null;
-    if ((left.class == .hangul_t_jamo or
-        left.class == .hangul_lvt_syllable) and
-        right_class == .hangul_t_jamo) return null;
+    if (hangulNoBreak(left.class, right_class)) return null;
 
     // LB8.
     if (before_spaces.class == .zero_width_space) return .soft;
@@ -516,18 +505,7 @@ pub fn decide(
         right_class == .numeric) return null;
 
     // LB26–LB27.
-    if (left.class == .hangul_l_jamo and
-        (right_class == .hangul_l_jamo or
-            right_class == .hangul_v_jamo or
-            right_class == .hangul_lv_syllable or
-            right_class == .hangul_lvt_syllable)) return null;
-    if ((left.class == .hangul_v_jamo or
-        left.class == .hangul_lv_syllable) and
-        (right_class == .hangul_v_jamo or
-            right_class == .hangul_t_jamo)) return null;
-    if ((left.class == .hangul_t_jamo or
-        left.class == .hangul_lvt_syllable) and
-        right_class == .hangul_t_jamo) return null;
+    if (hangulNoBreak(left.class, right_class)) return null;
     if (isHangulBlock(left.class) and right_class == .postfix) return null;
     if (left.class == .prefix and isHangulBlock(right_class)) return null;
 
@@ -750,10 +728,23 @@ fn isIdeographic(class: BreakClass) bool {
         class == .emoji_modifier;
 }
 
-fn isHangulBlock(class: BreakClass) bool {
+pub inline fn isHangulBlock(class: BreakClass) bool {
     return class == .hangul_l_jamo or class == .hangul_v_jamo or
         class == .hangul_t_jamo or class == .hangul_lv_syllable or
         class == .hangul_lvt_syllable;
+}
+
+/// LB26: no break inside a Hangul syllable sequence.
+pub inline fn hangulNoBreak(left: BreakClass, right: BreakClass) bool {
+    return (left == .hangul_l_jamo and
+        (right == .hangul_l_jamo or
+            right == .hangul_v_jamo or
+            right == .hangul_lv_syllable or
+            right == .hangul_lvt_syllable)) or
+        ((left == .hangul_v_jamo or left == .hangul_lv_syllable) and
+            (right == .hangul_v_jamo or right == .hangul_t_jamo)) or
+        ((left == .hangul_t_jamo or left == .hangul_lvt_syllable) and
+            right == .hangul_t_jamo);
 }
 
 fn isAksaraBase(entry: Significant) bool {

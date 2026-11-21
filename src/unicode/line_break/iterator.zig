@@ -40,6 +40,7 @@ pub const Iterator = struct {
             if (self.nextSimpleAscii()) |opportunity| return opportunity;
             if (self.consumeAsciiWordRun()) continue;
             if (self.consumeUnicodeWordRun()) continue;
+            if (self.consumeHangulRun()) continue;
 
             const decoded = rules.decodeValid(self.text, self.cursor);
             // A pending opportunity intentionally routes the first scalar of
@@ -74,6 +75,38 @@ pub const Iterator = struct {
             }
         }
         return null;
+    }
+
+    /// Consume a run of Hangul scalars whose adjacent pairs are all
+    /// prohibited by LB26. The internal boundaries never break, so only the
+    /// final state must be recorded before the next full decision.
+    fn consumeHangulRun(self: *Iterator) bool {
+        if (self.cursor >= self.text.len) return false;
+        if (self.text[self.cursor] < 0x80) return false;
+        if (self.suppress_break_at_cursor) return false;
+        var last_class = self.state.last.class;
+        if (!rules.isHangulBlock(last_class)) return false;
+        var cursor = self.cursor;
+        var consumed = false;
+        while (cursor < self.text.len and self.text[cursor] >= 0x80) {
+            const decoded = rules.decodeValid(self.text, cursor);
+            const raw = properties(decoded.codepoint);
+            if (!rules.hangulNoBreak(last_class, raw.class)) break;
+            self.state.consume(raw.class, .{
+                .codepoint = decoded.codepoint,
+                .properties = raw,
+                .class = raw.class,
+                .start = cursor,
+                .next = decoded.next,
+            });
+            cursor = decoded.next;
+            consumed = true;
+            last_class = raw.class;
+        }
+        if (!consumed) return false;
+        self.cursor = cursor;
+        self.simple_ascii = false;
+        return true;
     }
 
     fn nextSimpleAscii(self: *Iterator) ?Break {
