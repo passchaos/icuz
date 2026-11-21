@@ -18,6 +18,7 @@
 #include <unicode/uregex.h>
 #include <unicode/ureldatefmt.h>
 #include <unicode/ustring.h>
+#include <unicode/utrans.h>
 #include <unicode/utypes.h>
 #include <cstdio>
 #include <cstring>
@@ -302,6 +303,64 @@ int main() {
                 static_cast<int32_t>(utf8_out.size()), encoded.data(),
                 encoded_length, &status);
         });
+    }
+
+    std::printf("\n-- transliteration --\n");
+    {
+        auto repeat8 = [](const std::string& unit) {
+            std::string s;
+            for (int i = 0; i < 8; i++) s += unit;
+            return s;
+        };
+        struct TransCase {
+            const char* label;
+            const char* id;
+            std::string text;
+        };
+        std::vector<TransCase> trans_cases = {
+            {"Latin-ASCII Swedish", "Latin-ASCII",
+                repeat8("Ångström älskar blåbär och öar. ÅÄÖ åäö ")},
+            {"Fullwidth-Halfwidth", "Fullwidth-Halfwidth",
+                repeat8("ＡＢＣ１２３！？　ｶﾞｷﾞｸﾞ ")},
+            {"Russian-Latin-BGN", "Russian-Latin/BGN",
+                repeat8("Москва Санкт-Петербург Россия ")},
+            {"Greek-Latin-BGN", "Greek-Latin/BGN",
+                repeat8("Ελλάδα Αθήνα ελληνική γλώσσα ")},
+            {"Katakana-Latin-BGN", "Katakana-Latin/BGN",
+                repeat8("ラーメン とうきょう カタカナ ﾃｽﾄ ")},
+            {"Amharic-Latin-BGN", "Amharic-Latin/BGN",
+                repeat8("አማርኛ ግዕዝ ፊደል ቋንቋ ")},
+            {"Ukrainian-Latin-BGN", "Ukrainian-Latin/BGN",
+                repeat8("Київ Україна українська мова ")},
+        };
+        for (auto& item : trans_cases) {
+            const auto u16 = to_u16(item.text);
+            std::u16string id16;
+            for (const char* p = item.id; *p; ++p) {
+                id16.push_back(static_cast<char16_t>(*p));
+            }
+            UErrorCode status = U_ZERO_ERROR;
+            UTransliterator* tr = utrans_openU(
+                reinterpret_cast<const UChar*>(id16.c_str()),
+                static_cast<int32_t>(id16.size()), UTRANS_FORWARD, nullptr, 0,
+                nullptr, &status);
+            if (U_FAILURE(status)) {
+                std::printf("%s skipped\n", item.id);
+                continue;
+            }
+            std::vector<UChar> buffer(u16.size() * 4 + 64);
+            const int32_t capacity = static_cast<int32_t>(buffer.size());
+            bench_bytes(item.label, item.text.size(), 4000, [&] {
+                std::memcpy(buffer.data(), u16.data(),
+                    u16.size() * sizeof(UChar));
+                int32_t length = static_cast<int32_t>(u16.size());
+                int32_t limit = length;
+                status = U_ZERO_ERROR;
+                utrans_transUChars(tr, buffer.data(), &length, capacity, 0,
+                    &limit, &status);
+            });
+            utrans_close(tr);
+        }
     }
 
     std::printf("\n-- segmentation --\n");
