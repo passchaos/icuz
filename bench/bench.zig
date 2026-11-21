@@ -1054,6 +1054,18 @@ pub fn main() !void {
         allocator,
     );
     benchCollationCodepoints(
+        "UCA sort key ASCII (cp)",
+        ascii_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationCodepoints(
+        "UCA sort key mixed (cp)",
+        mixed_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationCodepoints(
         "UCA sort key Chinese root (cp)",
         chinese_collation_runtime,
         .{},
