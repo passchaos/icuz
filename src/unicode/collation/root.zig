@@ -1526,6 +1526,30 @@ const LatinEntry = struct {
 /// letters and combining marks of Latin-script text after NFD.
 pub const latin_limit: usize = 0x370;
 
+/// Recursive canonical decomposition for every scalar the tailored Latin
+/// fast path accepts. Precomposed Latin letters decompose to at most four
+/// scalars, so a direct table replaces the generated binary search in the
+/// hottest NFD path.
+const LatinNfd = struct {
+    parts: [4]u21 = .{ 0, 0, 0, 0 },
+    len: u4 = 0,
+};
+
+const latin_nfd: [latin_limit]LatinNfd = blk: {
+    @setEvalBranchQuota(1_000_000);
+    var table: [latin_limit]LatinNfd = [_]LatinNfd{.{}} ** latin_limit;
+    for (0..latin_limit) |codepoint| {
+        const mapping = normalization.decompositionFor(@intCast(codepoint)) orelse
+            continue;
+        if (mapping.len > 4) {
+            @compileError("Latin decomposition longer than four scalars");
+        }
+        table[codepoint].len = @intCast(mapping.len);
+        for (mapping, 0..) |part, index| table[codepoint].parts[index] = part;
+    }
+    break :blk table;
+};
+
 const latin_elements = blk: {
     @setEvalBranchQuota(2_000_000);
     var table: [latin_limit]LatinEntry = undefined;
@@ -2029,7 +2053,9 @@ fn normalizeNfdLatinInto(
         // lookup for the common prose case.
         if (codepoint < 0x80) {
             if (segment_len > 0) {
-                normalization.canonicalOrder(segment[0..segment_len]);
+                if (segment_len > 2 or segment[0] >= 0x80) {
+                    normalization.canonicalOrder(segment[0..segment_len]);
+                }
                 if (length + segment_len > buffer.len) return null;
                 @memcpy(
                     buffer[length..][0..segment_len],
@@ -2046,14 +2072,24 @@ fn normalizeNfdLatinInto(
             pending = codepoint;
             continue;
         }
-        var parts: [64]u21 = undefined;
-        const count = normalization.decomposeInto(&parts, codepoint, false);
-        for (parts[0..count]) |part| {
+        std.debug.assert(codepoint < latin_limit);
+        const entry = &latin_nfd[codepoint];
+        var single: [1]u21 = undefined;
+        const parts: []const u21 = if (entry.len == 0) blk: {
+            single[0] = codepoint;
+            break :blk &single;
+        } else entry.parts[0..entry.len];
+        for (parts) |part| {
             const starter = part < 0x80 or
                 combining_class.forCodepoint(part) == 0;
             if (starter) {
                 if (segment_len > 0) {
-                    normalization.canonicalOrder(segment[0..segment_len]);
+                    // A two-scalar segment with an ASCII starter is already
+                    // in canonical order; only longer or mark-led segments
+                    // can need reordering.
+                    if (segment_len > 2 or segment[0] >= 0x80) {
+                        normalization.canonicalOrder(segment[0..segment_len]);
+                    }
                     if (length + segment_len > buffer.len) return null;
                     @memcpy(
                         buffer[length..][0..segment_len],
@@ -2081,7 +2117,9 @@ fn normalizeNfdLatinInto(
         }
     }
     if (segment_len > 0) {
-        normalization.canonicalOrder(segment[0..segment_len]);
+        if (segment_len > 2 or segment[0] >= 0x80) {
+            normalization.canonicalOrder(segment[0..segment_len]);
+        }
         if (length + segment_len > buffer.len) return null;
         @memcpy(buffer[length..][0..segment_len], segment[0..segment_len]);
         length += segment_len;
