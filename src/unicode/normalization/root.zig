@@ -319,6 +319,16 @@ pub fn normalizeCodepointsTryInto(
     form: Form,
 ) CodepointNormalization {
     if (isNormalizedCodepoints(codepoints, form)) return .unchanged;
+    return normalizeCodepointsTryIntoChanged(buffer, codepoints, form);
+}
+
+/// `normalizeCodepointsTryInto` for input already known to need changes,
+/// so callers that checked quick-check status do not scan it twice.
+pub fn normalizeCodepointsTryIntoChanged(
+    buffer: []u21,
+    codepoints: []const u21,
+    form: Form,
+) CodepointNormalization {
     var fixed = std.heap.FixedBufferAllocator.init(std.mem.sliceAsBytes(buffer));
     var output = std.ArrayList(u21).empty;
     normalizeCodepointsInto(fixed.allocator(), codepoints, form, &output) catch

@@ -967,9 +967,9 @@ fn sortKeyCodepointsResolved(
     const backwards = options.backwards_secondary orelse
         (if (locale_tailoring) |tailoring| tailoring.backwards else false);
 
-    if (!shifted and case_first == .off and !backwards and
-        !options.numeric and !options.case_level)
-    {
+    const fast_conditions = !shifted and case_first == .off and !backwards and
+        !options.numeric and !options.case_level;
+    if (fast_conditions) {
         if (locale_tailoring) |tailoring| {
             if (try appendTailoredLatinSortKey(
                 allocator,
@@ -988,7 +988,15 @@ fn sortKeyCodepointsResolved(
             options.strength,
         )) {
             return;
-        } else if (try appendImplicitSortKey(
+        }
+    }
+
+    // The implicit-only fast path and the normalization step both need the
+    // NFD answer; scan the input once for both.
+    const nfd = normalization.isNormalizedCodepoints(codepoints, .nfd);
+
+    if (fast_conditions and locale_tailoring == null and nfd) {
+        if (try appendImplicitSortKey(
             allocator,
             output,
             codepoints,
@@ -1003,7 +1011,9 @@ fn sortKeyCodepointsResolved(
     var normalized_stack: [512]u21 = undefined;
     var normalized_owned: ?[]u21 = null;
     defer if (normalized_owned) |owned| allocator.free(owned);
-    const source: []const u21 = switch (normalization.normalizeCodepointsTryInto(
+    const source: []const u21 = if (nfd)
+        codepoints
+    else switch (normalization.normalizeCodepointsTryIntoChanged(
         &normalized_stack,
         codepoints,
         .nfd,
@@ -1837,7 +1847,7 @@ fn appendImplicitSortKey(
     {
         return false;
     }
-    if (!normalization.isNormalizedCodepoints(codepoints, .nfd)) return false;
+    // The caller already proved the input is NFD.
     for (codepoints, 0..) |codepoint, index| {
         if (codepoint >= 0x300 and
             combining_class.forCodepoint(codepoint) != 0)
