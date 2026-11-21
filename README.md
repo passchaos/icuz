@@ -646,7 +646,9 @@ without a search, and a 256-entry atomic cache of the first rule for recently
 matched code points; above U+1000, rule records carry their first code point
 inline so binary-search probes are a single load. Collation elements start in
 a stack buffer, so typical sort keys allocate only the returned key, and the
-NFD pass over Latin text handles ASCII without a decomposition lookup.
+NFD pass over Latin text handles ASCII without a decomposition lookup. Element
+appends inline into the stack buffer, ASCII entries are iterated in place
+instead of copied, and implicit weights are computed inline.
 UAX #29 word and sentence segmentation classify ASCII bytes through
 compile-time tables and decode ASCII bytes directly, so prose runs skip the
 general property lookup and the UTF-8 decoder. The word and line-break
