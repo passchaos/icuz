@@ -44,6 +44,37 @@ pub fn gbkNext(input: []const u8, index: *usize) DecodeResult {
     return gbNext(input, index, true);
 }
 
+/// Inline GBK decode for converters. Returns null for end-of-input and for
+/// any malformed or incomplete sequence, so the caller can fall back to the
+/// generic decoder that owns error handling. On success `index` advances.
+pub inline fn gbkNextFast(input: []const u8, index: *usize) ?u21 {
+    const start = index.*;
+    if (start >= input.len) return null;
+    const first = input[start];
+    if (first <= 0x7F) {
+        index.* = start + 1;
+        return first;
+    }
+    if (first == 0x80) {
+        index.* = start + 1;
+        return 0x20AC;
+    }
+    if (first < 0x81 or first > 0xFE or start + 2 > input.len) return null;
+    const second = input[start + 1];
+    const offset: u8 = if (second >= 0x40 and second <= 0x7E)
+        0x40
+    else if (second >= 0x80 and second <= 0xFE)
+        0x41
+    else
+        return null;
+    const pointer = (@as(u32, first) - 0x81) * 190 +
+        (@as(u32, second) - offset);
+    const codepoint = tables.forwardLookup(tables.gb18030_forward, pointer) orelse
+        return null;
+    index.* = start + 2;
+    return codepoint;
+}
+
 fn gbNext(input: []const u8, index: *usize, comptime gbk: bool) DecodeResult {
     const start = index.*;
     const first = firstByte(input, index) orelse return .end;

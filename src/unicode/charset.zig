@@ -1214,7 +1214,9 @@ fn convertDbcsToUtf8Fast(
 ) error{OutOfMemory}!?[]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, input.len * 2 + 8);
+    // Single-byte DBCS values can expand to three UTF-8 bytes (GBK 0x80 is
+    // U+20AC, Shift_JIS 0xA0 is U+F8F0), so reserve three bytes per input.
+    try output.ensureTotalCapacity(allocator, input.len * 3 + 8);
     const spare = output.unusedCapacitySlice();
     var index: usize = 0;
     var written: usize = 0;
@@ -1272,6 +1274,45 @@ fn convertDbcsToUtf8Fast(
     return try output.toOwnedSlice(allocator);
 }
 
+/// Fused GBK-to-UTF-8 fast path. The generic DBCS converter dispatches
+/// through a decoder function and a result union per scalar; GBK prose is
+/// dominated by two-byte sequences, so decoding inline avoids both.
+fn convertGbkToUtf8Fast(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+) error{OutOfMemory}!?[]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    // 0x80 decodes to U+20AC, so one input byte can become three UTF-8 bytes.
+    try output.ensureTotalCapacity(allocator, input.len * 3 + 8);
+    const spare = output.unusedCapacitySlice();
+    var index: usize = 0;
+    var written: usize = 0;
+    while (index < input.len) {
+        const codepoint = cjk.gbkNextFast(input, &index) orelse {
+            output.deinit(allocator);
+            return null;
+        };
+        if (codepoint < 0x80) {
+            spare[written] = @intCast(codepoint);
+            written += 1;
+        } else if (codepoint < 0x800) {
+            spare[written] = @intCast(0xC0 | (codepoint >> 6));
+            spare[written + 1] = @intCast(0x80 | (codepoint & 0x3F));
+            written += 2;
+        } else {
+            spare[written] = @intCast(0xE0 | (codepoint >> 12));
+            spare[written + 1] = @intCast(
+                0x80 | ((codepoint >> 6) & 0x3F),
+            );
+            spare[written + 2] = @intCast(0x80 | (codepoint & 0x3F));
+            written += 3;
+        }
+    }
+    output.items.len = written;
+    return try output.toOwnedSlice(allocator);
+}
+
 fn convertAllocStateless(
     comptime from: Encoding,
     comptime to: Encoding,
@@ -1281,11 +1322,7 @@ fn convertAllocStateless(
 ) Error![]u8 {
     if (comptime to == .utf8) {
         if (comptime from == .gbk) {
-            if (try convertDbcsToUtf8Fast(
-                cjk.gbkNext,
-                allocator,
-                input,
-            )) |result| {
+            if (try convertGbkToUtf8Fast(allocator, input)) |result| {
                 return result;
             }
         } else if (comptime from == .gb18030) {
@@ -1817,6 +1854,23 @@ test "multi-byte conversion" {
     );
     defer allocator.free(round_trip);
     try testing.expectEqualStrings("\u{4F60}\u{597D}", round_trip);
+
+    // Single-byte values that expand to three UTF-8 bytes exercise the
+    // fast-path capacity bound.
+    const gbk_bytes = [_]u8{ 0x80, 0x80, 'A' };
+    const euro = try convertAlloc(allocator, &gbk_bytes, .gbk, .utf8, .{});
+    defer allocator.free(euro);
+    try testing.expectEqualStrings("\u{20AC}\u{20AC}A", euro);
+    const sjis_bytes = [_]u8{ 0xA0, 'A' };
+    const sjis = try convertAlloc(
+        allocator,
+        &sjis_bytes,
+        .shift_jis,
+        .utf8,
+        .{},
+    );
+    defer allocator.free(sjis);
+    try testing.expectEqualStrings("\u{F8F0}A", sjis);
 }
 
 test "replacement and user-defined encodings" {
