@@ -411,6 +411,9 @@ pub const PageIndex = struct {
     /// multiple rules, otherwise the single-code-point rule index + 2.
     single_rules: [0x370]u32,
     cache: [256]std.atomic.Value(u64),
+    /// True when no rule starts with an ASCII code point, so ASCII text
+    /// sorts exactly like the root collation.
+    ascii_untailored: bool,
 };
 
 const direct_limit: usize = 0x1000;
@@ -475,6 +478,9 @@ fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
             }
         }
     }
+    pages.ascii_untailored = for (0..128) |codepoint| {
+        if (pages.single_rules[codepoint] != 0) break false;
+    } else true;
 }
 
 /// Return (building on first use) the page index for this tailoring.

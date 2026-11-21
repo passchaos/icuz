@@ -1390,6 +1390,70 @@ fn appendSingle(
     return appendImplicit(allocator, ces, codepoint, reorder);
 }
 
+const ReorderAsciiSlot = struct {
+    /// 0 = empty, 1 = building, 2 = published.
+    state: std.atomic.Value(u8) = std.atomic.Value(u8).init(0),
+    index: u16 = 0,
+    entries: [128]AsciiEntry = undefined,
+};
+
+var reorder_ascii_slots = [_]ReorderAsciiSlot{.{}} ** 4;
+var reorder_ascii_next = std.atomic.Value(usize).init(0);
+
+threadlocal var cached_reorder_index: u16 = 0xFFFF;
+threadlocal var cached_reorder_ascii: ?*const [128]AsciiEntry = null;
+
+/// ASCII elements remapped by `map`. Script reordering also moves Latin
+/// primary weights, so the root table cannot be used directly; the remapped
+/// copy is built once per plan and cached per thread.
+fn reorderedAsciiTable(map: tailorings.Reorder) ?*const [128]AsciiEntry {
+    if (cached_reorder_index == map.index) {
+        if (cached_reorder_ascii) |table| return table;
+    }
+    for (&reorder_ascii_slots) |*slot| {
+        if (slot.state.load(.acquire) == 2 and slot.index == map.index) {
+            cached_reorder_index = map.index;
+            cached_reorder_ascii = &slot.entries;
+            return &slot.entries;
+        }
+    }
+    const claimed = reorder_ascii_next.fetchAdd(1, .monotonic);
+    if (claimed >= reorder_ascii_slots.len) return null;
+    const slot = &reorder_ascii_slots[claimed];
+    if (slot.state.cmpxchgStrong(0, 1, .acquire, .monotonic) != null) {
+        return null;
+    }
+    for (0..128) |codepoint| {
+        const entry = ascii_elements.table[codepoint];
+        var stored = AsciiEntry{ .count = entry.count, .elements = undefined };
+        for (entry.elements[0..entry.count], 0..) |element, element_index| {
+            stored.elements[element_index] = .{
+                .primary = reorderPrimary(map, element.primary),
+                .secondary = element.secondary,
+                .tertiary = element.tertiary,
+            };
+        }
+        slot.entries[codepoint] = stored;
+    }
+    slot.index = map.index;
+    slot.state.store(2, .release);
+    cached_reorder_index = map.index;
+    cached_reorder_ascii = &slot.entries;
+    return &slot.entries;
+}
+
+/// ASCII elements for `first`, remapped for `reorder` when one applies.
+inline fn asciiEntryFor(
+    first: u21,
+    reorder: ?tailorings.Reorder,
+) ?AsciiEntry {
+    if (reorder) |map| {
+        const table = reorderedAsciiTable(map) orelse return null;
+        return table[@as(usize, first)];
+    }
+    return ascii_elements.table[@as(usize, first)];
+}
+
 inline fn appendElements(
     allocator: std.mem.Allocator,
     ces: anytype,
@@ -1402,11 +1466,19 @@ inline fn appendElements(
     const first = codepoints[index];
     // Root ASCII entries are precomputed; keep that hot path inline and let
     // the contraction, mark, and implicit cases pay a call.
-    if (reorder == null and !shifted and first < 128 and
-        ascii_elements.usable and
+    if (!shifted and first < 128 and ascii_elements.usable and
         !ascii_contractions[@as(usize, first)])
     {
-        const ascii_entry = ascii_elements.table[@as(usize, first)];
+        const ascii_entry = asciiEntryFor(first, reorder) orelse
+            return appendElementsSlow(
+                allocator,
+                ces,
+                codepoints,
+                index,
+                reorder,
+                shifted,
+                tables,
+            );
         for (ascii_entry.elements[0..ascii_entry.count]) |element| {
             try ces.append(allocator, .{
                 .primary = element.primary,
@@ -1956,6 +2028,32 @@ fn appendAsciiLevel(
 /// Emit a root-order sort key for Latin-script text from a compact table,
 /// bypassing page lookups and the collation-element list. Text with
 /// precomposed letters is decomposed into a stack buffer first.
+/// Emit the root sort key for ASCII-only text straight from the
+/// precomputed table, without a collation-element buffer.
+fn appendAsciiSortKey(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    codepoints: []const u21,
+    strength: Strength,
+) error{OutOfMemory}!void {
+    if (try appendAsciiLevels(allocator, output, codepoints, strength)) {
+        if (strength == .identical) {
+            try appendIdenticalLevel(allocator, output, codepoints);
+        }
+        return;
+    }
+    try output.ensureTotalCapacity(allocator, codepoints.len * 6 + 8);
+    try appendAsciiLevel(allocator, output, codepoints, .primary);
+    if (strength == .primary) return;
+    try appendAsciiLevel(allocator, output, codepoints, .secondary);
+    if (strength == .secondary) return;
+    try appendAsciiLevel(allocator, output, codepoints, .tertiary);
+    if (strength == .tertiary) return;
+    try output.append(allocator, 0);
+    if (strength == .quaternary) return;
+    try appendIdenticalLevel(allocator, output, codepoints);
+}
+
 fn appendLatinSortKey(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u32),
@@ -1970,22 +2068,7 @@ fn appendLatinSortKey(
     }
 
     if (all_ascii and ascii_elements.usable) {
-        if (try appendAsciiLevels(allocator, output, codepoints, strength)) {
-            if (strength == .identical) {
-                try appendIdenticalLevel(allocator, output, codepoints);
-            }
-            return true;
-        }
-        try output.ensureTotalCapacity(allocator, codepoints.len * 6 + 8);
-        try appendAsciiLevel(allocator, output, codepoints, .primary);
-        if (strength == .primary) return true;
-        try appendAsciiLevel(allocator, output, codepoints, .secondary);
-        if (strength == .secondary) return true;
-        try appendAsciiLevel(allocator, output, codepoints, .tertiary);
-        if (strength == .tertiary) return true;
-        try output.append(allocator, 0);
-        if (strength == .quaternary) return true;
-        try appendIdenticalLevel(allocator, output, codepoints);
+        try appendAsciiSortKey(allocator, output, codepoints, strength);
         return true;
     }
 
@@ -2080,8 +2163,20 @@ fn appendTailoredLatinSortKey(
     {
         return false;
     }
+    var all_ascii = true;
     for (codepoints) |codepoint| {
         if (codepoint >= latin_limit) return false;
+        if (codepoint >= 0x80) all_ascii = false;
+    }
+    // ASCII text sorts like the root collation when the tailoring has no
+    // rule starting with an ASCII code point.
+    if (all_ascii and ascii_elements.usable) {
+        if (pages) |page_index| {
+            if (page_index.ascii_untailored) {
+                try appendAsciiSortKey(allocator, output, codepoints, strength);
+                return true;
+            }
+        }
     }
     var buffer: [1024]u21 = undefined;
     const source = normalizeNfdLatinInto(&buffer, codepoints) orelse return false;
