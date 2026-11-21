@@ -37,10 +37,13 @@ pub const Iterator = struct {
                 return .{ .byte_offset = self.text.len, .kind = .hard };
             }
 
-            if (self.nextSimpleAscii()) |opportunity| return opportunity;
-            if (self.consumeAsciiWordRun()) continue;
+            // Try the non-ASCII run scanners first: they reject ASCII lead
+            // bytes with one comparison, and mixed-script text reaches them
+            // far more often than the ASCII prose shapes.
             if (self.consumeUnicodeWordRun()) continue;
             if (self.consumeHangulRun()) continue;
+            if (self.nextSimpleAscii()) |opportunity| return opportunity;
+            if (self.consumeAsciiWordRun()) continue;
 
             const decoded = rules.decodeValid(self.text, self.cursor);
             // A pending opportunity intentionally routes the first scalar of
