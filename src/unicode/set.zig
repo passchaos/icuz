@@ -450,12 +450,20 @@ pub const Set = struct {
             return;
         }
 
-        var index: usize = 0;
-        while (index < self.ranges.items.len and
-            self.ranges.items[index].last + 1 < first)
-        {
-            index += 1;
+        // Scattered inserts (case closure, user edits) need the first range
+        // that can merge or follow the new one; binary search keeps that
+        // O(log n) instead of rescanning from the front.
+        var low: usize = 0;
+        var high = self.ranges.items.len;
+        while (low < high) {
+            const middle = low + (high - low) / 2;
+            if (self.ranges.items[middle].last + 1 < first) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
         }
+        const index = low;
 
         var merged_first = first;
         var merged_last = last;
@@ -606,39 +614,93 @@ pub const Set = struct {
                     try self.addMappedSequence(folded);
                 }
             }
-        } else if (original_count < cased_codepoints.len) {
-            // Case-insensitive closure: ICU groups cased scalars by
-            // simple-fold class and adds every class that intersects the
-            // set. The classes are precomputed at compile time. Small sets
-            // scan their own scalars; larger ones merge-join the sorted
-            // cased table.
-            var class_bits = [_]u64{0} ** cased_class_words;
-            for (original.ranges.items) |range| {
-                var codepoint: u32 = range.first;
-                while (codepoint <= range.last) : (codepoint += 1) {
-                    const index = casedIndex(@intCast(codepoint)) orelse continue;
-                    const class = cased_classes[index];
-                    if (testCaseClass(&class_bits, class)) continue;
-                    markCaseClass(&class_bits, class);
-                    try self.expandCaseClass(class, closure);
+        } else {
+            // Collect every new cased scalar first and union the coalesced
+            // ranges once. Adding scattered scalars one by one would shift
+            // the range list on every insert and drop the membership bitmap.
+            var additions = std.ArrayList(u21).empty;
+            defer additions.deinit(allocator);
+
+            if (original_count < 512) {
+                // Small sets scan their own scalars; a binary search per
+                // scalar is cheaper than a pass over the whole cased table.
+                var class_bits = [_]u64{0} ** cased_class_words;
+                for (original.ranges.items) |range| {
+                    var codepoint: u32 = range.first;
+                    while (codepoint <= range.last) : (codepoint += 1) {
+                        const index = casedIndex(@intCast(codepoint)) orelse continue;
+                        const class = cased_classes[index];
+                        if (testCaseClass(&class_bits, class)) continue;
+                        markCaseClass(&class_bits, class);
+                        try self.collectCaseClass(
+                            class,
+                            closure,
+                            &additions,
+                            allocator,
+                        );
+                    }
+                }
+                if (additions.items.len != 0 and additions.items.len <= 8) {
+                    // A handful of inserts beats sorting and merging.
+                    for (additions.items) |codepoint| try self.add(codepoint);
+                    additions.clearRetainingCapacity();
+                }
+            } else {
+                // Larger sets merge-join the sorted cased table once,
+                // recording both membership and the classes it hits. The
+                // second pass emits missing class members in ascending
+                // order, so the additions need no sort.
+                var member_bits = [_]u64{0} ** cased_class_words;
+                var class_bits = [_]u64{0} ** cased_class_words;
+                const ranges = original.ranges.items;
+                var range_index: usize = 0;
+                for (cased_codepoints, 0..) |codepoint, index| {
+                    while (range_index < ranges.len and
+                        ranges[range_index].last < codepoint)
+                    {
+                        range_index += 1;
+                    }
+                    if (range_index == ranges.len) break;
+                    if (ranges[range_index].first > codepoint) continue;
+                    markCaseClass(&member_bits, index);
+                    markCaseClass(&class_bits, cased_classes[index]);
+                }
+                for (cased_codepoints, 0..) |codepoint, index| {
+                    if (!testCaseClass(&class_bits, cased_classes[index])) {
+                        continue;
+                    }
+                    if (!testCaseClass(&member_bits, index)) {
+                        try additions.append(allocator, codepoint);
+                    }
+                    if (closure == .case_insensitive) {
+                        if (case_mapping.fullFold(codepoint)) |folded| {
+                            if (folded.len > 1) {
+                                try self.addMappedSequence(folded);
+                            }
+                        }
+                    }
                 }
             }
-        } else {
-            var class_bits = [_]u64{0} ** cased_class_words;
-            const ranges = original.ranges.items;
-            var range_index: usize = 0;
-            for (cased_codepoints, 0..) |codepoint, index| {
-                while (range_index < ranges.len and
-                    ranges[range_index].last < codepoint)
-                {
-                    range_index += 1;
+
+            if (additions.items.len != 0) {
+                std.mem.sort(u21, additions.items, {}, std.sort.asc(u21));
+                var extra = Set.init(allocator);
+                defer extra.deinit();
+                var start: usize = 0;
+                while (start < additions.items.len) {
+                    var end = start + 1;
+                    while (end < additions.items.len and
+                        additions.items[end] <= additions.items[end - 1] + 1)
+                    {
+                        end += 1;
+                    }
+                    try extra.addRange(
+                        additions.items[start],
+                        additions.items[end - 1],
+                    );
+                    start = end;
                 }
-                if (range_index == ranges.len) break;
-                if (ranges[range_index].first > codepoint) continue;
-                const class = cased_classes[index];
-                if (testCaseClass(&class_bits, class)) continue;
-                markCaseClass(&class_bits, class);
-                try self.expandCaseClass(class, closure);
+                try self.unionWith(extra);
             }
         }
 
@@ -681,18 +743,27 @@ pub const Set = struct {
 
     /// Add every cased scalar in one simple-fold class, plus full-fold
     /// strings for the full case-insensitive closure.
-    fn expandCaseClass(self: *Set, class: usize, closure: CaseClosure) !void {
+    /// Collect one simple-fold class's missing scalars, plus the full-fold
+    /// strings that a full closure needs. Codepoints stay unapplied until
+    /// the caller unions all classes in one pass.
+    fn collectCaseClass(
+        self: *Set,
+        class: usize,
+        closure: CaseClosure,
+        additions: *std.ArrayList(u21),
+        allocator: std.mem.Allocator,
+    ) !void {
         var index: usize = cased_class_offsets[class];
         const end: usize = cased_class_offsets[class + 1];
         while (index < end) : (index += 1) {
             const codepoint = cased_codepoints[cased_class_members[index]];
-            // Checking first keeps the existing membership bits alive when
-            // the set already covers the class, which is the common case for
-            // large sets such as `Alphabetic`.
-            if (!self.contains(codepoint)) try self.add(codepoint);
+            if (!self.contains(codepoint)) try additions.append(allocator, codepoint);
             if (closure == .case_insensitive) {
                 if (case_mapping.fullFold(codepoint)) |folded| {
-                    try self.addMappedSequence(folded);
+                    // Single-scalar folds target another member of the same
+                    // class, so the expansion adds them; only multi-scalar
+                    // folds need a string element.
+                    if (folded.len > 1) try self.addMappedSequence(folded);
                 }
             }
         }
@@ -2381,6 +2452,21 @@ test "case closure skips sets that already cover all cased scalars" {
     // already present.
     try set.closeOver(.case_insensitive);
     try testing.expectEqual(before, set.count());
+    try testing.expect(set.containsString("ss"));
+}
+
+test "case closure merges large class expansions" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var set = try fromProperty(allocator, .uppercase);
+    defer set.deinit();
+    try set.closeOver(.simple_case_insensitive);
+    try testing.expect(set.contains('a'));
+    try testing.expect(set.contains('A'));
+    try testing.expect(set.contains(0x00e0));
+    try testing.expect(!set.contains('0'));
+    try set.closeOver(.case_insensitive);
     try testing.expect(set.containsString("ss"));
 }
 
