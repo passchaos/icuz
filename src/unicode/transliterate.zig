@@ -1622,15 +1622,41 @@ fn runPassesAlloc(
     filter_set: u32,
 ) Error!std.ArrayList(u21) {
     const record = transformAt(transform_index);
+    const pass_count = @max(record.pass_count, 1);
     return runPassesRangeAlloc(
         allocator,
         codepoints,
         transform_index,
         0,
-        @max(record.pass_count, 1),
+        pass_count,
         filter_set,
-        null,
+        passSetup(transform_index, pass_count),
     );
+}
+
+/// Last transform's pass ranges. Transliteration repeats the same transform
+/// over many inputs, so the two binary searches per pass run once.
+threadlocal var cached_setup_transform: usize = std.math.maxInt(usize);
+threadlocal var cached_setup_pass_count: u8 = 0;
+threadlocal var cached_setup_storage: [16]PassSetup = undefined;
+
+fn passSetup(transform_index: usize, pass_count: usize) ?[]const PassSetup {
+    if (pass_count > cached_setup_storage.len) return null;
+    if (cached_setup_transform == transform_index and
+        cached_setup_pass_count == pass_count)
+    {
+        return cached_setup_storage[0..pass_count];
+    }
+    for (0..pass_count) |pass| {
+        const range = transformPassRange(transform_index, @intCast(pass));
+        cached_setup_storage[pass] = .{
+            .range = range,
+            .streamable = range.end > range.start and canStreamPass(range),
+        };
+    }
+    cached_setup_transform = transform_index;
+    cached_setup_pass_count = @intCast(pass_count);
+    return cached_setup_storage[0..pass_count];
 }
 
 /// Run passes `[start_pass, start_pass + count)` of a transform. `setup`
