@@ -12,6 +12,7 @@ const collation = @import("collation/root.zig");
 const tailorings = @import("collation/tailorings.zig");
 const combining_class = @import("canonical/combining_class.zig");
 const decomposition = @import("canonical/decomposition.zig");
+const scalar = @import("scalar/root.zig");
 
 pub const Options = collation.Options;
 pub const Error = error{ InvalidUtf8, OutOfMemory };
@@ -298,10 +299,20 @@ pub const Search = struct {
             !tailorings.hasNonMarkContraction(tailoring);
     }
 
-    fn latinPrimaryFor(self: *Search, codepoint: u21) ?LatinPrimary {
+    /// Cached per-code-point primary weights; the probe stays inline so the
+    /// position loop pays one compare per character instead of a call.
+    inline fn latinPrimaryFor(self: *Search, codepoint: u21) ?LatinPrimary {
         const hash: usize = (@as(u32, codepoint) *% 0x9E3779B1) >> 25;
         const entry = &self.latin_primary_cache[hash];
         if (entry.codepoint == codepoint) return entry.primary;
+        return self.latinPrimaryForSlow(codepoint, entry);
+    }
+
+    fn latinPrimaryForSlow(
+        self: *Search,
+        codepoint: u21,
+        entry: *LatinPrimaryCacheEntry,
+    ) ?LatinPrimary {
         const single = [_]u21{codepoint};
         self.collator.sortKeyCodepointsInto(
             self.allocator,
@@ -435,15 +446,13 @@ pub const Search = struct {
         try self.text_offsets.ensureTotalCapacity(self.allocator, text.len);
         var cursor: usize = 0;
         while (cursor < text.len) {
-            const length = std.unicode.utf8ByteSequenceLength(text[cursor]) catch
-                return error.InvalidUtf8;
-            if (cursor + length > text.len) return error.InvalidUtf8;
-            const codepoint = std.unicode.utf8Decode(
-                text[cursor..][0..length],
-            ) catch return error.InvalidUtf8;
-            try self.text_codepoints.append(self.allocator, codepoint);
-            try self.text_offsets.append(self.allocator, cursor);
-            cursor += length;
+            const decoded = scalar.decodeValidatingPacked(text, cursor);
+            if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+            self.text_codepoints.appendAssumeCapacity(
+                scalar.packedCodepoint(decoded),
+            );
+            self.text_offsets.appendAssumeCapacity(cursor);
+            cursor += scalar.packedLength(decoded);
         }
     }
 };
@@ -628,22 +637,38 @@ test "locale-aware search" {
     );
 }
 
-fn decodeAt(text: []const u8, offset: usize) ?Decoded {
+inline fn decodeAt(text: []const u8, offset: usize) ?Decoded {
     if (offset >= text.len) return null;
-    const length = std.unicode.utf8ByteSequenceLength(text[offset]) catch
-        return null;
-    if (offset + length > text.len) return null;
-    const codepoint = std.unicode.utf8Decode(
-        text[offset..][0..length],
-    ) catch return null;
-    return .{ .codepoint = codepoint, .next = offset + length };
+    const decoded = scalar.decodeValidatingPacked(text, offset);
+    if (decoded == scalar.packed_invalid) return null;
+    return .{
+        .codepoint = scalar.packedCodepoint(decoded),
+        .next = offset + scalar.packedLength(decoded),
+    };
 }
 
-fn latinFastCodepoint(codepoint: u21) bool {
-    return codepoint < collation.latin_limit and
-        codepoint != 0xb7 and
-        combining_class.forCodepoint(codepoint) == 0 and
-        decomposition.markLeadingForCodepoint(codepoint) == null;
+/// Codepoints below `latin_limit` that need no decomposition and no mark
+/// reordering. Materializing the predicate once turns the per-position check
+/// into a single bit test instead of a combining-class load plus a
+/// mark-leading record search.
+const latin_fast_bits = blk: {
+    @setEvalBranchQuota(1_000_000);
+    const count = collation.latin_limit;
+    var bits: [count / 8]u8 = @splat(0);
+    for (0..count) |value| {
+        const codepoint: u21 = @intCast(value);
+        if (codepoint == 0xb7) continue;
+        if (combining_class.forCodepoint(codepoint) != 0) continue;
+        if (decomposition.markLeadingForCodepoint(codepoint) != null) continue;
+        bits[value >> 3] |= @as(u8, 1) << @intCast(value & 7);
+    }
+    break :blk bits;
+};
+
+inline fn latinFastCodepoint(codepoint: u21) bool {
+    if (codepoint >= collation.latin_limit) return false;
+    return latin_fast_bits[codepoint >> 3] &
+        (@as(u8, 1) << @intCast(codepoint & 7)) != 0;
 }
 
 fn isAscii(text: []const u8) bool {
