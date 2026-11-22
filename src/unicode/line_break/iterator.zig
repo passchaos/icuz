@@ -162,11 +162,11 @@ pub const Iterator = struct {
                 // left class without a prohibition, and the run interior is
                 // replayed, so settle the first scalar without the rule
                 // engine.
-                if (self.cursor >= self.id_run_end and
+                if (self.text[self.cursor] >= 0xe4 and
+                    self.text[self.cursor] <= 0xe9 and
+                    self.cursor >= self.id_run_end and
                     self.cursor != 0 and
-                    !self.suppress_break_at_cursor and
-                    self.text[self.cursor] >= 0xe4 and
-                    self.text[self.cursor] <= 0xe9)
+                    !self.suppress_break_at_cursor)
                 {
                     const start = self.cursor;
                     const decoded = scalar.decodeValidPacked(self.text, start);
