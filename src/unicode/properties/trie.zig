@@ -4,6 +4,11 @@
 //! Each scalar maps to one packed `u64`: five `General_Category` bits plus one
 //! bit per binary property. The 256-scalar pages are deduplicated, so a lookup
 //! is one index load and one payload load instead of a binary search.
+//!
+//! `set_ranges.bin` is generated from `data.bin` by
+//! `tools/unicode/properties/generate_set_ranges.py`. It holds the coalesced
+//! scalar ranges for every property bit and category mask, letting set
+//! construction copy ranges instead of rescanning every deduplicated page.
 
 const std = @import("std");
 
@@ -76,6 +81,30 @@ comptime {
 }
 
 const ascii_values = buildAsciiValues();
+
+const set_ranges = @embedFile("set_ranges.bin");
+const sr_header_len = 16;
+const sr_property_count = readU16At(set_ranges, 8);
+const sr_mask_count = readU16At(set_ranges, 10);
+const sr_range_count = readU32At(set_ranges, 12);
+const sr_property_offset = sr_header_len;
+const sr_mask_offset = sr_property_offset + @as(usize, sr_property_count) * 8;
+const sr_ranges_offset = sr_mask_offset + @as(usize, sr_mask_count) * 12;
+
+comptime {
+    if (set_ranges.len < sr_header_len or
+        !std.mem.eql(u8, set_ranges[0..4], "CJSR") or
+        set_ranges[4] != 1 or
+        set_ranges[5] != 17 or set_ranges[6] != 0 or set_ranges[7] != 0)
+    {
+        @compileError("invalid precomputed set range data");
+    }
+    if (sr_property_count != 64 or
+        sr_ranges_offset + @as(usize, sr_range_count) * 8 != set_ranges.len)
+    {
+        @compileError("invalid precomputed set range data lengths");
+    }
+}
 
 fn buildAsciiValues() [128]u64 {
     @setEvalBranchQuota(10_000);
@@ -228,6 +257,73 @@ fn readU64(offset: usize) u64 {
     return std.mem.readInt(u64, data[offset..][0..8], .little);
 }
 
+fn readU16At(blob: []const u8, offset: usize) u16 {
+    return std.mem.readInt(u16, blob[offset..][0..2], .little);
+}
+
+fn readU32At(blob: []const u8, offset: usize) u32 {
+    return std.mem.readInt(u32, blob[offset..][0..4], .little);
+}
+
+/// One precomputed range list inside `set_ranges.bin`.
+pub const RangeEntry = struct {
+    offset: u32,
+    count: u32,
+};
+
+/// Precomputed ranges selected by one binary-property bit.
+pub fn propertyRangeEntry(bit: u6) RangeEntry {
+    const base = sr_property_offset + @as(usize, bit) * 8;
+    return .{
+        .offset = readU32At(set_ranges, base),
+        .count = readU32At(set_ranges, base + 4),
+    };
+}
+
+pub const MaskEntry = struct {
+    mask: u32,
+    ranges: RangeEntry,
+};
+
+/// Number of precomputed category masks (single categories and aggregates).
+pub fn maskEntryCount() usize {
+    return sr_mask_count;
+}
+
+pub fn maskEntryAt(index: usize) MaskEntry {
+    const base = sr_mask_offset + index * 12;
+    return .{
+        .mask = readU32At(set_ranges, base),
+        .ranges = .{
+            .offset = readU32At(set_ranges, base + 4),
+            .count = readU32At(set_ranges, base + 8),
+        },
+    };
+}
+
+/// Precomputed ranges for a `General_Category` mask, or null when the mask is
+/// not one of the single-category or aggregate aliases. Entries are sorted by
+/// mask, so the scan can stop early.
+pub fn maskRangeEntry(mask: u32) ?RangeEntry {
+    var index: usize = 0;
+    while (index < sr_mask_count) : (index += 1) {
+        const entry = maskEntryAt(index);
+        if (entry.mask == mask) return entry.ranges;
+        if (entry.mask > mask) return null;
+    }
+    return null;
+}
+
+pub fn rangeFirst(entry: RangeEntry, index: usize) u21 {
+    const base = sr_ranges_offset + (@as(usize, entry.offset) + index) * 8;
+    return @intCast(readU32At(set_ranges, base));
+}
+
+pub fn rangeLast(entry: RangeEntry, index: usize) u21 {
+    const base = sr_ranges_offset + (@as(usize, entry.offset) + index) * 8;
+    return @intCast(readU32At(set_ranges, base + 4));
+}
+
 fn categoryFingerprint() u32 {
     @setEvalBranchQuota(10_000);
     var hash: u32 = 2166136261;
@@ -238,4 +334,65 @@ fn categoryFingerprint() u32 {
         hash = (hash ^ 0xff) *% 16777619;
     }
     return hash;
+}
+
+test "precomputed set ranges match the page scan" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const Collector = struct {
+        allocator: std.mem.Allocator,
+        ranges: std.ArrayList(Pair) = .empty,
+
+        const Pair = struct {
+            first: u21,
+            last: u21,
+        };
+
+        fn append(context: *@This(), first: u21, last: u21) !void {
+            try context.ranges.append(context.allocator, .{
+                .first = first,
+                .last = last,
+            });
+        }
+    };
+
+    var bit: u6 = 5;
+    while (true) : (bit += 1) {
+        var collector: Collector = .{ .allocator = allocator };
+        defer collector.ranges.deinit(allocator);
+        try forEachRun(0, @as(u64, 1) << bit, &collector, Collector.append);
+        const entry = propertyRangeEntry(bit);
+        try testing.expectEqual(
+            @as(usize, entry.count),
+            collector.ranges.items.len,
+        );
+        for (collector.ranges.items, 0..) |range, index| {
+            try testing.expectEqual(range.first, rangeFirst(entry, index));
+            try testing.expectEqual(range.last, rangeLast(entry, index));
+        }
+        if (bit == 63) break;
+    }
+
+    var mask_index: usize = 0;
+    while (mask_index < maskEntryCount()) : (mask_index += 1) {
+        const mask_entry = maskEntryAt(mask_index);
+        var collector: Collector = .{ .allocator = allocator };
+        defer collector.ranges.deinit(allocator);
+        try forEachRun(mask_entry.mask, 0, &collector, Collector.append);
+        try testing.expectEqual(
+            @as(usize, mask_entry.ranges.count),
+            collector.ranges.items.len,
+        );
+        for (collector.ranges.items, 0..) |range, index| {
+            try testing.expectEqual(
+                range.first,
+                rangeFirst(mask_entry.ranges, index),
+            );
+            try testing.expectEqual(
+                range.last,
+                rangeLast(mask_entry.ranges, index),
+            );
+        }
+    }
 }

@@ -130,11 +130,16 @@ pub const Set = struct {
     fn fillWords(words: []u64, value: u64) void {
         const splat: WordVec = @splat(value);
         var index: usize = 0;
+        // Volatile keeps the compiler from rewriting the loop into a
+        // byte-wise memset libcall; each iteration stays one wide store.
         while (index + 8 <= words.len) : (index += 8) {
-            const dest: *[8]u64 = words[index..][0..8];
+            const dest: *volatile [8]u64 = words[index..][0..8];
             dest.* = splat;
         }
-        while (index < words.len) : (index += 1) words[index] = value;
+        while (index < words.len) : (index += 1) {
+            const dest: *volatile u64 = &words[index];
+            dest.* = value;
+        }
     }
 
     pub fn isEmpty(self: Set) bool {
@@ -219,7 +224,35 @@ pub const Set = struct {
         std.debug.assert(self.ranges.items.len == 0);
         std.debug.assert(self.strings.items.len == 0);
         self.invalidateBits();
+        if (category_mask == 0 and @popCount(property_mask) == 1 and
+            @ctz(property_mask) >= 5)
+        {
+            try self.appendRangeEntry(
+                trie.propertyRangeEntry(@intCast(@ctz(property_mask))),
+            );
+            return;
+        }
+        if (property_mask == 0 and category_mask != 0) {
+            if (trie.maskRangeEntry(category_mask)) |entry| {
+                try self.appendRangeEntry(entry);
+                return;
+            }
+        }
         try trie.forEachRun(category_mask, property_mask, self, appendValueRun);
+    }
+
+    /// Copy one precomputed range list, which is already coalesced and
+    /// sorted, into this empty set.
+    fn appendRangeEntry(self: *Set, entry: trie.RangeEntry) !void {
+        const range_count: usize = entry.count;
+        try self.ranges.ensureTotalCapacity(self.allocator, range_count);
+        var index: usize = 0;
+        while (index < range_count) : (index += 1) {
+            self.ranges.appendAssumeCapacity(.{
+                .first = trie.rangeFirst(entry, index),
+                .last = trie.rangeLast(entry, index),
+            });
+        }
     }
 
     pub fn addRange(self: *Set, first: u21, last: u21) !void {
