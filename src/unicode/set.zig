@@ -508,14 +508,12 @@ pub const Set = struct {
     pub fn closeOver(self: *Set, closure: CaseClosure) !void {
         const allocator = self.allocator;
 
-        // When the set already covers every cased scalar, the simple
-        // closure has nothing to add. Check before cloning and before
-        // counting: this is the common case for large classes such as
-        // `Alphabetic`, where the check is far cheaper than expanding
-        // thousands of already-present classes.
-        if (closure == .simple_case_insensitive and casedRangesContained(self)) {
-            return;
-        }
+        // Whether the set already covers every cased scalar. Then a simple
+        // closure has nothing to add, and a full closure only needs the
+        // full-fold strings.
+        const fully_cased = closure != .add_case_mappings and
+            casedRangesContained(self);
+        if (closure == .simple_case_insensitive and fully_cased) return;
 
         // The clone below does not change the membership count, so compute
         // it once for the small/large decision.
@@ -546,12 +544,22 @@ pub const Set = struct {
             return;
         }
 
-        // Case-insensitive closure: ICU groups cased scalars by simple-fold
-        // class and adds every class that intersects the set. The classes
-        // are precomputed at compile time. Small sets scan their own scalars;
-        // larger ones merge-join the sorted cased table.
-        var class_bits = [_]u64{0} ** cased_class_words;
-        if (original_count < cased_codepoints.len) {
+        if (fully_cased) {
+            // Every cased scalar is already present; only full-fold strings
+            // can be new. Single-scalar folds are already members, so
+            // `addMappedSequence` skips them after one membership check.
+            for (cased_codepoints) |codepoint| {
+                if (case_mapping.fullFold(codepoint)) |folded| {
+                    try self.addMappedSequence(folded);
+                }
+            }
+        } else if (original_count < cased_codepoints.len) {
+            // Case-insensitive closure: ICU groups cased scalars by
+            // simple-fold class and adds every class that intersects the
+            // set. The classes are precomputed at compile time. Small sets
+            // scan their own scalars; larger ones merge-join the sorted
+            // cased table.
+            var class_bits = [_]u64{0} ** cased_class_words;
             for (original.ranges.items) |range| {
                 var codepoint: u32 = range.first;
                 while (codepoint <= range.last) : (codepoint += 1) {
@@ -563,6 +571,7 @@ pub const Set = struct {
                 }
             }
         } else {
+            var class_bits = [_]u64{0} ** cased_class_words;
             const ranges = original.ranges.items;
             var range_index: usize = 0;
             for (cased_codepoints, 0..) |codepoint, index| {
@@ -2252,6 +2261,12 @@ test "case closure skips sets that already cover all cased scalars" {
     try testing.expect(set.contains('A'));
     try testing.expect(set.contains(0x212a));
     try testing.expect(set.contains(0x0131));
+
+    // The full closure adds only fold strings when every cased scalar is
+    // already present.
+    try set.closeOver(.case_insensitive);
+    try testing.expectEqual(before, set.count());
+    try testing.expect(set.containsString("ss"));
 }
 
 test "set span" {
