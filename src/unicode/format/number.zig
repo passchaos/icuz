@@ -2321,20 +2321,6 @@ fn formatCurrencyNameAlloc(
         currencyDigits(code);
     const min_fraction = options.min_fraction_digits orelse fraction_digits;
     const magnitude = @abs(value);
-    const formatted = try formatStandardAlloc(
-        allocator,
-        magnitude,
-        locale_name,
-        &.{
-            .style = .decimal,
-            .min_fraction_digits = min_fraction,
-            .max_fraction_digits = fraction_digits,
-            .use_grouping = options.use_grouping,
-        },
-        null,
-        null,
-    );
-    defer allocator.free(formatted);
 
     const category = compactCategory(
         locale_name,
@@ -2359,25 +2345,55 @@ fn formatCurrencyNameAlloc(
     }
     if (unit_pattern.len == 0) unit_pattern = "{0} {1}";
 
-    const combined = try replaceTwoPlaceholdersAlloc(
-        allocator,
-        unit_pattern,
-        formatted,
-        name,
-    );
-    if (value >= 0) return combined;
-
+    // The number is formatted directly at its placeholder, so the unit
+    // pattern, the number, and the currency name share one allocation.
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    if (options.accounting) {
-        try output.append(allocator, '(');
-        try output.appendSlice(allocator, combined);
-        try output.append(allocator, ')');
-    } else {
-        try output.appendSlice(allocator, locale.minus);
-        try output.appendSlice(allocator, combined);
+    if (value < 0) {
+        if (options.accounting) {
+            try output.append(allocator, '(');
+        } else {
+            try output.appendSlice(allocator, locale.minus);
+        }
     }
-    allocator.free(combined);
+    var index: usize = 0;
+    while (index < unit_pattern.len) {
+        if (unit_pattern[index] == '{' and index + 2 < unit_pattern.len and
+            unit_pattern[index + 2] == '}')
+        {
+            switch (unit_pattern[index + 1]) {
+                '0' => {
+                    try formatStandardInto(
+                        allocator,
+                        magnitude,
+                        locale_name,
+                        &.{
+                            .style = .decimal,
+                            .min_fraction_digits = min_fraction,
+                            .max_fraction_digits = fraction_digits,
+                            .use_grouping = options.use_grouping,
+                        },
+                        null,
+                        null,
+                        &output,
+                    );
+                    index += 3;
+                    continue;
+                },
+                '1' => {
+                    try output.appendSlice(allocator, name);
+                    index += 3;
+                    continue;
+                },
+                else => {},
+            }
+        }
+        try output.append(allocator, unit_pattern[index]);
+        index += 1;
+    }
+    if (value < 0 and options.accounting) {
+        try output.append(allocator, ')');
+    }
     return output.toOwnedSlice(allocator);
 }
 
