@@ -314,7 +314,22 @@ def render(
             "    comptime kind: Kind,",
             "    root: bool,",
             ") bool {",
-            "    if (codepoint >= 0x10000) return true;",
+            "    if (codepoint >= 0x10000) {",
+            "        const index = @as(usize, codepoint >> 8) - 0x100;",
+            "        if ((astral_page_bits[index >> 3] >>",
+            "            @intCast(index & 7)) & 1 == 0) return false;",
+            "        var slot: usize = 0;",
+            "        while (astral_pages[slot] != @as(u16, @intCast(index))) {",
+            "            slot += 1;",
+            "        }",
+            "        const low = codepoint & 0xFF;",
+            "        const masks = switch (kind) {",
+            "            .lower => &astral_lower_masks,",
+            "            .title, .upper => &astral_upper_masks,",
+            "        };",
+            "        return (masks[slot][low >> 3] &",
+            "            (@as(u8, 1) << @intCast(low & 7))) != 0;",
+            "    }",
             "    const bitmap = switch (kind) {",
             "        .lower => lower_interest,",
             "        .title, .upper => upper_interest,",
@@ -355,6 +370,46 @@ def render(
             "",
         ]
     )
+    # Astral mappings are sparse: one shared page bitmap plus per-kind page
+    # masks let emoji and other uncased planes skip without decoding tables.
+    astral_pages = sorted(
+        {cp >> 8 for cp in lower_set | upper_set if cp >= 0x10000}
+    )
+    astral_page_bits = bytearray(0x1000 // 8)
+    for page in astral_pages:
+        index = page - 0x100
+        astral_page_bits[index >> 3] |= 1 << (index & 7)
+
+    def astral_masks(interesting: set[int]) -> list[list[int]]:
+        masks = []
+        for page in astral_pages:
+            mask = [0] * 32
+            for codepoint in interesting:
+                if codepoint >> 8 == page:
+                    low = codepoint & 0xFF
+                    mask[low >> 3] |= 1 << (low & 7)
+            masks.append(mask)
+        return masks
+
+    lines.extend(["const astral_page_bits = [_]u8{"])
+    for start in range(0, len(astral_page_bits), 32):
+        chunk = ", ".join(
+            str(value) for value in astral_page_bits[start : start + 32]
+        )
+        lines.append(f"    {chunk},")
+    lines.extend(["};", ""])
+    pages_text = ", ".join(str(page - 0x100) for page in astral_pages)
+    lines.extend([f"const astral_pages = [_]u16{{{pages_text}}};", ""])
+    for name, interesting in (
+        ("astral_lower_masks", lower_set),
+        ("astral_upper_masks", upper_set),
+    ):
+        lines.append(f"const {name} = [_][32]u8{{")
+        for mask in astral_masks(interesting):
+            chunk = ", ".join(str(value) for value in mask)
+            lines.append(f"    .{{{chunk}}},")
+        lines.extend(["};", ""])
+
     lines.extend(
         [
             "/// SpecialCasing entries that only exist for the Turkic or Lithuanian",
