@@ -50,6 +50,11 @@ pub const Search = struct {
     latin_fast: bool,
     latin_primary_cache: [128]LatinPrimaryCacheEntry =
         [_]LatinPrimaryCacheEntry{.{}} ** 128,
+    /// First primary weight per code point for the position filter: the high
+    /// half holds the code point and the low half the weight plus one, or
+    /// zero when the code point contributes no primary weight. One 64-bit
+    /// load replaces the two loads of the full cache entry probe.
+    latin_first_cache: [128]u64 = @splat(0),
     /// Root primary weights per ASCII scalar, materialized once at init so
     /// the ASCII search loop is a table read instead of an element walk.
     ascii_primaries: [128]collation.Collator.AsciiPrimary =
@@ -364,13 +369,32 @@ pub const Search = struct {
                 fallback.* = true;
                 return null;
             }
-            const weights = self.latinPrimaryFor(decoded.codepoint) orelse {
-                fallback.* = true;
-                return null;
-            };
-            if (weights.count != 0 and weights.values[0] != first) {
-                position = decoded.next;
-                continue;
+            // Filter on the first primary weight from the compact cache; the
+            // full entry is only needed once a position survives it.
+            const hash: usize =
+                (@as(u32, decoded.codepoint) *% 0x9E3779B1) >> 25;
+            const cached = self.latin_first_cache[hash];
+            if (@as(u32, @truncate(cached >> 32)) != decoded.codepoint) {
+                const weights = self.latinPrimaryFor(decoded.codepoint) orelse {
+                    fallback.* = true;
+                    return null;
+                };
+                const stored: u32 = if (weights.count != 0)
+                    weights.values[0] + 1
+                else
+                    0;
+                self.latin_first_cache[hash] =
+                    (@as(u64, decoded.codepoint) << 32) | stored;
+                if (stored != 0 and stored - 1 != first) {
+                    position = decoded.next;
+                    continue;
+                }
+            } else {
+                const stored: u32 = @truncate(cached);
+                if (stored != 0 and stored - 1 != first) {
+                    position = decoded.next;
+                    continue;
+                }
             }
             var needle_index: usize = 0;
             var cursor = position;
