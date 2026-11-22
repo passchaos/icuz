@@ -526,12 +526,24 @@ pub const Set = struct {
             return;
         }
 
+        // When the set already covers every cased scalar, the simple
+        // closure has nothing to add. This is the common case for large
+        // classes such as `Alphabetic`, where the check is far cheaper than
+        // expanding thousands of already-present classes.
+        const original_count = original.count();
+        if (closure == .simple_case_insensitive and
+            original_count >= cased_codepoints.len and
+            casedRangesContained(original))
+        {
+            return;
+        }
+
         // Case-insensitive closure: ICU groups cased scalars by simple-fold
         // class and adds every class that intersects the set. The classes
         // are precomputed at compile time. Small sets scan their own scalars;
         // larger ones merge-join the sorted cased table.
         var class_bits = [_]u64{0} ** cased_class_words;
-        if (original.count() < cased_codepoints.len) {
+        if (original_count < cased_codepoints.len) {
             for (original.ranges.items) |range| {
                 var codepoint: u32 = range.first;
                 while (codepoint <= range.last) : (codepoint += 1) {
@@ -567,6 +579,34 @@ pub const Set = struct {
                 try self.addString(folded);
             }
         }
+    }
+
+    /// Whether every scalar selected by the `Cased` property is a member.
+    /// Both range lists are sorted, so a merge join replaces 158 binary
+    /// searches with one pass.
+    fn casedRangesContained(self: Set) bool {
+        const entry = trie.propertyRangeEntry(
+            @intFromEnum(properties.BinaryProperty.cased),
+        );
+        const ranges = self.ranges.items;
+        var range_index: usize = 0;
+        var index: usize = 0;
+        while (index < entry.count) : (index += 1) {
+            const first = trie.rangeFirst(entry, index);
+            const last = trie.rangeLast(entry, index);
+            while (range_index < ranges.len and
+                ranges[range_index].last < first)
+            {
+                range_index += 1;
+            }
+            if (range_index == ranges.len or
+                ranges[range_index].first > first or
+                ranges[range_index].last < last)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /// Add every cased scalar in one simple-fold class, plus full-fold
@@ -2163,6 +2203,20 @@ test "set case closure" {
     try testing.expect(dotted.contains(0x0130));
     try testing.expect(dotted.containsString("\u{0069}\u{0307}"));
     try testing.expect(!dotted.contains('I'));
+}
+
+test "case closure skips sets that already cover all cased scalars" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    var set = try fromProperty(allocator, .alphabetic);
+    defer set.deinit();
+    const before = set.count();
+    try set.closeOver(.simple_case_insensitive);
+    try testing.expectEqual(before, set.count());
+    try testing.expect(set.contains('A'));
+    try testing.expect(set.contains(0x212a));
+    try testing.expect(set.contains(0x0131));
 }
 
 test "set span" {
