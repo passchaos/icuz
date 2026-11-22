@@ -501,6 +501,20 @@ pub const Set = struct {
     /// Apply ICU-style case closure to this set.
     pub fn closeOver(self: *Set, closure: CaseClosure) !void {
         const allocator = self.allocator;
+
+        // When the set already covers every cased scalar, the simple
+        // closure has nothing to add. Check before cloning and before
+        // counting: this is the common case for large classes such as
+        // `Alphabetic`, where the check is far cheaper than expanding
+        // thousands of already-present classes.
+        if (closure == .simple_case_insensitive and casedRangesContained(self)) {
+            return;
+        }
+
+        // The clone below does not change the membership count, so compute
+        // it once for the small/large decision.
+        const original_count = self.count();
+
         var original = try self.clone(allocator);
         defer original.deinit();
 
@@ -523,18 +537,6 @@ pub const Set = struct {
                 defer allocator.free(folded);
                 try self.addString(folded);
             }
-            return;
-        }
-
-        // When the set already covers every cased scalar, the simple
-        // closure has nothing to add. This is the common case for large
-        // classes such as `Alphabetic`, where the check is far cheaper than
-        // expanding thousands of already-present classes.
-        const original_count = original.count();
-        if (closure == .simple_case_insensitive and
-            original_count >= cased_codepoints.len and
-            casedRangesContained(original))
-        {
             return;
         }
 
@@ -584,7 +586,7 @@ pub const Set = struct {
     /// Whether every scalar selected by the `Cased` property is a member.
     /// Both range lists are sorted, so a merge join replaces 158 binary
     /// searches with one pass.
-    fn casedRangesContained(self: Set) bool {
+    fn casedRangesContained(self: *const Set) bool {
         const entry = trie.propertyRangeEntry(
             @intFromEnum(properties.BinaryProperty.cased),
         );
