@@ -127,11 +127,10 @@ pub const Iterator = struct {
                 if (self.cursor < self.id_run_end) {
                     const start = self.cursor;
                     const decoded = scalar.decodeValidPacked(self.text, start);
-                    self.state.previous_raw = .ideographic;
-                    self.state.lb9_base = .ideographic;
-                    self.state.numeric_chain = false;
-                    self.state.numeric_close_suffix = false;
-                    self.state.regional_indicator_count = 0;
+                    // Every scalar in the run is ideographic, so the raw
+                    // class, LB9 base, numeric flags, and regional-indicator
+                    // count already hold the values `consume` would set for
+                    // the run's first scalar.
                     self.state.previous_previous = self.state.previous;
                     self.state.previous = self.state.last;
                     self.state.last = .{
