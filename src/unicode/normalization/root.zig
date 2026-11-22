@@ -802,8 +802,6 @@ const Utf16Sink = struct {
     }
 };
 
-
-
 /// Compose the L jamo `l` with the UTF-16 units after `after_l`.
 fn hangulSyllableAt16(
     units: []const u16,

@@ -1140,7 +1140,7 @@ test "streaming and edit-tracking mappings agree" {
     // paying for allocations on each of the million plane 1-16 scalars.
     // U+0307 has locale-only records and is not root-interesting.
     const extra_samples = [_]u21{
-        0x0307, 0x10400, 0x10428, 0x104b0, 0x10570, 0x10d50, 0x118a0,
+        0x0307,  0x10400, 0x10428, 0x104b0, 0x10570, 0x10d50, 0x118a0,
         0x16e40, 0x1e900, 0x1e921, 0x1f600,
     };
     while (true) : (codepoint += 1) {
