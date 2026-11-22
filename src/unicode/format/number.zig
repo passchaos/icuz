@@ -3260,7 +3260,51 @@ pub fn parseFloatPrefix(
     var seen_decimal = false;
     var last_was_digit = false;
 
+    // Most locales use a one-byte ASCII decimal and grouping symbol, and
+    // most input is ASCII. Recognizing those inline avoids three symbol
+    // probes per character in the hot loop.
+    const decimal_ascii: ?u8 = if (locale.decimal.len == 1 and
+        locale.decimal[0] < 0x80) locale.decimal[0] else null;
+    const group_ascii: ?u8 = if (locale.group.len == 1 and
+        locale.group[0] < 0x80) locale.group[0] else null;
+
     while (cursor.index < text.len) {
+        const byte = text[cursor.index];
+        if (byte < 0x80) {
+            if (decimal_ascii) |symbol| {
+                if (byte == symbol) {
+                    if (seen_decimal) break;
+                    if (length + 1 >= ascii.len) return null;
+                    seen_decimal = true;
+                    last_was_digit = false;
+                    ascii[length] = '.';
+                    length += 1;
+                    cursor.index += 1;
+                    continue;
+                }
+            }
+            if (group_ascii) |symbol| {
+                if (byte == symbol) {
+                    if (!options.lenient and
+                        (!seen_digit or seen_decimal or !last_was_digit))
+                    {
+                        return null;
+                    }
+                    last_was_digit = false;
+                    cursor.index += 1;
+                    continue;
+                }
+            }
+            if (byte >= '0' and byte <= '9') {
+                if (length + 1 >= ascii.len) return null;
+                ascii[length] = byte;
+                length += 1;
+                seen_digit = true;
+                last_was_digit = true;
+                cursor.index += 1;
+                continue;
+            }
+        }
         const save = cursor.index;
         if (cursor.match(locale.decimal)) {
             if (seen_decimal) {
