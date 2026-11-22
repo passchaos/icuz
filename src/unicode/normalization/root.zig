@@ -210,7 +210,7 @@ fn normalizeFusedInto(
                 if (!changed) {
                     try output.ensureTotalCapacityPrecise(
                         allocator,
-                        text.len + 16,
+                        text.len,
                     );
                     changed = true;
                 }
@@ -252,7 +252,7 @@ fn normalizeFusedInto(
                 pairChangesUnderForm(starter.?, codepoint, form));
         if (edit) {
             if (!changed) {
-                try output.ensureTotalCapacityPrecise(allocator, text.len + 16);
+                try output.ensureTotalCapacityPrecise(allocator, text.len);
                 changed = true;
             }
             if (starter_offset > stable_start) {
@@ -1700,15 +1700,20 @@ fn segmentEnd(text: []const u8, index: usize) usize {
     return text.len;
 }
 
-fn asciiPrefixLen(text: []const u8) usize {
+/// End offset of the ASCII run that starts at `start`.
+fn asciiRunEnd(text: []const u8, start: usize) usize {
     const high_bits: u64 = 0x8080_8080_8080_8080;
-    var index: usize = 0;
+    var index = start;
     while (index + 8 <= text.len) : (index += 8) {
         const word = std.mem.readInt(u64, text[index..][0..8], .little);
         if (word & high_bits != 0) break;
     }
     while (index < text.len and text[index] < 0x80) : (index += 1) {}
     return index;
+}
+
+fn asciiPrefixLen(text: []const u8) usize {
+    return asciiRunEnd(text, 0);
 }
 
 fn appendDecomposition(
