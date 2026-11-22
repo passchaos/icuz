@@ -145,15 +145,16 @@ pub fn encode(state: *State, codepoint: u21, out: []u8) EncodeResult {
         ) orelse return .unmappable;
     }
 
-    const pointer = tables.reverseLookupCached(
+    const code = tables.reverseLookupCached(
         &jis0208_reverse_cache,
         tables.jis0208_reverse,
         &tables.jis0208_reverse_pages,
         target,
     ) orelse
         return .unmappable;
-    const lead: u8 = @intCast(pointer / 94 + 0x21);
-    const trail: u8 = @intCast(pointer % 94 + 0x21);
+    // The reverse table stores the EUC form; ISO-2022-JP uses the 7-bit form.
+    const lead: u8 = @truncate((code >> 8) - 0x80);
+    const trail: u8 = @truncate((code & 0xFF) - 0x80);
     if (state.mode == .jis0208) {
         out[0] = lead;
         out[1] = trail;

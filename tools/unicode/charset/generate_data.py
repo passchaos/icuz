@@ -102,11 +102,40 @@ def forward_index(values: list[int | None]) -> bytes:
     return bytes(body)
 
 
+def euc_pair(pointer: int) -> int:
+    return ((pointer // 94) + 0xA1) << 8 | ((pointer % 94) + 0xA1)
+
+
+def gb_pair(pointer: int) -> int:
+    trail = pointer % 190
+    trail += 0x40 if trail < 0x3F else 0x41
+    return ((pointer // 190) + 0x81) << 8 | trail
+
+
+def big5_pair(pointer: int) -> int:
+    trail = pointer % 157
+    trail += 0x40 if trail < 0x3F else 0x62
+    return ((pointer // 157) + 0x81) << 8 | trail
+
+
+def euc_kr_pair(pointer: int) -> int:
+    return ((pointer // 190) + 0x81) << 8 | ((pointer % 190) + 0x41)
+
+
+def shift_jis_pair(pointer: int) -> int:
+    lead_index = pointer // 188
+    lead = lead_index + (0x81 if lead_index < 0x1F else 0xC1)
+    trail = pointer % 188
+    trail += 0x40 if trail < 0x3F else 0x41
+    return lead << 8 | trail
+
+
 def reverse_index(
     values: list[int | None],
     *,
     exclude=None,
     last_for: set[int] = frozenset(),
+    encode=None,
 ) -> bytes:
     reverse: dict[int, int] = {}
     for pointer, value in enumerate(values):
@@ -120,14 +149,18 @@ def reverse_index(
             reverse[value] = pointer
     entries = sorted(reverse.items())
     # Split layout: sorted code points (u32) for the binary search, then the
-    # parallel u16 pointers. Probes touch only the compact code-point array.
+    # parallel u16 encoded bytes. Storing the final byte pair keeps the
+    # encoders free of the pointer-to-lead/trail arithmetic.
     body = bytearray(struct.pack("<I", len(entries)))
     for codepoint, _pointer in entries:
         body += struct.pack("<I", codepoint)
     for _codepoint, pointer in entries:
         if pointer > 0xFFFF:
             raise SystemExit("reverse pointer does not fit in u16")
-        body += struct.pack("<H", pointer)
+        encoded = encode(pointer) if encode is not None else pointer
+        if encoded > 0xFFFF:
+            raise SystemExit("reverse code does not fit in u16")
+        body += struct.pack("<H", encoded)
     return bytes(body)
 
 
@@ -204,13 +237,18 @@ def main() -> int:
         ("euc-kr", SECTION_EUC_KR_FORWARD),
     ):
         add_section(sections, payload, section_id, forward_index(indexes[name]))
-    for name, section_id in (
-        ("jis0208", SECTION_JIS0208_REVERSE),
-        ("jis0212", SECTION_JIS0212_REVERSE),
-        ("gb18030", SECTION_GB18030_REVERSE),
-        ("euc-kr", SECTION_EUC_KR_REVERSE),
+    for name, section_id, encode in (
+        ("jis0208", SECTION_JIS0208_REVERSE, euc_pair),
+        ("jis0212", SECTION_JIS0212_REVERSE, euc_pair),
+        ("gb18030", SECTION_GB18030_REVERSE, gb_pair),
+        ("euc-kr", SECTION_EUC_KR_REVERSE, euc_kr_pair),
     ):
-        add_section(sections, payload, section_id, reverse_index(indexes[name]))
+        add_section(
+            sections,
+            payload,
+            section_id,
+            reverse_index(indexes[name], encode=encode),
+        )
     add_section(
         sections,
         payload,
@@ -218,6 +256,7 @@ def main() -> int:
         reverse_index(
             indexes["jis0208"],
             exclude=lambda pointer: 8272 <= pointer <= 8835,
+            encode=shift_jis_pair,
         ),
     )
     add_section(
@@ -228,6 +267,7 @@ def main() -> int:
             indexes["big5"],
             exclude=lambda pointer: pointer < (0xA1 - 0x81) * 157,
             last_for=BIG5_LAST_POINTER,
+            encode=big5_pair,
         ),
     )
 

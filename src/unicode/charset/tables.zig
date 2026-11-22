@@ -166,15 +166,18 @@ pub fn reverseLookupPaged(
 }
 
 /// A direct-mapped cache of recent reverse lookups. Entries pack the code
-/// point in the high half and `pointer + 1` in the low half; zero means
-/// empty. Stores are atomic so encoders stay safe when called concurrently.
+/// point in the high half and the encoded byte pair plus one in the low
+/// half; zero means empty. Stores are atomic so encoders stay safe when
+/// called concurrently.
 pub const ReverseCache = [256]std.atomic.Value(u64);
 
 pub const empty_reverse_cache: ReverseCache =
     @splat(std.atomic.Value(u64).init(0));
 
 /// Reverse lookup with a small cache in front of the paged index. Repeated
-/// characters, the common case in real text, cost one load.
+/// characters, the common case in real text, cost one load. The returned
+/// value is the encoded byte pair (lead in the high half, trail in the low
+/// half) for the DBCS sections, or the single byte for single-byte ones.
 pub fn reverseLookupCached(
     cache: *ReverseCache,
     section: Section,
@@ -187,13 +190,13 @@ pub fn reverseLookupCached(
         const stored: u32 = @truncate(cached);
         if (stored != 0) return stored - 1;
     }
-    const pointer = reverseLookupPaged(section, pages, codepoint) orelse
+    const code = reverseLookupPaged(section, pages, codepoint) orelse
         return null;
     cache[hash].store(
-        (@as(u64, codepoint) << 32) | (@as(u64, pointer) + 1),
+        (@as(u64, codepoint) << 32) | (@as(u64, code) + 1),
         .monotonic,
     );
-    return pointer;
+    return code;
 }
 
 /// Look up a code point in a reverse index (records sorted by code point).
@@ -442,7 +445,11 @@ test "charset tables are structurally valid" {
     try testing.expectEqual(@as(u21, 0x20AC), singleByteForward(20, 0x80).?);
     try testing.expectEqual(@as(u8, 0x80), singleByteReverse(20, 0x20AC).?);
     try testing.expectEqual(@as(u21, 0x3000), forwardLookup(jis0208_forward, 0).?);
-    try testing.expectEqual(@as(u32, 0), reverseLookup(jis0208_reverse, 0x3000).?);
+    // Reverse sections store the encoded byte pair: pointer 0 is EUC 0xA1A1.
+    try testing.expectEqual(
+        @as(u32, 0xA1A1),
+        reverseLookup(jis0208_reverse, 0x3000).?,
+    );
     try testing.expectEqual(@as(u21, 0x10000), gb18030RangeByPointer(189000).?);
     try testing.expectEqual(@as(u32, 189000), gb18030RangeByCodepoint(0x10000).?);
 }

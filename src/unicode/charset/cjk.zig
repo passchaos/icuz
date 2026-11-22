@@ -130,17 +130,14 @@ pub fn gbkEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
         out[0] = 0x80;
         return 1;
     }
-    const pointer = tables.reverseLookupCached(
+    const code = tables.reverseLookupCached(
         &gb_reverse_cache,
         tables.gb18030_reverse,
         &tables.gb18030_reverse_pages,
         codepoint,
     ) orelse return null;
-    const lead: u8 = @intCast(pointer / 190 + 0x81);
-    var trail: u8 = @intCast(pointer % 190);
-    trail += if (trail < 0x3F) 0x40 else 0x41;
-    out[0] = lead;
-    out[1] = trail;
+    out[0] = @truncate(code >> 8);
+    out[1] = @truncate(code);
     return 2;
 }
 
@@ -150,24 +147,21 @@ pub fn big5EncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
         out[0] = @intCast(codepoint);
         return 1;
     }
-    const special: ?u32 = switch (codepoint) {
-        0x00CA => 1133,
-        0x00EA => 1135,
-        0x0304 => 1164,
-        0x030C => 1166,
+    const special: ?u16 = switch (codepoint) {
+        0x00CA => 0x8862,
+        0x00EA => 0x8864,
+        0x0304 => 0x88A3,
+        0x030C => 0x88A5,
         else => null,
     };
-    const pointer = special orelse tables.reverseLookupCached(
+    const code = special orelse tables.reverseLookupCached(
         &big5_reverse_cache,
         tables.big5_reverse,
         &tables.big5_reverse_pages,
         codepoint,
     ) orelse return null;
-    const lead: u8 = @intCast(pointer / 157 + 0x81);
-    var trail: u8 = @intCast(pointer % 157);
-    trail += if (trail < 0x3F) 0x40 else 0x62;
-    out[0] = lead;
-    out[1] = trail;
+    out[0] = @truncate(code >> 8);
+    out[1] = @truncate(code);
     return 2;
 }
 
@@ -177,14 +171,14 @@ pub fn eucKrEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
         out[0] = @intCast(codepoint);
         return 1;
     }
-    const pointer = tables.reverseLookupCached(
+    const code = tables.reverseLookupCached(
         &euc_kr_reverse_cache,
         tables.euc_kr_reverse,
         &tables.euc_kr_reverse_pages,
         codepoint,
     ) orelse return null;
-    out[0] = @intCast(pointer / 190 + 0x81);
-    out[1] = @intCast(pointer % 190 + 0x41);
+    out[0] = @truncate(code >> 8);
+    out[1] = @truncate(code);
     return 2;
 }
 
@@ -207,18 +201,14 @@ pub fn shiftJisEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
         return 1;
     }
     const target: u21 = if (codepoint == 0x2212) 0xFF0D else codepoint;
-    const pointer = tables.reverseLookupCached(
+    const code = tables.reverseLookupCached(
         &shift_jis_reverse_cache,
         tables.shift_jis_reverse,
         &tables.shift_jis_reverse_pages,
         target,
     ) orelse return null;
-    var lead: u8 = @intCast(pointer / 188);
-    lead += if (lead < 0x1F) 0x81 else 0xC1;
-    var trail: u8 = @intCast(pointer % 188);
-    trail += if (trail < 0x3F) 0x40 else 0x41;
-    out[0] = lead;
-    out[1] = trail;
+    out[0] = @truncate(code >> 8);
+    out[1] = @truncate(code);
     return 2;
 }
 
@@ -247,9 +237,9 @@ pub fn eucJpEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
         tables.jis0208_reverse,
         &tables.jis0208_reverse_pages,
         target,
-    )) |pointer| {
-        out[0] = @intCast(pointer / 94 + 0xA1);
-        out[1] = @intCast(pointer % 94 + 0xA1);
+    )) |code| {
+        out[0] = @truncate(code >> 8);
+        out[1] = @truncate(code);
         return 2;
     }
     if (tables.reverseLookupCached(
@@ -257,10 +247,10 @@ pub fn eucJpEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
         tables.jis0212_reverse,
         &tables.jis0212_reverse_pages,
         target,
-    )) |pointer| {
+    )) |code| {
         out[0] = 0x8F;
-        out[1] = @intCast(pointer / 94 + 0xA1);
-        out[2] = @intCast(pointer % 94 + 0xA1);
+        out[1] = @truncate(code >> 8);
+        out[2] = @truncate(code);
         return 3;
     }
     return null;
@@ -289,12 +279,9 @@ fn gbEncode(codepoint: u21, out: []u8, comptime full: bool) EncodeResult {
         tables.gb18030_reverse,
         &tables.gb18030_reverse_pages,
         codepoint,
-    )) |pointer| {
-        const lead: u8 = @intCast(pointer / 190 + 0x81);
-        var trail: u8 = @intCast(pointer % 190);
-        trail += if (trail < 0x3F) 0x40 else 0x41;
-        out[0] = lead;
-        out[1] = trail;
+    )) |code| {
+        out[0] = @truncate(code >> 8);
+        out[1] = @truncate(code);
         return .{ .written = 2 };
     }
     if (!full) return .unmappable;
@@ -340,14 +327,14 @@ pub fn big5Encode(codepoint: u21, out: []u8) EncodeResult {
         out[0] = @intCast(codepoint);
         return .{ .written = 1 };
     }
-    const special: ?u32 = switch (codepoint) {
-        0x00CA => 1133,
-        0x00EA => 1135,
-        0x0304 => 1164,
-        0x030C => 1166,
+    const special: ?u16 = switch (codepoint) {
+        0x00CA => 0x8862,
+        0x00EA => 0x8864,
+        0x0304 => 0x88A3,
+        0x030C => 0x88A5,
         else => null,
     };
-    const pointer = special orelse
+    const code = special orelse
         tables.reverseLookupCached(
         &big5_reverse_cache,
         tables.big5_reverse,
@@ -355,11 +342,8 @@ pub fn big5Encode(codepoint: u21, out: []u8) EncodeResult {
         codepoint,
     ) orelse
         return .unmappable;
-    const lead: u8 = @intCast(pointer / 157 + 0x81);
-    var trail: u8 = @intCast(pointer % 157);
-    trail += if (trail < 0x3F) 0x40 else 0x62;
-    out[0] = lead;
-    out[1] = trail;
+    out[0] = @truncate(code >> 8);
+    out[1] = @truncate(code);
     return .{ .written = 2 };
 }
 
@@ -383,15 +367,15 @@ pub fn eucKrEncode(codepoint: u21, out: []u8) EncodeResult {
         out[0] = @intCast(codepoint);
         return .{ .written = 1 };
     }
-    const pointer = tables.reverseLookupCached(
+    const code = tables.reverseLookupCached(
         &euc_kr_reverse_cache,
         tables.euc_kr_reverse,
         &tables.euc_kr_reverse_pages,
         codepoint,
     ) orelse
         return .unmappable;
-    out[0] = @intCast(pointer / 190 + 0x81);
-    out[1] = @intCast(pointer % 190 + 0x41);
+    out[0] = @truncate(code >> 8);
+    out[1] = @truncate(code);
     return .{ .written = 2 };
 }
 
@@ -450,18 +434,14 @@ pub fn shiftJisEncode(codepoint: u21, out: []u8) EncodeResult {
         return .{ .written = 1 };
     }
     const target: u21 = if (codepoint == 0x2212) 0xFF0D else codepoint;
-    const pointer = tables.reverseLookupCached(
+    const code = tables.reverseLookupCached(
         &shift_jis_reverse_cache,
         tables.shift_jis_reverse,
         &tables.shift_jis_reverse_pages,
         target,
     ) orelse return .unmappable;
-    var lead: u8 = @intCast(pointer / 188);
-    lead += if (lead < 0x1F) 0x81 else 0xC1;
-    var trail: u8 = @intCast(pointer % 188);
-    trail += if (trail < 0x3F) 0x40 else 0x41;
-    out[0] = lead;
-    out[1] = trail;
+    out[0] = @truncate(code >> 8);
+    out[1] = @truncate(code);
     return .{ .written = 2 };
 }
 
@@ -521,9 +501,9 @@ pub fn eucJpEncode(codepoint: u21, out: []u8) EncodeResult {
         tables.jis0208_reverse,
         &tables.jis0208_reverse_pages,
         target,
-    )) |pointer| {
-        out[0] = @intCast(pointer / 94 + 0xA1);
-        out[1] = @intCast(pointer % 94 + 0xA1);
+    )) |code| {
+        out[0] = @truncate(code >> 8);
+        out[1] = @truncate(code);
         return .{ .written = 2 };
     }
     if (tables.reverseLookupCached(
@@ -531,10 +511,10 @@ pub fn eucJpEncode(codepoint: u21, out: []u8) EncodeResult {
         tables.jis0212_reverse,
         &tables.jis0212_reverse_pages,
         target,
-    )) |pointer| {
+    )) |code| {
         out[0] = 0x8F;
-        out[1] = @intCast(pointer / 94 + 0xA1);
-        out[2] = @intCast(pointer % 94 + 0xA1);
+        out[1] = @truncate(code >> 8);
+        out[2] = @truncate(code);
         return .{ .written = 3 };
     }
     return .unmappable;
