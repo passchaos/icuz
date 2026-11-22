@@ -972,9 +972,50 @@ pub const Set = struct {
             self.clear();
             return;
         }
-        for (other.ranges.items) |range| {
-            try self.removeRange(range.first, range.last);
+        self.invalidateBits();
+        var result = std.ArrayList(Range).empty;
+        errdefer result.deinit(self.allocator);
+        try result.ensureTotalCapacity(
+            self.allocator,
+            self.ranges.items.len + other.ranges.items.len,
+        );
+
+        // Merge join: walk both sorted lists and emit the parts of each
+        // self range not covered by the current other range.
+        var left: usize = 0;
+        var right: usize = 0;
+        while (left < self.ranges.items.len) : (left += 1) {
+            var current = self.ranges.items[left];
+            while (right < other.ranges.items.len and
+                other.ranges.items[right].last < current.first)
+            {
+                right += 1;
+            }
+            var removed = false;
+            while (right < other.ranges.items.len and
+                other.ranges.items[right].first <= current.last)
+            {
+                const cut = other.ranges.items[right];
+                if (cut.first > current.first) {
+                    result.appendAssumeCapacity(.{
+                        .first = current.first,
+                        .last = cut.first - 1,
+                    });
+                }
+                if (cut.last >= current.last) {
+                    removed = true;
+                    break;
+                }
+                current.first = cut.last + 1;
+                right += 1;
+            }
+            if (!removed and current.first <= current.last) {
+                result.appendAssumeCapacity(current);
+            }
         }
+
+        self.ranges.deinit(self.allocator);
+        self.ranges = result;
         for (other.strings.items) |text| self.removeString(text);
     }
 

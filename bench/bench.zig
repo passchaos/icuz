@@ -689,6 +689,23 @@ fn benchSet(allocator: std.mem.Allocator, codepoints: []const u21) void {
         large_rounds,
         large_closure_best,
     );
+
+    var cut = icuz.set.fromProperty(allocator, .lowercase) catch unreachable;
+    defer cut.deinit();
+    const difference_rounds = 200;
+    var difference_best: u64 = std.math.maxInt(u64);
+    for (0..trials) |_| {
+        const start = now();
+        for (0..difference_rounds) |_| {
+            var work = set.clone(allocator) catch unreachable;
+            work.subtract(cut) catch unreachable;
+            sink +%= work.count();
+            work.deinit();
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < difference_best) difference_best = elapsed;
+    }
+    reportOps("UnicodeSet difference", difference_rounds, difference_best);
 }
 
 fn benchCollation(
