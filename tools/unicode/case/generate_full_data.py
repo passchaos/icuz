@@ -215,56 +215,27 @@ def render(
         lines.append(f"    {chunk},")
     lines.extend(["};", ""])
 
-    # Per-page bitmaps let the hot path reject code points without records
-    # after two loads instead of running the binary search. Root-locale lookups
-    # use a second bitmap so locale-only records (I, i, Lithuanian letters) do
-    # not force a search in the common root case.
-    present_pages = sorted({record[0] >> 8 for record in records})
-    slots = [0xFF] * page_limit
-    any_masks = []
-    root_masks = []
-    for slot, page in enumerate(present_pages):
-        slots[page] = slot
-        any_bits = [0] * 32
-        root_bits = [0] * 32
-        for record in records:
-            if record[0] >> 8 != page:
-                continue
-            low = record[0] & 0xFF
-            any_bits[low >> 3] |= 1 << (low & 7)
-            if record[1] == 1:
-                root_bits[low >> 3] |= 1 << (low & 7)
-        any_masks.append(any_bits)
-        root_masks.append(root_bits)
+    # A flat bitmap answers "does this scalar have a root record?" in one
+    # load; locale-only records (I, i, Lithuanian letters) are a tiny switch
+    # so the common root case never pays for them.
+    records_bitmap = bytearray(INTEREST_PAGE_LIMIT >> 3)
+    for record in records:
+        if record[0] >= INTEREST_PAGE_LIMIT or record[1] != 1:
+            continue
+        records_bitmap[record[0] >> 3] |= 1 << (record[0] & 7)
 
-    def emit_masks(name: str, masks: list[list[int]]) -> None:
-        lines.append(f"const {name} = [_][32]u8{{")
-        for mask in masks:
-            chunk = ", ".join(str(value) for value in mask)
-            lines.append(f"    .{{{chunk}}},")
-        lines.append("};")
-        lines.append("")
-
-    lines.extend(["const presence_slots = [_]u8{"])
-    for start in range(0, page_limit, 16):
-        chunk = ", ".join(str(value) for value in slots[start : start + 16])
-        lines.append(f"    {chunk},")
-    lines.extend(["};", ""])
-    emit_masks("presence_masks", any_masks)
-    emit_masks("root_presence_masks", root_masks)
     lines.extend(
         [
+            'const records_bmp = @embedFile("full_records.bin");',
+            "",
             "/// True when `codepoint` has a SpecialCasing record for the",
             "/// requested locale family. Root lookups also accept root records.",
             "pub inline fn hasRecords(codepoint: u21, root_only: bool) bool {",
-            "    const page = codepoint >> 8;",
-            "    if (page >= page_limit) return false;",
-            "    const slot = presence_slots[page];",
-            "    if (slot == 0xFF) return false;",
-            "    const low = codepoint & 0xFF;",
-            "    const masks = if (root_only) &root_presence_masks else &presence_masks;",
-            "    return (masks[slot][low >> 3] &",
-            "        (@as(u8, 1) << @intCast(low & 7))) != 0;",
+            "    if (codepoint >= 0x10000) return false;",
+            "    if (records_bmp[codepoint >> 3] &",
+            "        (@as(u8, 1) << @intCast(codepoint & 7)) != 0) return true;",
+            "    if (!root_only) return localeOnlyRecord(codepoint);",
+            "    return false;",
             "}",
             "",
         ]
@@ -476,7 +447,12 @@ def render(
             "",
         ]
     )
-    return "\n".join(lines), bytes(lower_bitmap), bytes(upper_bitmap)
+    return (
+        "\n".join(lines),
+        bytes(lower_bitmap),
+        bytes(upper_bitmap),
+        bytes(records_bitmap),
+    )
 
 
 def main() -> int:
@@ -490,7 +466,7 @@ def main() -> int:
     lower_interest, upper_interest = parse_simple_interest(
         checked_text(unicode_path, UNICODE_DATA_SHA256)
     )
-    text, lower_bitmap, upper_bitmap = render(
+    text, lower_bitmap, upper_bitmap, records_bitmap = render(
         records,
         components,
         lower_interest,
@@ -500,6 +476,7 @@ def main() -> int:
     directory = output_path.parent
     (directory / "full_lower.bin").write_bytes(lower_bitmap)
     (directory / "full_upper.bin").write_bytes(upper_bitmap)
+    (directory / "full_records.bin").write_bytes(records_bitmap)
     return 0
 
 
