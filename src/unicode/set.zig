@@ -695,10 +695,10 @@ pub const Set = struct {
                     additions.clearRetainingCapacity();
                 }
             } else {
-                // Larger sets merge-join the sorted cased table once,
-                // recording both membership and the classes it hits. The
-                // second pass emits missing class members in ascending
-                // order, so the additions need no sort.
+                // Merge-join the sorted cased table with the set's ranges,
+                // recording membership and the classes it hits. The
+                // membership test is masked instead of branched: a member
+                // check per cased scalar would mispredict on every gap.
                 var member_bits = [_]u64{0} ** cased_class_words;
                 var class_bits = [_]u64{0} ** cased_class_words;
                 const ranges = original.ranges.items;
@@ -710,18 +710,35 @@ pub const Set = struct {
                         range_index += 1;
                     }
                     if (range_index == ranges.len) break;
-                    if (ranges[range_index].first > codepoint) continue;
-                    markCaseClass(&member_bits, index);
-                    markCaseClass(&class_bits, cased_classes[index]);
+                    const mask = @as(u64, @intFromBool(
+                        ranges[range_index].first <= codepoint,
+                    ));
+                    member_bits[index >> 6] |= mask <<
+                        @as(u6, @intCast(index & 63));
+                    const class = cased_classes[index];
+                    class_bits[class >> 6] |= mask <<
+                        @as(u6, @intCast(class & 63));
                 }
+
+                // Emit missing class members in ascending order. The
+                // unconditional store keeps the loop branchless; the final
+                // length drops the entries whose class was not hit.
+                try additions.ensureTotalCapacity(allocator, cased_codepoints.len);
+                additions.items.len = cased_codepoints.len;
+                var emitted: usize = 0;
                 for (cased_codepoints, 0..) |codepoint, index| {
-                    if (!testCaseClass(&class_bits, cased_classes[index])) {
-                        continue;
-                    }
-                    if (!testCaseClass(&member_bits, index)) {
-                        try additions.append(allocator, codepoint);
-                    }
-                    if (closure == .case_insensitive) {
+                    const hit = testCaseClass(&class_bits, cased_classes[index]);
+                    const member = testCaseClass(&member_bits, index);
+                    additions.items[emitted] = codepoint;
+                    emitted += @as(usize, @intFromBool(hit & !member));
+                }
+                additions.items.len = emitted;
+
+                if (closure == .case_insensitive) {
+                    for (cased_codepoints, 0..) |codepoint, index| {
+                        if (!testCaseClass(&class_bits, cased_classes[index])) {
+                            continue;
+                        }
                         if (case_mapping.fullFold(codepoint)) |folded| {
                             if (folded.len > 1) {
                                 try self.addMappedSequence(folded);
@@ -732,24 +749,13 @@ pub const Set = struct {
             }
 
             if (additions.items.len != 0) {
-                std.mem.sort(u21, additions.items, {}, std.sort.asc(u21));
-                var extra = Set.init(allocator);
-                defer extra.deinit();
-                var start: usize = 0;
-                while (start < additions.items.len) {
-                    var end = start + 1;
-                    while (end < additions.items.len and
-                        additions.items[end] <= additions.items[end - 1] + 1)
-                    {
-                        end += 1;
-                    }
-                    try extra.addRange(
-                        additions.items[start],
-                        additions.items[end - 1],
-                    );
-                    start = end;
+                // The large-set pass emits additions in ascending order; the
+                // small-set pass visits classes in range order, so only it
+                // needs a sort before the merge.
+                if (original_count < 512) {
+                    std.mem.sort(u21, additions.items, {}, std.sort.asc(u21));
                 }
-                try self.unionWith(extra);
+                try self.unionSortedScalars(additions.items);
             }
         }
 
@@ -1031,6 +1037,63 @@ pub const Set = struct {
         self.ranges.deinit(self.allocator);
         self.ranges = result;
         for (other.strings.items) |text| try self.addString(text);
+    }
+
+    /// Union an ascending scalar list into this set in one merge pass.
+    ///
+    /// Case closure produces sorted additions; materializing them as a
+    /// temporary Set would allocate twice and insert every run separately.
+    fn unionSortedScalars(self: *Set, scalars: []const u21) !void {
+        self.invalidateBits();
+        var result = std.ArrayList(Range).empty;
+        errdefer result.deinit(self.allocator);
+        try result.ensureTotalCapacity(
+            self.allocator,
+            self.ranges.items.len + scalars.len,
+        );
+
+        const ranges = self.ranges.items;
+        var range_index: usize = 0;
+        var scalar_index: usize = 0;
+        while (range_index < ranges.len or scalar_index < scalars.len) {
+            var next: Range = undefined;
+            if (scalar_index == scalars.len or
+                (range_index < ranges.len and
+                    ranges[range_index].first <= scalars[scalar_index]))
+            {
+                next = ranges[range_index];
+                range_index += 1;
+            } else {
+                // Consecutive scalars arrive as one range, so the merge
+                // never appends more entries than the input had.
+                var end = scalar_index + 1;
+                while (end < scalars.len and
+                    scalars[end] == scalars[end - 1] + 1)
+                {
+                    end += 1;
+                }
+                next = .{
+                    .first = scalars[scalar_index],
+                    .last = scalars[end - 1],
+                };
+                scalar_index = end;
+            }
+
+            if (result.items.len > 0 and
+                result.items[result.items.len - 1].last + 1 >= next.first)
+            {
+                const last = result.items.len - 1;
+                result.items[last].last = @max(
+                    result.items[last].last,
+                    next.last,
+                );
+            } else {
+                result.appendAssumeCapacity(next);
+            }
+        }
+
+        self.ranges.deinit(self.allocator);
+        self.ranges = result;
     }
 
     pub fn intersectWith(self: *Set, other: Set) !void {
