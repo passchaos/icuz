@@ -2248,16 +2248,14 @@ fn appendTailoredLatinSortKey(
     {
         return false;
     }
-    var all_ascii = true;
-    for (codepoints) |codepoint| {
-        if (codepoint >= latin_limit) return false;
-        if (codepoint >= 0x80) all_ascii = false;
-    }
     // ASCII text sorts like the root collation when the tailoring has no
-    // rule starting with an ASCII code point.
-    if (all_ascii and ascii_usable) {
+    // rule starting with an ASCII code point. Tailorings that do touch ASCII
+    // skip this scan entirely; the NFD pass below rejects non-Latin scalars.
+    if (ascii_usable) {
         if (pages) |page_index| {
-            if (page_index.ascii_untailored) {
+            if (page_index.ascii_untailored and
+                allAsciiCodepoints(codepoints))
+            {
                 try appendAsciiSortKey(allocator, output, codepoints, strength);
                 return true;
             }
@@ -2427,6 +2425,13 @@ fn appendLatinCesLevel(
 
 /// NFD for Latin-script code points into a fixed buffer, without allocating.
 /// Returns null when the buffer is too small.
+fn allAsciiCodepoints(codepoints: []const u21) bool {
+    for (codepoints) |codepoint| {
+        if (codepoint >= 0x80) return false;
+    }
+    return true;
+}
+
 fn normalizeNfdLatinInto(
     buffer: []u21,
     codepoints: []const u21,
@@ -2460,7 +2465,7 @@ fn normalizeNfdLatinInto(
             pending = codepoint;
             continue;
         }
-        std.debug.assert(codepoint < latin_limit);
+        if (codepoint >= latin_limit) return null;
         const entry = &latin_nfd[codepoint];
         var single: [1]u21 = undefined;
         const parts: []const u21 = if (entry.len == 0) blk: {
