@@ -62,6 +62,7 @@ BLOBS = (
     Blob("src/unicode/format/alphabetic_index_data.bin", b"CJXA", 1, "d81c627ec71d66e78f4d8cd72c18edfea47643b7311c18acdff196866dc519c3", version=(48, 0, 0)),
     Blob("src/unicode/set/conformance.bin", b"CJSU", 1, "91a539f3a91e5c65793aa5f5c5f8568d2a5cca7cfdb2a11950f5047dc24726da", version=(0, 0, 0)),
     Blob("src/unicode/properties/set_ranges.bin", b"CJSR", 1, "ce4b267d2cee1a1316ba94747895fe6f9ee18e7203e73deff2a83cb27792dd76"),
+    Blob("src/unicode/properties/property_bits.bin", b"CJQZ", 1, "7f12af8912ad30c2c0c695fd6e30e8cddeaca8465b2af11af0bea3e472a17760"),
     Blob("src/unicode/script/set_ranges.bin", b"CJSS", 1, "3c8f8770b712a2a6a59a34ec45f8c4d29938261822d60f04f87a3222428b28cf"),
     Blob("src/unicode/break/conformance.bin", b"CJGF", 1, "5e7119dc378412e1c6b0bf58b1cc826e38aebb39773c361141737a3709c60077", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_data.bin", b"CJRB", 1, "9a88f134d56db6e730bc7ef2fcc69ad271923321b22bdcaf041a74e0266db4f2", version=(0, 0, 0)),
@@ -518,6 +519,7 @@ GENERATORS = {
     "tools/unicode/properties/generate_age.py": "d923847013894f9a005893604f767539c7a9e20ec2f1e30f45ad711e8c509583",
     "tools/unicode/properties/generate_data.py": "2e55cb0f2aeae0367602e87ece0b8f8093fee1a18dacf38028ac732247874cb7",
     "tools/unicode/properties/generate_set_ranges.py": "b590190010671ca5f6a157219fd0c3bbc9a238ca01acf1110b6ca2408156ae37",
+    "tools/unicode/properties/generate_property_bits.py": "cb9ddbc926c086b4afb2fac3b3f6f7f2c3ae2567305ba653e48354ec9bb10565",
     "tools/unicode/script/generate_set_ranges.py": "93feed17f6365fa4cbb6eba6fcb779e8903a8d4c4627cc7c9ddf082c1716afa0",
     "tools/unicode/bidi/generate_conformance.py": "1ca3d3fd9fe5962f37192eb77d9aadfab6e5f9c670540a7ae691213682bb0425",
     "tools/unicode/bidi/generate_data.py": "ab6f9359af0f5d198b52d174041e35ffde11b0f8277a4bf5a8981a76c0a1cb05",
@@ -910,6 +912,16 @@ def check_layout(blob: Blob, data: bytes) -> None:
         for index in range(range_count):
             first, last = struct.unpack_from("<II", data, offset + index * 8)
             assert first <= last <= 0x10FFFF
+    elif magic == b"CJQZ":
+        property_count, _, total_words = struct.unpack_from("<HHI", data, 8)
+        offset = 16 + property_count * 12
+        assert offset + total_words * 8 == len(data)
+        for index in range(property_count):
+            _, ranges_offset, words = struct.unpack_from(
+                "<III", data, 16 + index * 12
+            )
+            assert words >= 1
+            assert ranges_offset + words <= total_words
     elif magic == b"CJSS":
         script_count, extension_count, range_count = struct.unpack_from(
             "<HHI", data, 8

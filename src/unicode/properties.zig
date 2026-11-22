@@ -6,6 +6,7 @@
 const mark = @import("mark/root.zig");
 
 pub const general_category = @import("properties/general_category.zig");
+pub const bits = @import("properties/bits.zig");
 pub const aliases = @import("properties/aliases.zig");
 
 pub const Category = general_category.Category;
@@ -33,11 +34,13 @@ pub const graphemeBreakClass = extra.graphemeBreakClass;
 pub const graphemeBreakFromName = extra.graphemeBreakFromName;
 pub const binaryPropertyFromAlias = aliases.binaryPropertyFromAlias;
 
-pub const isWhiteSpace = general_category.isWhiteSpace;
-pub const isAlphabetic = general_category.isAlphabetic;
-pub const isUppercase = general_category.isUppercase;
-pub const isLowercase = general_category.isLowercase;
-pub const isMath = general_category.isMath;
+// The hottest binary properties use trimmed bitmaps; the rest stay on the
+// packed page table.
+pub const isWhiteSpace = bits.isWhiteSpace;
+pub const isAlphabetic = bits.isAlphabetic;
+pub const isUppercase = bits.isUppercase;
+pub const isLowercase = bits.isLowercase;
+pub const isMath = bits.isMath;
 pub const isDefaultIgnorableCodePoint =
     general_category.isDefaultIgnorableCodePoint;
 
@@ -46,7 +49,7 @@ pub const isIdContinue = general_category.isIdContinue;
 pub const isXidStart = general_category.isXidStart;
 pub const isXidContinue = general_category.isXidContinue;
 pub const isCaseIgnorable = general_category.isCaseIgnorable;
-pub const isCased = general_category.isCased;
+pub const isCased = bits.isCased;
 pub const isGraphemeBase = general_category.isGraphemeBase;
 pub const isGraphemeExtend = general_category.isGraphemeExtend;
 pub const isPatternSyntax = general_category.isPatternSyntax;
