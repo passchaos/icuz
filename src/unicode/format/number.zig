@@ -3141,7 +3141,10 @@ const ParseCursor = struct {
 
     fn peek(self: *const ParseCursor) ?u21 {
         if (self.index >= self.text.len) return null;
-        const length = std.unicode.utf8ByteSequenceLength(self.text[self.index]) catch
+        const byte = self.text[self.index];
+        // Numbers are overwhelmingly ASCII; skip the UTF-8 decoder there.
+        if (byte < 0x80) return byte;
+        const length = std.unicode.utf8ByteSequenceLength(byte) catch
             return null;
         if (self.index + length > self.text.len) return null;
         return std.unicode.utf8Decode(self.text[self.index..][0..length]) catch
@@ -3179,6 +3182,7 @@ fn isParseSpace(codepoint: u21) bool {
 }
 
 fn utf8LengthAt(text: []const u8, index: usize) usize {
+    if (text[index] < 0x80) return 1;
     return std.unicode.utf8ByteSequenceLength(text[index]) catch 1;
 }
 
