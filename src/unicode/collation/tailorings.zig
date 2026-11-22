@@ -596,19 +596,21 @@ pub fn match(
     const first = codepoints[index];
     const end = tailoring.rule_start + tailoring.rule_count;
     const start = if (pages) |page_index| blk: {
+        const page: usize = @as(usize, first) >> 8;
+        if (first < direct_limit) {
+            // The direct table is populated for every low code point, so
+            // probing the hash cache here could never hit.
+            const offset = page_index.direct[first];
+            if (offset == direct_absent) return null;
+            break :blk tailoring.rule_start + page_index.rules[page] + offset;
+        }
         const hash: usize = (@as(u32, first) *% 0x9E3779B1) >> 24;
         const cached = page_index.cache[hash].load(.monotonic);
         if (@as(u32, @truncate(cached >> 32)) == first) {
             const offset: u32 = @truncate(cached);
             if (offset != 0) break :blk tailoring.rule_start + (offset - 1);
         }
-        const page: usize = @as(usize, first) >> 8;
         const low = tailoring.rule_start + page_index.rules[page];
-        if (first < direct_limit) {
-            const offset = page_index.direct[first];
-            if (offset == direct_absent) return null;
-            break :blk low + offset;
-        }
         const high = if (page + 1 < 0x1100)
             tailoring.rule_start + page_index.rules[page + 1]
         else
