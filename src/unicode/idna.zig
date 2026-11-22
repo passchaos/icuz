@@ -182,6 +182,12 @@ fn convertAlloc(
     options: Options,
     ascii_output: bool,
 ) Error!Result {
+    // ASCII domains dominate real traffic and need no decoding, NFC, or
+    // punycode. A-label labels still take the general path so their punycode
+    // is decoded and revalidated.
+    if (isAsciiDomain(domain) and !hasAlabel(domain)) {
+        return convertAsciiAlloc(allocator, domain, options, ascii_output);
+    }
     if (!std.unicode.utf8ValidateSlice(domain)) return error.InvalidUtf8;
 
     var codepoints = std.ArrayList(u21).empty;
@@ -349,6 +355,108 @@ fn convertAlloc(
     if (trailing_dot) {
         if (ascii_output) had_error = true;
         try output.append(allocator, '.');
+    }
+    if (ascii_output and output.items.len > 253) had_error = true;
+    return .{
+        .text = try output.toOwnedSlice(allocator),
+        .had_error = had_error,
+    };
+}
+
+inline fn asciiLowerByte(byte: u8) u8 {
+    return if (byte >= 'A' and byte <= 'Z') byte + ('a' - 'A') else byte;
+}
+
+fn isAsciiDomain(text: []const u8) bool {
+    const high_bits: u64 = 0x8080_8080_8080_8080;
+    var index: usize = 0;
+    while (index + 8 <= text.len) : (index += 8) {
+        const quad = std.mem.readInt(u64, text[index..][0..8], .little);
+        if (quad & high_bits != 0) return false;
+    }
+    while (index < text.len) : (index += 1) {
+        if (text[index] >= 0x80) return false;
+    }
+    return true;
+}
+
+/// True when any label carries the ACE prefix; those need punycode handling.
+fn hasAlabel(domain: []const u8) bool {
+    var start: usize = 0;
+    var index: usize = 0;
+    while (index <= domain.len) : (index += 1) {
+        if (index != domain.len and domain[index] != '.') continue;
+        const raw = domain[start..index];
+        if (raw.len >= 4 and asciiLowerByte(raw[0]) == 'x' and
+            asciiLowerByte(raw[1]) == 'n' and raw[2] == '-' and raw[3] == '-')
+        {
+            return true;
+        }
+        start = index + 1;
+    }
+    return false;
+}
+
+/// UTS #46 for an all-ASCII domain without A-labels.
+///
+/// Every ASCII scalar other than A-Z is `valid` in the mapping table, so the
+/// conversion reduces to lowercasing, the per-label checks that can apply to
+/// ASCII, and joining with dots. ToUnicode and ToASCII produce the same text
+/// here because no label needs punycode.
+fn convertAsciiAlloc(
+    allocator: std.mem.Allocator,
+    domain: []const u8,
+    options: Options,
+    ascii_output: bool,
+) Error!Result {
+    var had_error = false;
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    // The output is the lowercased input, so its length is exactly
+    // `domain.len`; an exact reservation keeps toOwnedSlice from copying.
+    try output.ensureTotalCapacityPrecise(allocator, domain.len);
+
+    var label_count: usize = 0;
+    var trailing_dot = false;
+    var first_label = true;
+    var start: usize = 0;
+    var index: usize = 0;
+    while (index <= domain.len) : (index += 1) {
+        const at_end = index == domain.len;
+        if (!at_end and domain[index] != '.') continue;
+        const raw = domain[start..index];
+        if (raw.len == 0 and at_end) {
+            if (label_count > 0) trailing_dot = true;
+            break;
+        }
+        if (!first_label) output.appendAssumeCapacity('.');
+        first_label = false;
+        if (raw.len == 0) {
+            had_error = true;
+            label_count += 1;
+            start = index + 1;
+            continue;
+        }
+        if (options.check_hyphens) {
+            if (raw[0] == '-' or raw[raw.len - 1] == '-') had_error = true;
+            if (raw.len >= 4 and raw[2] == '-' and raw[3] == '-' and
+                !(asciiLowerByte(raw[0]) == 'x' and
+                    asciiLowerByte(raw[1]) == 'n'))
+            {
+                had_error = true;
+            }
+        }
+        if (ascii_output and raw.len > 63) had_error = true;
+        for (raw) |byte| {
+            output.appendAssumeCapacity(asciiLowerByte(byte));
+        }
+        label_count += 1;
+        start = index + 1;
+    }
+    if (label_count == 0) had_error = true;
+    if (trailing_dot) {
+        if (ascii_output) had_error = true;
+        output.appendAssumeCapacity('.');
     }
     if (ascii_output and output.items.len > 253) had_error = true;
     return .{
