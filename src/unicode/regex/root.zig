@@ -61,8 +61,12 @@ pub const Regex = struct {
     group_count: u16,
     flags: parser.Flags,
     pattern_text: []u8,
-    /// Lowered regexz program when the pattern fits its exact subset.
+    /// Lowered regexz program when the pattern fits its exact subset. The
+    /// lowering is deferred until the first matcher is created so compiling a
+    /// pattern does not pay for the second program.
     backend: ?regexz_backend.Program = null,
+    backend_lock: std.atomic.Mutex = .unlocked,
+    backend_ready: std.atomic.Value(bool) = .init(false),
 
     pub fn compileAlloc(
         allocator: std.mem.Allocator,
@@ -119,12 +123,6 @@ pub const Regex = struct {
         const pattern_text = try allocator.dupe(u8, pattern);
         errdefer allocator.free(pattern_text);
 
-        const backend = try regexz_backend.lower(allocator, &parsed);
-        errdefer if (backend) |value| {
-            var mutable = value;
-            mutable.deinit();
-        };
-
         const sets = parsed.sets;
         parsed_owned = false;
         parsed.arena.deinit();
@@ -138,8 +136,43 @@ pub const Regex = struct {
             .group_count = parsed.group_count,
             .flags = flags,
             .pattern_text = pattern_text,
-            .backend = backend,
         };
+    }
+
+    /// Lower the regexz backend on first use.
+    ///
+    /// The pattern is re-parsed from the retained text; parsing is a small
+    /// fraction of the lowering cost, and keeping the AST alive would pin the
+    /// parser arena for every compiled expression.
+    fn ensureBackend(
+        self: *const Regex,
+    ) Error!?*const regexz_backend.Program {
+        if (self.backend_ready.load(.acquire)) {
+            return if (self.backend) |*program| program else null;
+        }
+        const mutable = @constCast(self);
+        while (!mutable.backend_lock.tryLock()) std.atomic.spinLoopHint();
+        defer mutable.backend_lock.unlock();
+        if (!mutable.backend_ready.load(.monotonic)) {
+            var offset: usize = 0;
+            var parsed = parser.parse(
+                mutable.allocator,
+                mutable.pattern_text,
+                mutable.flags,
+                &offset,
+            ) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                // The pattern compiled before, so it still parses.
+                error.InvalidPattern => return null,
+            };
+            defer parsed.deinit(mutable.allocator);
+            mutable.backend = try regexz_backend.lower(
+                mutable.allocator,
+                &parsed,
+            );
+            mutable.backend_ready.store(true, .release);
+        }
+        return if (mutable.backend) |*program| program else null;
     }
 
     pub fn deinit(self: *Regex) void {
@@ -381,6 +414,10 @@ pub const Matcher = struct {
         options: MatcherOptions,
     ) error{ InvalidUtf8, OutOfMemory }!Matcher {
         if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+        const backend = regex.ensureBackend() catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => null,
+        };
         const runner = try vm.Runner.init(
             regex.allocator,
             regex.program.insts,
@@ -396,7 +433,7 @@ pub const Matcher = struct {
             regex.program.required_literal,
             regex.program.full_literal,
             regex.program.literal_alternatives,
-            if (regex.backend) |*backend| backend else null,
+            backend,
             .{
                 .transparent_bounds = options.transparent_bounds,
                 .anchoring_bounds = options.anchoring_bounds,
