@@ -55,6 +55,12 @@ pub const Search = struct {
     /// zero when the code point contributes no primary weight. One 64-bit
     /// load replaces the two loads of the full cache entry probe.
     latin_first_cache: [128]u64 = @splat(0),
+    /// First primary weight (plus one) per ASCII scalar, so the Latin search
+    /// loop needs no UTF-8 decode or hash probe at ASCII positions.
+    latin_ascii_first: [128]u32 = @splat(0),
+    /// Full primary weights per ASCII scalar for the rare positions that
+    /// survive the first-primary filter.
+    latin_ascii_primary: [128]LatinPrimary = [_]LatinPrimary{.{}} ** 128,
     /// Root primary weights per ASCII scalar, materialized once at init so
     /// the ASCII search loop is a table read instead of an element walk.
     ascii_primaries: [128]collation.Collator.AsciiPrimary =
@@ -115,6 +121,23 @@ pub const Search = struct {
                     entry.* = search.collator.asciiPrimaryWeights(
                         @intCast(value),
                     );
+                }
+            }
+            if (search.latin_fast) {
+                for (0..128) |value| {
+                    const weights = search.latinPrimaryFor(
+                        @intCast(value),
+                    ) orelse {
+                        // Materializing the ASCII tables failed; keep the
+                        // general search instead of a partial fast path.
+                        search.latin_fast = false;
+                        break;
+                    };
+                    search.latin_ascii_primary[value] = weights;
+                    search.latin_ascii_first[value] = if (weights.count != 0)
+                        weights.values[0] + 1
+                    else
+                        0;
                 }
             }
         }
@@ -345,6 +368,23 @@ pub const Search = struct {
         return primary;
     }
 
+    /// First primary weight (plus one) of one code point, cached; zero means
+    /// the code point contributes no primary weight.
+    inline fn latinFirstFor(self: *Search, codepoint: u21) ?u32 {
+        const hash: usize = (@as(u32, codepoint) *% 0x9E3779B1) >> 25;
+        const cached = self.latin_first_cache[hash];
+        if (@as(u32, @truncate(cached >> 32)) == codepoint) {
+            return @truncate(cached);
+        }
+        const weights = self.latinPrimaryFor(codepoint) orelse return null;
+        const stored: u32 = if (weights.count != 0)
+            weights.values[0] + 1
+        else
+            0;
+        self.latin_first_cache[hash] = (@as(u64, codepoint) << 32) | stored;
+        return stored;
+    }
+
     /// Primary search for precomposed Latin text. Per-code-point keys are
     /// valid here because the text has no combining marks and the tailoring
     /// has no non-mark contractions. Falls back to the general search when a
@@ -361,63 +401,64 @@ pub const Search = struct {
         const first = needle[0];
         var position = start;
         while (position < text.len) {
-            const decoded = decodeAt(text, position) orelse {
-                fallback.* = true;
-                return null;
-            };
-            if (!latinFastCodepoint(decoded.codepoint)) {
-                fallback.* = true;
-                return null;
-            }
-            // Filter on the first primary weight from the compact cache; the
-            // full entry is only needed once a position survives it.
-            const hash: usize =
-                (@as(u32, decoded.codepoint) *% 0x9E3779B1) >> 25;
-            const cached = self.latin_first_cache[hash];
-            if (@as(u32, @truncate(cached >> 32)) != decoded.codepoint) {
-                const weights = self.latinPrimaryFor(decoded.codepoint) orelse {
+            var next: usize = undefined;
+            var stored: u32 = 0;
+            const byte = text[position];
+            if (byte < 0x80) {
+                // ASCII positions skip UTF-8 decoding and the cache probe;
+                // the primary table was materialized at init.
+                next = position + 1;
+                stored = self.latin_ascii_first[byte];
+            } else {
+                const decoded = decodeAt(text, position) orelse {
                     fallback.* = true;
                     return null;
                 };
-                const stored: u32 = if (weights.count != 0)
-                    weights.values[0] + 1
-                else
-                    0;
-                self.latin_first_cache[hash] =
-                    (@as(u64, decoded.codepoint) << 32) | stored;
-                if (stored != 0 and stored - 1 != first) {
-                    position = decoded.next;
-                    continue;
+                if (!latinFastCodepoint(decoded.codepoint)) {
+                    fallback.* = true;
+                    return null;
                 }
-            } else {
-                const stored: u32 = @truncate(cached);
-                if (stored != 0 and stored - 1 != first) {
-                    position = decoded.next;
-                    continue;
-                }
+                stored = self.latinFirstFor(decoded.codepoint) orelse {
+                    fallback.* = true;
+                    return null;
+                };
+                next = decoded.next;
+            }
+            // Filter on the first primary weight; the full entry is only
+            // needed once a position survives it.
+            if (stored != 0 and stored - 1 != first) {
+                position = next;
+                continue;
             }
             var needle_index: usize = 0;
             var cursor = position;
             var matched = true;
             while (needle_index < needle.len and cursor < text.len) {
-                const current = decodeAt(text, cursor) orelse {
-                    fallback.* = true;
-                    return null;
-                };
-                if (!latinFastCodepoint(current.codepoint)) {
-                    fallback.* = true;
-                    return null;
+                var current: LatinPrimary = undefined;
+                var current_next: usize = undefined;
+                const current_byte = text[cursor];
+                if (current_byte < 0x80) {
+                    current = self.latin_ascii_primary[current_byte];
+                    current_next = cursor + 1;
+                } else {
+                    const decoded = decodeAt(text, cursor) orelse {
+                        fallback.* = true;
+                        return null;
+                    };
+                    if (!latinFastCodepoint(decoded.codepoint)) {
+                        fallback.* = true;
+                        return null;
+                    }
+                    current = self.latinPrimaryFor(decoded.codepoint) orelse {
+                        fallback.* = true;
+                        return null;
+                    };
+                    current_next = decoded.next;
                 }
-                const current_primary = self.latinPrimaryFor(
-                    current.codepoint,
-                ) orelse {
-                    fallback.* = true;
-                    return null;
-                };
                 var element_index: usize = 0;
-                while (element_index < current_primary.count) : (element_index += 1) {
+                while (element_index < current.count) : (element_index += 1) {
                     if (needle_index == needle.len or
-                        current_primary.values[element_index] !=
+                        current.values[element_index] !=
                             needle[needle_index])
                     {
                         matched = false;
@@ -426,23 +467,23 @@ pub const Search = struct {
                     needle_index += 1;
                 }
                 if (!matched) break;
-                cursor = current.next;
+                cursor = current_next;
             }
             if (matched and needle_index == needle.len) {
                 // A contraction could extend the last matched code point.
-                if (cursor < text.len) {
-                    const next = decodeAt(text, cursor) orelse {
+                if (cursor < text.len and text[cursor] >= 0x80) {
+                    const decoded = decodeAt(text, cursor) orelse {
                         fallback.* = true;
                         return null;
                     };
-                    if (!latinFastCodepoint(next.codepoint)) {
+                    if (!latinFastCodepoint(decoded.codepoint)) {
                         fallback.* = true;
                         return null;
                     }
                 }
                 return position;
             }
-            position = decoded.next;
+            position = next;
         }
         return null;
     }
@@ -780,6 +821,16 @@ test "Latin primary fast path matches the general search" {
             .options = .{ .strength = .primary, .locale = "sv" },
         },
         .{
+            .text = "Ångström älskar blåbär och öar.",
+            .needle = "wombat",
+            .options = .{ .strength = .primary, .locale = "sv" },
+        },
+        .{
+            .text = "Ångström älskar blåbär och öar.",
+            .needle = "och",
+            .options = .{ .strength = .primary, .locale = "sv" },
+        },
+        .{
             .text = "Böttger Mühsam Überlingen ÄÖÜ äöü",
             .needle = "mühsam",
             .options = .{
@@ -825,6 +876,60 @@ test "Latin primary fast path matches the general search" {
             try testing.expectEqual(
                 general.find(case.text, start),
                 fast.find(case.text, start),
+            );
+        }
+    }
+}
+
+test "Latin primary fast path matches the general search on random text" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const alphabet = [_]u21{
+        'a', 'b', 'c', 'o', 'w', ' ', 'A', 'B',
+        0xe5, 0xe4, 0xf6, 0xe9, 0xfc, 0xdf, '-', '.',
+    };
+    var state: u32 = 0x9e3779b9;
+    var text: [64]u8 = undefined;
+    var needle: [16]u8 = undefined;
+    for (0..200) |_| {
+        var text_len: usize = 0;
+        state = state *% 1664525 +% 1013904223;
+        const length = (state >> 16) % 24 + 1;
+        for (0..length) |_| {
+            state = state *% 1664525 +% 1013904223;
+            const codepoint = alphabet[(state >> 16) % alphabet.len];
+            text_len += std.unicode.utf8Encode(
+                codepoint,
+                text[text_len..][0..4],
+            ) catch unreachable;
+        }
+        state = state *% 1664525 +% 1013904223;
+        const needle_length = (state >> 16) % 4 + 1;
+        var needle_len: usize = 0;
+        for (0..needle_length) |_| {
+            state = state *% 1664525 +% 1013904223;
+            const codepoint = alphabet[(state >> 16) % alphabet.len];
+            needle_len += std.unicode.utf8Encode(
+                codepoint,
+                needle[needle_len..][0..4],
+            ) catch unreachable;
+        }
+        const options = Options{ .strength = .primary, .locale = "sv" };
+        var fast = try Search.init(allocator, needle[0..needle_len], options);
+        defer fast.deinit();
+        var general = try Search.init(
+            allocator,
+            needle[0..needle_len],
+            options,
+        );
+        defer general.deinit();
+        general.fast_ascii_primary = false;
+        general.latin_fast = false;
+        var start: usize = 0;
+        while (start <= text_len) : (start += 1) {
+            try testing.expectEqual(
+                general.find(text[0..text_len], start),
+                fast.find(text[0..text_len], start),
             );
         }
     }
