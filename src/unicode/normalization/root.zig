@@ -529,7 +529,26 @@ const Utf8Sink = struct {
         self: *Utf8Sink,
         codepoints: []const u21,
     ) error{OutOfMemory}!void {
-        try self.list.ensureUnusedCapacity(self.allocator, codepoints.len * 4);
+        // Size the request by the encoded length, not four bytes per scalar:
+        // an over-request on a small edit forces a grow and then a shrink
+        // copy in toOwnedSlice.
+        var needed: usize = 0;
+        for (codepoints) |codepoint| {
+            needed += if (codepoint < 0x80)
+                1
+            else if (codepoint < 0x800)
+                2
+            else if (codepoint < 0x10000)
+                3
+            else
+                4;
+        }
+        if (self.list.unusedCapacitySlice().len < needed) {
+            try self.list.ensureTotalCapacityPrecise(
+                self.allocator,
+                self.list.items.len + needed,
+            );
+        }
         const dest = self.list.unusedCapacitySlice();
         var written: usize = 0;
         for (codepoints) |codepoint| {
@@ -1379,13 +1398,30 @@ fn normalizeSegmentFastAt(
         composeSliceWithClasses(storage[0..length], classes[0..length])
     else
         length;
-    // Encode straight into the list's spare capacity instead of appending
-    // one scalar at a time.
-    try output.ensureUnusedCapacity(allocator, final_len * 4);
+    // Size the reservation by the encoded length, not four bytes per scalar:
+    // an over-request on a small edit forces a grow here and then a shrink
+    // copy in toOwnedSlice.
+    var needed: usize = 0;
+    for (storage[0..final_len]) |codepoint| {
+        needed += if (codepoint < 0x80)
+            1
+        else if (codepoint < 0x800)
+            2
+        else if (codepoint < 0x10000)
+            3
+        else
+            4;
+    }
+    if (output.unusedCapacitySlice().len < needed) {
+        try output.ensureTotalCapacityPrecise(
+            allocator,
+            output.items.len + needed,
+        );
+    }
     const dest = output.unusedCapacitySlice();
     var written: usize = 0;
     for (storage[0..final_len]) |codepoint| {
-        written += scalar.encodeUtf8(dest[written..], codepoint);
+        written += scalar.encodeUtf8(dest[written..][0..4], codepoint);
     }
     output.items.len += written;
     return index;
