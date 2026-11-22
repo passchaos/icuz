@@ -313,7 +313,7 @@ pub fn decide(
     current_start: usize,
     current_next: usize,
     raw_properties: Properties,
-    effective: ?Significant,
+    effective: ?*const Significant,
 ) ?BreakKind {
     if (current_start == 0) return null; // LB2.
     if (asciiCommonDecision(state, raw_properties.class)) |fast| {
@@ -336,7 +336,7 @@ pub fn decide(
     if (state.previous_raw == .zero_width_joiner) return null;
     if (effective == null) return null; // LB9.
 
-    const right = effective.?;
+    const right = effective.?.*;
     // Hangul-to-Hangul pairs are fully decided by LB26/LB27: either an
     // internal syllable pair or LB31. Every rule between LB4 and LB25 needs
     // a non-Hangul class on one side.

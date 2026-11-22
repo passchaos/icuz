@@ -191,7 +191,7 @@ pub const Iterator = struct {
                     start,
                     next_index,
                     raw_properties,
-                    effective,
+                    &effective.?,
                 );
             // Every interior boundary of an ideographic run is LB31 soft, so
             // once a soft decision lands before an ideograph, find the run
