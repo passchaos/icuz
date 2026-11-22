@@ -152,6 +152,21 @@ pub const Scratch = struct {
         return self.initial_types.items;
     }
 
+    /// Hand the `initial_types` allocation to the caller and forget the list
+    /// so `deinit` does not free it.
+    pub fn takeInitialTypes(self: *Scratch) []Class {
+        const storage = self.initial_types.allocatedSlice();
+        self.initial_types = .empty;
+        return storage;
+    }
+
+    /// Hand the `levels` allocation to the caller and forget the list.
+    pub fn takeLevels(self: *Scratch) []u8 {
+        const storage = self.levels.allocatedSlice();
+        self.levels = .empty;
+        return storage;
+    }
+
     fn clearRetainingCapacity(self: *Scratch) void {
         self.initial_types.clearRetainingCapacity();
         self.types.clearRetainingCapacity();

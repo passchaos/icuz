@@ -54,17 +54,27 @@ pub const Paragraph = struct {
     scalars: []const Scalar,
     classes: []const Class,
     levels: []const u8,
-    /// Allocated capacity behind `scalars` when the decoder's buffer was
-    /// transferred as-is; empty when `scalars` is the exact allocation.
+    /// Allocated capacity behind the public slices when a buffer was
+    /// transferred as-is; empty when the public slice is the exact allocation.
     scalars_storage: []Scalar = &.{},
+    classes_storage: []Class = &.{},
+    levels_storage: []u8 = &.{},
     owner: Owner = .allocator,
 
     const Owner = enum { allocator, borrowed };
 
     pub fn deinit(self: *Paragraph) void {
         if (self.owner == .allocator) {
-            self.allocator.free(self.levels);
-            self.allocator.free(self.classes);
+            if (self.levels_storage.len != 0) {
+                self.allocator.free(self.levels_storage);
+            } else {
+                self.allocator.free(self.levels);
+            }
+            if (self.classes_storage.len != 0) {
+                self.allocator.free(self.classes_storage);
+            } else {
+                self.allocator.free(self.classes);
+            }
             if (self.scalars_storage.len != 0) {
                 self.allocator.free(self.scalars_storage);
             } else {
@@ -492,17 +502,21 @@ pub fn resolve(
     const scalars_storage = scalar_list.allocatedSlice();
     scalar_list = .empty;
     errdefer allocator.free(scalars_storage);
-    const classes = try allocator.dupe(Class, scratch.initialTypes());
-    errdefer allocator.free(classes);
-    const levels = try allocator.dupe(u8, scratch.resolvedLevels());
-    errdefer allocator.free(levels);
+    // Transfer the scratch buffers instead of copying them; the paragraph
+    // frees the full allocations.
+    const classes_storage = scratch.takeInitialTypes();
+    errdefer allocator.free(classes_storage);
+    const levels_storage = scratch.takeLevels();
+    errdefer allocator.free(levels_storage);
     return .{
         .allocator = allocator,
         .base_level = base_level,
         .scalars = scalars,
-        .classes = classes,
-        .levels = levels,
+        .classes = classes_storage[0..scalars.len],
+        .levels = levels_storage[0..scalars.len],
         .scalars_storage = scalars_storage,
+        .classes_storage = classes_storage,
+        .levels_storage = levels_storage,
     };
 }
 
