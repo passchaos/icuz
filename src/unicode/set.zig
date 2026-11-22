@@ -220,10 +220,11 @@ pub const Set = struct {
         self: *const Set,
         list: *std.ArrayList(Range),
     ) !void {
+        try list.ensureTotalCapacity(self.allocator, self.ranges.items.len + 1);
         var next: u32 = 0;
         for (self.ranges.items) |range| {
             if (next < range.first) {
-                try list.append(self.allocator, .{
+                list.appendAssumeCapacity(.{
                     .first = @intCast(next),
                     .last = range.first - 1,
                 });
@@ -231,7 +232,7 @@ pub const Set = struct {
             next = @as(u32, range.last) + 1;
         }
         if (next <= 0x10ffff) {
-            try list.append(self.allocator, .{
+            list.appendAssumeCapacity(.{
                 .first = @intCast(next),
                 .last = 0x10ffff,
             });
@@ -844,11 +845,12 @@ pub const Set = struct {
         self.invalidateBits();
         var result = std.ArrayList(Range).empty;
         errdefer result.deinit(self.allocator);
+        try result.ensureTotalCapacity(self.allocator, self.ranges.items.len + 1);
 
         var next: u32 = 0;
         for (self.ranges.items) |range| {
             if (next < range.first) {
-                try result.append(self.allocator, .{
+                result.appendAssumeCapacity(.{
                     .first = @intCast(next),
                     .last = range.first - 1,
                 });
@@ -856,7 +858,7 @@ pub const Set = struct {
             next = @as(u32, range.last) + 1;
         }
         if (next <= 0x10ffff) {
-            try result.append(self.allocator, .{
+            result.appendAssumeCapacity(.{
                 .first = @intCast(next),
                 .last = 0x10ffff,
             });
@@ -870,6 +872,10 @@ pub const Set = struct {
         self.invalidateBits();
         var result = std.ArrayList(Range).empty;
         errdefer result.deinit(self.allocator);
+        try result.ensureTotalCapacity(
+            self.allocator,
+            self.ranges.items.len + other.ranges.items.len,
+        );
 
         var left: usize = 0;
         var right: usize = 0;
@@ -898,7 +904,7 @@ pub const Set = struct {
                     next.last,
                 );
             } else {
-                try result.append(self.allocator, next);
+                result.appendAssumeCapacity(next);
             }
         }
 
@@ -911,6 +917,10 @@ pub const Set = struct {
         self.invalidateBits();
         var result = std.ArrayList(Range).empty;
         errdefer result.deinit(self.allocator);
+        try result.ensureTotalCapacity(
+            self.allocator,
+            @min(self.ranges.items.len, other.ranges.items.len),
+        );
 
         var left: usize = 0;
         var right: usize = 0;
@@ -926,7 +936,7 @@ pub const Set = struct {
                 other.ranges.items[right].last,
             );
             if (first <= last) {
-                try result.append(self.allocator, .{
+                result.appendAssumeCapacity(.{
                     .first = first,
                     .last = last,
                 });
