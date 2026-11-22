@@ -48,7 +48,7 @@ pub const StreamState = struct {
     numeric_close_suffix: bool = false,
     regional_indicator_count: usize = 0,
 
-    fn beforeSpaceRun(self: StreamState) HistoryEntry {
+    fn beforeSpaceRun(self: *const StreamState) HistoryEntry {
         return if (self.count != 0 and self.last.class == .space)
             self.before_spaces
         else
@@ -58,7 +58,7 @@ pub const StreamState = struct {
     /// True when the class before the current space run forces the general
     /// rules to inspect the next boundary; otherwise a `space → JL` pair is
     /// LB31 soft and the iterator can decide it directly.
-    pub fn spaceRunNeedsRules(self: StreamState) bool {
+    pub fn spaceRunNeedsRules(self: *const StreamState) bool {
         const before = self.beforeSpaceRun();
         return switch (before.class) {
             .open_punctuation,
@@ -71,7 +71,7 @@ pub const StreamState = struct {
         };
     }
 
-    fn beforeBeforeSpaceRun(self: StreamState) HistoryEntry {
+    fn beforeBeforeSpaceRun(self: *const StreamState) HistoryEntry {
         return if (self.count != 0 and self.last.class == .space)
             self.before_spaces_previous
         else
@@ -309,7 +309,7 @@ pub inline fn effectiveSignificant(
 /// remains a strictly forward, bounded-state stream.
 pub fn decide(
     text: []const u8,
-    state: StreamState,
+    state: *const StreamState,
     current_start: usize,
     current_next: usize,
     raw_properties: Properties,
@@ -639,7 +639,7 @@ const FastDecision = struct {
 };
 
 fn asciiCommonDecision(
-    state: StreamState,
+    state: *const StreamState,
     current: BreakClass,
 ) ?FastDecision {
     // These branches cover ordinary ASCII prose only. Punctuation, joiners,

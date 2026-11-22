@@ -129,7 +129,7 @@ fn readU16(offset: usize) u16 {
 }
 
 /// SB3-SB7 precede terminator context and SB8 lookahead.
-pub fn immediateBreak(current: Class, state: BoundaryState) ?bool {
+pub fn immediateBreak(current: Class, state: *const BoundaryState) ?bool {
     // SB3.
     if (state.previous_actual == .cr and current == .lf) return false;
     // SB4 is evaluated before ignore replacement. Starting a fresh state
@@ -154,7 +154,7 @@ pub fn immediateBreak(current: Class, state: BoundaryState) ?bool {
 }
 
 /// SB8-SB998, with a monotonic source-specific lower lookahead.
-pub fn contextualBreak(current: Class, state: BoundaryState, lower_follows: bool) bool {
+pub fn contextualBreak(current: Class, state: *const BoundaryState, lower_follows: bool) bool {
     const terminator = state.terminator orelse return false; // SB998.
     // SB8. The cached forward query ignores Extend/Format and stops at the
     // first Lower or a class that the rule explicitly excludes.

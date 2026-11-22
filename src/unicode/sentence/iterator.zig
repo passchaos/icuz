@@ -45,14 +45,14 @@ pub const Iterator = struct {
             // directly and keep the decoded-struct path for other scripts.
             if (self.text[end] < 0x80) {
                 const current_class = classForCodepoint(self.text[end]);
-                if (self.breaksAt(end, current_class, state)) break;
+                if (self.breaksAt(end, current_class, &state)) break;
                 state.consume(current_class);
                 end += 1;
                 continue;
             }
             const current = decode(self.text, end) orelse unreachable;
             const current_class = classForCodepoint(current.codepoint);
-            if (self.breaksAt(end, current_class, state)) break;
+            if (self.breaksAt(end, current_class, &state)) break;
             state.consume(current_class);
             end = current.next;
         }
@@ -64,7 +64,7 @@ pub const Iterator = struct {
         self: *Iterator,
         offset: usize,
         current: Class,
-        state: BoundaryState,
+        state: *const BoundaryState,
     ) bool {
         if (rules.immediateBreak(current, state)) |decision| return decision;
         const lower_follows = if (state.terminator) |terminator|

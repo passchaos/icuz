@@ -53,12 +53,12 @@ pub fn SentenceCursorIterator(comptime Cursor: type) type {
         }
 
         fn breaksAt(self: *Self, offset: usize, current: rules.Class, state: rules.BoundaryState) Error!bool {
-            if (rules.immediateBreak(current, state)) |decision| return decision;
+            if (rules.immediateBreak(current, &state)) |decision| return decision;
             const lower_follows = if (state.terminator) |terminator|
                 terminator.class == .a_term and try self.lowerFollows(offset)
             else
                 false;
-            return rules.contextualBreak(current, state, lower_follows);
+            return rules.contextualBreak(current, &state, lower_follows);
         }
 
         fn lowerFollows(self: *Self, offset: usize) Error!bool {

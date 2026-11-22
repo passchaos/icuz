@@ -187,7 +187,7 @@ pub const Iterator = struct {
             else
                 rules.decide(
                     self.text,
-                    self.state,
+                    &self.state,
                     start,
                     next_index,
                     raw_properties,
