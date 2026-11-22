@@ -379,7 +379,10 @@ fn mapStreamingInner(
             while (cursor + ascii_chunk <= text.len) {
                 const chunk: @Vector(ascii_chunk, u8) =
                     text[cursor..][0..ascii_chunk].*;
-                if (@reduce(.Or, chunk) & 0x80 != 0) break;
+                // Reduce over two 64-bit lanes: a 16-lane byte reduction
+                // lowers to a long shuffle chain on x86-64.
+                const quads: @Vector(2, u64) = @bitCast(chunk);
+                if (@reduce(.Or, quads) & 0x8080_8080_8080_8080 != 0) break;
                 if (output.unusedCapacitySlice().len < ascii_chunk) {
                     try output.ensureUnusedCapacity(allocator, ascii_chunk);
                 }

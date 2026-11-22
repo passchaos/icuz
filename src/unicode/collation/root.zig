@@ -636,7 +636,10 @@ fn sortKeyUtf8Resolved(
                     count + 8 <= stack_codepoints.len)
                 {
                     const bytes: @Vector(8, u8) = text[cursor..][0..8].*;
-                    if (@reduce(.Or, bytes) & 0x80 != 0) break;
+                    // A single 64-bit lane avoids the shuffle chain that a
+                    // byte-lane reduction lowers to on x86-64.
+                    const quad: u64 = @bitCast(bytes);
+                    if (quad & 0x8080_8080_8080_8080 != 0) break;
                     const wide: @Vector(8, u21) = @intCast(bytes);
                     stack_codepoints[count..][0..8].* = wide;
                     cursor += 8;
