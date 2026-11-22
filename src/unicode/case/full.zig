@@ -431,6 +431,42 @@ fn mapStreamingInner(
             if (meta & full_data.lead_skip_bit != 0) {
                 const length: usize = (meta >> 16) & 7;
                 if (cursor + length > text.len) return error.InvalidUtf8;
+                // When the source quad and the output spare both exist, one
+                // 32-bit load validates and copies the whole sequence: the
+                // output position never exceeds the source position, so
+                // `cursor + 4 <= text.len` proves four spare bytes.
+                if (output.items.len <= cursor and cursor + 4 <= text.len) {
+                    const quad = std.mem.readInt(
+                        u32,
+                        text[cursor..][0..4],
+                        .little,
+                    );
+                    const second: u8 = @truncate(quad >> 8);
+                    if (second < @as(u8, @truncate(meta)) or
+                        second > @as(u8, @truncate(meta >> 8)))
+                    {
+                        return error.InvalidUtf8;
+                    }
+                    if (length >= 3 and
+                        @as(u8, @truncate(quad >> 16)) & 0xc0 != 0x80)
+                    {
+                        return error.InvalidUtf8;
+                    }
+                    if (length == 4 and
+                        @as(u8, @truncate(quad >> 24)) & 0xc0 != 0x80)
+                    {
+                        return error.InvalidUtf8;
+                    }
+                    std.mem.writeInt(
+                        u32,
+                        output.unusedCapacitySlice()[0..4],
+                        quad,
+                        .little,
+                    );
+                    output.items.len += length;
+                    cursor += length;
+                    continue;
+                }
                 const second = text[cursor + 1];
                 if (second < @as(u8, @truncate(meta)) or
                     second > @as(u8, @truncate(meta >> 8)))
