@@ -415,23 +415,22 @@ fn mapStreamingInner(
         }
 
         // A lead byte whose whole scalar range is identity needs no decoding:
-        // validate the sequence in place and copy it.
+        // validate the sequence in place and copy it. One metadata load packs
+        // the skip flag, the second-byte bounds and the sequence length.
         if (root and first >= 0x80) {
-            const skip_mask = switch (mode) {
-                .fold => &full_data.fold_lead_skip,
+            const meta = switch (mode) {
+                .fold => full_data.fold_lead_meta[first],
                 .full, .simple => switch (kind) {
-                    .lower => &full_data.lower_lead_skip,
-                    .upper, .title => &full_data.upper_lead_skip,
+                    .lower => full_data.lower_lead_meta[first],
+                    .upper, .title => full_data.upper_lead_meta[first],
                 },
             };
-            const skip_bit = @as(u8, 1) << @intCast(first & 7);
-            if (skip_mask[first >> 3] & skip_bit != 0) {
-                const bounds = full_data.lead_bounds[first];
-                const length: usize = (bounds >> 16) & 7;
+            if (meta & full_data.lead_skip_bit != 0) {
+                const length: usize = (meta >> 16) & 7;
                 if (cursor + length > text.len) return error.InvalidUtf8;
                 const second = text[cursor + 1];
-                if (second < @as(u8, @truncate(bounds)) or
-                    second > @as(u8, @truncate(bounds >> 8)))
+                if (second < @as(u8, @truncate(meta)) or
+                    second > @as(u8, @truncate(meta >> 8)))
                 {
                     return error.InvalidUtf8;
                 }

@@ -507,7 +507,7 @@ GENERATORS = {
     "tools/unicode/locale/generate_extension_aliases.py": "5853caa458dca1ffc133ce165e40543648e2209ff446093b58d11dc05197589f",
     "tools/unicode/locale/generate_script_direction.py": "4eb044adfbf490197b2f22c04c16c997074f6a98426b885cf16e11796c878282",
     "tools/unicode/case/generate_data.py": "715cf6a3ccb7b86f5b7b5c345762fa093829f80a260055afdd55c78ded8560be",
-    "tools/unicode/case/generate_full_data.py": "bc0728162b78a843e8194b9a32c7ba83fd5f98c9435c659ecf7cb189b80b9761",
+    "tools/unicode/case/generate_full_data.py": "3eb22610f4db8642d31bc0d9d1611fa04114a92eb98fcd2642454bbfbd250801",
     "tools/unicode/collation/generate_data.py": "3e789930a4ee07357d7e89a26d9bf93fe598ce7555efdbd16c524e860f0e4c96",
     "tools/unicode/collation/generate_collation_options_conformance.py": "a75918f1082f562d53c1296eb1fb8916e14c7e946c2201539a967a7bc4444a12",
     "tools/unicode/collation/generate_tailorings.py": "5643f8a612263d31f4da50c73e9720c3739191d6d1d321489a04e8f2f99b2713",
@@ -630,7 +630,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/case/full_data.zig",
         "tools/unicode/case/generate_full_data.py",
-        "1fbbfeb09fea407815759bb22ee1a81d5b73671d47a9ae7ff0adf9bf4b09b8d3",
+        "a8e0327c649c4c650fb0f66442569bdc013a50193ad9cab813cc88f77fcb3c36",
     ),
     GeneratedText(
         "src/unicode/collation/implicit.zig",

@@ -363,36 +363,35 @@ def render(
             "    return false;",
             "}",
             "",
-            "/// Packed UTF-8 lead-byte metadata: minimum and maximum valid second",
-            "/// byte in the low 16 bits, sequence length in bits 16..18.",
-            "pub const lead_bounds = [_]u32{",
-        ]
-    )
-    for start in range(0, 256, 16):
-        chunk = ", ".join(f"0x{value:x}" for value in lead_bounds[start : start + 16])
-        lines.append(f"    {chunk},")
-    lines.extend(["};", ""])
-
-    def emit_skip(name: str, mask: bytearray) -> None:
-        chunk = ", ".join(str(value) for value in mask)
-        lines.extend([f"pub const {name} = [_]u8{{{chunk}}};", ""])
-
-    emit_skip("lower_lead_skip", lower_skip)
-    emit_skip("upper_lead_skip", upper_skip)
-    lines.extend(
-        [
-            "/// A lead can be skipped while folding only when neither case kind",
-            "/// maps inside its range.",
-            "pub const fold_lead_skip = blk: {",
-            "    var mask: [32]u8 = undefined;",
-            "    for (&mask, 0..) |*byte, index| {",
-            "        byte.* = lower_lead_skip[index] & upper_lead_skip[index];",
-            "    }",
-            "    break :blk mask;",
-            "};",
+            "/// Set when every scalar reached through this lead byte is identity",
+            "/// under the table's kind, so the sequence can be copied verbatim.",
+            "pub const lead_skip_bit: u32 = 1 << 31;",
             "",
+            "/// Packed UTF-8 lead-byte metadata: minimum and maximum valid second",
+            "/// byte in the low 16 bits, sequence length in bits 16..18, and the",
+            "/// skip flag in bit 31. One load answers every streaming-path check.",
         ]
     )
+
+    def emit_lead_meta(name: str, mask: bytearray) -> None:
+        table = list(lead_bounds)
+        for lead in range(256):
+            if mask[lead >> 3] & (1 << (lead & 7)):
+                table[lead] |= 0x8000_0000
+        lines.append(f"pub const {name} = [_]u32{{")
+        for start in range(0, 256, 16):
+            chunk = ", ".join(
+                f"0x{value:x}" for value in table[start : start + 16]
+            )
+            lines.append(f"    {chunk},")
+        lines.extend(["};", ""])
+
+    fold_skip = bytearray(
+        lower & upper for lower, upper in zip(lower_skip, upper_skip)
+    )
+    emit_lead_meta("lower_lead_meta", lower_skip)
+    emit_lead_meta("upper_lead_meta", upper_skip)
+    emit_lead_meta("fold_lead_meta", fold_skip)
     # Astral mappings are sparse: one shared page bitmap plus per-kind page
     # masks let emoji and other uncased planes skip without decoding tables.
     astral_pages = sorted(
