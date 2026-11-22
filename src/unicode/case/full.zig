@@ -366,7 +366,10 @@ fn mapStreamingInner(
 ) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, text.len);
+    // Most mappings keep the byte length, so a tight first allocation lets
+    // toOwnedSlice reuse it instead of copying into an exact-size buffer. The
+    // four-byte slack keeps the encoder's worst-case write in bounds.
+    try output.ensureTotalCapacityPrecise(allocator, text.len + 4);
 
     var cursor: usize = 0;
     while (cursor < text.len) {
