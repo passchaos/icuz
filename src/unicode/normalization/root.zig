@@ -521,6 +521,20 @@ inline fn appendBytes(
     list.items.len += bytes.len;
 }
 
+/// Encode one scalar into the reserved tail of an output buffer.
+///
+/// Reservations are sized to the exact encoded length, so the last scalar may
+/// leave fewer than four bytes of room. The common case still writes straight
+/// into the buffer; the short tail falls back to a stack buffer.
+inline fn encodeScalarInto(dest: []u8, written: usize, codepoint: u21) usize {
+    const room = dest[written..];
+    if (room.len >= 4) return scalar.encodeUtf8(room[0..4], codepoint);
+    var encoded: [4]u8 = undefined;
+    const length = scalar.encodeUtf8(&encoded, codepoint);
+    @memcpy(room[0..length], encoded[0..length]);
+    return length;
+}
+
 const Utf8Sink = struct {
     list: *std.ArrayList(u8),
     allocator: std.mem.Allocator,
@@ -552,7 +566,7 @@ const Utf8Sink = struct {
         const dest = self.list.unusedCapacitySlice();
         var written: usize = 0;
         for (codepoints) |codepoint| {
-            written += scalar.encodeUtf8(dest[written..][0..4], codepoint);
+            written += encodeScalarInto(dest, written, codepoint);
         }
         self.list.items.len += written;
     }
@@ -1421,7 +1435,7 @@ fn normalizeSegmentFastAt(
     const dest = output.unusedCapacitySlice();
     var written: usize = 0;
     for (storage[0..final_len]) |codepoint| {
-        written += scalar.encodeUtf8(dest[written..][0..4], codepoint);
+        written += encodeScalarInto(dest, written, codepoint);
     }
     output.items.len += written;
     return index;
