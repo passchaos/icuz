@@ -187,15 +187,67 @@ pub const Set = struct {
     /// testing.
     pub fn finalize(self: *Set) !void {
         if (self.bits != null or self.static_bits != null) return;
-        if (self.count() < 4096) return;
+        const total = self.count();
+        if (total < 4096) return;
 
         const ranges = self.ranges.items;
+        const words = (@as(usize, ranges[ranges.len - 1].last) >> 6) + 1;
+        // Mostly-full sets store the membership of their complement's
+        // trimmed span instead. Inverting that bitmap yields the set's own
+        // bits, and the inverted sentinel is all ones, so scalars above the
+        // span stay members and `contains` remains one branchless lookup.
+        if (total > 0x110000 / 2) {
+            var gaps = std.ArrayList(Range).empty;
+            defer gaps.deinit(self.allocator);
+            try self.appendComplementRanges(&gaps);
+            const complement_words = if (gaps.items.len == 0)
+                1
+            else
+                (@as(usize, gaps.items[gaps.items.len - 1].last) >> 6) + 1;
+            if (complement_words < words) {
+                const bitmap = try self.buildBitmap(gaps.items);
+                for (bitmap) |*word| word.* = ~word.*;
+                self.bits = bitmap;
+                return;
+            }
+        }
+        self.bits = try self.buildBitmap(ranges);
+    }
+
+    /// Append the gaps between this set's ranges, including the leading and
+    /// trailing gaps.
+    fn appendComplementRanges(
+        self: *const Set,
+        list: *std.ArrayList(Range),
+    ) !void {
+        var next: u32 = 0;
+        for (self.ranges.items) |range| {
+            if (next < range.first) {
+                try list.append(self.allocator, .{
+                    .first = @intCast(next),
+                    .last = range.first - 1,
+                });
+            }
+            next = @as(u32, range.last) + 1;
+        }
+        if (next <= 0x10ffff) {
+            try list.append(self.allocator, .{
+                .first = @intCast(next),
+                .last = 0x10ffff,
+            });
+        }
+    }
+
+    fn buildBitmap(self: *Set, ranges: []const Range) ![]u64 {
         // Trim the bitmap to the highest selected scalar. Property sets
         // rarely reach plane 16, and a shorter bitmap is cheaper to
         // allocate and fill. One extra zero word acts as a sentinel so
         // `contains` can clamp its index instead of branching on the
         // codepoint's distance from the trim point.
-        const word_count = (@as(usize, ranges[ranges.len - 1].last) >> 6) + 1;
+        const word_count = if (ranges.len == 0)
+            1
+        else
+            (@as(usize, ranges[ranges.len - 1].last) >> 6) + 1;
         const words = try self.allocator.alloc(u64, word_count + 1);
         errdefer self.allocator.free(words);
 
@@ -233,7 +285,7 @@ pub const Set = struct {
             }
         }
         fillWords(words[cursor..], 0);
-        self.bits = words;
+        return words;
     }
 
     const WordVec = @Vector(8, u64);
@@ -1875,7 +1927,17 @@ test "set ranges, union, intersection, and complement" {
     try complement.complement();
     try testing.expect(!complement.contains('a'));
     try testing.expect(complement.contains('A'));
+    try testing.expect(complement.contains(0x10ffff));
     try testing.expectEqual(@as(u32, 0x110000 - 26), complement.count());
+
+    // A full set stores an empty inverted bitmap whose sentinel is all
+    // ones, so every scalar stays a member.
+    var everything = try full(allocator);
+    defer everything.deinit();
+    try testing.expect(everything.isFull());
+    try testing.expect(everything.contains(0));
+    try testing.expect(everything.contains('A'));
+    try testing.expect(everything.contains(0x10ffff));
 }
 
 test "property-backed sets" {
