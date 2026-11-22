@@ -919,7 +919,9 @@ pub const Set = struct {
         errdefer result.deinit(self.allocator);
         try result.ensureTotalCapacity(
             self.allocator,
-            @min(self.ranges.items.len, other.ranges.items.len),
+            // One input range can intersect several ranges on the other
+            // side, so the safe bound is the sum, not the minimum.
+            self.ranges.items.len + other.ranges.items.len,
         );
 
         var left: usize = 0;
