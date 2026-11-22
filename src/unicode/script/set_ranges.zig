@@ -63,6 +63,14 @@ pub fn rangeLast(entry: RangeEntry, index: usize) u21 {
     return @intCast(readU32(ranges_offset + (@as(usize, entry.offset) + index) * 8 + 4));
 }
 
+/// Raw little-endian bytes of one entry's range list. Each record is two
+/// `u32` scalars, matching the in-memory layout of a set range on
+/// little-endian targets.
+pub fn rangeBytes(entry: RangeEntry) []const u8 {
+    const start = ranges_offset + @as(usize, entry.offset) * 8;
+    return blob[start..][0 .. @as(usize, entry.count) * 8];
+}
+
 fn readU16(offset: usize) u16 {
     return std.mem.readInt(u16, blob[offset..][0..2], .little);
 }

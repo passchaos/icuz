@@ -6,6 +6,7 @@
 //! selectors such as `Script=Greek` or `General_Category=Lu`.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const properties = @import("properties.zig");
 const trie = @import("properties/trie.zig");
 const aliases = @import("properties/aliases.zig");
@@ -352,11 +353,24 @@ pub const Set = struct {
         try trie.forEachRun(category_mask, property_mask, self, appendValueRun);
     }
 
+    /// Bulk-copying precomputed ranges is safe when the blob record layout
+    /// matches `Range`: two little-endian `u32` scalars per record.
+    const range_bytes_match = builtin.cpu.arch.endian() == .little and
+        @sizeOf(Range) == 8 and
+        @offsetOf(Range, "first") == 0 and
+        @offsetOf(Range, "last") == 4;
+
     /// Copy one precomputed range list, which is already coalesced and
     /// sorted, into this empty set. `source` provides the entry accessors.
     fn appendRangeEntry(self: *Set, entry: anytype, comptime source: type) !void {
         const range_count: usize = entry.count;
         try self.ranges.ensureTotalCapacity(self.allocator, range_count);
+        if (comptime range_bytes_match) {
+            const dest = self.ranges.unusedCapacitySlice()[0..range_count];
+            @memcpy(std.mem.sliceAsBytes(dest), source.rangeBytes(entry));
+            self.ranges.items.len += range_count;
+            return;
+        }
         var index: usize = 0;
         while (index < range_count) : (index += 1) {
             self.ranges.appendAssumeCapacity(.{

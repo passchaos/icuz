@@ -324,6 +324,14 @@ pub fn rangeLast(entry: RangeEntry, index: usize) u21 {
     return @intCast(readU32At(set_ranges, base + 4));
 }
 
+/// Raw little-endian bytes of one entry's range list. Each record is two
+/// `u32` scalars, matching the in-memory layout of a set range on
+/// little-endian targets.
+pub fn rangeBytes(entry: RangeEntry) []const u8 {
+    const start = sr_ranges_offset + @as(usize, entry.offset) * 8;
+    return set_ranges[start..][0 .. @as(usize, entry.count) * 8];
+}
+
 fn categoryFingerprint() u32 {
     @setEvalBranchQuota(10_000);
     var hash: u32 = 2166136261;
