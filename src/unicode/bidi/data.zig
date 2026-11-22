@@ -109,7 +109,10 @@ comptime {
 pub inline fn class(codepoint: u21) Class {
     // The generator patches surrogates and appends an out-of-range sentinel,
     // both `on`, so a clamped load matches the validity rule.
-    const index = @min(@as(usize, codepoint), flat_count - 1);
+    const index: usize = @min(
+        @as(usize, codepoint),
+        @as(usize, flat_count) - 1,
+    );
     return @enumFromInt(flat_classes[flat_header_len + index]);
 }
 

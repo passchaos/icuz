@@ -10,6 +10,13 @@ const page_count = readU16(10);
 const index_offset = header_len;
 const pages_offset = index_offset + @as(usize, index_count) * 2;
 
+/// Flat table derived from `combining_class.bin` by
+/// `tools/unicode/canonical/generate_flat_combining_class.py`. A single load
+/// avoids the packed table's dependent index-then-page loads.
+const flat = @embedFile("flat_combining_class.bin");
+const flat_header_len = 16;
+const flat_count = readU32At(flat, 8);
+
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJC1") or
         data[4] != 1 or data[5] != 17 or data[6] != 0 or data[7] != 0)
@@ -21,13 +28,31 @@ comptime {
     {
         @compileError("invalid Unicode Canonical_Combining_Class data lengths");
     }
+    if (flat.len < flat_header_len or !std.mem.eql(u8, flat[0..4], "CJZ8") or
+        flat[4] != 1 or flat[5] != 17 or flat[6] != 0 or flat[7] != 0)
+    {
+        @compileError("invalid flat Canonical_Combining_Class data");
+    }
+    if (flat_count != 0x110001 or flat_header_len + flat_count != flat.len) {
+        @compileError("invalid flat Canonical_Combining_Class data lengths");
+    }
 }
 
 /// Return Canonical_Combining_Class for one scalar.
 ///
-/// ASCII and every scalar outside the Unicode range are
-/// Not_Reordered (0), so the common prose case skips the page table.
+/// ASCII, surrogates, and every scalar outside the Unicode range are
+/// Not_Reordered (0), so the generator's zero sentinel makes a clamped load
+/// match the packed table's validity rule.
 pub inline fn forCodepoint(codepoint: u21) u8 {
+    const index: usize = @min(
+        @as(usize, codepoint),
+        @as(usize, flat_count) - 1,
+    );
+    return flat[flat_header_len + index];
+}
+
+/// Packed-table lookup, kept as the reference for the flat table's test.
+fn forCodepointPacked(codepoint: u21) u8 {
     if (codepoint < 0x80 or codepoint > 0x10ffff) return 0;
     const page = @as(usize, codepoint) >> 8;
     const slot = readU16(index_offset + page * 2);
@@ -41,6 +66,10 @@ fn readU16(offset: usize) u16 {
     return std.mem.readInt(u16, data[offset..][0..2], .little);
 }
 
+fn readU32At(blob: []const u8, offset: usize) u32 {
+    return std.mem.readInt(u32, blob[offset..][0..4], .little);
+}
+
 test "canonical combining classes include Tai Tham marks" {
     const testing = @import("std").testing;
     try testing.expectEqual(@as(u8, 9), forCodepoint(0x1a60));
@@ -52,4 +81,13 @@ test "ASCII and out-of-range scalars are Not_Reordered" {
     const testing = @import("std").testing;
     try testing.expectEqual(@as(u8, 0), forCodepoint('A'));
     try testing.expectEqual(@as(u8, 0), forCodepoint(0x110000));
+}
+
+test "flat combining classes match the packed table" {
+    const testing = @import("std").testing;
+    var codepoint: u32 = 0;
+    while (codepoint <= 0x1fffff) : (codepoint += 1) {
+        const value: u21 = @intCast(codepoint);
+        try testing.expectEqual(forCodepointPacked(value), forCodepoint(value));
+    }
 }

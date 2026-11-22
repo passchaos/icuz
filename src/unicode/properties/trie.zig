@@ -82,6 +82,30 @@ comptime {
 
 const ascii_values = buildAsciiValues();
 
+/// Flat `General_Category` table derived from `data.bin`. The category query
+/// uses one load instead of the packed table's dependent index-then-page
+/// loads, which dominate random lookups.
+const flat_categories = @embedFile("flat_categories.bin");
+const flat_header_len = 16;
+const flat_count = readU32At(flat_categories, 8);
+
+comptime {
+    if (flat_categories.len < flat_header_len or
+        !std.mem.eql(u8, flat_categories[0..4], "CJZ7") or
+        flat_categories[4] != 1 or
+        flat_categories[5] != 17 or
+        flat_categories[6] != 0 or
+        flat_categories[7] != 0)
+    {
+        @compileError("invalid flat General_Category data");
+    }
+    if (flat_count != 0x110001 or
+        flat_header_len + flat_count != flat_categories.len)
+    {
+        @compileError("invalid flat General_Category data lengths");
+    }
+}
+
 const set_ranges = @embedFile("set_ranges.bin");
 const sr_header_len = 16;
 const sr_property_count = readU16At(set_ranges, 8);
@@ -141,7 +165,13 @@ pub inline fn has(codepoint: u21, bit_index: u6) bool {
 }
 
 pub inline fn category(codepoint: u21) Category {
-    return @enumFromInt(@as(u5, @truncate(value(codepoint))));
+    // The generator appends a `Cn` sentinel for scalars above U+10FFFF, so a
+    // clamped load matches `value`'s default without a branch.
+    const index: usize = @min(
+        @as(usize, codepoint),
+        @as(usize, flat_count) - 1,
+    );
+    return @enumFromInt(flat_categories[flat_header_len + index]);
 }
 
 pub fn categoryMask(category_value: Category) u32 {
@@ -402,5 +432,17 @@ test "precomputed set ranges match the page scan" {
                 rangeLast(mask_entry.ranges, index),
             );
         }
+    }
+}
+
+test "flat categories match the packed table" {
+    const testing = @import("std").testing;
+    var codepoint: u32 = 0;
+    while (codepoint <= 0x1fffff) : (codepoint += 1) {
+        const value_codepoint: u21 = @intCast(codepoint);
+        const expected: Category = @enumFromInt(
+            @as(u5, @truncate(value(value_codepoint))),
+        );
+        try testing.expectEqual(expected, category(value_codepoint));
     }
 }

@@ -67,6 +67,9 @@ BLOBS = (
     Blob("src/unicode/bidi/flat_classes.bin", b"CJZ0", 1, "a07c4c586cdf2bb300bcd808f00752b0629758a086d5e906ea33eb4294beb30b"),
     Blob("src/unicode/script/flat_scripts.bin", b"CJZ5", 1, "2c91d4b52f9adf9161a2326a944837cc9e8eeb6e00c6fbb518e1ccb75fa52c88"),
     Blob("src/unicode/line_break/flat_classes.bin", b"CJZ6", 1, "67cab7c54fe1bcf8eda4582bac64649247759f2aae16235688f9dc76fa2d9359"),
+    Blob("src/unicode/properties/flat_categories.bin", b"CJZ7", 1, "0c929a3e9ebd34b15f34bbf133fed87126ef262b8e8460636cf1c4a8ec13f23f"),
+    Blob("src/unicode/canonical/flat_combining_class.bin", b"CJZ8", 1, "00f62ee422dd1c920014765f739f0e03f1dcb4a30a2f0b326dd52258ae84cc7f"),
+    Blob("src/unicode/normalization/flat_quick_check.bin", b"CJZ9", 1, "ab99f55f247ef4871c8c91950f6b28c4a51a532f6f57f52c6ddb303fd41b6899"),
     Blob("src/unicode/break/conformance.bin", b"CJGF", 1, "5e7119dc378412e1c6b0bf58b1cc826e38aebb39773c361141737a3709c60077", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_data.bin", b"CJRB", 1, "9a88f134d56db6e730bc7ef2fcc69ad271923321b22bdcaf041a74e0266db4f2", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_conformance.bin", b"CJRN", 1, "d78e610b755b158f8ebc761255cd8da9ac5ce1ee210e6cfcae3e7678b079cb7c", version=(48, 0, 0)),
@@ -475,7 +478,7 @@ BLOBS = (
 )
 
 GENERATORS = {
-    "tools/generate_canonical_combining_class.py": "b8064fb61377c6bca1604c2bd35c6a1db37be5187762c7419ec90b4b19527b82",
+    "tools/generate_canonical_combining_class.py": "91d1e35934321c63d99c713f6347219226686b0c96c62d5279041cb9d047225f",
     "tools/unicode/spoof/generate_confusables.py": "40d49eef65d71552cefc4bc90f2c9ba6e1313ce95dd2af9598213dff29f972fc",
     "tools/unicode/spoof/generate_conformance.py": "b1bd9eaced6f6b97e9ecd669f5037938b21c4268a1a5dd72db1909cf779761b5",
     "tools/unicode/spoof/generate_identifier_status.py": "d19db85b91e1933c0841ff7846b2d2e644fd78621eaccf6e5f81f8f07134b4f9",
@@ -506,7 +509,9 @@ GENERATORS = {
     "tools/generate_canonical_decomposition.py": "450c932dbd278208bccd3ab8bb26f04f1b18a96051fc03944393f5d73e3ad6d8",
     "tools/generate_nonspacing_marks.py": "12d45f34ce2891ccf1b342bc8f44c6fe32e15e019d7a41489d8036dee9f8555c",
     "tools/unicode/normalization/generate_conformance.py": "c3e9f80b8fb410a2d142cfbb228941d01322672b28261c1e0c0de53eb662ee43",
-    "tools/unicode/normalization/generate_data.py": "e61fd24b9b23e554ebded137825546a4378e61050eae3cbbe1863555df79f864",
+    "tools/unicode/normalization/generate_data.py": "3d8f5c4d5e928c97ef049556c1eab8efb4129f1aafd91bf2fa696184245dbc56",
+    "tools/unicode/normalization/generate_flat_quick_check.py": "134d75170508dbe6141e9f27be6501f26a449ca5084eb2268573ad5d166fb885",
+    "tools/unicode/canonical/generate_flat_combining_class.py": "ab68ca2cee02b52e303ffea6e71a76c515e555e238068d6115ac1df7eedacf1e",
     "tools/unicode/normalization/generate_boundaries.py": "a3603e318545dcb539136fc608f2c07211742e4a9ee2aaf6d8199cfbf0e3fa26",
     "tools/unicode/normalization/generate_casefold.py": "ddfa581f1fdaa2e914bf4a216aeb0dd6d428a5413dc96ddb0e005f7966d2a5e9",
     "tools/unicode/locale/generate_matcher.py": "d184c9ae1b441f60d3bae49386ea476c53e538c9d2bf41051bfa761102f74690",
@@ -527,6 +532,7 @@ GENERATORS = {
     "tools/unicode/script/generate_flat_scripts.py": "8571c6aaec543a5be3b9bd3447ef858f6ecaf1c3d7e40538313ed0d615b5ee2c",
     "tools/unicode/bidi/generate_flat_classes.py": "a60480cef80e9b90e47f0bbe9affb7971d5e27f8ff0c197dd6905500f04c39c6",
     "tools/unicode/line_break/generate_flat_classes.py": "b80e609ff27e73f81629ee6b232c54edc56a9f27534839b54e97d71d0af03a3f",
+    "tools/unicode/properties/generate_flat_categories.py": "21758a8cf659a1059ee1d2fd0fdcd73a3b4fc0ecf0642cbfe402db13b7cf975e",
     "tools/unicode/bidi/generate_conformance.py": "1ca3d3fd9fe5962f37192eb77d9aadfab6e5f9c670540a7ae691213682bb0425",
     "tools/unicode/bidi/generate_data.py": "ab6f9359af0f5d198b52d174041e35ffde11b0f8277a4bf5a8981a76c0a1cb05",
     "tools/unicode/grapheme/generate_conformance.py": "93378e8fcf4b0bd91630716a5378902cb3a1a41253b2d4fc4cd4688a036a3018",
@@ -612,7 +618,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/canonical/combining_class.zig",
         "tools/generate_canonical_combining_class.py",
-        "ca2e720d0fc25b5ce557d23c51fdfb2c5d729b2fe0ea34572ced577065d8dd6a",
+        "3ca7db6d1ad4348029f46b2c8ce957f30e26898ef37c2e6f8b76670bc2640ef2",
     ),
     GeneratedText(
         "src/unicode/canonical/decomposition.zig",
@@ -627,7 +633,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/normalization/data.zig",
         "tools/unicode/normalization/generate_data.py",
-        "0368d9be6d6b861435d31b914139fb4ee8e56beedf2785a4dd3663cd14536975",
+        "063cca175566dae4db95422c11a2e8086bc72f28dbc6cebeae35359f9708a427",
     ),
     GeneratedText(
         "src/unicode/name/ranges.zig",
@@ -918,7 +924,7 @@ def check_layout(blob: Blob, data: bytes) -> None:
         for index in range(range_count):
             first, last = struct.unpack_from("<II", data, offset + index * 8)
             assert first <= last <= 0x10FFFF
-    elif magic in (b"CJZ0", b"CJZ5", b"CJZ6"):
+    elif magic in (b"CJZ0", b"CJZ5", b"CJZ6", b"CJZ7", b"CJZ8", b"CJZ9"):
         length = struct.unpack_from("<I", data, 8)[0]
         assert length == 0x110001
         assert 16 + length == len(data)

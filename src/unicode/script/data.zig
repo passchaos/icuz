@@ -51,7 +51,10 @@ comptime {
 pub inline fn scriptId(codepoint: u21) u8 {
     // The generator patches surrogates and appends an out-of-range sentinel,
     // both Unknown, so a clamped load matches the validity rule.
-    const index = @min(@as(usize, codepoint), flat_count - 1);
+    const index: usize = @min(
+        @as(usize, codepoint),
+        @as(usize, flat_count) - 1,
+    );
     return flat[flat_header_len + index];
 }
 

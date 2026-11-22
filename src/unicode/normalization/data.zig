@@ -14,6 +14,13 @@ const page_count = readU16(10);
 const index_offset = header_len;
 const pages_offset = index_offset + @as(usize, index_count) * 2;
 
+/// Flat table derived from `quick_check.bin` by
+/// `tools/unicode/normalization/generate_flat_quick_check.py`. A single load
+/// avoids the packed table's dependent index-then-page loads.
+const flat_quick_check = @embedFile("flat_quick_check.bin");
+const flat_header_len = 16;
+const flat_count = readU32At(flat_quick_check, 8);
+
 comptime {
     if (quick_check_data.len < header_len or
         !std.mem.eql(u8, quick_check_data[0..4], "CJQ1") or
@@ -27,6 +34,18 @@ comptime {
     {
         @compileError("invalid Unicode normalization quick-check data lengths");
     }
+    if (flat_quick_check.len < flat_header_len or
+        !std.mem.eql(u8, flat_quick_check[0..4], "CJZ9") or
+        flat_quick_check[4] != 1 or flat_quick_check[5] != 17 or
+        flat_quick_check[6] != 0 or flat_quick_check[7] != 0)
+    {
+        @compileError("invalid flat normalization quick-check data");
+    }
+    if (flat_count != 0x110001 or
+        flat_header_len + flat_count != flat_quick_check.len)
+    {
+        @compileError("invalid flat normalization quick-check data lengths");
+    }
     if (@intFromEnum(QuickCheck.no) != 1 or
         @intFromEnum(QuickCheck.maybe) != 2 or
         @intFromEnum(Form.nfc) != 0 or @intFromEnum(Form.nfd) != 1 or
@@ -37,6 +56,18 @@ comptime {
 }
 
 inline fn quickCheckValue(codepoint: u21) u8 {
+    // ASCII, surrogates, and every scalar outside the Unicode range are all
+    // `yes` (0), so the generator's zero sentinel makes a clamped load match
+    // the packed table's validity rule.
+    const index: usize = @min(
+        @as(usize, codepoint),
+        @as(usize, flat_count) - 1,
+    );
+    return flat_quick_check[flat_header_len + index];
+}
+
+/// Packed-table lookup, kept as the reference for the flat table's test.
+inline fn quickCheckValuePacked(codepoint: u21) u8 {
     if (codepoint < 0x80 or codepoint > 0x10ffff) return 0;
     const page = @as(usize, codepoint) >> 8;
     const slot = readU16(index_offset + page * 2);
@@ -69,6 +100,10 @@ pub fn nfkdQuickCheck(codepoint: u21) QuickCheck {
 
 fn readU16(offset: usize) u16 {
     return std.mem.readInt(u16, quick_check_data[offset..][0..2], .little);
+}
+
+fn readU32At(blob: []const u8, offset: usize) u32 {
+    return std.mem.readInt(u32, blob[offset..][0..4], .little);
 }
 
 const Composition = struct {
@@ -1193,4 +1228,16 @@ test "generated normalization tables expose all quick-check forms" {
     try testing.expectEqual(QuickCheck.no, nfkdQuickCheck(0x00a8));
     try testing.expectEqual(@as(?u21, 0x00e9), composePair('e', 0x0301));
     try testing.expectEqual(@as(?u21, null), composePair(0x0915, 0x093c));
+}
+
+test "flat quick-check values match the packed table" {
+    const testing = @import("std").testing;
+    var codepoint: u32 = 0;
+    while (codepoint <= 0x1fffff) : (codepoint += 1) {
+        const value: u21 = @intCast(codepoint);
+        try testing.expectEqual(
+            quickCheckValuePacked(value),
+            quickCheckValue(value),
+        );
+    }
 }
