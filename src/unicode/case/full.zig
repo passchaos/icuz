@@ -109,9 +109,8 @@ pub fn foldWithEditsAlloc(
     if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
     edits.clearRetainingCapacity();
 
-    var output = std.ArrayList(u8).empty;
+    var output = try std.ArrayList(u8).initCapacity(allocator, text.len + 4);
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacityPrecise(allocator, text.len + 4);
 
     var encoded: [4]u8 = undefined;
     var index: usize = 0;
@@ -149,9 +148,8 @@ fn titleAlloc(
     var decoded = try decodeAlloc(allocator, text, true);
     defer decoded.deinit(allocator);
 
-    var output = std.ArrayList(u8).empty;
+    var output = try std.ArrayList(u8).initCapacity(allocator, text.len + 4);
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacityPrecise(allocator, text.len + 4);
 
     var segments = word.segments(text) catch unreachable;
     var emitted: usize = 0;
@@ -364,12 +362,11 @@ fn mapStreamingInner(
     comptime root: bool,
     comptime mode: MapMode,
 ) Error![]u8 {
-    var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
     // Most mappings keep the byte length, so a tight first allocation lets
     // toOwnedSlice reuse it instead of copying into an exact-size buffer. The
     // four-byte slack keeps the encoder's worst-case write in bounds.
-    try output.ensureTotalCapacityPrecise(allocator, text.len + 4);
+    var output = try std.ArrayList(u8).initCapacity(allocator, text.len + 4);
+    errdefer output.deinit(allocator);
 
     var cursor: usize = 0;
     while (cursor < text.len) {
@@ -528,9 +525,8 @@ fn mapWithEdits(
     var decoded = try decodeAlloc(allocator, text, true);
     defer decoded.deinit(allocator);
 
-    var output = std.ArrayList(u8).empty;
+    var output = try std.ArrayList(u8).initCapacity(allocator, text.len + 4);
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacityPrecise(allocator, text.len + 4);
 
     const codepoints = decoded.codepoints.items;
     const offsets = decoded.offsets.items;
