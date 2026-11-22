@@ -379,6 +379,14 @@ pub const Iterator = struct {
     text: []const u8,
     cursor: usize = 0,
     pending: ?Decoded = null,
+    /// Properties of `pending`, recorded when the previous cluster ended so
+    /// the next call does not repeat the two-level table read.
+    pending_properties: Properties = .{
+        .class = .other,
+        .incb = .none,
+        .extended_pictographic = false,
+        .emoji_presentation = false,
+    },
     tailoring: ScalarBreaker.Tailoring = .unicode_default,
 
     pub fn next(self: *Iterator) ?Cluster {
@@ -395,6 +403,7 @@ pub const Iterator = struct {
             self.cursor = start + 1;
             return .{ .byte_start = start, .byte_len = 1 };
         }
+        const pending_used = self.pending != null;
         const first = self.pending orelse decode(self.text, self.cursor) orelse unreachable;
         self.pending = null;
         self.cursor = first.next;
@@ -407,7 +416,10 @@ pub const Iterator = struct {
             return .{ .byte_start = start, .byte_len = self.cursor - start };
         }
 
-        var previous = properties(first.codepoint);
+        var previous = if (pending_used)
+            self.pending_properties
+        else
+            properties(first.codepoint);
         var regional_indicator_count: usize =
             if (previous.class == .regional_indicator) 1 else 0;
         var saw_extended_pictographic = previous.extended_pictographic;
@@ -434,6 +446,7 @@ pub const Iterator = struct {
                 incb_linker,
             )) {
                 self.pending = current;
+                self.pending_properties = current_properties;
                 break;
             }
             self.cursor = current.next;
@@ -580,7 +593,7 @@ inline fn effectiveInCb(
         value.incb;
 }
 
-fn properties(codepoint: u21) Properties {
+inline fn properties(codepoint: u21) Properties {
     if (!scalar_value.isValid(codepoint)) return .{
         .class = .other,
         .incb = .none,
@@ -615,7 +628,7 @@ test "Unicode emoji presentation stays distinct from extended pictographic" {
 
 const Decoded = scalar_value.Decoded;
 
-fn decode(text: []const u8, offset: usize) ?Decoded {
+inline fn decode(text: []const u8, offset: usize) ?Decoded {
     return scalar_value.decodeValid(text, offset);
 }
 
