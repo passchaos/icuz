@@ -1682,17 +1682,24 @@ fn formatScientificAlloc(
         try output.appendSlice(allocator, locale.plus);
     }
     var buffer: [12]u8 = undefined;
-    const digits = std.fmt.bufPrint(&buffer, "{d}", .{exponent}) catch
-        unreachable;
+    const digit_length = formatUnsigned(&buffer, @intCast(exponent));
+    const digits = buffer[0..digit_length];
     var padding = if (digits.len < options.exponent_min_digits)
         options.exponent_min_digits - @as(u8, @intCast(digits.len))
     else
         0;
-    while (padding > 0) : (padding -= 1) {
-        try appendCodepoint(allocator, &output, locale.digits[0]);
-    }
-    for (digits) |digit| {
-        try appendCodepoint(allocator, &output, locale.digits[digit - '0']);
+    if (hasAsciiDigits(locale)) {
+        while (padding > 0) : (padding -= 1) {
+            try output.append(allocator, '0');
+        }
+        try output.appendSlice(allocator, digits);
+    } else {
+        while (padding > 0) : (padding -= 1) {
+            try appendCodepoint(allocator, &output, locale.digits[0]);
+        }
+        for (digits) |digit| {
+            try appendCodepoint(allocator, &output, locale.digits[digit - '0']);
+        }
     }
     return output.toOwnedSlice(allocator);
 }
