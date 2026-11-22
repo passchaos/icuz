@@ -50,6 +50,10 @@ pub const Search = struct {
     latin_fast: bool,
     latin_primary_cache: [128]LatinPrimaryCacheEntry =
         [_]LatinPrimaryCacheEntry{.{}} ** 128,
+    /// Root primary weights per ASCII scalar, materialized once at init so
+    /// the ASCII search loop is a table read instead of an element walk.
+    ascii_primaries: [128]collation.Collator.AsciiPrimary =
+        [_]collation.Collator.AsciiPrimary{.{}} ** 128,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -101,6 +105,13 @@ pub const Search = struct {
                 options.backwards_secondary == null and
                 search.latinFastNeedle(needle) and
                 search.latinFastTailoring();
+            if (search.fast_ascii_primary) {
+                for (&search.ascii_primaries, 0..) |*entry, value| {
+                    entry.* = search.collator.asciiPrimaryWeights(
+                        @intCast(value),
+                    );
+                }
+            }
         }
         return search;
     }
@@ -251,7 +262,7 @@ pub const Search = struct {
         const first = needle[0];
         var position = start;
         while (position < text.len) {
-            const weights = self.collator.asciiPrimaryWeights(text[position]);
+            const weights = self.ascii_primaries[text[position]];
             if (weights.count != 0 and weights.values[0] != first) {
                 position += 1;
                 continue;
@@ -260,7 +271,7 @@ pub const Search = struct {
             var cursor = position;
             var matched = true;
             while (needle_index < needle.len and cursor < text.len) {
-                const current = self.collator.asciiPrimaryWeights(text[cursor]);
+                const current = self.ascii_primaries[text[cursor]];
                 var element_index: usize = 0;
                 while (element_index < current.count) : (element_index += 1) {
                     if (needle_index == needle.len or
