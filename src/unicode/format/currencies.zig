@@ -155,9 +155,46 @@ pub fn hasLocale(locale_name: []const u8) bool {
     return false;
 }
 
+const lookup_cache_len = 8;
+
+const LookupCacheEntry = struct {
+    locale: [16]u8 = [_]u8{0} ** 16,
+    locale_len: u8 = 0,
+    code: [8]u8 = [_]u8{0} ** 8,
+    code_len: u8 = 0,
+    found: bool = false,
+    entry: Entry = undefined,
+};
+
+/// Currency formatting repeats the same locale and code, so the three
+/// binary searches behind `lookup` are cached per thread.
+threadlocal var lookup_cache: [lookup_cache_len]LookupCacheEntry =
+    [_]LookupCacheEntry{.{}} ** lookup_cache_len;
+
 /// Localized symbol and display names for a currency, or null when the
 /// locale has no data for it.
 pub fn find(locale_name: []const u8, code: []const u8) ?Entry {
+    if (locale_name.len <= 16 and code.len <= 8) {
+        var hash: usize = locale_name.len * 31 + code.len;
+        for (locale_name) |byte| hash = hash *% 31 +% byte;
+        for (code) |byte| hash = hash *% 31 +% byte;
+        const slot = &lookup_cache[hash & (lookup_cache_len - 1)];
+        if (slot.locale_len == locale_name.len and
+            slot.code_len == code.len and
+            std.mem.eql(u8, slot.locale[0..slot.locale_len], locale_name) and
+            std.mem.eql(u8, slot.code[0..slot.code_len], code))
+        {
+            return if (slot.found) slot.entry else null;
+        }
+        const result = lookup(locale_name, code);
+        slot.locale_len = @intCast(locale_name.len);
+        @memcpy(slot.locale[0..locale_name.len], locale_name);
+        slot.code_len = @intCast(code.len);
+        @memcpy(slot.code[0..code.len], code);
+        slot.found = result != null;
+        if (result) |entry| slot.entry = entry;
+        return result;
+    }
     return lookup(locale_name, code);
 }
 
