@@ -372,6 +372,20 @@ def render(
     emit_skip("upper_lead_skip", upper_skip)
     lines.extend(
         [
+            "/// A lead can be skipped while folding only when neither case kind",
+            "/// maps inside its range.",
+            "pub const fold_lead_skip = blk: {",
+            "    var mask: [32]u8 = undefined;",
+            "    for (&mask, 0..) |*byte, index| {",
+            "        byte.* = lower_lead_skip[index] & upper_lead_skip[index];",
+            "    }",
+            "    break :blk mask;",
+            "};",
+            "",
+        ]
+    )
+    lines.extend(
+        [
             "/// SpecialCasing entries that only exist for the Turkic or Lithuanian",
             "/// locale families; the root bitmap excludes them on purpose.",
             "inline fn localeOnlyRecord(codepoint: u21) bool {",

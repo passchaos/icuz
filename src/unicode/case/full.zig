@@ -321,6 +321,8 @@ fn mapAlloc(
 /// scans decode the previous scalar on demand, and forward scans walk ahead of
 /// the cursor. The common case never touches either scan, so no intermediate
 /// code-point array is built.
+const MapMode = enum { full, simple, fold };
+
 fn mapStreaming(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -328,9 +330,9 @@ fn mapStreaming(
     comptime kind: full_data.Kind,
 ) Error![]u8 {
     if (options.locale == .root) {
-        return mapStreamingInner(allocator, text, .root, kind, true, true);
+        return mapStreamingInner(allocator, text, .root, kind, true, .full);
     }
-    return mapStreamingInner(allocator, text, options.locale, kind, false, true);
+    return mapStreamingInner(allocator, text, options.locale, kind, false, .full);
 }
 
 /// One-to-one mapping entry point for the simple case API.
@@ -343,7 +345,15 @@ pub fn simpleMapAlloc(
     text: []const u8,
     comptime kind: full_data.Kind,
 ) Error![]u8 {
-    return mapStreamingInner(allocator, text, .root, kind, true, false);
+    return mapStreamingInner(allocator, text, .root, kind, true, .simple);
+}
+
+/// Full case folding entry point; ASCII folds like lowercase.
+pub fn foldStreamingAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+) Error![]u8 {
+    return mapStreamingInner(allocator, text, .root, .lower, true, .fold);
 }
 
 fn mapStreamingInner(
@@ -352,7 +362,7 @@ fn mapStreamingInner(
     locale: Locale,
     comptime kind: full_data.Kind,
     comptime root: bool,
-    comptime records: bool,
+    comptime mode: MapMode,
 ) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
@@ -406,9 +416,12 @@ fn mapStreamingInner(
         // A lead byte whose whole scalar range is identity needs no decoding:
         // validate the sequence in place and copy it.
         if (root and first >= 0x80) {
-            const skip_mask = switch (kind) {
-                .lower => &full_data.lower_lead_skip,
-                .upper, .title => &full_data.upper_lead_skip,
+            const skip_mask = switch (mode) {
+                .fold => &full_data.fold_lead_skip,
+                .full, .simple => switch (kind) {
+                    .lower => &full_data.lower_lead_skip,
+                    .upper, .title => &full_data.upper_lead_skip,
+                },
             };
             const skip_bit = @as(u8, 1) << @intCast(first & 7);
             if (skip_mask[first >> 3] & skip_bit != 0) {
@@ -444,7 +457,15 @@ fn mapStreamingInner(
         if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
         const codepoint = scalar.packedCodepoint(decoded);
         const next = cursor + scalar.packedLength(decoded);
-        if (!full_data.interesting(codepoint, kind, root)) {
+        const may_map = switch (mode) {
+            // Folding only changes scalars that also have a simple case
+            // mapping, so the union of the lower and upper filters is exact
+            // enough and never skips a folding scalar.
+            .fold => full_data.interesting(codepoint, .lower, root) or
+                full_data.interesting(codepoint, .upper, root),
+            .full, .simple => full_data.interesting(codepoint, kind, root),
+        };
+        if (!may_map) {
             // The mapping is the identity, so the source bytes are the result.
             const length = next - cursor;
             if (output.unusedCapacitySlice().len < length) {
@@ -455,7 +476,23 @@ fn mapStreamingInner(
             cursor = next;
             continue;
         }
-        if (records) {
+        if (mode == .fold) {
+            if (data.fullFold(codepoint)) |components| {
+                try appendMapping(allocator, &output, components);
+                cursor = next;
+                continue;
+            }
+            // The scalar folds to itself; copy the source bytes.
+            const length = next - cursor;
+            if (output.unusedCapacitySlice().len < length) {
+                try output.ensureUnusedCapacity(allocator, length);
+            }
+            copySourceBytes(output.unusedCapacitySlice(), text[cursor..next]);
+            output.items.len += length;
+            cursor = next;
+            continue;
+        }
+        if (mode == .full) {
             const mapping = if (root)
                 lookupRootStreaming(codepoint, kind, text, cursor, next)
             else
@@ -980,6 +1017,45 @@ test "full case mapping rejects invalid UTF-8" {
     try std.testing.expectError(
         error.InvalidUtf8,
         fullUpperAlloc(std.testing.allocator, "\xff", .{}),
+    );
+}
+
+test "streaming fold matches the folding table" {
+    const allocator = std.testing.allocator;
+    var text_buffer: [4]u8 = undefined;
+    var expected_buffer: [16]u8 = undefined;
+    var codepoint: u21 = 0;
+    while (codepoint <= 0xFFFF) : (codepoint += 1) {
+        if (codepoint >= 0xD800 and codepoint <= 0xDFFF) continue;
+        if (!full_data.interesting(codepoint, .lower, false) and
+            !full_data.interesting(codepoint, .upper, false)) continue;
+        try expectFoldMatches(allocator, &text_buffer, &expected_buffer, codepoint);
+    }
+    for ([_]u21{ 0x10400, 0x10428, 0x10570, 0x118a0, 0x16e40, 0x1e900 }) |sample| {
+        try expectFoldMatches(allocator, &text_buffer, &expected_buffer, sample);
+    }
+}
+
+fn expectFoldMatches(
+    allocator: std.mem.Allocator,
+    text_buffer: *[4]u8,
+    expected_buffer: *[16]u8,
+    codepoint: u21,
+) !void {
+    const length = scalar.encodeUtf8(text_buffer, codepoint);
+    var expected_len: usize = 0;
+    if (data.fullFold(codepoint)) |components| {
+        for (components) |component| {
+            expected_len += scalar.encodeUtf8(expected_buffer[expected_len..], component);
+        }
+    } else {
+        expected_len = scalar.encodeUtf8(expected_buffer[0..], codepoint);
+    }
+    const folded = try foldStreamingAlloc(allocator, text_buffer[0..length]);
+    defer allocator.free(folded);
+    try std.testing.expectEqualStrings(
+        expected_buffer[0..expected_len],
+        folded,
     );
 }
 

@@ -328,6 +328,16 @@ pub const lower_lead_skip = [_]u8{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 
 pub const upper_lead_skip = [_]u8{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 128, 255, 249, 123, 0, 0};
 
+/// A lead can be skipped while folding only when neither case kind
+/// maps inside its range.
+pub const fold_lead_skip = blk: {
+    var mask: [32]u8 = undefined;
+    for (&mask, 0..) |*byte, index| {
+        byte.* = lower_lead_skip[index] & upper_lead_skip[index];
+    }
+    break :blk mask;
+};
+
 /// SpecialCasing entries that only exist for the Turkic or Lithuanian
 /// locale families; the root bitmap excludes them on purpose.
 inline fn localeOnlyRecord(codepoint: u21) bool {

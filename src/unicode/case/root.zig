@@ -121,17 +121,6 @@ pub inline fn fullFold(codepoint: u21) ?[]const u21 {
     return data.fullFold(codepoint);
 }
 
-fn asciiPrefixLen(text: []const u8) usize {
-    const high_bits: u64 = 0x8080_8080_8080_8080;
-    var index: usize = 0;
-    while (index + 8 <= text.len) : (index += 8) {
-        const word = std.mem.readInt(u64, text[index..][0..8], .little);
-        if (word & high_bits != 0) break;
-    }
-    while (index < text.len and text[index] < 0x80) : (index += 1) {}
-    return index;
-}
-
 /// Lowercase UTF-8 text using simple one-to-one mappings.
 pub fn lowerAlloc(
     allocator: std.mem.Allocator,
@@ -156,63 +145,7 @@ pub fn foldAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
 ) Error![]u8 {
-    if (asciiPrefixLen(text) == text.len) {
-        const output = try allocator.alloc(u8, text.len);
-        for (text, 0..) |byte, index| {
-            output[index] = if (byte >= 'A' and byte <= 'Z')
-                byte + ('a' - 'A')
-            else
-                byte;
-        }
-        return output;
-    }
-    var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, text.len + 8);
-
-    var index: usize = 0;
-    while (index < text.len) {
-        const first = text[index];
-        if (first < 0x80) {
-            // Map ASCII runs straight into the spare capacity; folding only
-            // changes A-Z and never changes the byte length.
-            try output.ensureUnusedCapacity(allocator, 8);
-            const spare = output.unusedCapacitySlice();
-            var written: usize = 0;
-            while (index < text.len and text[index] < 0x80 and
-                written < spare.len)
-            {
-                const byte = text[index];
-                spare[written] = if (byte >= 'A' and byte <= 'Z')
-                    byte + ('a' - 'A')
-                else
-                    byte;
-                written += 1;
-                index += 1;
-            }
-            output.items.len += written;
-            continue;
-        }
-        const decoded = scalar.decodeValidatingPacked(text, index);
-        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
-        const codepoint = scalar.packedCodepoint(decoded);
-        index += scalar.packedLength(decoded);
-        if (fullFold(codepoint)) |components| {
-            // Unicode 17 folds expand to at most three scalars.
-            try output.ensureUnusedCapacity(allocator, 12);
-            const dest = output.unusedCapacitySlice();
-            var written: usize = 0;
-            for (components) |component| {
-                written += scalar.encodeUtf8(dest[written..], component);
-            }
-            output.items.len += written;
-        } else {
-            try output.ensureUnusedCapacity(allocator, 4);
-            const dest = output.unusedCapacitySlice();
-            output.items.len += scalar.encodeUtf8(dest, codepoint);
-        }
-    }
-    return try output.toOwnedSlice(allocator);
+    return full.foldStreamingAlloc(allocator, text);
 }
 
 fn mapSimpleAlloc(
