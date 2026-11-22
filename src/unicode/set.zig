@@ -444,16 +444,22 @@ pub const Set = struct {
     /// Add a multi-code-point element. Empty strings are ignored.
     pub fn addString(self: *Set, text: []const u8) !void {
         if (text.len == 0) return;
-        if (self.stringIndex(text) != null) return;
+        // One binary search both rejects duplicates and finds the sorted
+        // insertion point. A linear scan here makes closures with many
+        // folded strings quadratic.
+        var low: usize = 0;
+        var high = self.strings.items.len;
+        while (low < high) {
+            const middle = low + (high - low) / 2;
+            switch (std.mem.order(u8, self.strings.items[middle], text)) {
+                .lt => low = middle + 1,
+                .gt => high = middle,
+                .eq => return,
+            }
+        }
         const copy = try self.allocator.dupe(u8, text);
         errdefer self.allocator.free(copy);
-        var position: usize = 0;
-        while (position < self.strings.items.len and
-            std.mem.order(u8, self.strings.items[position], copy) == .lt)
-        {
-            position += 1;
-        }
-        try self.strings.insert(self.allocator, position, copy);
+        try self.strings.insert(self.allocator, low, copy);
     }
 
     pub fn containsString(self: Set, text: []const u8) bool {
@@ -681,7 +687,12 @@ pub const Set = struct {
 
     fn addMappedSequence(self: *Set, codepoints: []const u21) !void {
         if (codepoints.len <= 1) {
-            if (codepoints.len == 1) try self.add(codepoints[0]);
+            if (codepoints.len == 1) {
+                // Checking first avoids dropping the membership bitmap for
+                // a fold target that is already present, which is the norm
+                // while closing an already-covered set.
+                if (!self.contains(codepoints[0])) try self.add(codepoints[0]);
+            }
             return;
         }
         var buffer: [64]u8 = undefined;
