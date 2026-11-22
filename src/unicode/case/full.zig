@@ -440,14 +440,13 @@ fn mapStreamingInner(
                 if (length == 4 and text[cursor + 3] & 0xc0 != 0x80) {
                     return error.InvalidUtf8;
                 }
-                if (output.unusedCapacitySlice().len < length) {
-                    try output.ensureUnusedCapacity(allocator, length);
-                }
-                copySourceBytes(
-                    output.unusedCapacitySlice(),
-                    text[cursor..][0..length],
+                try copyIdentityBytes(
+                    allocator,
+                    &output,
+                    text,
+                    cursor,
+                    length,
                 );
-                output.items.len += length;
                 cursor += length;
                 continue;
             }
@@ -467,12 +466,13 @@ fn mapStreamingInner(
         };
         if (!may_map) {
             // The mapping is the identity, so the source bytes are the result.
-            const length = next - cursor;
-            if (output.unusedCapacitySlice().len < length) {
-                try output.ensureUnusedCapacity(allocator, length);
-            }
-            copySourceBytes(output.unusedCapacitySlice(), text[cursor..next]);
-            output.items.len += length;
+            try copyIdentityBytes(
+                allocator,
+                &output,
+                text,
+                cursor,
+                next - cursor,
+            );
             cursor = next;
             continue;
         }
@@ -483,12 +483,13 @@ fn mapStreamingInner(
                 continue;
             }
             // The scalar folds to itself; copy the source bytes.
-            const length = next - cursor;
-            if (output.unusedCapacitySlice().len < length) {
-                try output.ensureUnusedCapacity(allocator, length);
-            }
-            copySourceBytes(output.unusedCapacitySlice(), text[cursor..next]);
-            output.items.len += length;
+            try copyIdentityBytes(
+                allocator,
+                &output,
+                text,
+                cursor,
+                next - cursor,
+            );
             cursor = next;
             continue;
         }
@@ -902,6 +903,38 @@ inline fn asciiMapVector(
             zero,
         ),
     };
+}
+
+/// Copy an identity sequence of `length` (2-4) bytes.
+///
+/// While the output has not outgrown the input position, the reserved
+/// capacity covers the whole input and a single word load and store copies
+/// the sequence plus one byte that a later write overwrites.
+inline fn copyIdentityBytes(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    text: []const u8,
+    cursor: usize,
+    length: usize,
+) error{OutOfMemory}!void {
+    if (output.items.len <= cursor and cursor + 4 <= text.len) {
+        const quad = std.mem.readInt(u32, text[cursor..][0..4], .little);
+        std.mem.writeInt(
+            u32,
+            output.unusedCapacitySlice()[0..4],
+            quad,
+            .little,
+        );
+    } else {
+        if (output.unusedCapacitySlice().len < length) {
+            try output.ensureUnusedCapacity(allocator, length);
+        }
+        copySourceBytes(
+            output.unusedCapacitySlice(),
+            text[cursor..][0..length],
+        );
+    }
+    output.items.len += length;
 }
 
 inline fn copySourceBytes(dest: []u8, source: []const u8) void {
