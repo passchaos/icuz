@@ -215,8 +215,9 @@ fn normalizeFusedInto(
                     changed = true;
                 }
                 if (start > stable_start) {
-                    try output.appendSlice(
+                    try appendBytes(
                         allocator,
+                        output,
                         text[stable_start..start],
                     );
                 }
@@ -255,8 +256,9 @@ fn normalizeFusedInto(
                 changed = true;
             }
             if (starter_offset > stable_start) {
-                try output.appendSlice(
+                try appendBytes(
                     allocator,
+                    output,
                     text[stable_start..starter_offset],
                 );
             }
@@ -288,7 +290,7 @@ fn normalizeFusedInto(
         previous_input_class = current_class;
     }
     if (!changed) return false;
-    try output.appendSlice(allocator, text[stable_start..]);
+    try appendBytes(allocator, output, text[stable_start..]);
     return true;
 }
 
@@ -486,6 +488,39 @@ const CodepointSink = struct {
     }
 };
 
+/// Append bytes without routing one- to four-byte spans through memcpy.
+inline fn appendBytes(
+    allocator: std.mem.Allocator,
+    list: *std.ArrayList(u8),
+    bytes: []const u8,
+) error{OutOfMemory}!void {
+    if (list.unusedCapacitySlice().len < bytes.len) {
+        try list.ensureUnusedCapacity(allocator, bytes.len);
+    }
+    const dest = list.unusedCapacitySlice();
+    switch (bytes.len) {
+        0 => return,
+        1 => dest[0] = bytes[0],
+        2 => {
+            dest[0] = bytes[0];
+            dest[1] = bytes[1];
+        },
+        3 => {
+            dest[0] = bytes[0];
+            dest[1] = bytes[1];
+            dest[2] = bytes[2];
+        },
+        4 => {
+            dest[0] = bytes[0];
+            dest[1] = bytes[1];
+            dest[2] = bytes[2];
+            dest[3] = bytes[3];
+        },
+        else => @memcpy(dest[0..bytes.len], bytes),
+    }
+    list.items.len += bytes.len;
+}
+
 const Utf8Sink = struct {
     list: *std.ArrayList(u8),
     allocator: std.mem.Allocator,
@@ -495,11 +530,12 @@ const Utf8Sink = struct {
         codepoints: []const u21,
     ) error{OutOfMemory}!void {
         try self.list.ensureUnusedCapacity(self.allocator, codepoints.len * 4);
-        var encoded: [4]u8 = undefined;
+        const dest = self.list.unusedCapacitySlice();
+        var written: usize = 0;
         for (codepoints) |codepoint| {
-            const length = scalar.encodeUtf8(&encoded, codepoint);
-            self.list.appendSliceAssumeCapacity(encoded[0..length]);
+            written += scalar.encodeUtf8(dest[written..][0..4], codepoint);
         }
+        self.list.items.len += written;
     }
 
     fn appendOne(
@@ -508,14 +544,14 @@ const Utf8Sink = struct {
     ) error{OutOfMemory}!void {
         var encoded: [4]u8 = undefined;
         const length = scalar.encodeUtf8(&encoded, codepoint);
-        try self.list.appendSlice(self.allocator, encoded[0..length]);
+        try appendBytes(self.allocator, self.list, encoded[0..length]);
     }
 
     fn appendAsciiBytes(
         self: *Utf8Sink,
         bytes: []const u8,
     ) error{OutOfMemory}!void {
-        try self.list.appendSlice(self.allocator, bytes);
+        try appendBytes(self.allocator, self.list, bytes);
     }
 };
 
