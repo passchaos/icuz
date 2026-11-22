@@ -105,6 +105,48 @@ const cased_class_members = blk: {
 
 const cased_class_words = (cased_codepoints.len + 63) / 64;
 
+/// UTF-8 bytes of every multi-scalar full fold of a cased scalar, packed in
+/// cased-scalar order.
+const cased_fold_data = blk: {
+    @setEvalBranchQuota(10_000_000);
+    var bytes: [8192]u8 = undefined;
+    var length: usize = 0;
+    for (cased_codepoints) |codepoint| {
+        const folded = case_mapping.fullFold(codepoint) orelse continue;
+        if (folded.len <= 1) continue;
+        for (folded) |component| {
+            length += std.unicode.utf8Encode(component, bytes[length..][0..4]) catch
+                unreachable;
+        }
+    }
+    break :blk bytes[0..length].*;
+};
+
+/// One slice of `cased_fold_data` per multi-scalar full fold.
+const cased_fold_entries = blk: {
+    @setEvalBranchQuota(10_000_000);
+    const Entry = struct { offset: u16, length: u8 };
+    var entries: [cased_codepoints.len]Entry = undefined;
+    var count: usize = 0;
+    var offset: usize = 0;
+    for (cased_codepoints) |codepoint| {
+        const folded = case_mapping.fullFold(codepoint) orelse continue;
+        if (folded.len <= 1) continue;
+        var length: usize = 0;
+        for (folded) |component| {
+            length += std.unicode.utf8CodepointSequenceLength(component) catch
+                unreachable;
+        }
+        entries[count] = .{
+            .offset = @intCast(offset),
+            .length = @intCast(length),
+        };
+        offset += length;
+        count += 1;
+    }
+    break :blk entries[0..count].*;
+};
+
 fn casedIndex(codepoint: u21) ?usize {
     var low: usize = 0;
     var high: usize = cased_codepoints.len;
@@ -606,13 +648,10 @@ pub const Set = struct {
         }
 
         if (fully_cased) {
-            // Every cased scalar is already present; only full-fold strings
-            // can be new. Single-scalar folds are already members, so
-            // `addMappedSequence` skips them after one membership check.
-            for (cased_codepoints) |codepoint| {
-                if (case_mapping.fullFold(codepoint)) |folded| {
-                    try self.addMappedSequence(folded);
-                }
+            // Every cased scalar is already present; only multi-scalar full
+            // folds can add anything, and their strings are precomputed.
+            for (cased_fold_entries) |entry| {
+                try self.addString(cased_fold_data[entry.offset..][0..entry.length]);
             }
         } else {
             // Collect every new cased scalar first and union the coalesced
