@@ -220,66 +220,14 @@ fn mapSimpleAlloc(
     text: []const u8,
     comptime kind: enum { lower, upper },
 ) Error![]u8 {
-    if (asciiPrefixLen(text) == text.len) {
-        const output = try allocator.alloc(u8, text.len);
-        for (text, 0..) |byte, index| {
-            output[index] = switch (kind) {
-                .lower => if (byte >= 'A' and byte <= 'Z')
-                    byte + ('a' - 'A')
-                else
-                    byte,
-                .upper => if (byte >= 'a' and byte <= 'z')
-                    byte - ('a' - 'A')
-                else
-                    byte,
-            };
-        }
-        return output;
-    }
-    var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, text.len + 8);
-
-    var index: usize = 0;
-    while (index < text.len) {
-        const first = text[index];
-        if (first < 0x80) {
-            try output.ensureUnusedCapacity(allocator, 8);
-            const spare = output.unusedCapacitySlice();
-            var written: usize = 0;
-            while (index < text.len and text[index] < 0x80 and
-                written < spare.len)
-            {
-                const byte = text[index];
-                spare[written] = switch (kind) {
-                    .lower => if (byte >= 'A' and byte <= 'Z')
-                        byte + ('a' - 'A')
-                    else
-                        byte,
-                    .upper => if (byte >= 'a' and byte <= 'z')
-                        byte - ('a' - 'A')
-                    else
-                        byte,
-                };
-                written += 1;
-                index += 1;
-            }
-            output.items.len += written;
-            continue;
-        }
-        const decoded = scalar.decodeValidatingPacked(text, index);
-        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
-        const codepoint = scalar.packedCodepoint(decoded);
-        index += scalar.packedLength(decoded);
-        const mapped = switch (kind) {
-            .lower => simpleLower(codepoint),
-            .upper => simpleUpper(codepoint),
-        };
-        try output.ensureUnusedCapacity(allocator, 4);
-        const dest = output.unusedCapacitySlice();
-        output.items.len += scalar.encodeUtf8(dest, mapped);
-    }
-    return try output.toOwnedSlice(allocator);
+    return full.simpleMapAlloc(
+        allocator,
+        text,
+        switch (kind) {
+            .lower => .lower,
+            .upper => .upper,
+        },
+    );
 }
 
 test "case folding expands sharp s and dotted capital I" {

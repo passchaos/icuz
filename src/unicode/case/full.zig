@@ -328,9 +328,22 @@ fn mapStreaming(
     comptime kind: full_data.Kind,
 ) Error![]u8 {
     if (options.locale == .root) {
-        return mapStreamingInner(allocator, text, .root, kind, true);
+        return mapStreamingInner(allocator, text, .root, kind, true, true);
     }
-    return mapStreamingInner(allocator, text, options.locale, kind, false);
+    return mapStreamingInner(allocator, text, options.locale, kind, false, true);
+}
+
+/// One-to-one mapping entry point for the simple case API.
+///
+/// The identity skip masks are conservative supersets of the simple mappings,
+/// so they are shared with the full-mapping path; only the record lookup is
+/// compiled out.
+pub fn simpleMapAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    comptime kind: full_data.Kind,
+) Error![]u8 {
+    return mapStreamingInner(allocator, text, .root, kind, true, false);
 }
 
 fn mapStreamingInner(
@@ -339,6 +352,7 @@ fn mapStreamingInner(
     locale: Locale,
     comptime kind: full_data.Kind,
     comptime root: bool,
+    comptime records: bool,
 ) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
@@ -441,20 +455,23 @@ fn mapStreamingInner(
             cursor = next;
             continue;
         }
-        const mapping = if (root)
-            lookupRootStreaming(codepoint, kind, text, cursor, next)
-        else
-            lookupStreaming(codepoint, kind, locale, text, cursor, next);
-        if (mapping) |components| {
-            try appendMapping(allocator, &output, components);
-        } else {
-            const mapped = switch (kind) {
-                .lower => simpleLowerFast(codepoint),
-                .upper => simpleUpperFast(codepoint),
-                .title => simpleTitleFast(codepoint),
-            };
-            try appendCodepoint(allocator, &output, mapped);
+        if (records) {
+            const mapping = if (root)
+                lookupRootStreaming(codepoint, kind, text, cursor, next)
+            else
+                lookupStreaming(codepoint, kind, locale, text, cursor, next);
+            if (mapping) |components| {
+                try appendMapping(allocator, &output, components);
+                cursor = next;
+                continue;
+            }
         }
+        const mapped = switch (kind) {
+            .lower => simpleLowerFast(codepoint),
+            .upper => simpleUpperFast(codepoint),
+            .title => simpleTitleFast(codepoint),
+        };
+        try appendCodepoint(allocator, &output, mapped);
         cursor = next;
     }
     return output.toOwnedSlice(allocator);
