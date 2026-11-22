@@ -10,6 +10,7 @@ const properties = @import("properties.zig");
 const trie = @import("properties/trie.zig");
 const aliases = @import("properties/aliases.zig");
 const script = @import("script/root.zig");
+const script_ranges = @import("script/set_ranges.zig");
 const script_extensions = @import("script_extensions/root.zig");
 const case_mapping = @import("case/root.zig");
 
@@ -229,12 +230,13 @@ pub const Set = struct {
         {
             try self.appendRangeEntry(
                 trie.propertyRangeEntry(@intCast(@ctz(property_mask))),
+                trie,
             );
             return;
         }
         if (property_mask == 0 and category_mask != 0) {
             if (trie.maskRangeEntry(category_mask)) |entry| {
-                try self.appendRangeEntry(entry);
+                try self.appendRangeEntry(entry, trie);
                 return;
             }
         }
@@ -242,15 +244,15 @@ pub const Set = struct {
     }
 
     /// Copy one precomputed range list, which is already coalesced and
-    /// sorted, into this empty set.
-    fn appendRangeEntry(self: *Set, entry: trie.RangeEntry) !void {
+    /// sorted, into this empty set. `source` provides the entry accessors.
+    fn appendRangeEntry(self: *Set, entry: anytype, comptime source: type) !void {
         const range_count: usize = entry.count;
         try self.ranges.ensureTotalCapacity(self.allocator, range_count);
         var index: usize = 0;
         while (index < range_count) : (index += 1) {
             self.ranges.appendAssumeCapacity(.{
-                .first = trie.rangeFirst(entry, index),
-                .last = trie.rangeLast(entry, index),
+                .first = source.rangeFirst(entry, index),
+                .last = source.rangeLast(entry, index),
             });
         }
     }
@@ -1128,18 +1130,7 @@ pub fn fromScript(
 ) !Set {
     var set = Set.init(allocator);
     errdefer set.deinit();
-
-    var start: ?u21 = null;
-    var codepoint: u21 = 0;
-    while (codepoint <= 0x10ffff) : (codepoint += 1) {
-        const present = script.forCodepoint(codepoint) == target;
-        if (present and start == null) start = codepoint;
-        if (!present and start != null) {
-            try set.addRange(start.?, codepoint - 1);
-            start = null;
-        }
-    }
-    if (start != null) try set.addRange(start.?, 0x10ffff);
+    try set.appendRangeEntry(script_ranges.scriptEntry(target), script_ranges);
     try set.finalize();
     return set;
 }
@@ -1150,18 +1141,10 @@ pub fn fromScriptExtensions(
 ) !Set {
     var set = Set.init(allocator);
     errdefer set.deinit();
-
-    var start: ?u21 = null;
-    var codepoint: u21 = 0;
-    while (codepoint <= 0x10ffff) : (codepoint += 1) {
-        const present = script_extensions.contains(codepoint, target);
-        if (present and start == null) start = codepoint;
-        if (!present and start != null) {
-            try set.addRange(start.?, codepoint - 1);
-            start = null;
-        }
-    }
-    if (start != null) try set.addRange(start.?, 0x10ffff);
+    try set.appendRangeEntry(
+        script_ranges.extensionEntry(target),
+        script_ranges,
+    );
     try set.finalize();
     return set;
 }
@@ -2138,4 +2121,88 @@ test "UnicodeSetIterator ranges and strings" {
     try testing.expect(ranges.isString());
     try testing.expectEqualStrings("xy", ranges.getString());
     try testing.expect(!ranges.nextRange());
+}
+
+test "precomputed script ranges match membership" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const script_count = @typeInfo(script.Script).@"enum".fields.len;
+    var id: usize = 0;
+    while (id < script_count) : (id += 1) {
+        const target: script.Script = @enumFromInt(id);
+
+        const entry = script_ranges.scriptEntry(target);
+        var previous_last: u32 = 0;
+        var index: usize = 0;
+        while (index < entry.count) : (index += 1) {
+            const first = script_ranges.rangeFirst(entry, index);
+            const last = script_ranges.rangeLast(entry, index);
+            try testing.expect(first <= last);
+            if (index != 0) {
+                try testing.expect(@as(u32, first) > previous_last + 1);
+            }
+            previous_last = last;
+            try testing.expectEqual(target, script.forCodepoint(first));
+            try testing.expectEqual(target, script.forCodepoint(last));
+            if (first > 0) {
+                try testing.expect(script.forCodepoint(first - 1) != target);
+            }
+            if (last < 0x10ffff) {
+                try testing.expect(script.forCodepoint(last + 1) != target);
+            }
+        }
+
+        const extension = script_ranges.extensionEntry(target);
+        previous_last = 0;
+        index = 0;
+        while (index < extension.count) : (index += 1) {
+            const first = script_ranges.rangeFirst(extension, index);
+            const last = script_ranges.rangeLast(extension, index);
+            try testing.expect(first <= last);
+            if (index != 0) {
+                try testing.expect(@as(u32, first) > previous_last + 1);
+            }
+            previous_last = last;
+            try testing.expect(script_extensions.contains(first, target));
+            try testing.expect(script_extensions.contains(last, target));
+            if (first > 0) {
+                try testing.expect(!script_extensions.contains(first - 1, target));
+            }
+            if (last < 0x10ffff) {
+                try testing.expect(!script_extensions.contains(last + 1, target));
+            }
+        }
+    }
+
+    const sampled = [_]script.Script{ .greek, .han, .latin };
+    for (sampled) |target| {
+        var scanned = std.ArrayList(Range).empty;
+        defer scanned.deinit(allocator);
+        var open: ?u21 = null;
+        var codepoint: u32 = 0;
+        while (codepoint <= 0x10ffff) : (codepoint += 1) {
+            const present = script.forCodepoint(@intCast(codepoint)) == target;
+            if (present and open == null) open = @intCast(codepoint);
+            if (!present and open != null) {
+                try scanned.append(allocator, .{
+                    .first = open.?,
+                    .last = @intCast(codepoint - 1),
+                });
+                open = null;
+            }
+        }
+        if (open != null) {
+            try scanned.append(allocator, .{
+                .first = open.?,
+                .last = 0x10ffff,
+            });
+        }
+        const entry = script_ranges.scriptEntry(target);
+        try testing.expectEqual(@as(usize, entry.count), scanned.items.len);
+        for (scanned.items, 0..) |range, index| {
+            try testing.expectEqual(range.first, script_ranges.rangeFirst(entry, index));
+            try testing.expectEqual(range.last, script_ranges.rangeLast(entry, index));
+        }
+    }
 }
