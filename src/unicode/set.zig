@@ -1005,8 +1005,26 @@ pub const Set = struct {
     }
 
     fn matchStringAt(self: Set, text: []const u8, index: usize) ?usize {
+        const items = self.strings.items;
+        if (items.len == 0) return null;
+        // Strings are sorted by byte order, so candidates starting with the
+        // text byte are contiguous; a binary search avoids scanning every
+        // string at every position.
+        const first = text[index];
+        var low: usize = 0;
+        var high = items.len;
+        while (low < high) {
+            const middle = low + (high - low) / 2;
+            if (items[middle][0] < first) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
         var best: ?usize = null;
-        for (self.strings.items) |string| {
+        var position = low;
+        while (position < items.len and items[position][0] == first) : (position += 1) {
+            const string = items[position];
             if (string.len > text.len - index) continue;
             if (!std.mem.eql(u8, text[index..][0..string.len], string)) continue;
             if (best == null or string.len > best.?) best = string.len;
@@ -1015,8 +1033,12 @@ pub const Set = struct {
     }
 
     fn matchStringEndingAt(self: Set, text: []const u8, index: usize) ?usize {
+        const last = text[index - 1];
         var best: ?usize = null;
         for (self.strings.items) |string| {
+            // The last byte is not part of the sort key, so filter on it
+            // before comparing whole strings.
+            if (string[string.len - 1] != last) continue;
             if (string.len > index) continue;
             if (!std.mem.eql(u8, text[index - string.len .. index], string)) {
                 continue;
