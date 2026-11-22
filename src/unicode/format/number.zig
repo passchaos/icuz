@@ -3221,6 +3221,12 @@ fn utf8LengthAt(text: []const u8, index: usize) usize {
     return std.unicode.utf8ByteSequenceLength(text[index]) catch 1;
 }
 
+/// Exact powers of ten used by the fast decimal conversion.
+const pow10_table = [_]f64{
+    1e0,  1e1,  1e2,  1e3,  1e4,  1e5,  1e6,  1e7,
+    1e8,  1e9,  1e10, 1e11, 1e12, 1e13, 1e14, 1e15,
+};
+
 fn parseDigit(locale: *const data.Locale, codepoint: u21) ?u8 {
     if (codepoint >= '0' and codepoint <= '9') {
         return @intCast(codepoint - '0');
@@ -3303,6 +3309,14 @@ pub fn parseFloatPrefix(
     const group_ascii: ?u8 = if (locale.group.len == 1 and
         locale.group[0] < 0x80) locale.group[0] else null;
 
+    // Simple numbers (at most 15 digits, no exponent) are converted from an
+    // exact integer mantissa instead of the generic float parser.
+    const max_fast_digits = 15;
+    var mantissa: u64 = 0;
+    var digit_count: usize = 0;
+    var fraction_digits: usize = 0;
+    var fast_ok = true;
+
     while (cursor.index < text.len) {
         const byte = text[cursor.index];
         if (byte < 0x80) {
@@ -3336,6 +3350,13 @@ pub fn parseFloatPrefix(
                 length += 1;
                 seen_digit = true;
                 last_was_digit = true;
+                if (digit_count < max_fast_digits) {
+                    mantissa = mantissa * 10 + (byte - '0');
+                    digit_count += 1;
+                    if (seen_decimal) fraction_digits += 1;
+                } else {
+                    fast_ok = false;
+                }
                 cursor.index += 1;
                 continue;
             }
@@ -3371,6 +3392,13 @@ pub fn parseFloatPrefix(
         length += 1;
         seen_digit = true;
         last_was_digit = true;
+        if (digit_count < max_fast_digits) {
+            mantissa = mantissa * 10 + digit;
+            digit_count += 1;
+            if (seen_decimal) fraction_digits += 1;
+        } else {
+            fast_ok = false;
+        }
         cursor.index += utf8LengthAt(text, cursor.index);
     }
     if (!seen_digit) return null;
@@ -3378,6 +3406,7 @@ pub fn parseFloatPrefix(
     const exponent_start = cursor.index;
     const before_exponent = length;
     if (cursor.matchAny(&.{ locale.exponential, "e", "E" })) {
+        fast_ok = false;
         if (length + 4 >= ascii.len) return null;
         ascii[length] = 'e';
         length += 1;
@@ -3431,8 +3460,10 @@ pub fn parseFloatPrefix(
         negative = true;
     }
 
-    const magnitude = std.fmt.parseFloat(f64, ascii[0..length]) catch
-        return null;
+    const magnitude = if (fast_ok)
+        @as(f64, @floatFromInt(mantissa)) / pow10_table[fraction_digits]
+    else
+        std.fmt.parseFloat(f64, ascii[0..length]) catch return null;
     const value = if (negative) -magnitude else magnitude;
     return .{ .value = value * scale, .end = cursor.index };
 }
@@ -4512,4 +4543,56 @@ test "rounding mode unnecessary rejects inexact values" {
             "precision-integer rounding-mode-unnecessary",
         ),
     );
+}
+
+test "fast decimal conversion matches the generic parser" {
+    const testing = @import("std").testing;
+    const fixed = [_][]const u8{
+        "0",
+        "-0",
+        "1",
+        "1234567.89",
+        ".5",
+        "-.5",
+        "123.",
+        "0.0001",
+        "999999999999999",
+        "0.000000000000001",
+        "1234567890123456",
+        "1e3",
+        "1,234.5",
+    };
+    for (fixed) |text| {
+        const expected = std.fmt.parseFloat(f64, text) catch continue;
+        const actual = parseFloat(text, "en", .{}) orelse continue;
+        try testing.expectEqual(expected, actual);
+    }
+
+    var state: u32 = 0x12345678;
+    var text: [24]u8 = undefined;
+    for (0..500) |_| {
+        state = state *% 1664525 +% 1013904223;
+        const digits = (state >> 16) % 15 + 1;
+        var length: usize = 0;
+        if (state & 1 != 0) {
+            text[length] = '-';
+            length += 1;
+        }
+        state = state *% 1664525 +% 1013904223;
+        const integer_digits = (state >> 16) % digits + 1;
+        var digit_index: usize = 0;
+        while (digit_index < digits) : (digit_index += 1) {
+            if (digit_index == integer_digits) {
+                text[length] = '.';
+                length += 1;
+            }
+            state = state *% 1664525 +% 1013904223;
+            text[length] = '0' + @as(u8, @intCast((state >> 16) % 10));
+            length += 1;
+        }
+        const input = text[0..length];
+        const expected = std.fmt.parseFloat(f64, input) catch continue;
+        const actual = parseFloat(input, "en", .{}) orelse continue;
+        try testing.expectEqual(expected, actual);
+    }
 }
