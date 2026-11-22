@@ -1072,6 +1072,41 @@ pub fn resolveInverse(
     adjustRemovedLevels(classes, levels, base_level);
 }
 
+/// Per-class dispatch bits for the weak-type pass, which visits every scalar
+/// of a sequence and would otherwise run a chain of enum comparisons.
+const WeakFlags = struct {
+    const nsm: u8 = 1 << 0;
+    const isolate_formatting: u8 = 1 << 1;
+    const strong_initial: u8 = 1 << 2;
+    const es_or_cs: u8 = 1 << 3;
+    const et: u8 = 1 << 4;
+    const weak: u8 = 1 << 5;
+    const en: u8 = 1 << 6;
+    const al: u8 = 1 << 7;
+};
+
+const weak_flags = buildWeakFlags();
+
+fn buildWeakFlags() [@typeInfo(Class).@"enum".fields.len]u8 {
+    var table = [_]u8{0} ** @typeInfo(Class).@"enum".fields.len;
+    for (&table, 0..) |*flags, index| {
+        const value: Class = @enumFromInt(index);
+        var bits: u8 = 0;
+        if (value == .nsm) bits |= WeakFlags.nsm;
+        if (isIsolateFormatting(value)) bits |= WeakFlags.isolate_formatting;
+        if (isStrongInitial(value)) bits |= WeakFlags.strong_initial;
+        if (value == .es or value == .cs) bits |= WeakFlags.es_or_cs;
+        if (value == .et) bits |= WeakFlags.et;
+        if (value == .es or value == .et or value == .cs or value == .en) {
+            bits |= WeakFlags.weak;
+        }
+        if (value == .en) bits |= WeakFlags.en;
+        if (value == .al) bits |= WeakFlags.al;
+        flags.* = bits;
+    }
+    return table;
+}
+
 fn resolveWeak(types: []Class, sos: Class, eos: Class) void {
     var previous = sos;
     var previous_strong = sos;
@@ -1079,27 +1114,28 @@ fn resolveWeak(types: []Class, sos: Class, eos: Class) void {
     var saw_weak = false;
     for (types, 0..) |*value, index| {
         var current = value.*;
-        if (current == .nsm) {
+        const flags = weak_flags[@intFromEnum(current)];
+        if (flags & WeakFlags.nsm != 0) {
             current = switch (previous) {
                 .lri, .rli, .fsi, .pdi => .on,
                 else => previous,
             };
             value.* = current;
         } else {
-            if (isIsolateFormatting(current)) {
+            if (flags & WeakFlags.isolate_formatting != 0) {
                 previous = .on;
                 continue;
             }
-            if (current == .en and previous_strong == .al) {
+            if (flags & WeakFlags.en != 0 and previous_strong == .al) {
                 current = .an;
                 value.* = current;
-            } else if (isStrongInitial(current)) {
+            } else if (flags & WeakFlags.strong_initial != 0) {
                 previous_strong = current;
-                if (current == .al) {
+                if (flags & WeakFlags.al != 0) {
                     current = .r;
                     value.* = current;
                 }
-            } else if ((current == .es or current == .cs) and
+            } else if (flags & WeakFlags.es_or_cs != 0 and
                 index + 1 < types.len)
             {
                 var next = types[index + 1];
@@ -1114,12 +1150,8 @@ fn resolveWeak(types: []Class, sos: Class, eos: Class) void {
             }
             previous = current;
         }
-        if (current == .et) saw_et = true;
-        if (current == .es or current == .et or current == .cs or
-            current == .en)
-        {
-            saw_weak = true;
-        }
+        if (flags & WeakFlags.et != 0) saw_et = true;
+        if (flags & WeakFlags.weak != 0) saw_weak = true;
     }
 
     // Most prose sequences contain no European separators, terminators, or
