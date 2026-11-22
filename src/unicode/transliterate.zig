@@ -916,11 +916,14 @@ fn decodeAlloc(
 ) Error!std.ArrayList(u21) {
     var codepoints = std.ArrayList(u21).empty;
     errdefer codepoints.deinit(allocator);
+    // One scalar per input byte is the upper bound, so the loop never
+    // grows the list.
+    try codepoints.ensureTotalCapacity(allocator, text.len);
     var index: usize = 0;
     while (index < text.len) {
         const decoded = scalar.decodeValidating(text, index) orelse
             return error.InvalidUtf8;
-        try codepoints.append(allocator, decoded.codepoint);
+        codepoints.appendAssumeCapacity(decoded.codepoint);
         index = decoded.next;
     }
     return codepoints;
@@ -1721,8 +1724,14 @@ fn encodeCodepointsAlloc(
 ) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
+    // Four bytes per scalar is the upper bound, so the loop never grows
+    // the list; `toOwnedSlice` trims the unused tail.
+    try output.ensureTotalCapacity(allocator, codepoints.len * 4);
     for (codepoints) |codepoint| {
-        try appendCodepoint(allocator, &output, codepoint);
+        var buffer: [4]u8 = undefined;
+        const length = std.unicode.utf8Encode(codepoint, &buffer) catch
+            return error.InvalidUtf8;
+        output.appendSliceAssumeCapacity(buffer[0..length]);
     }
     return output.toOwnedSlice(allocator);
 }
