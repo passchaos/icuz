@@ -3093,7 +3093,42 @@ fn currencySymbol(code: []const u8) []const u8 {
     return code;
 }
 
+const locale_cache_len = 8;
+const locale_cache_name_len = 24;
+
+const LocaleCacheEntry = struct {
+    name: [locale_cache_name_len]u8 = [_]u8{0} ** locale_cache_name_len,
+    name_len: u8 = 0,
+    found: bool = false,
+    result: *const data.Locale = undefined,
+};
+
+/// Repeated formatting with one locale should not repeat the binary search
+/// over the locale table.
+threadlocal var locale_cache: [locale_cache_len]LocaleCacheEntry =
+    [_]LocaleCacheEntry{.{}} ** locale_cache_len;
+
 fn findLocale(locale: []const u8) ?*const data.Locale {
+    var hash: usize = locale.len;
+    for (locale) |byte| hash = hash *% 31 +% byte;
+    if (locale.len <= locale_cache_name_len) {
+        const slot = &locale_cache[hash & (locale_cache_len - 1)];
+        if (slot.name_len == locale.len and
+            std.mem.eql(u8, slot.name[0..slot.name_len], locale))
+        {
+            return if (slot.found) slot.result else null;
+        }
+        const result = findLocaleUncached(locale);
+        slot.name_len = @intCast(locale.len);
+        @memcpy(slot.name[0..locale.len], locale);
+        slot.found = result != null;
+        if (result) |value| slot.result = value;
+        return result;
+    }
+    return findLocaleUncached(locale);
+}
+
+fn findLocaleUncached(locale: []const u8) ?*const data.Locale {
     if (lookup(locale)) |result| return result;
 
     var buffer: [64]u8 = undefined;
