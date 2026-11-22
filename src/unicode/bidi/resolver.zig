@@ -86,13 +86,21 @@ pub const Scratch = struct {
         try self.initial_types.ensureTotalCapacity(self.allocator, inputs.len);
         try self.types.ensureTotalCapacity(self.allocator, inputs.len);
         try self.levels.ensureTotalCapacity(self.allocator, inputs.len);
+        // Explicit and isolate formatting classes are the tail of the Class
+        // enum, so one range check records whether X1..X8 can change levels.
+        const explicit_start = @intFromEnum(Class.lre);
+        var has_explicit = false;
+        var has_fsi = false;
         for (inputs) |input| {
             self.initial_types.appendAssumeCapacity(input.class);
             self.types.appendAssumeCapacity(input.class);
             self.levels.appendAssumeCapacity(0);
+            has_explicit = has_explicit or
+                @intFromEnum(input.class) >= explicit_start;
+            has_fsi = has_fsi or input.class == .fsi;
         }
 
-        resolveFirstStrongIsolates(self.types.items);
+        if (has_fsi) resolveFirstStrongIsolates(self.types.items);
         const base_level: u8 = switch (base_direction) {
             .ltr => 0,
             .rtl => 1,
@@ -104,7 +112,13 @@ pub const Scratch = struct {
             return base_level;
         }
 
-        resolveExplicit(self.types.items, self.levels.items, base_level);
+        if (has_explicit) {
+            resolveExplicit(self.types.items, self.levels.items, base_level);
+        } else if (base_level != 0) {
+            // Without formatting characters the stack never changes, so every
+            // scalar keeps the paragraph level.
+            @memset(self.levels.items, base_level);
+        }
         // Runs and per-sequence scratch never exceed the scalar count, so
         // reserve them once instead of growing inside the run loops.
         try self.runs.ensureTotalCapacity(self.allocator, inputs.len + 1);
