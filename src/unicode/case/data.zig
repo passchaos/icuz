@@ -10226,18 +10226,18 @@ inline fn mappedInPage(slots: []const u8, masks: []const [32]u8, codepoint: u21)
     return (masks[slot][low >> 3] & (@as(u8, 1) << @intCast(low & 7))) != 0;
 }
 
-fn lookupSingle(table: SingleTable, codepoint: u21) ?u21 {
+fn lookupSingle(table: SingleTable, codepoint: u21) u21 {
     const page = codepoint >> 8;
     if (page < page_limit) {
         const slot = table.dense_slots[page];
         if (slot != 0xFF) {
             const mapped = table.dense[(@as(usize, slot) << 8) | (codepoint & 0xFF)];
-            if (mapped == 0) return null;
+            if (mapped == 0) return 0;
             if (mapped != 0xFFFF) return mapped;
             // Astral targets keep the sparse record search below.
         }
     }
-    if (!mappedInPage(table.slots, table.masks, codepoint)) return null;
+    if (!mappedInPage(table.slots, table.masks, codepoint)) return 0;
     var low: usize = table.index[page];
     var high: usize = if (page + 1 < page_limit) table.index[page + 1] else table.records.len;
     while (low < high) {
@@ -10245,7 +10245,7 @@ fn lookupSingle(table: SingleTable, codepoint: u21) ?u21 {
         const record = table.records[mid];
         if (codepoint < record.codepoint) high = mid else if (codepoint > record.codepoint) low = mid + 1 else return record.mapped;
     }
-    return null;
+    return 0;
 }
 
 fn lookupMulti(table: MultiTable, codepoint: u21) ?[]const u21 {
@@ -10271,20 +10271,24 @@ fn lookupMulti(table: MultiTable, codepoint: u21) ?[]const u21 {
 }
 
 pub fn simpleLower(codepoint: u21) u21 {
-    return lookupSingle(lower_table, codepoint) orelse codepoint;
+    const mapped = lookupSingle(lower_table, codepoint);
+    return if (mapped == 0) codepoint else mapped;
 }
 
 pub fn simpleUpper(codepoint: u21) u21 {
-    return lookupSingle(upper_table, codepoint) orelse codepoint;
+    const mapped = lookupSingle(upper_table, codepoint);
+    return if (mapped == 0) codepoint else mapped;
 }
 
 pub fn simpleTitle(codepoint: u21) u21 {
-    return lookupSingle(title_table, codepoint) orelse codepoint;
+    const mapped = lookupSingle(title_table, codepoint);
+    return if (mapped == 0) codepoint else mapped;
 }
 
 /// Simple case folding for caseless matching.
 pub fn simpleFold(codepoint: u21) u21 {
-    return lookupSingle(simple_fold_table, codepoint) orelse codepoint;
+    const mapped = lookupSingle(simple_fold_table, codepoint);
+    return if (mapped == 0) codepoint else mapped;
 }
 
 /// Full case folding. Returns null when the scalar folds to itself.
