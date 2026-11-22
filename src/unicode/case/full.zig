@@ -109,7 +109,7 @@ pub fn foldWithEditsAlloc(
     if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
     edits.clearRetainingCapacity();
 
-    var output = try std.ArrayList(u8).initCapacity(allocator, text.len + 4);
+    var output = try std.ArrayList(u8).initCapacity(allocator, text.len);
     errdefer output.deinit(allocator);
 
     var encoded: [4]u8 = undefined;
@@ -148,7 +148,7 @@ fn titleAlloc(
     var decoded = try decodeAlloc(allocator, text, true);
     defer decoded.deinit(allocator);
 
-    var output = try std.ArrayList(u8).initCapacity(allocator, text.len + 4);
+    var output = try std.ArrayList(u8).initCapacity(allocator, text.len);
     errdefer output.deinit(allocator);
 
     var segments = word.segments(text) catch unreachable;
@@ -362,10 +362,11 @@ fn mapStreamingInner(
     comptime root: bool,
     comptime mode: MapMode,
 ) Error![]u8 {
-    // Most mappings keep the byte length, so a tight first allocation lets
-    // toOwnedSlice reuse it instead of copying into an exact-size buffer. The
-    // four-byte slack keeps the encoder's worst-case write in bounds.
-    var output = try std.ArrayList(u8).initCapacity(allocator, text.len + 4);
+    // Most mappings keep the byte length, so sizing the first allocation
+    // exactly lets toOwnedSlice return it without a remap or copy. Every
+    // write either checks spare capacity or proves four bytes fit: identity
+    // copies only write a quad when `cursor + 4 <= text.len`.
+    var output = try std.ArrayList(u8).initCapacity(allocator, text.len);
     errdefer output.deinit(allocator);
 
     var cursor: usize = 0;
@@ -525,7 +526,7 @@ fn mapWithEdits(
     var decoded = try decodeAlloc(allocator, text, true);
     defer decoded.deinit(allocator);
 
-    var output = try std.ArrayList(u8).initCapacity(allocator, text.len + 4);
+    var output = try std.ArrayList(u8).initCapacity(allocator, text.len);
     errdefer output.deinit(allocator);
 
     const codepoints = decoded.codepoints.items;
