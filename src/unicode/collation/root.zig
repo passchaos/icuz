@@ -1036,6 +1036,7 @@ fn sortKeyCodepointsResolved(
     output: *std.ArrayList(u32),
 ) error{OutOfMemory}!void {
     output.clearRetainingCapacity();
+    try output.ensureTotalCapacityPrecise(allocator, codepoints.len * 4);
 
     const reorder = if (locale_tailoring) |tailoring| tailoring.reorder else null;
     const shifted = options.variable_weighting == .shifted;
