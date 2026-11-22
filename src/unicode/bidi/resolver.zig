@@ -18,9 +18,10 @@ pub const BaseDirection = enum {
     auto,
 };
 
-pub const Input = struct {
+pub const Input = packed struct(u32) {
     codepoint: u21,
     class: Class,
+    _padding: u6 = 0,
 };
 
 const Override = enum {
