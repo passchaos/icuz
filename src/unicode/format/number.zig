@@ -2424,6 +2424,9 @@ fn formatParts(
 
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
+    // Most locales use ASCII digits; append whole digit slices instead of
+    // encoding one scalar per digit.
+    const plain_digits = hasAsciiDigits(locale);
 
     const negative_pattern = negative and pattern.has_negative;
     if (negative_pattern) {
@@ -2474,6 +2477,7 @@ fn formatParts(
         digits,
         pattern,
         locale,
+        plain_digits,
         use_grouping,
         grouping,
         fields,
@@ -2490,8 +2494,12 @@ fn formatParts(
             output.items.len,
         );
         const fraction_start = output.items.len;
-        for (fraction_digits[0..fraction_len]) |byte| {
-            try appendDigit(allocator, &output, byte - '0', locale);
+        if (plain_digits) {
+            try output.appendSlice(allocator, fraction_digits[0..fraction_len]);
+        } else {
+            for (fraction_digits[0..fraction_len]) |byte| {
+                try appendDigit(allocator, &output, byte - '0', locale);
+            }
         }
         try recordField(
             allocator,
@@ -2848,6 +2856,7 @@ fn appendGroupedDigits(
     digits: []const u8,
     pattern: Pattern,
     locale: *const data.Locale,
+    plain_digits: bool,
     use_grouping: bool,
     grouping: GroupingMode,
     fields: ?*std.ArrayList(NumberFieldPosition),
@@ -2869,8 +2878,12 @@ fn appendGroupedDigits(
     };
     if (!enabled or primary == 0 or length <= primary) {
         const start = output.items.len;
-        for (digits) |byte| {
-            try appendDigit(allocator, output, byte - '0', locale);
+        if (plain_digits) {
+            try output.appendSlice(allocator, digits);
+        } else {
+            for (digits) |byte| {
+                try appendDigit(allocator, output, byte - '0', locale);
+            }
         }
         try recordField(allocator, fields, .integer, start, output.items.len);
         return;
@@ -2895,8 +2908,12 @@ fn appendGroupedDigits(
     if (remaining > 0) {
         // Extremely long digit strings fall back to one group.
         const start = output.items.len;
-        for (digits) |byte| {
-            try appendDigit(allocator, output, byte - '0', locale);
+        if (plain_digits) {
+            try output.appendSlice(allocator, digits);
+        } else {
+            for (digits) |byte| {
+                try appendDigit(allocator, output, byte - '0', locale);
+            }
         }
         try recordField(allocator, fields, .integer, start, output.items.len);
         return;
@@ -2919,8 +2936,12 @@ fn appendGroupedDigits(
         }
         const group_start = output.items.len;
         const end = index + sizes[group_index];
-        for (digits[index..end]) |byte| {
-            try appendDigit(allocator, output, byte - '0', locale);
+        if (plain_digits) {
+            try output.appendSlice(allocator, digits[index..end]);
+        } else {
+            for (digits[index..end]) |byte| {
+                try appendDigit(allocator, output, byte - '0', locale);
+            }
         }
         try recordField(
             allocator,
@@ -2931,6 +2952,15 @@ fn appendGroupedDigits(
         );
         index = end;
     }
+}
+
+/// True when the locale's digits are ASCII `0`..`9`, so a digit slice can be
+/// appended verbatim.
+fn hasAsciiDigits(locale: *const data.Locale) bool {
+    for (locale.digits, 0..) |codepoint, index| {
+        if (codepoint != '0' + index) return false;
+    }
+    return true;
 }
 
 fn appendDigit(
