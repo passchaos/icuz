@@ -111,7 +111,7 @@ pub fn foldWithEditsAlloc(
 
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, text.len);
+    try output.ensureTotalCapacityPrecise(allocator, text.len + 4);
 
     var encoded: [4]u8 = undefined;
     var index: usize = 0;
@@ -151,7 +151,7 @@ fn titleAlloc(
 
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, text.len);
+    try output.ensureTotalCapacityPrecise(allocator, text.len + 4);
 
     var segments = word.segments(text) catch unreachable;
     var emitted: usize = 0;
@@ -530,7 +530,7 @@ fn mapWithEdits(
 
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, text.len);
+    try output.ensureTotalCapacityPrecise(allocator, text.len + 4);
 
     const codepoints = decoded.codepoints.items;
     const offsets = decoded.offsets.items;
