@@ -623,6 +623,72 @@ fn benchSet(allocator: std.mem.Allocator, codepoints: []const u21) void {
         "UnicodeSet parse Alphabetic",
         @as(f64, @floatFromInt(parse_ns)) / 1_000_000.0,
     });
+
+    const script_start = now();
+    var script_set = icuz.set.fromScript(allocator, .greek) catch unreachable;
+    defer script_set.deinit();
+    const script_ns: u64 = @intCast(now() - script_start);
+    std.debug.print("{s:<32} {d:>8.3} ms\n", .{
+        "UnicodeSet build Script Greek",
+        @as(f64, @floatFromInt(script_ns)) / 1_000_000.0,
+    });
+
+    const complement_start = now();
+    var complement = icuz.set.parse(
+        allocator,
+        "[^\\p{Alphabetic}]",
+    ) catch unreachable;
+    defer complement.deinit();
+    const complement_ns: u64 = @intCast(now() - complement_start);
+    std.debug.print("{s:<32} {d:>8.3} ms\n", .{
+        "UnicodeSet build complement",
+        @as(f64, @floatFromInt(complement_ns)) / 1_000_000.0,
+    });
+
+    total = 0;
+    best = std.math.maxInt(u64);
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            for (codepoints) |codepoint| {
+                total += @intFromBool(complement.contains(codepoint));
+            }
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    sink +%= total;
+    reportOps("UnicodeSet contains complement", rounds * codepoints.len, best);
+
+    var small = icuz.set.parse(allocator, "[a]") catch unreachable;
+    defer small.deinit();
+    const small_rounds = 2000;
+    var closure_best: u64 = std.math.maxInt(u64);
+    for (0..trials) |_| {
+        const start = now();
+        for (0..small_rounds) |_| {
+            small.closeOver(.simple_case_insensitive) catch unreachable;
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < closure_best) closure_best = elapsed;
+    }
+    reportOps("UnicodeSet closeOver [a]", small_rounds, closure_best);
+
+    const large_rounds = 200;
+    var large_closure_best: u64 = std.math.maxInt(u64);
+    for (0..trials) |_| {
+        const start = now();
+        for (0..large_rounds) |_| {
+            set.closeOver(.simple_case_insensitive) catch unreachable;
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < large_closure_best) large_closure_best = elapsed;
+    }
+    reportOps(
+        "UnicodeSet closeOver Alphabetic",
+        large_rounds,
+        large_closure_best,
+    );
 }
 
 fn benchCollation(
