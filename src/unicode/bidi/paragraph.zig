@@ -54,6 +54,9 @@ pub const Paragraph = struct {
     scalars: []const Scalar,
     classes: []const Class,
     levels: []const u8,
+    /// Allocated capacity behind `scalars` when the decoder's buffer was
+    /// transferred as-is; empty when `scalars` is the exact allocation.
+    scalars_storage: []Scalar = &.{},
     owner: Owner = .allocator,
 
     const Owner = enum { allocator, borrowed };
@@ -62,7 +65,11 @@ pub const Paragraph = struct {
         if (self.owner == .allocator) {
             self.allocator.free(self.levels);
             self.allocator.free(self.classes);
-            self.allocator.free(self.scalars);
+            if (self.scalars_storage.len != 0) {
+                self.allocator.free(self.scalars_storage);
+            } else {
+                self.allocator.free(self.scalars);
+            }
         }
         self.* = undefined;
     }
@@ -479,8 +486,12 @@ pub fn resolve(
     var scratch = resolver.Scratch.init(allocator);
     defer scratch.deinit();
     const base_level = try scratch.resolve(inputs.items, base_direction);
-    const scalars = try scalar_list.toOwnedSlice(allocator);
-    errdefer allocator.free(scalars);
+    // Keep the decoder's allocation instead of shrinking it to the scalar
+    // count; the extra capacity is freed with the paragraph.
+    const scalars = scalar_list.items;
+    const scalars_storage = scalar_list.allocatedSlice();
+    scalar_list = .empty;
+    errdefer allocator.free(scalars_storage);
     const classes = try allocator.dupe(Class, scratch.initialTypes());
     errdefer allocator.free(classes);
     const levels = try allocator.dupe(u8, scratch.resolvedLevels());
@@ -491,6 +502,7 @@ pub fn resolve(
         .scalars = scalars,
         .classes = classes,
         .levels = levels,
+        .scalars_storage = scalars_storage,
     };
 }
 
