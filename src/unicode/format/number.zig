@@ -2794,15 +2794,36 @@ fn roundSigned(value: f64, digits: u8, mode: RoundingMode) f64 {
     return if (negative) -rounded else rounded;
 }
 
+/// Two decimal digits per table entry, used by `formatUnsigned` to halve
+/// the number of constant divisions.
+const digit_pairs: [200]u8 = blk: {
+    var table: [200]u8 = undefined;
+    for (0..100) |value| {
+        table[value * 2] = '0' + @as(u8, @intCast(value / 10));
+        table[value * 2 + 1] = '0' + @as(u8, @intCast(value % 10));
+    }
+    break :blk table;
+};
+
 fn formatUnsigned(buffer: []u8, value: u64) usize {
     var temp: [20]u8 = undefined;
     var index: usize = temp.len;
     var remaining = value;
-    while (true) {
+    while (remaining >= 100) {
+        const pair: usize = @intCast((remaining % 100) * 2);
+        remaining /= 100;
+        index -= 2;
+        temp[index] = digit_pairs[pair];
+        temp[index + 1] = digit_pairs[pair + 1];
+    }
+    if (remaining >= 10) {
+        const pair: usize = @intCast(remaining * 2);
+        index -= 2;
+        temp[index] = digit_pairs[pair];
+        temp[index + 1] = digit_pairs[pair + 1];
+    } else {
         index -= 1;
-        temp[index] = '0' + @as(u8, @intCast(remaining % 10));
-        remaining /= 10;
-        if (remaining == 0) break;
+        temp[index] = '0' + @as(u8, @intCast(remaining));
     }
     const length = temp.len - index;
     @memcpy(buffer[0..length], temp[index..]);
@@ -2818,20 +2839,27 @@ fn formatFloat(buffer: []u8, value: f64, digits: u8) []const u8 {
         if (scaled < 9_007_199_254_740_992.0) {
             const total: u64 = @intFromFloat(@round(scaled));
             const scale: u64 = pow10_int[digits];
-            var fraction = total % scale;
+            const fraction = total % scale;
             var length = formatUnsigned(buffer, total / scale);
             if (digits > 0) {
+                // Convert the fraction with the same constant-division
+                // helper, then left-pad to the requested width. The old
+                // loop divided by a runtime divisor on every digit.
+                var fraction_buffer: [20]u8 = undefined;
+                const fraction_length = formatUnsigned(
+                    &fraction_buffer,
+                    fraction,
+                );
                 buffer[length] = '.';
                 length += 1;
-                var fraction_divisor: u64 = pow10_int[digits - 1];
-                while (fraction_divisor > 0) : (fraction_divisor /= 10) {
-                    const digit: u8 = @intCast(
-                        (fraction / fraction_divisor) % 10,
-                    );
-                    buffer[length] = '0' + digit;
-                    length += 1;
-                    fraction %= fraction_divisor;
-                }
+                const pad = @as(usize, digits) - fraction_length;
+                @memset(buffer[length..][0..pad], '0');
+                length += pad;
+                @memcpy(
+                    buffer[length..][0..fraction_length],
+                    fraction_buffer[0..fraction_length],
+                );
+                length += fraction_length;
             }
             return buffer[0..length];
         }
