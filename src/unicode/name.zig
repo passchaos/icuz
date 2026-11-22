@@ -85,12 +85,23 @@ fn findFirst(codepoint: u21, kind: u8) ?Record {
 /// Algorithmic names are not materialized here; use `nameInto` or `nameAlloc`
 /// for CJK, Tangut, Egyptian, Khitan, and Nushu characters.
 pub fn name(codepoint: u21) ?[]const u8 {
-    if (findFirst(codepoint, @intFromEnum(NameType.name))) |record| {
-        return recordName(record);
+    // One lower-bound search reaches every record for the scalar; the name
+    // and control alias are adjacent, so a second search is wasted.
+    var index = firstIndexFor(codepoint);
+    var name_record: ?Record = null;
+    var control_record: ?Record = null;
+    while (index < record_count) : (index += 1) {
+        const record = recordAt(index);
+        if (record.codepoint != codepoint) break;
+        const kind = record.kind;
+        if (kind == @intFromEnum(NameType.name)) {
+            if (name_record == null) name_record = record;
+        } else if (kind == @intFromEnum(NameType.control)) {
+            if (control_record == null) control_record = record;
+        }
     }
-    if (findFirst(codepoint, @intFromEnum(NameType.control))) |record| {
-        return recordName(record);
-    }
+    if (name_record) |record| return recordName(record);
+    if (control_record) |record| return recordName(record);
     return null;
 }
 
