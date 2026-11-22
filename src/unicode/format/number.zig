@@ -789,21 +789,22 @@ fn pickSymbol(values: []const []const u8, fallback: []const u8) []const u8 {
     return fallback;
 }
 
-fn formatStandardAlloc(
+fn formatStandardInto(
     allocator: std.mem.Allocator,
     value: f64,
     locale_name: []const u8,
     options: *const Options,
     fields: ?*std.ArrayList(NumberFieldPosition),
     pattern_override: ?[]const u8,
-) Error![]u8 {
+    output: *std.ArrayList(u8),
+) Error!void {
     var locale_storage: data.Locale = undefined;
     const locale = resolveLocale(locale_name, options, &locale_storage);
     var currency_display_text: []const u8 = "";
     if (options.style == .currency) {
         const code = options.currency orelse return error.MissingCurrency;
         if (options.currency_display == .name) {
-            return formatCurrencyNameAlloc(
+            const text = try formatCurrencyNameAlloc(
                 allocator,
                 value,
                 locale_name,
@@ -811,6 +812,9 @@ fn formatStandardAlloc(
                 locale,
                 code,
             );
+            defer allocator.free(text);
+            try output.appendSlice(allocator, text);
+            return;
         }
         currency_display_text = currencyDisplayText(
             locale,
@@ -837,11 +841,9 @@ fn formatStandardAlloc(
     else
         locale.percent;
     if (std.math.isNan(value)) {
-        var output = std.ArrayList(u8).empty;
-        errdefer output.deinit(allocator);
         try appendAffix(
             allocator,
-            &output,
+            output,
             pattern.positive_prefix,
             locale,
             currency_display_text,
@@ -856,7 +858,7 @@ fn formatStandardAlloc(
         try output.appendSlice(allocator, locale.nan);
         try appendAffix(
             allocator,
-            &output,
+            output,
             pattern.positive_suffix,
             locale,
             currency_display_text,
@@ -868,17 +870,15 @@ fn formatStandardAlloc(
 
             true,
         );
-        return output.toOwnedSlice(allocator);
+        return;
     }
     if (std.math.isInf(value)) {
-        var output = std.ArrayList(u8).empty;
-        errdefer output.deinit(allocator);
         const negative = value < 0;
         const use_negative_pattern = negative and pattern.has_negative;
         if (use_negative_pattern) {
             try appendAffix(
                 allocator,
-                &output,
+                output,
                 pattern.negative_prefix,
                 locale,
                 currency_display_text,
@@ -904,7 +904,7 @@ fn formatStandardAlloc(
             }
             try appendAffix(
                 allocator,
-                &output,
+                output,
                 pattern.positive_prefix,
                 locale,
                 currency_display_text,
@@ -920,7 +920,7 @@ fn formatStandardAlloc(
         try output.appendSlice(allocator, locale.infinity);
         try appendAffix(
             allocator,
-            &output,
+            output,
             if (use_negative_pattern)
                 pattern.negative_suffix
             else
@@ -935,7 +935,7 @@ fn formatStandardAlloc(
 
             true,
         );
-        return output.toOwnedSlice(allocator);
+        return;
     }
 
     var min_fraction = options.min_fraction_digits orelse
@@ -1052,7 +1052,7 @@ fn formatStandardAlloc(
         fraction_part = formatted[dot + 1 ..];
     }
 
-    return formatParts(
+    try formatPartsInto(
         allocator,
         integer_part,
         fraction_part,
@@ -1068,7 +1068,47 @@ fn formatStandardAlloc(
         options.integer_max_digits,
         if (options.permille) "\u{2030}" else locale.percent,
         fields,
+        output,
     );
+}
+
+fn formatStandardAlloc(
+    allocator: std.mem.Allocator,
+    value: f64,
+    locale_name: []const u8,
+    options: *const Options,
+    fields: ?*std.ArrayList(NumberFieldPosition),
+    pattern_override: ?[]const u8,
+) Error![]u8 {
+    // Currency names are built as a complete string; routing them through
+    // the append path would copy the result twice.
+    if (options.style == .currency and options.currency_display == .name and
+        pattern_override == null)
+    {
+        var locale_storage: data.Locale = undefined;
+        const locale = resolveLocale(locale_name, options, &locale_storage);
+        const code = options.currency orelse return error.MissingCurrency;
+        return formatCurrencyNameAlloc(
+            allocator,
+            value,
+            locale_name,
+            options,
+            locale,
+            code,
+        );
+    }
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try formatStandardInto(
+        allocator,
+        value,
+        locale_name,
+        options,
+        fields,
+        pattern_override,
+        &output,
+    );
+    return output.toOwnedSlice(allocator);
 }
 
 /// Localized symbols needed to build DecimalFormat affixes.
@@ -1216,7 +1256,9 @@ pub fn formatIntegerAlloc(
     const fraction_len = @min(@as(usize, min_fraction), fraction_buffer.len);
     @memset(fraction_buffer[0..fraction_len], '0');
 
-    return formatParts(
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try formatPartsInto(
         allocator,
         integer_digits,
         fraction_buffer[0..fraction_len],
@@ -1236,7 +1278,9 @@ pub fn formatIntegerAlloc(
         options.integer_max_digits,
         if (options.permille) "\u{2030}" else locale.percent,
         null,
+        &output,
     );
+    return output.toOwnedSlice(allocator);
 }
 
 /// Format a value using a compact ICU-style number skeleton.
@@ -1655,7 +1699,9 @@ fn formatScientificAlloc(
         }
     }
 
-    const mantissa_text = try formatStandardAlloc(
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try formatStandardInto(
         allocator,
         mantissa,
         locale_name,
@@ -1668,12 +1714,8 @@ fn formatScientificAlloc(
         },
         null,
         null,
+        &output,
     );
-    defer allocator.free(mantissa_text);
-
-    var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
-    try output.appendSlice(allocator, mantissa_text);
     try output.appendSlice(allocator, locale.exponential);
     if (exponent < 0) {
         try output.appendSlice(allocator, locale.minus);
@@ -1936,7 +1978,10 @@ fn formatCompactAlloc(
         return compactFallback(allocator, value, locale_name, options);
     }
 
-    const scaled_text = try formatStandardAlloc(
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try output.appendSlice(allocator, pattern[0..info.start]);
+    try formatStandardInto(
         allocator,
         scaled,
         locale_name,
@@ -1948,13 +1993,8 @@ fn formatCompactAlloc(
         },
         null,
         null,
+        &output,
     );
-    defer allocator.free(scaled_text);
-
-    var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
-    try output.appendSlice(allocator, pattern[0..info.start]);
-    try output.appendSlice(allocator, scaled_text);
     try output.appendSlice(allocator, pattern[info.end..]);
     return output.toOwnedSlice(allocator);
 }
@@ -2374,7 +2414,7 @@ fn replaceTwoPlaceholdersAlloc(
     return output.toOwnedSlice(allocator);
 }
 
-fn formatParts(
+fn formatPartsInto(
     allocator: std.mem.Allocator,
     integer_digits: []const u8,
     fraction_digits: []const u8,
@@ -2390,7 +2430,8 @@ fn formatParts(
     max_integer_digits: u8,
     percent_symbol: []const u8,
     fields: ?*std.ArrayList(NumberFieldPosition),
-) Error![]u8 {
+    output: *std.ArrayList(u8),
+) Error!void {
     if (fields) |list| list.clearRetainingCapacity();
     var fraction_len = fraction_digits.len;
     while (fraction_len > min_fraction and
@@ -2413,8 +2454,6 @@ fn formatParts(
         digits = padded[0 .. pad + digits.len];
     }
 
-    var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
     // Most locales use ASCII digits; append whole digit slices instead of
     // encoding one scalar per digit.
     const plain_digits = hasAsciiDigits(locale);
@@ -2423,7 +2462,7 @@ fn formatParts(
     if (negative_pattern) {
         try appendAffix(
             allocator,
-            &output,
+            output,
             pattern.negative_prefix,
             locale,
             currency_display,
@@ -2448,7 +2487,7 @@ fn formatParts(
         }
         try appendAffix(
             allocator,
-            &output,
+            output,
             pattern.positive_prefix,
             locale,
             currency_display,
@@ -2464,7 +2503,7 @@ fn formatParts(
 
     try appendGroupedDigits(
         allocator,
-        &output,
+        output,
         digits,
         pattern,
         locale,
@@ -2489,7 +2528,7 @@ fn formatParts(
             try output.appendSlice(allocator, fraction_digits[0..fraction_len]);
         } else {
             for (fraction_digits[0..fraction_len]) |byte| {
-                try appendDigit(allocator, &output, byte - '0', locale);
+                try appendDigit(allocator, output, byte - '0', locale);
             }
         }
         try recordField(
@@ -2504,7 +2543,7 @@ fn formatParts(
     if (negative_pattern) {
         try appendAffix(
             allocator,
-            &output,
+            output,
             pattern.negative_suffix,
             locale,
             currency_display,
@@ -2519,7 +2558,7 @@ fn formatParts(
     } else {
         try appendAffix(
             allocator,
-            &output,
+            output,
             pattern.positive_suffix,
             locale,
             currency_display,
@@ -2532,7 +2571,6 @@ fn formatParts(
             true,
         );
     }
-    return output.toOwnedSlice(allocator);
 }
 
 const Pattern = struct {
