@@ -21,6 +21,115 @@ pub const Range = struct {
     last: u21,
 };
 
+/// Every scalar selected by the `Cased` property, ascending. Case closure
+/// only ever adds cased scalars, so iterating this table replaces a scan of
+/// the full 0x110000 scalar space.
+const cased_codepoints = blk: {
+    @setEvalBranchQuota(1_000_000);
+    const entry = trie.propertyRangeEntry(
+        @intFromEnum(properties.BinaryProperty.cased),
+    );
+    var count: usize = 0;
+    var range_index: usize = 0;
+    while (range_index < entry.count) : (range_index += 1) {
+        count += @as(usize, trie.rangeLast(entry, range_index)) -
+            trie.rangeFirst(entry, range_index) + 1;
+    }
+    var list: [count]u21 = undefined;
+    var index: usize = 0;
+    range_index = 0;
+    while (range_index < entry.count) : (range_index += 1) {
+        var codepoint = trie.rangeFirst(entry, range_index);
+        const last = trie.rangeLast(entry, range_index);
+        while (codepoint <= last) : (codepoint += 1) {
+            list[index] = codepoint;
+            index += 1;
+        }
+    }
+    break :blk list;
+};
+
+/// Simple-fold class of each cased scalar, encoded as the index of its
+/// `simpleFold` value in `cased_codepoints`. ICU's case closure is exactly
+/// the union of these classes.
+const cased_classes = blk: {
+    @setEvalBranchQuota(10_000_000);
+    var classes: [cased_codepoints.len]u16 = undefined;
+    for (cased_codepoints, 0..) |codepoint, index| {
+        const folded = case_mapping.simpleFold(codepoint);
+        var low: usize = 0;
+        var high: usize = cased_codepoints.len;
+        while (low < high) {
+            const middle = low + (high - low) / 2;
+            if (cased_codepoints[middle] < folded) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        if (low >= cased_codepoints.len or cased_codepoints[low] != folded) {
+            @compileError("simple fold target is not a cased scalar");
+        }
+        classes[index] = @intCast(low);
+    }
+    break :blk classes;
+};
+
+/// Member offsets per simple-fold class, indexed by class id.
+const cased_class_offsets = blk: {
+    @setEvalBranchQuota(10_000_000);
+    var counts = [_]u16{0} ** cased_codepoints.len;
+    for (cased_classes) |class| counts[class] += 1;
+    var offsets: [cased_codepoints.len + 1]u16 = undefined;
+    var total: u16 = 0;
+    for (counts, 0..) |count, index| {
+        offsets[index] = total;
+        total += count;
+    }
+    offsets[cased_codepoints.len] = total;
+    break :blk offsets;
+};
+
+/// Cased-scalar indices grouped by class, in `cased_class_offsets` order.
+const cased_class_members = blk: {
+    @setEvalBranchQuota(10_000_000);
+    var members: [cased_codepoints.len]u16 = undefined;
+    var cursors = cased_class_offsets[0..cased_codepoints.len].*;
+    for (cased_classes, 0..) |class, index| {
+        members[cursors[class]] = @intCast(index);
+        cursors[class] += 1;
+    }
+    break :blk members;
+};
+
+const cased_class_words = (cased_codepoints.len + 63) / 64;
+
+fn casedIndex(codepoint: u21) ?usize {
+    var low: usize = 0;
+    var high: usize = cased_codepoints.len;
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        const candidate = cased_codepoints[middle];
+        if (candidate < codepoint) {
+            low = middle + 1;
+        } else if (candidate > codepoint) {
+            high = middle;
+        } else {
+            return middle;
+        }
+    }
+    return null;
+}
+
+fn markCaseClass(bits: *[cased_class_words]u64, class: usize) void {
+    bits[class >> 6] |= @as(u64, 1) << @as(u6, @intCast(class & 63));
+}
+
+fn testCaseClass(bits: *[cased_class_words]u64, class: usize) bool {
+    const mask = @as(u64, 1) << @as(u6, @intCast(class & 63));
+    return (bits[class >> 6] & mask) != 0;
+}
+
 pub const Set = struct {
     allocator: std.mem.Allocator,
     ranges: std.ArrayList(Range),
@@ -403,39 +512,37 @@ pub const Set = struct {
             return;
         }
 
-        // Case-insensitive closure: find every cased scalar whose case
-        // variants intersect the original set. Iterating the Cased property
-        // ranges makes the closure symmetric without a reverse case-mapping
-        // table and skips the million uncased scalars.
-        const cased = trie.propertyRangeEntry(
-            @intFromEnum(properties.BinaryProperty.cased),
-        );
-        var cased_index: usize = 0;
-        while (cased_index < cased.count) : (cased_index += 1) {
-            var codepoint: u32 = trie.rangeFirst(cased, cased_index);
-            const cased_last: u32 = trie.rangeLast(cased, cased_index);
-            while (codepoint <= cased_last) : (codepoint += 1) {
-                const cp: u21 = @intCast(codepoint);
-                const lower = case_mapping.simpleLower(cp);
-                const upper = case_mapping.simpleUpper(cp);
-                const title = case_mapping.simpleTitle(cp);
-                const fold = case_mapping.simpleFold(cp);
-                const matches = original.contains(cp) or
-                    original.contains(lower) or
-                    original.contains(upper) or
-                    original.contains(title) or
-                    original.contains(fold);
-                if (!matches) continue;
-                try self.add(cp);
-                try self.add(lower);
-                try self.add(upper);
-                try self.add(title);
-                try self.add(fold);
-                if (closure == .case_insensitive) {
-                    if (case_mapping.fullFold(cp)) |folded| {
-                        try self.addMappedSequence(folded);
-                    }
+        // Case-insensitive closure: ICU groups cased scalars by simple-fold
+        // class and adds every class that intersects the set. The classes
+        // are precomputed at compile time. Small sets scan their own scalars;
+        // larger ones merge-join the sorted cased table.
+        var class_bits = [_]u64{0} ** cased_class_words;
+        if (original.count() < cased_codepoints.len) {
+            for (original.ranges.items) |range| {
+                var codepoint: u32 = range.first;
+                while (codepoint <= range.last) : (codepoint += 1) {
+                    const index = casedIndex(@intCast(codepoint)) orelse continue;
+                    const class = cased_classes[index];
+                    if (testCaseClass(&class_bits, class)) continue;
+                    markCaseClass(&class_bits, class);
+                    try self.expandCaseClass(class, closure);
                 }
+            }
+        } else {
+            const ranges = original.ranges.items;
+            var range_index: usize = 0;
+            for (cased_codepoints, 0..) |codepoint, index| {
+                while (range_index < ranges.len and
+                    ranges[range_index].last < codepoint)
+                {
+                    range_index += 1;
+                }
+                if (range_index == ranges.len) break;
+                if (ranges[range_index].first > codepoint) continue;
+                const class = cased_classes[index];
+                if (testCaseClass(&class_bits, class)) continue;
+                markCaseClass(&class_bits, class);
+                try self.expandCaseClass(class, closure);
             }
         }
 
@@ -444,6 +551,25 @@ pub const Set = struct {
                 const folded = try case_mapping.foldAlloc(allocator, text);
                 defer allocator.free(folded);
                 try self.addString(folded);
+            }
+        }
+    }
+
+    /// Add every cased scalar in one simple-fold class, plus full-fold
+    /// strings for the full case-insensitive closure.
+    fn expandCaseClass(self: *Set, class: usize, closure: CaseClosure) !void {
+        var index: usize = cased_class_offsets[class];
+        const end: usize = cased_class_offsets[class + 1];
+        while (index < end) : (index += 1) {
+            const codepoint = cased_codepoints[cased_class_members[index]];
+            // Checking first keeps the existing membership bits alive when
+            // the set already covers the class, which is the common case for
+            // large sets such as `Alphabetic`.
+            if (!self.contains(codepoint)) try self.add(codepoint);
+            if (closure == .case_insensitive) {
+                if (case_mapping.fullFold(codepoint)) |folded| {
+                    try self.addMappedSequence(folded);
+                }
             }
         }
     }
@@ -2000,6 +2126,29 @@ test "set case closure" {
     const second = try idempotent.toPatternAlloc(allocator);
     defer allocator.free(second);
     try testing.expectEqualStrings(first, second);
+
+    // ICU closes over simple-fold classes, so dotless and dotted I stay
+    // separate from the ASCII I class.
+    var ascii_i = try parse(allocator, "[I]");
+    defer ascii_i.deinit();
+    try ascii_i.closeOver(.simple_case_insensitive);
+    try testing.expect(ascii_i.contains('i'));
+    try testing.expect(!ascii_i.contains(0x0131));
+    try testing.expect(!ascii_i.contains(0x0130));
+
+    var dotless = try parse(allocator, "[\u{0131}]");
+    defer dotless.deinit();
+    try dotless.closeOver(.simple_case_insensitive);
+    try testing.expect(dotless.contains(0x0131));
+    try testing.expect(!dotless.contains('I'));
+    try testing.expect(!dotless.contains('i'));
+
+    var dotted = try parse(allocator, "[\u{0130}]");
+    defer dotted.deinit();
+    try dotted.closeOver(.case_insensitive);
+    try testing.expect(dotted.contains(0x0130));
+    try testing.expect(dotted.containsString("\u{0069}\u{0307}"));
+    try testing.expect(!dotted.contains('I'));
 }
 
 test "set span" {
