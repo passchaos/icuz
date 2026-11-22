@@ -950,6 +950,9 @@ pub fn encodeAlloc(
     }
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
+    // Legacy encodings rarely grow the UTF-8 byte length; a tight first
+    // allocation usually lets toOwnedSlice reuse the buffer.
+    try output.ensureTotalCapacityPrecise(allocator, text.len + 4);
     var encoder = Encoder.init(encoding);
     var index: usize = 0;
     while (index < text.len) {
@@ -1128,7 +1131,7 @@ fn convertUtf8ToDbcsFast(
 ) error{OutOfMemory}!?[]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, input.len + 8);
+    try output.ensureTotalCapacityPrecise(allocator, input.len + 8);
     const spare = output.unusedCapacitySlice();
     var index: usize = 0;
     var written: usize = 0;
