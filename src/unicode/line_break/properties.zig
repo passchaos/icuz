@@ -9,6 +9,24 @@ const scalar_value = @import("../scalar/root.zig");
 
 const data = @embedFile("data.bin");
 
+/// Flat Line_Break class table derived from `data.bin`. The public class
+/// query uses one load instead of the packed table's dependent
+/// index-then-page loads; the segmenter keeps `lookup` for the full record.
+const flat = @embedFile("flat_classes.bin");
+const flat_header_len = 16;
+const flat_count = readU32At(flat, 8);
+
+comptime {
+    if (flat.len < flat_header_len or !std.mem.eql(u8, flat[0..4], "CJZ6") or
+        flat[4] != 1 or flat[5] != 17 or flat[6] != 0 or flat[7] != 0)
+    {
+        @compileError("invalid flat Line_Break data");
+    }
+    if (flat_count != 0x110001 or flat_header_len + flat_count != flat.len) {
+        @compileError("invalid flat Line_Break data lengths");
+    }
+}
+
 pub const unicode_version = std.SemanticVersion{
     .major = 17,
     .minor = 0,
@@ -122,6 +140,13 @@ pub inline fn lookup(codepoint: u21) Properties {
     return lookupGenerated(codepoint);
 }
 
+/// Line_Break class only. The generator patches surrogates and appends an
+/// out-of-range sentinel, both Unknown, so a clamped load matches `lookup`.
+pub inline fn class(codepoint: u21) BreakClass {
+    const index = @min(@as(usize, codepoint), flat_count - 1);
+    return @enumFromInt(flat[flat_header_len + index]);
+}
+
 /// Property lookup for a scalar already known to be a Hangul jamo
 /// (U+1100..U+11FF).
 pub inline fn lookupHangul(codepoint: u21) Properties {
@@ -163,11 +188,11 @@ const resolved_class_table = buildResolvedClassTable();
 fn buildResolvedClassTable() [64]BreakClass {
     var result: [64]BreakClass = @splat(.unknown);
     inline for (std.meta.fields(BreakClass)) |field| {
-        const class: BreakClass = @enumFromInt(field.value);
-        result[field.value] = switch (class) {
+        const break_class: BreakClass = @enumFromInt(field.value);
+        result[field.value] = switch (break_class) {
             .ambiguous, .surrogate, .unknown => .alphabetic,
             .conditional_japanese_starter => .nonstarter,
-            else => class,
+            else => break_class,
         };
     }
     return result;
@@ -214,4 +239,17 @@ fn parseHeader() Header {
 
 fn readU16(offset: usize) u16 {
     return std.mem.readInt(u16, data[offset..][0..2], .little);
+}
+
+fn readU32At(blob: []const u8, offset: usize) u32 {
+    return std.mem.readInt(u32, blob[offset..][0..4], .little);
+}
+
+test "flat line-break classes match the packed table" {
+    const testing = @import("std").testing;
+    var codepoint: u32 = 0;
+    while (codepoint <= 0x1fffff) : (codepoint += 1) {
+        const value: u21 = @intCast(codepoint);
+        try testing.expectEqual(lookup(value).class, class(value));
+    }
 }

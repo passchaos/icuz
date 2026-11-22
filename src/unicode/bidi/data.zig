@@ -56,7 +56,24 @@ const pages_offset = index_offset + @as(usize, index_count) * 2;
 const brackets_offset = pages_offset + @as(usize, page_count) * 256;
 const mirrors_offset = brackets_offset + @as(usize, bracket_count) * 12;
 
-const ascii_classes = buildAsciiClasses();
+/// Flat Bidi_Class table generated from the packed pages. A single load
+/// avoids the index-then-page dependency, which dominates random lookups.
+const flat_classes = @embedFile("flat_classes.bin");
+const flat_header_len = 16;
+const flat_count = readU32At(flat_classes, 8);
+
+comptime {
+    if (flat_classes.len < flat_header_len or
+        !std.mem.eql(u8, flat_classes[0..4], "CJZ0") or
+        flat_classes[4] != 1 or
+        flat_classes[5] != 17 or flat_classes[6] != 0 or flat_classes[7] != 0)
+    {
+        @compileError("invalid flat Bidi_Class data");
+    }
+    if (flat_count != 0x110001 or flat_header_len + flat_count != flat_classes.len) {
+        @compileError("invalid flat Bidi_Class data lengths");
+    }
+}
 
 /// One bit per 256-scalar page that contains at least one mirrored scalar.
 /// Valid scalars occupy pages `0..0x1100`; every RTL-shaping hotspot page
@@ -90,9 +107,10 @@ comptime {
 }
 
 pub inline fn class(codepoint: u21) Class {
-    if (!scalar_value.isValid(codepoint)) return .on;
-    if (codepoint < 0x80) return ascii_classes[codepoint];
-    return classGenerated(codepoint);
+    // The generator patches surrogates and appends an out-of-range sentinel,
+    // both `on`, so a clamped load matches the validity rule.
+    const index = @min(@as(usize, codepoint), flat_count - 1);
+    return @enumFromInt(flat_classes[flat_header_len + index]);
 }
 
 pub inline fn bracket(codepoint: u21) ?Bracket {
@@ -190,12 +208,21 @@ fn classGenerated(codepoint: u21) Class {
     ]);
 }
 
-fn buildAsciiClasses() [128]Class {
-    var result: [128]Class = undefined;
-    for (&result, 0..) |*entry, codepoint| {
-        entry.* = classGenerated(@intCast(codepoint));
+fn readU32At(blob: []const u8, offset: usize) u32 {
+    return std.mem.readInt(u32, blob[offset..][0..4], .little);
+}
+
+test "flat bidi classes match the packed table" {
+    const testing = std.testing;
+    var codepoint: u32 = 0;
+    while (codepoint <= 0x1fffff) : (codepoint += 1) {
+        const value: u21 = @intCast(codepoint);
+        const expected: Class = if (!scalar_value.isValid(value))
+            .on
+        else
+            classGenerated(value);
+        try testing.expectEqual(expected, class(value));
     }
-    return result;
 }
 
 fn readU16(offset: usize) u16 {

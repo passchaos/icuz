@@ -64,6 +64,9 @@ BLOBS = (
     Blob("src/unicode/properties/set_ranges.bin", b"CJSR", 1, "ce4b267d2cee1a1316ba94747895fe6f9ee18e7203e73deff2a83cb27792dd76"),
     Blob("src/unicode/properties/property_bits.bin", b"CJQZ", 1, "7f12af8912ad30c2c0c695fd6e30e8cddeaca8465b2af11af0bea3e472a17760"),
     Blob("src/unicode/script/set_ranges.bin", b"CJSS", 1, "3c8f8770b712a2a6a59a34ec45f8c4d29938261822d60f04f87a3222428b28cf"),
+    Blob("src/unicode/bidi/flat_classes.bin", b"CJZ0", 1, "a07c4c586cdf2bb300bcd808f00752b0629758a086d5e906ea33eb4294beb30b"),
+    Blob("src/unicode/script/flat_scripts.bin", b"CJZ5", 1, "2c91d4b52f9adf9161a2326a944837cc9e8eeb6e00c6fbb518e1ccb75fa52c88"),
+    Blob("src/unicode/line_break/flat_classes.bin", b"CJZ6", 1, "67cab7c54fe1bcf8eda4582bac64649247759f2aae16235688f9dc76fa2d9359"),
     Blob("src/unicode/break/conformance.bin", b"CJGF", 1, "5e7119dc378412e1c6b0bf58b1cc826e38aebb39773c361141737a3709c60077", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_data.bin", b"CJRB", 1, "9a88f134d56db6e730bc7ef2fcc69ad271923321b22bdcaf041a74e0266db4f2", version=(0, 0, 0)),
     Blob("src/unicode/format/rbnf_conformance.bin", b"CJRN", 1, "d78e610b755b158f8ebc761255cd8da9ac5ce1ee210e6cfcae3e7678b079cb7c", version=(48, 0, 0)),
@@ -521,6 +524,9 @@ GENERATORS = {
     "tools/unicode/properties/generate_set_ranges.py": "b590190010671ca5f6a157219fd0c3bbc9a238ca01acf1110b6ca2408156ae37",
     "tools/unicode/properties/generate_property_bits.py": "cb9ddbc926c086b4afb2fac3b3f6f7f2c3ae2567305ba653e48354ec9bb10565",
     "tools/unicode/script/generate_set_ranges.py": "93feed17f6365fa4cbb6eba6fcb779e8903a8d4c4627cc7c9ddf082c1716afa0",
+    "tools/unicode/script/generate_flat_scripts.py": "8571c6aaec543a5be3b9bd3447ef858f6ecaf1c3d7e40538313ed0d615b5ee2c",
+    "tools/unicode/bidi/generate_flat_classes.py": "a60480cef80e9b90e47f0bbe9affb7971d5e27f8ff0c197dd6905500f04c39c6",
+    "tools/unicode/line_break/generate_flat_classes.py": "b80e609ff27e73f81629ee6b232c54edc56a9f27534839b54e97d71d0af03a3f",
     "tools/unicode/bidi/generate_conformance.py": "1ca3d3fd9fe5962f37192eb77d9aadfab6e5f9c670540a7ae691213682bb0425",
     "tools/unicode/bidi/generate_data.py": "ab6f9359af0f5d198b52d174041e35ffde11b0f8277a4bf5a8981a76c0a1cb05",
     "tools/unicode/grapheme/generate_conformance.py": "93378e8fcf4b0bd91630716a5378902cb3a1a41253b2d4fc4cd4688a036a3018",
@@ -912,6 +918,10 @@ def check_layout(blob: Blob, data: bytes) -> None:
         for index in range(range_count):
             first, last = struct.unpack_from("<II", data, offset + index * 8)
             assert first <= last <= 0x10FFFF
+    elif magic in (b"CJZ0", b"CJZ5", b"CJZ6"):
+        length = struct.unpack_from("<I", data, 8)[0]
+        assert length == 0x110001
+        assert 16 + length == len(data)
     elif magic == b"CJQZ":
         property_count, _, total_words = struct.unpack_from("<HHI", data, 8)
         offset = 16 + property_count * 12

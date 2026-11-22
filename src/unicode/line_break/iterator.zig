@@ -699,7 +699,7 @@ pub fn breaksAssumeValid(text: []const u8) Iterator {
 }
 
 pub inline fn classForCodepoint(codepoint: u21) BreakClass {
-    return property_data.lookup(codepoint).class;
+    return property_data.class(codepoint);
 }
 
 inline fn properties(codepoint: u21) property_data.Properties {

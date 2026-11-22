@@ -742,7 +742,7 @@ pub fn isEmojiTagCodepoint(codepoint: u21) bool {
     return codepoint >= 0xe0020 and codepoint <= 0xe007f;
 }
 
-pub fn exactBidiClassForCodepoint(codepoint: u21) ExactBidiClass {
+pub inline fn exactBidiClassForCodepoint(codepoint: u21) ExactBidiClass {
     return bidi_paragraph.classForCodepoint(codepoint);
 }
 

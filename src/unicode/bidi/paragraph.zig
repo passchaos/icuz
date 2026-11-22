@@ -841,7 +841,7 @@ pub const Storage = struct {
     }
 };
 
-pub fn classForCodepoint(codepoint: u21) Class {
+pub inline fn classForCodepoint(codepoint: u21) Class {
     return property_data.class(codepoint);
 }
 
