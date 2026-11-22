@@ -404,30 +404,37 @@ pub const Set = struct {
         }
 
         // Case-insensitive closure: find every cased scalar whose case
-        // variants intersect the original set. Iterating cased scalars makes
-        // the closure symmetric without a reverse case-mapping table.
-        var codepoint: u32 = 0;
-        while (codepoint <= 0x10FFFF) : (codepoint += 1) {
-            const cp: u21 = @intCast(codepoint);
-            if (!properties.isCased(cp)) continue;
-            const lower = case_mapping.simpleLower(cp);
-            const upper = case_mapping.simpleUpper(cp);
-            const title = case_mapping.simpleTitle(cp);
-            const fold = case_mapping.simpleFold(cp);
-            const matches = original.contains(cp) or
-                original.contains(lower) or
-                original.contains(upper) or
-                original.contains(title) or
-                original.contains(fold);
-            if (!matches) continue;
-            try self.add(cp);
-            try self.add(lower);
-            try self.add(upper);
-            try self.add(title);
-            try self.add(fold);
-            if (closure == .case_insensitive) {
-                if (case_mapping.fullFold(cp)) |folded| {
-                    try self.addMappedSequence(folded);
+        // variants intersect the original set. Iterating the Cased property
+        // ranges makes the closure symmetric without a reverse case-mapping
+        // table and skips the million uncased scalars.
+        const cased = trie.propertyRangeEntry(
+            @intFromEnum(properties.BinaryProperty.cased),
+        );
+        var cased_index: usize = 0;
+        while (cased_index < cased.count) : (cased_index += 1) {
+            var codepoint: u32 = trie.rangeFirst(cased, cased_index);
+            const cased_last: u32 = trie.rangeLast(cased, cased_index);
+            while (codepoint <= cased_last) : (codepoint += 1) {
+                const cp: u21 = @intCast(codepoint);
+                const lower = case_mapping.simpleLower(cp);
+                const upper = case_mapping.simpleUpper(cp);
+                const title = case_mapping.simpleTitle(cp);
+                const fold = case_mapping.simpleFold(cp);
+                const matches = original.contains(cp) or
+                    original.contains(lower) or
+                    original.contains(upper) or
+                    original.contains(title) or
+                    original.contains(fold);
+                if (!matches) continue;
+                try self.add(cp);
+                try self.add(lower);
+                try self.add(upper);
+                try self.add(title);
+                try self.add(fold);
+                if (closure == .case_insensitive) {
+                    if (case_mapping.fullFold(cp)) |folded| {
+                        try self.addMappedSequence(folded);
+                    }
                 }
             }
         }
