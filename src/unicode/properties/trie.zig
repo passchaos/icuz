@@ -154,14 +154,27 @@ pub fn forEachRun(
         if (!slot_ready[slot]) {
             const base = pages_offset + @as(usize, slot) * 256 * 8;
             var words: [4]u64 = .{ 0, 0, 0, 0 };
-            var index: usize = 0;
-            while (index < 256) : (index += 1) {
-                const word_value = readU64(base + index * 8);
-                const selected = (word_value & property_mask) != 0 or
-                    ((@as(u64, 1) << @as(u6, @intCast(word_value & 0x1f))) &
-                        category_mask) != 0;
-                if (selected) {
-                    words[index >> 6] |= @as(u64, 1) << @intCast(index & 63);
+            if (category_mask == 0) {
+                // Binary-property-only sets dominate set construction; the
+                // category test would be dead work on every scalar.
+                var index: usize = 0;
+                while (index < 256) : (index += 1) {
+                    if ((readU64(base + index * 8) & property_mask) != 0) {
+                        words[index >> 6] |=
+                            @as(u64, 1) << @intCast(index & 63);
+                    }
+                }
+            } else {
+                var index: usize = 0;
+                while (index < 256) : (index += 1) {
+                    const word_value = readU64(base + index * 8);
+                    const selected = (word_value & property_mask) != 0 or
+                        ((@as(u64, 1) << @as(u6, @intCast(word_value & 0x1f))) &
+                            category_mask) != 0;
+                    if (selected) {
+                        words[index >> 6] |=
+                            @as(u64, 1) << @intCast(index & 63);
+                    }
                 }
             }
             slot_words[slot] = words;

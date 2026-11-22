@@ -78,28 +78,63 @@ pub const Set = struct {
         if (self.bits != null or self.static_bits != null) return;
         if (self.count() < 4096) return;
 
-        const words = try self.allocator.alloc(u64, 0x110000 / 64);
+        const ranges = self.ranges.items;
+        // Trim the bitmap to the highest selected scalar. Property sets
+        // rarely reach plane 16, and a shorter bitmap is cheaper to
+        // allocate and fill. One extra zero word acts as a sentinel so
+        // `contains` can clamp its index instead of branching on the
+        // codepoint's distance from the trim point.
+        const word_count = (@as(usize, ranges[ranges.len - 1].last) >> 6) + 1;
+        const words = try self.allocator.alloc(u64, word_count + 1);
         errdefer self.allocator.free(words);
-        @memset(words, 0);
-        for (self.ranges.items) |range| {
-            const end: u32 = range.last;
-            var codepoint: u32 = range.first;
-            // Head: complete the first partial word one bit at a time.
-            while (codepoint <= end and (codepoint & 63) != 0) : (codepoint += 1) {
-                words[codepoint >> 6] |= @as(u64, 1) << @as(u6, @intCast(codepoint & 63));
-            }
-            if (codepoint > end) continue;
-            // Middle: every full word inside the range is all ones.
-            const aligned_end = end - (end & 63);
-            while (codepoint < aligned_end) : (codepoint += 64) {
-                words[codepoint >> 6] = ~@as(u64, 0);
-            }
-            // Tail: the final partial word.
-            while (codepoint <= end) : (codepoint += 1) {
-                words[codepoint >> 6] |= @as(u64, 1) << @as(u6, @intCast(codepoint & 63));
+
+        // Ranges are sorted and non-overlapping, so every word is written
+        // exactly once: gaps become zero, interior words all ones, and
+        // boundary words carry the head/tail masks. Two ranges may share a
+        // boundary word; that word is ORed.
+        var cursor: usize = 0; // First word not yet written.
+        for (ranges) |range| {
+            const first: u32 = range.first;
+            const last: u32 = range.last;
+            const first_word = first >> 6;
+            const last_word = last >> 6;
+            const head = ~@as(u64, 0) << @as(u6, @intCast(first & 63));
+            const tail = ~@as(u64, 0) >> @as(u6, @intCast(63 - (last & 63)));
+            if (first_word >= cursor) {
+                fillWords(words[cursor..first_word], 0);
+                words[first_word] = if (first_word == last_word) head & tail else head;
+                if (first_word != last_word) {
+                    fillWords(words[first_word + 1 .. last_word], ~@as(u64, 0));
+                    words[last_word] = tail;
+                }
+                cursor = last_word + 1;
+            } else {
+                // Shares the word written by the previous range's tail.
+                std.debug.assert(first_word + 1 == cursor);
+                if (first_word == last_word) {
+                    words[first_word] |= head & tail;
+                } else {
+                    words[first_word] |= head;
+                    fillWords(words[first_word + 1 .. last_word], ~@as(u64, 0));
+                    words[last_word] = tail;
+                    cursor = last_word + 1;
+                }
             }
         }
+        fillWords(words[cursor..], 0);
         self.bits = words;
+    }
+
+    const WordVec = @Vector(8, u64);
+
+    fn fillWords(words: []u64, value: u64) void {
+        const splat: WordVec = @splat(value);
+        var index: usize = 0;
+        while (index + 8 <= words.len) : (index += 8) {
+            const dest: *[8]u64 = words[index..][0..8];
+            dest.* = splat;
+        }
+        while (index < words.len) : (index += 1) words[index] = value;
     }
 
     pub fn isEmpty(self: Set) bool {
@@ -121,9 +156,19 @@ pub const Set = struct {
     }
 
     pub fn contains(self: Set, codepoint: u21) bool {
-        if (self.static_bits orelse self.bits) |bits| {
-            if (codepoint > 0x10ffff) return false;
-            const word = bits[@as(usize, codepoint) >> 6];
+        if (self.static_bits) |bits| {
+            const index = @as(usize, codepoint) >> 6;
+            if (index >= bits.len) return false;
+            const word = bits[index];
+            const mask = @as(u64, 1) << @as(u6, @intCast(codepoint & 63));
+            return (word & mask) != 0;
+        }
+        if (self.bits) |bits| {
+            // The final word is an always-zero sentinel, so clamping the
+            // index keeps the lookup branchless: codepoints past the trim
+            // point read zero instead of indexing out of bounds.
+            const index = @min(@as(usize, codepoint) >> 6, bits.len - 1);
+            const word = bits[index];
             const mask = @as(u64, 1) << @as(u6, @intCast(codepoint & 63));
             return (word & mask) != 0;
         }
@@ -180,6 +225,19 @@ pub const Set = struct {
     pub fn addRange(self: *Set, first: u21, last: u21) !void {
         if (first > last) return;
         self.invalidateBits();
+
+        // Bulk builders (property masks, pattern parsing) add ranges in
+        // ascending order; appending past the last range avoids rescanning
+        // the whole list for every run.
+        if (self.ranges.items.len == 0 or
+            self.ranges.items[self.ranges.items.len - 1].last + 1 < first)
+        {
+            try self.ranges.append(self.allocator, .{
+                .first = first,
+                .last = last,
+            });
+            return;
+        }
 
         var index: usize = 0;
         while (index < self.ranges.items.len and
