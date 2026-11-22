@@ -151,12 +151,13 @@ def render_page_masks(name: str, codepoints) -> list[str]:
 DENSE_PAGE_MIN = 8
 
 
-def render_dense(name: str, codepoints) -> list[str]:
+def render_dense(name: str, codepoints, wide: bool = False) -> list[str]:
     """Direct page tables for dense pages.
 
-    A 256-entry byte table per dense page replaces the page-local binary
-    search; values are record indices within the page plus one, zero meaning
-    "no mapping". Sparse pages keep the mask plus binary-search path.
+    Single-scalar tables store the mapped scalar itself: zero means "no
+    mapping" and 0xFFFF falls back to the record search for astral targets.
+    Multi-scalar tables store page-local record indices plus one. Sparse pages
+    keep the mask plus binary-search path either way.
     """
     pages = sorted({codepoint >> 8 for codepoint in codepoints})
     slots = [0xFF] * PAGE_LIMIT
@@ -167,16 +168,23 @@ def render_dense(name: str, codepoints) -> list[str]:
             continue
         slots[page] = len(flat) >> 8
         table = [0] * 256
-        for local, codepoint in enumerate(page_cps):
-            table[codepoint & 0xFF] = local + 1
+        if wide:
+            for codepoint in page_cps:
+                mapped = codepoints[codepoint]
+                table[codepoint & 0xFF] = mapped if mapped < 0xFFFF else 0xFFFF
+        else:
+            for local, codepoint in enumerate(page_cps):
+                table[codepoint & 0xFF] = local + 1
         flat.extend(table)
     lines = [f"const {name}_dense_slots = [_]u8{{"]
     for start in range(0, len(slots), 16):
         chunk = ", ".join(str(value) for value in slots[start : start + 16])
         lines.append(f"    {chunk},")
-    lines.extend(["};", "", f"const {name}_dense = [_]u8{{"])
-    for start in range(0, len(flat), 32):
-        chunk = ", ".join(str(value) for value in flat[start : start + 32])
+    entry = "u16" if wide else "u8"
+    lines.extend(["};", "", f"const {name}_dense = [_]{entry}{{"])
+    per_line = 16 if wide else 32
+    for start in range(0, len(flat), per_line):
+        chunk = ", ".join(str(value) for value in flat[start : start + per_line])
         lines.append(f"    {chunk},")
     lines.extend(["};", ""])
     return lines
@@ -209,19 +217,19 @@ def render(
     lines.extend(render_single("lower", lower))
     lines.extend(render_page_index("lower", lower))
     lines.extend(render_page_masks("lower", lower))
-    lines.extend(render_dense("lower", lower))
+    lines.extend(render_dense("lower", lower, wide=True))
     lines.extend(render_single("upper", upper))
     lines.extend(render_page_index("upper", upper))
     lines.extend(render_page_masks("upper", upper))
-    lines.extend(render_dense("upper", upper))
+    lines.extend(render_dense("upper", upper, wide=True))
     lines.extend(render_single("title", title))
     lines.extend(render_page_index("title", title))
     lines.extend(render_page_masks("title", title))
-    lines.extend(render_dense("title", title))
+    lines.extend(render_dense("title", title, wide=True))
     lines.extend(render_single("simple_fold", simple_fold))
     lines.extend(render_page_index("simple_fold", simple_fold))
     lines.extend(render_page_masks("simple_fold", simple_fold))
-    lines.extend(render_dense("simple_fold", simple_fold))
+    lines.extend(render_dense("simple_fold", simple_fold, wide=True))
     lines.extend(render_multi("full_fold", full_fold))
     lines.extend(render_page_index("full_fold", full_fold))
     lines.extend(render_page_masks("full_fold", full_fold))
@@ -236,7 +244,7 @@ def render(
             "    slots: []const u8,",
             "    masks: []const [32]u8,",
             "    dense_slots: []const u8,",
-            "    dense: []const u8,",
+            "    dense: []const u16,",
             "};",
             "",
             "const MultiTable = struct {",
@@ -269,9 +277,10 @@ def render(
             "    if (page < page_limit) {",
             "        const slot = table.dense_slots[page];",
             "        if (slot != 0xFF) {",
-            "            const local = table.dense[(@as(usize, slot) << 8) | (codepoint & 0xFF)];",
-            "            if (local == 0) return null;",
-            "            return table.records[table.index[page] + local - 1].mapped;",
+            "            const mapped = table.dense[(@as(usize, slot) << 8) | (codepoint & 0xFF)];",
+            "            if (mapped == 0) return null;",
+            "            if (mapped != 0xFFFF) return mapped;",
+            "            // Astral targets keep the sparse record search below.",
             "        }",
             "    }",
             "    if (!mappedInPage(table.slots, table.masks, codepoint)) return null;",
