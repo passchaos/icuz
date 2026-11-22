@@ -943,14 +943,29 @@ inline fn appendMapping(
     mapping: []const u21,
 ) error{OutOfMemory}!void {
     const needed = mapping.len * 4;
-    if (output.unusedCapacitySlice().len < needed) {
-        try output.ensureUnusedCapacity(allocator, needed);
+    if (output.unusedCapacitySlice().len >= needed) {
+        const dest = output.unusedCapacitySlice();
+        var written: usize = 0;
+        for (mapping) |codepoint| {
+            written += scalar.encodeUtf8(dest[written..][0..4], codepoint);
+        }
+        output.items.len += written;
+        return;
     }
-    const dest = output.unusedCapacitySlice();
+    // The spare capacity cannot hold the worst-case write. Encode into a
+    // stack buffer and reserve the exact length: asking for four bytes per
+    // scalar at the end of a full buffer grows the list and forces a shrink
+    // copy in toOwnedSlice.
+    var encoded: [16]u8 = undefined;
     var written: usize = 0;
     for (mapping) |codepoint| {
-        written += scalar.encodeUtf8(dest[written..][0..4], codepoint);
+        written += scalar.encodeUtf8(encoded[written..][0..4], codepoint);
     }
+    try output.ensureTotalCapacityPrecise(
+        allocator,
+        output.items.len + written,
+    );
+    @memcpy(output.unusedCapacitySlice()[0..written], encoded[0..written]);
     output.items.len += written;
 }
 
@@ -959,11 +974,18 @@ inline fn appendCodepoint(
     output: *std.ArrayList(u8),
     codepoint: u21,
 ) error{OutOfMemory}!void {
-    if (output.unusedCapacitySlice().len < 4) {
-        try output.ensureUnusedCapacity(allocator, 4);
+    if (output.unusedCapacitySlice().len >= 4) {
+        const dest = output.unusedCapacitySlice();
+        output.items.len += scalar.encodeUtf8(dest[0..4], codepoint);
+        return;
     }
-    const dest = output.unusedCapacitySlice();
-    const len = scalar.encodeUtf8(dest[0..4], codepoint);
+    var encoded: [4]u8 = undefined;
+    const len = scalar.encodeUtf8(&encoded, codepoint);
+    try output.ensureTotalCapacityPrecise(
+        allocator,
+        output.items.len + len,
+    );
+    @memcpy(output.unusedCapacitySlice()[0..len], encoded[0..len]);
     output.items.len += len;
 }
 
