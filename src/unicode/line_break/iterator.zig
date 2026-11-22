@@ -35,6 +35,43 @@ const cjk_ideograph_properties = property_data.Properties{
 /// Return one past the last scalar of the ideographic run starting at
 /// `start`. The caller guarantees valid UTF-8, and U+4DC0..U+4DFF (Yijing)
 /// are alphabetic, so a three-byte lead test identifies the run.
+/// True when `codepoint` belongs to the contiguous ideographic range the run
+/// scanner accepts (CJK Ext A and CJK Unified, excluding the Yijing block).
+inline fn isIdeographicCodepoint(codepoint: u21) bool {
+    return codepoint >= 0x4000 and codepoint <= 0x9fff and
+        (codepoint < 0x4dc0 or codepoint > 0x4dff);
+}
+
+/// True when the pair (last effective class, ideographic) is decided as a
+/// soft break by the rule engine's fast path and no earlier rule can
+/// override it.
+fn breakBeforeIdeograph(state: *const rules.StreamState) bool {
+    if (state.previous_raw == .mandatory or
+        state.previous_raw == .carriage_return or
+        state.previous_raw == .line_feed or
+        state.previous_raw == .next_line or
+        state.previous_raw == .zero_width_joiner)
+    {
+        return false;
+    }
+    return switch (state.last.class) {
+        .close_punctuation,
+        .close_parenthesis,
+        .exclamation,
+        .symbol,
+        .infix_separator,
+        .alphabetic,
+        .hebrew_letter,
+        .numeric,
+        .postfix,
+        .ideographic,
+        .emoji_base,
+        .emoji_modifier,
+        => true,
+        else => false,
+    };
+}
+
 fn scanIdeographicRunEnd(text: []const u8, start: usize) usize {
     var cursor = start;
     while (cursor + 3 <= text.len) {
@@ -121,6 +158,39 @@ pub const Iterator = struct {
                     continue;
                 }
             } else {
+                // Start of an ideographic run: the boundary is soft for every
+                // left class without a prohibition, and the run interior is
+                // replayed, so settle the first scalar without the rule
+                // engine.
+                if (self.cursor >= self.id_run_end and
+                    self.cursor != 0 and
+                    !self.suppress_break_at_cursor and
+                    self.text[self.cursor] >= 0xe4 and
+                    self.text[self.cursor] <= 0xe9)
+                {
+                    const start = self.cursor;
+                    const decoded = scalar.decodeValidPacked(self.text, start);
+                    const codepoint = scalar.packedCodepoint(decoded);
+                    if (isIdeographicCodepoint(codepoint) and
+                        breakBeforeIdeograph(&self.state))
+                    {
+                        const next_index =
+                            start + scalar.packedLength(decoded);
+                        self.id_run_end =
+                            scanIdeographicRunEnd(self.text, next_index);
+                        const effective = rules.effectiveSignificant(
+                            codepoint,
+                            start,
+                            next_index,
+                            cjk_ideograph_properties,
+                            self.state.lb9_base,
+                        );
+                        self.state.consume(.ideographic, effective);
+                        self.simple_ascii = false;
+                        self.cursor = next_index;
+                        return .{ .byte_offset = start, .kind = .soft };
+                    }
+                }
                 // Interior boundaries of an ideographic run are all LB31
                 // soft, so replay them without a property lookup or rule
                 // evaluation.
