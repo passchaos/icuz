@@ -57,7 +57,9 @@ const Journal = struct {
 /// while searching needs the capture-aware one.
 const BackendState = struct {
     workspace: ?regexz.Workspace = null,
-    search: ?regexz.ReplaceWorkspace = null,
+    /// `ReplaceWorkspace` is ~28 KiB; boxing it keeps `Runner` (and every
+    /// `Matcher` returned by value) small enough to copy cheaply.
+    search: ?*regexz.ReplaceWorkspace = null,
 };
 
 pub const Runner = struct {
@@ -175,7 +177,10 @@ pub const Runner = struct {
     pub fn deinit(self: *Runner) void {
         if (self.backend_state) |*state| {
             if (state.workspace) |*workspace| workspace.deinit();
-            if (state.search) |*search| search.deinit();
+            if (state.search) |search| {
+                search.deinit();
+                self.allocator.destroy(search);
+            }
         }
         self.allocator.free(self.captures);
         self.allocator.free(self.counters);
@@ -569,13 +574,16 @@ pub const Runner = struct {
     fn ensureBackendSearch(self: *Runner) error{OutOfMemory}!*regexz.ReplaceWorkspace {
         const state = &self.backend_state.?;
         if (state.search == null) {
-            state.search = try regexz.ReplaceWorkspace.init(
+            const search = try self.allocator.create(regexz.ReplaceWorkspace);
+            errdefer self.allocator.destroy(search);
+            search.* = try regexz.ReplaceWorkspace.init(
                 self.allocator,
                 self.backend.?.program,
                 .{},
             );
+            state.search = search;
         }
-        return &state.search.?;
+        return state.search.?;
     }
 
     fn backendMatches(self: *Runner) Error!?bool {
@@ -640,16 +648,10 @@ pub const Runner = struct {
         self: *Runner,
         start: usize,
     ) regexz.Error!?regexz.Match {
-        const state = &self.backend_state.?;
-        if (state.search == null) {
-            state.search = regexz.ReplaceWorkspace.init(
-                self.allocator,
-                self.backend.?.program,
-                .{},
-            ) catch return error.OutOfMemory;
-        }
+        const search = self.ensureBackendSearch() catch
+            return error.OutOfMemory;
         const region = self.text[self.region_start..self.region_end];
-        return state.search.?.find(region, start);
+        return search.find(region, start);
     }
 
     fn recordBackendMatch(self: *Runner, match: regexz.Match) void {
