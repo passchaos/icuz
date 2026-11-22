@@ -208,7 +208,10 @@ fn normalizeFusedInto(
                 &syllable_end,
             )) |composed| {
                 if (!changed) {
-                    try output.ensureUnusedCapacity(allocator, text.len + 16);
+                    try output.ensureTotalCapacityPrecise(
+                        allocator,
+                        text.len + 16,
+                    );
                     changed = true;
                 }
                 if (start > stable_start) {
@@ -248,7 +251,7 @@ fn normalizeFusedInto(
                 pairChangesUnderForm(starter.?, codepoint, form));
         if (edit) {
             if (!changed) {
-                try output.ensureUnusedCapacity(allocator, text.len + 16);
+                try output.ensureTotalCapacityPrecise(allocator, text.len + 16);
                 changed = true;
             }
             if (starter_offset > stable_start) {
