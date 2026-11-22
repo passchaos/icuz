@@ -783,26 +783,75 @@ fn previousStart(text: []const u8, offset: usize) ?usize {
     return start;
 }
 
-fn finalSigmaAt(text: []const u8, cursor: usize, next: usize) bool {
-    var preceded_by_cased = false;
-    var at = cursor;
-    while (previousStart(text, at)) |start| {
-        at = start;
-        const decoded = scalar.decodeValid(text, start) orelse return false;
-        if (properties.isCaseIgnorable(decoded.codepoint)) continue;
-        preceded_by_cased = properties.isCased(decoded.codepoint);
-        break;
-    }
-    if (!preceded_by_cased) return false;
+inline fn isAsciiLetter(byte: u8) bool {
+    return (byte | 0x20) >= 'a' and (byte | 0x20) <= 'z';
+}
 
-    at = next;
+/// Decode the scalar at `start`, which the forward scan already validated.
+inline fn decodePreviousScalar(text: []const u8, start: usize) u21 {
+    const first = text[start];
+    if (first < 0xe0) {
+        return (@as(u21, first & 0x1f) << 6) | (text[start + 1] & 0x3f);
+    }
+    if (first < 0xf0) {
+        return (@as(u21, first & 0x0f) << 12) |
+            (@as(u21, text[start + 1] & 0x3f) << 6) |
+            (text[start + 2] & 0x3f);
+    }
+    return (@as(u21, first & 0x07) << 18) |
+        (@as(u21, text[start + 1] & 0x3f) << 12) |
+        (@as(u21, text[start + 2] & 0x3f) << 6) |
+        (text[start + 3] & 0x3f);
+}
+
+/// True when the scalar before `cursor` is cased with no case-ignorable
+/// scalars in between.
+fn precededByCased(text: []const u8, cursor: usize) bool {
+    var end = cursor;
+    while (end > 0) {
+        var start = end - 1;
+        while (text[start] & 0xc0 == 0x80) {
+            if (start == 0) return false;
+            start -= 1;
+        }
+        end = start;
+        const first = text[start];
+        if (first < 0x80) {
+            // Letters are cased, and spaces and digits are neither cased
+            // nor case-ignorable, so the common neighbors need no lookup.
+            if (isAsciiLetter(first)) return true;
+            if (first == ' ' or (first >= '0' and first <= '9')) return false;
+        }
+        const codepoint: u21 = if (first < 0x80)
+            first
+        else
+            decodePreviousScalar(text, start);
+        if (properties.isCaseIgnorable(codepoint)) continue;
+        return properties.isCased(codepoint);
+    }
+    return false;
+}
+
+/// True when the scalar after `next` is cased with no case-ignorable scalars
+/// in between.
+fn followedByCased(text: []const u8, next: usize) bool {
+    var at = next;
     while (at < text.len) {
-        const decoded = scalar.decodeValid(text, at) orelse break;
+        const first = text[at];
+        if (first < 0x80) {
+            if (isAsciiLetter(first)) return true;
+            if (first == ' ' or (first >= '0' and first <= '9')) return false;
+        }
+        const decoded = scalar.decodeValid(text, at) orelse return false;
         at = decoded.next;
         if (properties.isCaseIgnorable(decoded.codepoint)) continue;
-        return !properties.isCased(decoded.codepoint);
+        return properties.isCased(decoded.codepoint);
     }
-    return true;
+    return false;
+}
+
+fn finalSigmaAt(text: []const u8, cursor: usize, next: usize) bool {
+    return precededByCased(text, cursor) and !followedByCased(text, next);
 }
 
 fn afterSoftDottedAt(text: []const u8, cursor: usize) bool {

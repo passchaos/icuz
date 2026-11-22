@@ -196,23 +196,46 @@ def render(
             "},"
         )
     lines.extend(["};", ""])
-    # Every SpecialCasing record lives below U+10000, so a 256-entry page
-    # index replaces the full-array binary search with a page-local one.
+    # Every SpecialCasing record lives below U+10000. Two small tables turn
+    # the record lookup into a direct index: one slot per page, then one
+    # first-record byte per scalar in the pages that carry records.
     page_limit = 0x100
-    page_index = []
-    record_index = 0
-    for page in range(page_limit):
-        page_start = page << 8
-        while (record_index < len(records) and
-               records[record_index][0] < page_start):
-            record_index += 1
-        page_index.append(record_index)
     if any(record[0] >> 8 >= page_limit for record in records):
         raise SystemExit("full case records exceed the page index")
-    lines.extend(["const page_limit = 0x100;", "const page_index = [_]u16{"])
-    for start in range(0, len(page_index), 16):
-        chunk = ", ".join(str(value) for value in page_index[start : start + 16])
+    record_pages = sorted({record[0] >> 8 for record in records})
+    page_slot = [0xFF] * page_limit
+    for slot, page in enumerate(record_pages):
+        page_slot[page] = slot
+    record_start = [[0xFF] * 256 for _ in record_pages]
+    for index, record in enumerate(records):
+        slot = page_slot[record[0] >> 8]
+        low = record[0] & 0xFF
+        if record_start[slot][low] == 0xFF:
+            record_start[slot][low] = index
+    lines.extend(
+        [
+            "const page_limit = 0x100;",
+            "/// Record-table slot for a page, or 0xFF when the page has none.",
+            "const page_slot = [_]u8{",
+        ]
+    )
+    for start in range(0, len(page_slot), 16):
+        chunk = ", ".join(str(value) for value in page_slot[start : start + 16])
         lines.append(f"    {chunk},")
+    lines.extend(
+        [
+            "};",
+            "",
+            "/// First record index for each scalar of a record-bearing page.",
+            "const record_start = [_][256]u8{",
+        ]
+    )
+    for slot_table in record_start:
+        lines.append("    .{")
+        for start in range(0, 256, 16):
+            chunk = ", ".join(str(value) for value in slot_table[start : start + 16])
+            lines.append(f"        {chunk},")
+        lines.append("    },")
     lines.extend(["};", ""])
 
     # A flat bitmap answers "does this scalar have a root record?" in one
@@ -436,34 +459,23 @@ def render(
             "}",
             "",
             "/// Return every SpecialCasing record for one code point in file order.",
+            "///",
+            "/// Two table loads replace a page-local binary search: one maps the",
+            "/// page to a record slot, the next gives the first record for the",
+            "/// scalar. A code point has at most three adjacent records, so the",
+            "/// upper bound extends linearly.",
             "pub fn recordsFor(codepoint: u21) []const Record {",
             "    const page = codepoint >> 8;",
             "    if (page >= page_limit) return records[0..0];",
-            "    var low: usize = page_index[page];",
-            "    const high: usize = if (page + 1 < page_limit)",
-            "        page_index[page + 1]",
-            "    else",
-            "        records.len;",
-            "    var scan_high = high;",
-            "    while (low < scan_high) {",
-            "        const mid = low + (scan_high - low) / 2;",
-            "        if (records[mid].codepoint < codepoint) {",
-            "            low = mid + 1;",
-            "        } else {",
-            "            scan_high = mid;",
-            "        }",
+            "    const slot = page_slot[page];",
+            "    if (slot == 0xFF) return records[0..0];",
+            "    const start = record_start[slot][codepoint & 0xff];",
+            "    if (start == 0xFF) return records[0..0];",
+            "    var end = start;",
+            "    while (end < records.len and records[end].codepoint == codepoint) {",
+            "        end += 1;",
             "    }",
-            "    const start = low;",
-            "    scan_high = high;",
-            "    while (low < scan_high) {",
-            "        const mid = low + (scan_high - low) / 2;",
-            "        if (records[mid].codepoint <= codepoint) {",
-            "            low = mid + 1;",
-            "        } else {",
-            "            scan_high = mid;",
-            "        }",
-            "    }",
-            "    return records[start..low];",
+            "    return records[start..end];",
             "}",
             "",
             'test "generated full case mappings" {',
