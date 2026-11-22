@@ -982,11 +982,7 @@ fn formatStandardAlloc(
         if (rounding_mantissa != 0) {
             const increment = @as(f64, @floatFromInt(
                 rounding_mantissa,
-            )) * std.math.pow(
-                f64,
-                10.0,
-                @floatFromInt(rounding_magnitude),
-            );
+            )) * pow10Signed(rounding_magnitude);
             const steps = magnitude / increment;
             if (steps != @floor(steps)) return error.InvalidPattern;
         } else if (options.max_significant_digits > 0) {
@@ -1012,11 +1008,7 @@ fn formatStandardAlloc(
     if (rounding_mantissa != 0) {
         const increment = @as(f64, @floatFromInt(
             rounding_mantissa,
-        )) * std.math.pow(
-            f64,
-            10.0,
-            @floatFromInt(rounding_magnitude),
-        );
+        )) * pow10Signed(rounding_magnitude);
         const steps = roundMagnitude(
             magnitude / increment,
             0,
@@ -1632,18 +1624,14 @@ fn formatScientificAlloc(
     var exponent: i32 = 0;
     if (value != 0) {
         exponent = @intFromFloat(@floor(@log10(@abs(value))));
-        const scaled = @abs(value) / std.math.pow(
-            f64,
-            10.0,
-            @floatFromInt(exponent),
-        );
+        const scaled = @abs(value) / pow10Signed(exponent);
         if (scaled >= 10.0) exponent += 1;
         if (scaled < 1.0) exponent -= 1;
     }
     if (options.engineering and value != 0) {
         exponent = @divFloor(exponent, 3) * 3;
     }
-    const power = std.math.pow(f64, 10.0, @floatFromInt(exponent));
+    const power = pow10Signed(exponent);
     if (power == 0) return decimalFallback(allocator, value, locale_name, options);
     var mantissa = if (value == 0) 0.0 else value / power;
     const max_fraction = options.max_fraction_digits orelse 6;
@@ -1662,7 +1650,7 @@ fn formatScientificAlloc(
                 mantissa = if (value == 0)
                     0.0
                 else
-                    value / std.math.pow(f64, 10.0, @floatFromInt(exponent));
+                    value / pow10Signed(exponent);
             }
         }
     }
@@ -1999,11 +1987,7 @@ fn significantDigits(
     ));
     var rounded = value;
     if (max_fraction_signed < 0) {
-        const scale = std.math.pow(
-            f64,
-            10.0,
-            @floatFromInt(-max_fraction_signed),
-        );
+        const scale = pow10Signed(-max_fraction_signed);
         rounded = roundMagnitude(
             value / scale,
             0,
@@ -2734,11 +2718,29 @@ const pow10_int = [_]u64{
     1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000,
 };
 
+/// Exact powers of ten up to 10^22, the largest exactly representable in
+/// f64. Integer exponents outside this range fall back to `pow`.
+const pow10_exact = [_]f64{
+    1e0,  1e1,  1e2,  1e3,  1e4,  1e5,  1e6,  1e7,  1e8,  1e9,  1e10, 1e11,
+    1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
+};
+
+fn pow10Signed(exponent: i32) f64 {
+    if (exponent >= 0) {
+        if (exponent < pow10_exact.len) {
+            return pow10_exact[@intCast(exponent)];
+        }
+    } else if (-exponent < pow10_exact.len) {
+        return 1.0 / pow10_exact[@intCast(-exponent)];
+    }
+    return std.math.pow(f64, 10.0, @floatFromInt(exponent));
+}
+
 fn pow10(digits: u8) f64 {
     return if (digits < pow10_float.len)
         pow10_float[digits]
     else
-        std.math.pow(f64, 10.0, @floatFromInt(digits));
+        pow10Signed(@intCast(digits));
 }
 
 fn roundingNeeded(magnitude: f64, digits: u8) bool {
@@ -4652,5 +4654,14 @@ test "fast decimal conversion matches the generic parser" {
         const expected = std.fmt.parseFloat(f64, input) catch continue;
         const actual = parseFloat(input, "en", .{}) orelse continue;
         try testing.expectEqual(expected, actual);
+    }
+}
+
+test "pow10Signed matches std.math.pow" {
+    const testing = @import("std").testing;
+    var exponent: i32 = -30;
+    while (exponent <= 30) : (exponent += 1) {
+        const expected = std.math.pow(f64, 10.0, @floatFromInt(exponent));
+        try testing.expectEqual(expected, pow10Signed(exponent));
     }
 }
