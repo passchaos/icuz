@@ -195,7 +195,7 @@ fn convertAlloc(
     try codepoints.ensureTotalCapacity(allocator, domain.len);
     var cursor: usize = 0;
     while (scalar.decodeValid(domain, cursor)) |decoded| {
-        try codepoints.append(allocator, decoded.codepoint);
+        codepoints.appendAssumeCapacity(decoded.codepoint);
         cursor = decoded.next;
     }
 
@@ -334,8 +334,9 @@ fn convertAlloc(
                     try appendUtf8(allocator, &output, label.unicode);
                 };
             } else {
-                const encoded = encodeAsciiLabel(
+                appendEncodedAsciiLabel(
                     allocator,
+                    &output,
                     label.unicode,
                 ) catch |err| switch (err) {
                     error.OutOfMemory => return error.OutOfMemory,
@@ -345,8 +346,6 @@ fn convertAlloc(
                         continue;
                     },
                 };
-                defer allocator.free(encoded);
-                try output.appendSlice(allocator, encoded);
             }
         } else {
             try appendUtf8(allocator, &output, label.unicode);
@@ -540,10 +539,15 @@ fn asciiLabelAlloc(
     return output;
 }
 
-fn encodeAsciiLabel(
+/// Append one A-label directly to the result. On an over-long label the
+/// appended bytes are rolled back so the caller can fall back to the
+/// Unicode form.
+fn appendEncodedAsciiLabel(
     allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
     label: []const u21,
-) Error![]u8 {
+) Error!void {
+    const start = output.items.len;
     var all_ascii = true;
     for (label) |codepoint| {
         if (codepoint >= 0x80) {
@@ -551,22 +555,19 @@ fn encodeAsciiLabel(
             break;
         }
     }
-
-    var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
     if (all_ascii) {
-        try output.ensureTotalCapacity(allocator, label.len);
+        try output.ensureUnusedCapacity(allocator, label.len);
         for (label) |codepoint| {
-            try output.append(allocator, @intCast(codepoint));
+            output.appendAssumeCapacity(@intCast(codepoint));
         }
     } else {
-        const encoded = try encodePunycode(allocator, label);
-        defer allocator.free(encoded);
         try output.appendSlice(allocator, "xn--");
-        try output.appendSlice(allocator, encoded);
+        try appendPunycode(allocator, output, label);
     }
-    if (output.items.len > 63) return error.LabelTooLong;
-    return output.toOwnedSlice(allocator);
+    if (output.items.len - start > 63) {
+        output.items.len = start;
+        return error.LabelTooLong;
+    }
 }
 
 fn appendUtf8(
@@ -768,7 +769,15 @@ fn encodePunycode(
 ) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
+    try appendPunycode(allocator, &output, codepoints);
+    return output.toOwnedSlice(allocator);
+}
 
+fn appendPunycode(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    codepoints: []const u21,
+) Error!void {
     var basic_count: usize = 0;
     for (codepoints) |codepoint| {
         if (codepoint < 0x80) {
@@ -817,7 +826,6 @@ fn encodePunycode(
         delta += 1;
         n += 1;
     }
-    return output.toOwnedSlice(allocator);
 }
 
 fn decodePunycode(
