@@ -40,7 +40,9 @@ pub fn run() !void {
 
     var scratch = resolver.Scratch.init(std.testing.allocator);
     defer scratch.deinit();
-    var inputs: [256]resolver.Input = undefined;
+    var scalars: [256]resolver.Scalar = undefined;
+    var classes: [256]resolver.Class = undefined;
+    var levels: [256]u8 = undefined;
     var actual_order: [256]usize = undefined;
 
     for (0..header.type_case_count) |case_index| {
@@ -57,17 +59,22 @@ pub fn run() !void {
         );
         const count = test_data[offset + 3];
         offset += 4;
-        for (inputs[0..count], test_data[offset..][0..count]) |*input, value| {
-            input.* = .{
-                .codepoint = 0,
-                .class = @enumFromInt(value),
-            };
+        for (classes[0..count], test_data[offset..][0..count]) |*class, value| {
+            class.* = @enumFromInt(value);
+        }
+        for (scalars[0..count]) |*scalar| {
+            scalar.* = .{ .codepoint = 0, .byte_start = 0, .byte_len = 0 };
         }
         offset += count;
 
-        const base_level = try scratch.resolve(inputs[0..count], mode);
+        const base_level = try scratch.resolve(
+            scalars[0..count],
+            classes[0..count],
+            levels[0..count],
+            mode,
+        );
         const expected = expectations[expectation_index];
-        if (!std.mem.eql(u8, scratch.resolvedLevels(), expected.levels)) {
+        if (!std.mem.eql(u8, levels[0..count], expected.levels)) {
             std.debug.print(
                 "BidiTest case={d} base={d} input={any} expected={any} actual={any}\n",
                 .{
@@ -75,13 +82,13 @@ pub fn run() !void {
                     base_level,
                     test_data[offset - count .. offset],
                     expected.levels,
-                    scratch.resolvedLevels(),
+                    levels[0..count],
                 },
             );
             return error.BidiLevelMismatch;
         }
         const order_count = reorder(
-            scratch.resolvedLevels(),
+            levels[0..count],
             actual_order[0..count],
         );
         if (!equalOrder(actual_order[0..order_count], expected.order)) {
@@ -110,24 +117,27 @@ pub fn run() !void {
         offset += 4;
         const expected_levels = test_data[offset..][0..count];
         offset += count;
-        for (inputs[0..count]) |*input| {
+        for (scalars[0..count], classes[0..count]) |*scalar, *class| {
             const codepoint: u21 = @intCast(std.mem.readInt(
                 u32,
                 test_data[offset..][0..4],
                 .little,
             ));
             offset += 4;
-            input.* = .{
-                .codepoint = codepoint,
-                .class = @import("data.zig").class(codepoint),
-            };
+            scalar.* = .{ .codepoint = codepoint, .byte_start = 0, .byte_len = 0 };
+            class.* = @import("data.zig").class(codepoint);
         }
         const expected_order = test_data[offset..][0..expected_order_count];
         offset += expected_order_count;
 
-        const actual_base = try scratch.resolve(inputs[0..count], mode);
+        const actual_base = try scratch.resolve(
+            scalars[0..count],
+            classes[0..count],
+            levels[0..count],
+            mode,
+        );
         if (actual_base != expected_base or
-            !std.mem.eql(u8, scratch.resolvedLevels(), expected_levels))
+            !std.mem.eql(u8, levels[0..count], expected_levels))
         {
             std.debug.print(
                 "BidiCharacterTest case={d} base={d}/{d} expected={any} actual={any}\n",
@@ -136,13 +146,13 @@ pub fn run() !void {
                     expected_base,
                     actual_base,
                     expected_levels,
-                    scratch.resolvedLevels(),
+                    levels[0..count],
                 },
             );
             return error.BidiLevelMismatch;
         }
         const order_count = reorder(
-            scratch.resolvedLevels(),
+            levels[0..count],
             actual_order[0..count],
         );
         if (!equalOrder(actual_order[0..order_count], expected_order)) {

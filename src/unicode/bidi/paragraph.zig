@@ -42,11 +42,9 @@ pub const Range = struct {
     }
 };
 
-pub const Scalar = struct {
-    codepoint: u21,
-    byte_start: usize,
-    byte_len: u3,
-};
+pub const Scalar = resolver.Scalar;
+
+const block_alignment = resolver.block_alignment;
 
 pub const Paragraph = struct {
     allocator: std.mem.Allocator,
@@ -54,30 +52,20 @@ pub const Paragraph = struct {
     scalars: []const Scalar,
     classes: []const Class,
     levels: []const u8,
-    /// Allocated capacity behind the public slices when a buffer was
-    /// transferred as-is; empty when the public slice is the exact allocation.
-    scalars_storage: []Scalar = &.{},
-    classes_storage: []Class = &.{},
-    levels_storage: []u8 = &.{},
+    /// One allocation holding the public arrays when they share storage;
+    /// empty when each slice is an independent exact allocation.
+    block: []align(block_alignment.toByteUnits()) u8 = &.{},
     owner: Owner = .allocator,
 
     const Owner = enum { allocator, borrowed };
 
     pub fn deinit(self: *Paragraph) void {
         if (self.owner == .allocator) {
-            if (self.levels_storage.len != 0) {
-                self.allocator.free(self.levels_storage);
+            if (self.block.len != 0) {
+                self.allocator.free(self.block);
             } else {
                 self.allocator.free(self.levels);
-            }
-            if (self.classes_storage.len != 0) {
-                self.allocator.free(self.classes_storage);
-            } else {
                 self.allocator.free(self.classes);
-            }
-            if (self.scalars_storage.len != 0) {
-                self.allocator.free(self.scalars_storage);
-            } else {
                 self.allocator.free(self.scalars);
             }
         }
@@ -450,29 +438,37 @@ pub fn resolve(
     text: []const u8,
     base_direction: BaseDirection,
 ) !Paragraph {
-    var scalar_list = std.ArrayList(Scalar).empty;
-    defer scalar_list.deinit(allocator);
-    var inputs = std.ArrayList(resolver.Input).empty;
-    defer inputs.deinit(allocator);
-    // One scalar per byte is the upper bound; reserving once avoids the
-    // repeated growth that dominates short paragraph resolution.
-    try scalar_list.ensureTotalCapacity(allocator, text.len);
-    try inputs.ensureTotalCapacity(allocator, text.len);
+    // One scalar per byte is the upper bound. Every array the paragraph keeps
+    // is carved from a single allocation, which removes two allocator calls
+    // (and their frees) from the hot path.
+    const capacity = text.len;
+    const scalar_bytes = capacity * @sizeOf(Scalar);
+    const block = try allocator.alignedAlloc(
+        u8,
+        block_alignment,
+        scalar_bytes + 2 * capacity,
+    );
+    errdefer allocator.free(block);
+    const scalars = std.mem.bytesAsSlice(Scalar, block[0..scalar_bytes]);
+    const classes = std.mem.bytesAsSlice(
+        Class,
+        block[scalar_bytes..][0..capacity],
+    );
+    const levels: []u8 = block[scalar_bytes + capacity ..][0..capacity];
 
+    var count: usize = 0;
     var cursor: usize = 0;
     while (cursor < text.len) {
         const start = cursor;
         const first = text[cursor];
         if (first < 0x80) {
-            scalar_list.appendAssumeCapacity(.{
+            scalars[count] = .{
                 .codepoint = first,
                 .byte_start = cursor,
                 .byte_len = 1,
-            });
-            inputs.appendAssumeCapacity(.{
-                .codepoint = first,
-                .class = property_data.class(first),
-            });
+            };
+            classes[count] = property_data.class(first);
+            count += 1;
             cursor += 1;
             continue;
         }
@@ -482,41 +478,30 @@ pub fn resolve(
         if (decoded == scalar_value.packed_invalid) return error.InvalidUtf8;
         const codepoint = scalar_value.packedCodepoint(decoded);
         cursor += scalar_value.packedLength(decoded);
-        scalar_list.appendAssumeCapacity(.{
+        scalars[count] = .{
             .codepoint = codepoint,
             .byte_start = start,
             .byte_len = @intCast(cursor - start),
-        });
-        inputs.appendAssumeCapacity(.{
-            .codepoint = codepoint,
-            .class = property_data.class(codepoint),
-        });
+        };
+        classes[count] = property_data.class(codepoint);
+        count += 1;
     }
 
     var scratch = resolver.Scratch.init(allocator);
     defer scratch.deinit();
-    const base_level = try scratch.resolve(inputs.items, base_direction);
-    // Keep the decoder's allocation instead of shrinking it to the scalar
-    // count; the extra capacity is freed with the paragraph.
-    const scalars = scalar_list.items;
-    const scalars_storage = scalar_list.allocatedSlice();
-    scalar_list = .empty;
-    errdefer allocator.free(scalars_storage);
-    // Transfer the scratch buffers instead of copying them; the paragraph
-    // frees the full allocations.
-    const classes_storage = scratch.takeInitialTypes();
-    errdefer allocator.free(classes_storage);
-    const levels_storage = scratch.takeLevels();
-    errdefer allocator.free(levels_storage);
+    const base_level = try scratch.resolve(
+        scalars[0..count],
+        classes[0..count],
+        levels[0..count],
+        base_direction,
+    );
     return .{
         .allocator = allocator,
         .base_level = base_level,
-        .scalars = scalars,
-        .classes = classes_storage[0..scalars.len],
-        .levels = levels_storage[0..scalars.len],
-        .scalars_storage = scalars_storage,
-        .classes_storage = classes_storage,
-        .levels_storage = levels_storage,
+        .scalars = scalars[0..count],
+        .classes = classes[0..count],
+        .levels = levels[0..count],
+        .block = block,
     };
 }
 
@@ -562,8 +547,10 @@ pub fn resolveWithRanges(
 
     var scalar_list = std.ArrayList(Scalar).empty;
     defer scalar_list.deinit(allocator);
-    var inputs = std.ArrayList(resolver.Input).empty;
-    defer inputs.deinit(allocator);
+    var expanded_scalars = std.ArrayList(Scalar).empty;
+    defer expanded_scalars.deinit(allocator);
+    var expanded_classes = std.ArrayList(Class).empty;
+    defer expanded_classes.deinit(allocator);
     var source_input_indices = std.ArrayList(usize).empty;
     defer source_input_indices.deinit(allocator);
 
@@ -575,7 +562,12 @@ pub fn resolveWithRanges(
         const codepoint = decodeValid(text, &cursor);
         if (active) |range| {
             if (range.byteEnd() == start) {
-                try appendClosures(&inputs, allocator, range.modes);
+                try appendClosures(
+                    &expanded_scalars,
+                    &expanded_classes,
+                    allocator,
+                    range.modes,
+                );
                 active = null;
             }
         }
@@ -583,7 +575,12 @@ pub fn resolveWithRanges(
             ranges[range_index].byte_start == start)
         {
             const range = ranges[range_index];
-            try appendOpenings(&inputs, allocator, range.modes);
+            try appendOpenings(
+                &expanded_scalars,
+                &expanded_classes,
+                allocator,
+                range.modes,
+            );
             active = range;
             range_index += 1;
         }
@@ -592,29 +589,59 @@ pub fn resolveWithRanges(
             .byte_start = start,
             .byte_len = @intCast(cursor - start),
         });
-        try source_input_indices.append(allocator, inputs.items.len);
+        try source_input_indices.append(
+            allocator,
+            expanded_classes.items.len,
+        );
         const class = property_data.class(codepoint);
-        try inputs.append(allocator, .{
+        try expanded_scalars.append(allocator, .{
             .codepoint = codepoint,
-            .class = class,
+            .byte_start = start,
+            .byte_len = @intCast(cursor - start),
         });
+        try expanded_classes.append(allocator, class);
         // UAX #9 resets explicit state at a paragraph separator. Reopen an
         // attributed range that continues into the following paragraph.
         if (class == .b) if (active) |range| {
             if (cursor < range.byteEnd()) {
-                try appendClosures(&inputs, allocator, range.modes);
-                try appendOpenings(&inputs, allocator, range.modes);
+                try appendClosures(
+                    &expanded_scalars,
+                    &expanded_classes,
+                    allocator,
+                    range.modes,
+                );
+                try appendOpenings(
+                    &expanded_scalars,
+                    &expanded_classes,
+                    allocator,
+                    range.modes,
+                );
             } else active = null;
         };
     }
     if (active) |range| {
-        try appendClosures(&inputs, allocator, range.modes);
+        try appendClosures(
+            &expanded_scalars,
+            &expanded_classes,
+            allocator,
+            range.modes,
+        );
     }
     std.debug.assert(range_index == ranges.len);
 
+    const expanded_levels = try allocator.alloc(
+        u8,
+        expanded_scalars.items.len,
+    );
+    defer allocator.free(expanded_levels);
     var scratch = resolver.Scratch.init(allocator);
     defer scratch.deinit();
-    const base_level = try scratch.resolve(inputs.items, base_direction);
+    const base_level = try scratch.resolve(
+        expanded_scalars.items,
+        expanded_classes.items,
+        expanded_levels,
+        base_direction,
+    );
     const scalars = try scalar_list.toOwnedSlice(allocator);
     errdefer allocator.free(scalars);
     const classes = try allocator.alloc(Class, scalars.len);
@@ -622,8 +649,8 @@ pub fn resolveWithRanges(
     const levels = try allocator.alloc(u8, scalars.len);
     errdefer allocator.free(levels);
     for (source_input_indices.items, 0..) |input_index, scalar_index| {
-        classes[scalar_index] = scratch.initialTypes()[input_index];
-        levels[scalar_index] = scratch.resolvedLevels()[input_index];
+        classes[scalar_index] = expanded_classes.items[input_index];
+        levels[scalar_index] = expanded_levels[input_index];
     }
     return .{
         .allocator = allocator,
@@ -651,36 +678,51 @@ pub fn validateRanges(text: []const u8, ranges: []const Range) !void {
 }
 
 fn appendOpenings(
-    inputs: *std.ArrayList(resolver.Input),
+    scalars: *std.ArrayList(Scalar),
+    classes: *std.ArrayList(Class),
     allocator: std.mem.Allocator,
     modes: []const RangeMode,
 ) !void {
     for (modes) |mode| {
-        try appendFormattingInput(inputs, allocator, openingClass(mode));
+        try appendFormattingInput(
+            scalars,
+            classes,
+            allocator,
+            openingClass(mode),
+        );
     }
 }
 
 fn appendClosures(
-    inputs: *std.ArrayList(resolver.Input),
+    scalars: *std.ArrayList(Scalar),
+    classes: *std.ArrayList(Class),
     allocator: std.mem.Allocator,
     modes: []const RangeMode,
 ) !void {
     var index = modes.len;
     while (index != 0) {
         index -= 1;
-        try appendFormattingInput(inputs, allocator, switch (modes[index]) {
-            .ltr_isolate, .rtl_isolate, .first_strong_isolate => .pdi,
-            else => .pdf,
-        });
+        try appendFormattingInput(
+            scalars,
+            classes,
+            allocator,
+            switch (modes[index]) {
+                .ltr_isolate, .rtl_isolate, .first_strong_isolate => .pdi,
+                else => .pdf,
+            },
+        );
     }
 }
 
 fn appendFormattingInput(
-    inputs: *std.ArrayList(resolver.Input),
+    scalars: *std.ArrayList(Scalar),
+    classes: *std.ArrayList(Class),
     allocator: std.mem.Allocator,
     class: Class,
 ) !void {
-    try inputs.append(allocator, .{
+    // Formatting controls never carry the `.on` class, so the resolver never
+    // reads their placeholder codepoint; only the class participates.
+    try scalars.append(allocator, .{
         .codepoint = switch (class) {
             .lre => 0x202a,
             .rle => 0x202b,
@@ -693,8 +735,10 @@ fn appendFormattingInput(
             .rlo => 0x202e,
             else => unreachable,
         },
-        .class = class,
+        .byte_start = 0,
+        .byte_len = 0,
     });
+    try classes.append(allocator, class);
 }
 
 fn openingClass(mode: RangeMode) Class {
@@ -715,60 +759,17 @@ fn isUtf8Boundary(text: []const u8, byte_offset: usize) bool {
     return text[byte_offset] & 0xc0 != 0x80;
 }
 
-/// Resolve into caller-owned arrays and reusable UAX #9 scratch.
-///
-/// The returned paragraph borrows all three arrays and remains valid only
-/// until `scalars`, `inputs`, or `scratch` is reused. This is intended for
-/// layout transactions that consume the resolution synchronously; `resolve`
-/// above remains the owning public contract.
-fn resolveInto(
-    allocator: std.mem.Allocator,
-    text: []const u8,
-    base_direction: BaseDirection,
-    scalars: *std.ArrayList(Scalar),
-    inputs: *std.ArrayList(resolver.Input),
-    scratch: *resolver.Scratch,
-) !Paragraph {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
-
-    scalars.clearRetainingCapacity();
-    inputs.clearRetainingCapacity();
-    try scalars.ensureTotalCapacity(allocator, text.len);
-    try inputs.ensureTotalCapacity(allocator, text.len);
-    var cursor: usize = 0;
-    while (cursor < text.len) {
-        const start = cursor;
-        const codepoint = decodeValid(text, &cursor);
-        scalars.appendAssumeCapacity(.{
-            .codepoint = codepoint,
-            .byte_start = start,
-            .byte_len = @intCast(cursor - start),
-        });
-        inputs.appendAssumeCapacity(.{
-            .codepoint = codepoint,
-            .class = property_data.class(codepoint),
-        });
-    }
-
-    const base_level = try scratch.resolve(inputs.items, base_direction);
-    return .{
-        .allocator = allocator,
-        .base_level = base_level,
-        .scalars = scalars.items,
-        .classes = scratch.initialTypes(),
-        .levels = scratch.resolvedLevels(),
-        .owner = .borrowed,
-    };
-}
-
 /// Reusable ownership for synchronous paragraph resolution.
 ///
-/// This remains internal to layout; the public `resolve` result owns an
-/// independent snapshot whose lifetime is not coupled to future resolutions.
+/// The returned paragraph borrows `scalars`, `classes` and `levels` and
+/// remains valid only until the storage is reused. This is intended for
+/// layout transactions that consume the resolution synchronously; `resolve`
+/// above remains the owning public contract.
 pub const Storage = struct {
     allocator: std.mem.Allocator,
     scalars: std.ArrayList(Scalar) = .empty,
-    inputs: std.ArrayList(resolver.Input) = .empty,
+    classes: std.ArrayList(Class) = .empty,
+    levels: std.ArrayList(u8) = .empty,
     scratch: resolver.Scratch,
 
     pub fn init(allocator: std.mem.Allocator) Storage {
@@ -780,7 +781,8 @@ pub const Storage = struct {
 
     pub fn deinit(self: *Storage) void {
         self.scratch.deinit();
-        self.inputs.deinit(self.allocator);
+        self.levels.deinit(self.allocator);
+        self.classes.deinit(self.allocator);
         self.scalars.deinit(self.allocator);
         self.* = undefined;
     }
@@ -790,14 +792,52 @@ pub const Storage = struct {
         text: []const u8,
         base_direction: BaseDirection,
     ) !Paragraph {
-        return resolveInto(
-            self.allocator,
-            text,
+        self.scalars.clearRetainingCapacity();
+        self.classes.clearRetainingCapacity();
+        try self.scalars.ensureTotalCapacity(self.allocator, text.len);
+        try self.classes.ensureTotalCapacity(self.allocator, text.len);
+        var cursor: usize = 0;
+        while (cursor < text.len) {
+            const start = cursor;
+            const first = text[cursor];
+            if (first < 0x80) {
+                self.scalars.appendAssumeCapacity(.{
+                    .codepoint = first,
+                    .byte_start = cursor,
+                    .byte_len = 1,
+                });
+                self.classes.appendAssumeCapacity(property_data.class(first));
+                cursor += 1;
+                continue;
+            }
+            // Validation is fused into the decode, matching the owning path.
+            const decoded = scalar_value.decodeValidatingPacked(text, cursor);
+            if (decoded == scalar_value.packed_invalid) return error.InvalidUtf8;
+            const codepoint = scalar_value.packedCodepoint(decoded);
+            cursor += scalar_value.packedLength(decoded);
+            self.scalars.appendAssumeCapacity(.{
+                .codepoint = codepoint,
+                .byte_start = start,
+                .byte_len = @intCast(cursor - start),
+            });
+            self.classes.appendAssumeCapacity(property_data.class(codepoint));
+        }
+        try self.levels.resize(self.allocator, self.scalars.items.len);
+
+        const base_level = try self.scratch.resolve(
+            self.scalars.items,
+            self.classes.items,
+            self.levels.items,
             base_direction,
-            &self.scalars,
-            &self.inputs,
-            &self.scratch,
         );
+        return .{
+            .allocator = self.allocator,
+            .base_level = base_level,
+            .scalars = self.scalars.items,
+            .classes = self.classes.items,
+            .levels = self.levels.items,
+            .owner = .borrowed,
+        };
     }
 };
 

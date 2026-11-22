@@ -18,10 +18,13 @@ pub const BaseDirection = enum {
     auto,
 };
 
-pub const Input = packed struct(u32) {
+/// One decoded scalar of the paragraph under resolution. The resolver only
+/// reads `codepoint`; the byte fields carry source coordinates for the owning
+/// paragraph facade.
+pub const Scalar = struct {
     codepoint: u21,
-    class: Class,
-    _padding: u6 = 0,
+    byte_start: usize,
+    byte_len: u3,
 };
 
 const Override = enum {
@@ -53,14 +56,32 @@ const BracketPair = struct {
     close: usize,
 };
 
+pub const block_alignment = std.mem.Alignment.fromByteUnits(@alignOf(usize));
+
 pub const Scratch = struct {
     allocator: std.mem.Allocator,
-    initial_types: std.ArrayList(Class) = .empty,
-    types: std.ArrayList(Class) = .empty,
-    levels: std.ArrayList(u8) = .empty,
-    runs: std.ArrayList(Run) = .empty,
-    indices: std.ArrayList(usize) = .empty,
-    sequence_types: std.ArrayList(Class) = .empty,
+    /// One allocation holding every per-scalar working array: sequence
+    /// indices, level runs, resolved types and per-sequence types. Splitting
+    /// these into separate allocations made allocator locks the dominant cost
+    /// of resolving short paragraphs.
+    block: []align(block_alignment.toByteUnits()) u8 = &.{},
+    capacity: usize = 0,
+    indices_storage: []usize = &.{},
+    runs_storage: []Run = &.{},
+    types_storage: []Class = &.{},
+    sequence_storage: []Class = &.{},
+    /// Views over the paragraph currently being resolved.
+    scalars: []const Scalar = &.{},
+    initial_types: []const Class = &.{},
+    types: []Class = &.{},
+    levels: []u8 = &.{},
+    indices: []usize = &.{},
+    sequence_types: []Class = &.{},
+    runs: []Run = &.{},
+    indices_len: usize = 0,
+    sequence_len: usize = 0,
+    runs_len: usize = 0,
+    has_bracket: bool = false,
     bracket_pairs: std.ArrayList(BracketPair) = .empty,
 
     pub fn init(allocator: std.mem.Allocator) Scratch {
@@ -69,120 +90,152 @@ pub const Scratch = struct {
 
     pub fn deinit(self: *Scratch) void {
         self.bracket_pairs.deinit(self.allocator);
-        self.sequence_types.deinit(self.allocator);
-        self.indices.deinit(self.allocator);
-        self.runs.deinit(self.allocator);
-        self.levels.deinit(self.allocator);
-        self.types.deinit(self.allocator);
-        self.initial_types.deinit(self.allocator);
+        self.allocator.free(self.block);
         self.* = undefined;
     }
 
+    /// Resolve one paragraph. `classes` holds the original `Bidi_Class` of
+    /// every scalar and is left untouched; `levels` receives the result.
     pub fn resolve(
         self: *Scratch,
-        inputs: []const Input,
+        scalars: []const Scalar,
+        classes: []const Class,
+        levels: []u8,
         base_direction: BaseDirection,
     ) std.mem.Allocator.Error!u8 {
-        self.clearRetainingCapacity();
-        try self.initial_types.ensureTotalCapacity(self.allocator, inputs.len);
-        try self.types.ensureTotalCapacity(self.allocator, inputs.len);
-        try self.levels.ensureTotalCapacity(self.allocator, inputs.len);
-        // Explicit and isolate formatting classes are the tail of the Class
-        // enum, so one range check records whether X1..X8 can change levels.
-        const explicit_start = @intFromEnum(Class.lre);
-        var has_explicit = false;
-        var has_fsi = false;
-        for (inputs) |input| {
-            self.initial_types.appendAssumeCapacity(input.class);
-            self.types.appendAssumeCapacity(input.class);
-            self.levels.appendAssumeCapacity(0);
-            has_explicit = has_explicit or
-                @intFromEnum(input.class) >= explicit_start;
-            has_fsi = has_fsi or input.class == .fsi;
+        std.debug.assert(classes.len == scalars.len);
+        std.debug.assert(levels.len == scalars.len);
+        self.scalars = scalars;
+        self.initial_types = classes;
+        self.levels = levels;
+        self.indices_len = 0;
+        self.sequence_len = 0;
+        self.runs_len = 0;
+        self.bracket_pairs.clearRetainingCapacity();
+        try self.ensureCapacity(scalars.len);
+        self.types = self.types_storage[0..scalars.len];
+        self.indices = self.indices_storage[0..scalars.len];
+        self.sequence_types = self.sequence_storage[0..scalars.len];
+
+        // One table-driven flag accumulation records every property the
+        // follow-up passes need, so they can skip whole scans of plain text.
+        var flags: u8 = 0;
+        for (classes, 0..) |class, index| {
+            self.types[index] = class;
+            levels[index] = 0;
+            flags |= fill_flags[@intFromEnum(class)];
         }
 
-        if (has_fsi) resolveFirstStrongIsolates(self.types.items);
+        if (flags & FillFlags.fsi != 0) resolveFirstStrongIsolates(self.types);
         const base_level: u8 = switch (base_direction) {
             .ltr => 0,
             .rtl => 1,
-            .auto => defaultLevel(self.types.items),
+            .auto => defaultLevel(self.types),
         };
-        if (inputs.len == 0) return base_level;
-        if (isPureLtr(self.initial_types.items, base_level)) {
-            @memset(self.levels.items, 0);
+        if (scalars.len == 0) return base_level;
+        if (base_level == 0 and flags & FillFlags.impure == 0) {
+            // Levels were initialized to zero above.
             return base_level;
         }
 
-        if (has_explicit) {
-            resolveExplicit(self.types.items, self.levels.items, base_level);
+        // Paired brackets always carry the initial `.on` class, so only those
+        // scalars need the sparse bracket lookup. Text without any bracket
+        // skips the N0 pass entirely.
+        self.has_bracket = false;
+        if (flags & FillFlags.on != 0) {
+            for (classes, scalars) |class, scalar| {
+                if (class != .on) continue;
+                if (property_data.bracket(scalar.codepoint) != null) {
+                    self.has_bracket = true;
+                    break;
+                }
+            }
+        }
+
+        if (flags & FillFlags.explicit != 0) {
+            resolveExplicit(self.types, levels, base_level);
         } else if (base_level != 0) {
             // Without formatting characters the stack never changes, so every
             // scalar keeps the paragraph level.
-            @memset(self.levels.items, base_level);
+            @memset(levels, base_level);
         }
-        // Runs and per-sequence scratch never exceed the scalar count, so
-        // reserve them once instead of growing inside the run loops.
-        try self.runs.ensureTotalCapacity(self.allocator, inputs.len + 1);
-        try self.resolveRuns(base_level);
-        try self.indices.ensureTotalCapacity(self.allocator, inputs.len);
-        try self.sequence_types.ensureTotalCapacity(self.allocator, inputs.len);
-        for (self.runs.items, 0..) |run, run_index| {
-            if (run.in_sequence) continue;
-            try self.resolveSequence(inputs, run_index);
+        if (flags & FillFlags.structured == 0) {
+            // Without formatting or isolate controls every scalar keeps one
+            // level, so the paragraph is a single level run and a single
+            // isolating run sequence over all scalars. Resolving it in place
+            // skips the run scan and the per-sequence type copy.
+            const sos = typeFromLevel(base_level);
+            self.sequence_types = self.types;
+            self.sequence_len = scalars.len;
+            self.indices_len = scalars.len;
+            for (self.indices, 0..) |*slot, index| slot.* = index;
+            resolveWeak(self.types, sos, sos);
+            try self.resolveNeutral(base_level, sos, sos);
+            resolveImplicit(
+                self.sequence_types[0..self.sequence_len],
+                self.indices[0..self.indices_len],
+                levels,
+                base_level,
+            );
+        } else {
+            // Level runs never exceed the scalar count plus one, so the single
+            // block reserved above covers every run.
+            self.runs = self.runs_storage[0 .. scalars.len + 1];
+            self.resolveRuns(base_level);
+            for (self.runs[0..self.runs_len], 0..) |run, run_index| {
+                if (run.in_sequence) continue;
+                try self.resolveSequence(run_index);
+            }
         }
         // L1 resets paragraph/segment separators and the trailing formatting
         // context that immediately precedes them. The conformance suites expect
         // this line-ready form rather than raw X/I levels.
-        resetParagraphLevels(
-            self.initial_types.items,
-            self.levels.items,
-            base_level,
-        );
-        for (self.initial_types.items, 0..) |value, index| {
-            if (isRemovedByX9(value)) self.levels.items[index] = removed_level;
+        if (flags & FillFlags.separator != 0) {
+            resetSeparatorLevels(self.initial_types, levels, base_level);
+        }
+        resetTrailingLevels(self.initial_types, levels, base_level);
+        if (flags & FillFlags.removed != 0) {
+            for (self.initial_types, 0..) |value, index| {
+                if (isRemovedByX9(value)) levels[index] = removed_level;
+            }
         }
         return base_level;
     }
 
-    pub fn resolvedLevels(self: *const Scratch) []const u8 {
-        return self.levels.items;
+    fn ensureCapacity(self: *Scratch, scalar_count: usize) !void {
+        if (self.capacity >= scalar_count or scalar_count == 0) return;
+        const indices_bytes = scalar_count * @sizeOf(usize);
+        const runs_bytes = (scalar_count + 1) * @sizeOf(Run);
+        const types_offset = indices_bytes + runs_bytes;
+        const sequence_offset = types_offset + scalar_count;
+        const block = try self.allocator.alignedAlloc(
+            u8,
+            block_alignment,
+            sequence_offset + scalar_count,
+        );
+        self.allocator.free(self.block);
+        self.block = block;
+        self.capacity = scalar_count;
+        self.indices_storage = std.mem.bytesAsSlice(
+            usize,
+            block[0..indices_bytes],
+        );
+        const runs_bytes_slice: []align(block_alignment.toByteUnits()) u8 =
+            @alignCast(block[indices_bytes..][0..runs_bytes]);
+        self.runs_storage = std.mem.bytesAsSlice(Run, runs_bytes_slice);
+        self.types_storage = std.mem.bytesAsSlice(
+            Class,
+            block[types_offset..][0..scalar_count],
+        );
+        self.sequence_storage = std.mem.bytesAsSlice(
+            Class,
+            block[sequence_offset..][0..scalar_count],
+        );
     }
 
-    pub fn initialTypes(self: *const Scratch) []const Class {
-        return self.initial_types.items;
-    }
-
-    /// Hand the `initial_types` allocation to the caller and forget the list
-    /// so `deinit` does not free it.
-    pub fn takeInitialTypes(self: *Scratch) []Class {
-        const storage = self.initial_types.allocatedSlice();
-        self.initial_types = .empty;
-        return storage;
-    }
-
-    /// Hand the `levels` allocation to the caller and forget the list.
-    pub fn takeLevels(self: *Scratch) []u8 {
-        const storage = self.levels.allocatedSlice();
-        self.levels = .empty;
-        return storage;
-    }
-
-    fn clearRetainingCapacity(self: *Scratch) void {
-        self.initial_types.clearRetainingCapacity();
-        self.types.clearRetainingCapacity();
-        self.levels.clearRetainingCapacity();
-        self.runs.clearRetainingCapacity();
-        self.indices.clearRetainingCapacity();
-        self.sequence_types.clearRetainingCapacity();
-        self.bracket_pairs.clearRetainingCapacity();
-    }
-
-    fn resolveRuns(
-        self: *Scratch,
-        base_level: u8,
-    ) std.mem.Allocator.Error!void {
-        const types = self.types.items;
-        const levels = self.levels.items;
+    fn resolveRuns(self: *Scratch, base_level: u8) void {
+        const types = self.types;
+        const levels = self.levels;
         var start: usize = 0;
         while (start < types.len and isRemovedByX9(types[start])) : (start += 1) {}
         if (start == types.len) return;
@@ -193,21 +246,23 @@ pub const Scratch = struct {
         while (cursor < types.len) : (cursor += 1) {
             if (isRemovedByX9(types[cursor])) continue;
             if (levels[cursor] == level) continue;
-            self.runs.appendAssumeCapacity(.{
+            self.runs[self.runs_len] = .{
                 .level = level,
                 .start = run_start,
                 .end = cursor,
-            });
+            };
+            self.runs_len += 1;
             run_start = cursor;
             level = levels[cursor];
         }
-        self.runs.appendAssumeCapacity(.{
+        self.runs[self.runs_len] = .{
             .level = level,
             .start = run_start,
             .end = types.len,
-        });
+        };
+        self.runs_len += 1;
 
-        for (self.runs.items) |*run| {
+        for (self.runs[0..self.runs_len]) |*run| {
             while (run.start < run.end and isRemovedByX9(types[run.start])) {
                 run.start += 1;
             }
@@ -227,7 +282,7 @@ pub const Scratch = struct {
             }
             run.sos = typeFromLevel(@max(previous_level, run.level));
 
-            if (isIsolateInitiator(self.initial_types.items[run.end - 1])) {
+            if (isIsolateInitiator(self.initial_types[run.end - 1])) {
                 run.ends_with_isolate = true;
                 run.eos = typeFromLevel(@max(base_level, run.level));
             } else {
@@ -242,54 +297,52 @@ pub const Scratch = struct {
             }
         }
 
-        linkIsolatingRuns(self.runs.items);
+        linkIsolatingRuns(self.runs[0..self.runs_len]);
     }
 
     fn resolveSequence(
         self: *Scratch,
-        inputs: []const Input,
         first_run_index: usize,
     ) std.mem.Allocator.Error!void {
-        self.indices.clearRetainingCapacity();
-        self.sequence_types.clearRetainingCapacity();
+        self.indices_len = 0;
+        self.sequence_len = 0;
         var run_index = first_run_index;
-        const sequence_level = self.runs.items[first_run_index].level;
-        const sos = self.runs.items[first_run_index].sos;
+        const sequence_level = self.runs[first_run_index].level;
+        const sos = self.runs[first_run_index].sos;
         var eos = sos;
         while (true) {
-            const run = self.runs.items[run_index];
+            const run = self.runs[run_index];
             var index = run.start;
             while (index < run.end) : (index += 1) {
-                if (isRemovedByX9(self.types.items[index])) continue;
-                self.indices.appendAssumeCapacity(index);
-                self.sequence_types.appendAssumeCapacity(
-                    self.types.items[index],
-                );
+                if (isRemovedByX9(self.types[index])) continue;
+                self.indices[self.indices_len] = index;
+                self.indices_len += 1;
+                self.sequence_types[self.sequence_len] = self.types[index];
+                self.sequence_len += 1;
             }
             eos = run.eos;
             run_index = run.next orelse break;
         }
-        if (self.indices.items.len == 0) return;
+        if (self.indices_len == 0) return;
 
-        resolveWeak(self.sequence_types.items, sos, eos);
-        try self.resolveNeutral(inputs, sequence_level, sos, eos);
+        resolveWeak(self.sequence_types[0..self.sequence_len], sos, eos);
+        try self.resolveNeutral(sequence_level, sos, eos);
         resolveImplicit(
-            self.sequence_types.items,
-            self.indices.items,
-            self.levels.items,
+            self.sequence_types[0..self.sequence_len],
+            self.indices[0..self.indices_len],
+            self.levels,
             sequence_level,
         );
     }
 
     fn resolveNeutral(
         self: *Scratch,
-        inputs: []const Input,
         sequence_level: u8,
         sos: Class,
         eos: Class,
     ) std.mem.Allocator.Error!void {
-        try self.resolveBrackets(inputs, sequence_level, sos);
-        const types = self.sequence_types.items;
+        if (self.has_bracket) try self.resolveBrackets(sequence_level, sos);
+        const types = self.sequence_types[0..self.sequence_len];
         const embedding = typeFromLevel(sequence_level);
         var previous = sos;
         var cursor: usize = 0;
@@ -314,7 +367,6 @@ pub const Scratch = struct {
 
     fn resolveBrackets(
         self: *Scratch,
-        inputs: []const Input,
         sequence_level: u8,
         sos: Class,
     ) std.mem.Allocator.Error!void {
@@ -322,9 +374,11 @@ pub const Scratch = struct {
         var stack_opening: [63]u21 = undefined;
         var stack_position: [63]usize = undefined;
         var depth: usize = 0;
-        for (self.indices.items, 0..) |input_index, sequence_index| {
-            if (self.sequence_types.items[sequence_index] != .on) continue;
-            const bracket = property_data.bracket(inputs[input_index].codepoint) orelse continue;
+        for (self.indices[0..self.indices_len], 0..) |input_index, sequence_index| {
+            if (self.sequence_types[sequence_index] != .on) continue;
+            const bracket = property_data.bracket(
+                self.scalars[input_index].codepoint,
+            ) orelse continue;
             if (bracket.is_open) {
                 if (depth == stack_opening.len) break;
                 stack_opening[depth] = bracket.opening;
@@ -352,7 +406,7 @@ pub const Scratch = struct {
             bracketPairLessThan,
         );
 
-        const types = self.sequence_types.items;
+        const types = self.sequence_types[0..self.sequence_len];
         const embedding = typeFromLevel(sequence_level);
         for (self.bracket_pairs.items) |pair| {
             var pair_direction: Class = .on;
@@ -381,15 +435,15 @@ pub const Scratch = struct {
             types[pair.close] = pair_direction;
             applyFollowingNsm(
                 types,
-                self.initial_types.items,
-                self.indices.items,
+                self.initial_types,
+                self.indices[0..self.indices_len],
                 pair.open + 1,
                 pair_direction,
             );
             applyFollowingNsm(
                 types,
-                self.initial_types.items,
-                self.indices.items,
+                self.initial_types,
+                self.indices[0..self.indices_len],
                 pair.close + 1,
                 pair_direction,
             );
@@ -465,28 +519,63 @@ fn defaultLevel(types: []const Class) u8 {
     return 0;
 }
 
-fn isPureLtr(types: []const Class, base_level: u8) bool {
-    if (base_level != 0) return false;
-    for (types) |value| {
-        switch (value) {
-            .r,
-            .al,
-            .an,
-            .rle,
-            .rlo,
-            .rli,
-            .lre,
-            .lro,
-            .lri,
-            .fsi,
-            .pdf,
-            .pdi,
-            .bn,
-            => return false,
-            else => {},
+/// Per-class bits accumulated while filling the working type array. One
+/// table load and OR per scalar replaces several follow-up scans.
+const FillFlags = struct {
+    const explicit: u8 = 1 << 0;
+    const fsi: u8 = 1 << 1;
+    const separator: u8 = 1 << 2;
+    const removed: u8 = 1 << 3;
+    const impure: u8 = 1 << 4;
+    /// Formatting, isolate or BN controls that split level runs.
+    const structured: u8 = 1 << 5;
+    /// At least one scalar has the `.on` class.
+    const on: u8 = 1 << 6;
+};
+
+const fill_flags = buildFillFlags();
+
+fn buildFillFlags() [@typeInfo(Class).@"enum".fields.len]u8 {
+    var table = [_]u8{0} ** @typeInfo(Class).@"enum".fields.len;
+    for (&table, 0..) |*bits, index| {
+        const value: Class = @enumFromInt(index);
+        var flags: u8 = 0;
+        if (@intFromEnum(value) >= @intFromEnum(Class.lre)) {
+            flags |= FillFlags.explicit;
         }
+        if (value == .fsi) flags |= FillFlags.fsi;
+        if (value == .b or value == .s) flags |= FillFlags.separator;
+        if (isRemovedByX9(value)) flags |= FillFlags.removed;
+        if (!isPureLtrClass(value)) flags |= FillFlags.impure;
+        if (value == .bn or
+            @intFromEnum(value) >= @intFromEnum(Class.lre))
+        {
+            flags |= FillFlags.structured;
+        }
+        if (value == .on) flags |= FillFlags.on;
+        bits.* = flags;
     }
-    return true;
+    return table;
+}
+
+fn isPureLtrClass(value: Class) bool {
+    return switch (value) {
+        .r,
+        .al,
+        .an,
+        .rle,
+        .rlo,
+        .rli,
+        .lre,
+        .lro,
+        .lri,
+        .fsi,
+        .pdf,
+        .pdi,
+        .bn,
+        => false,
+        else => true,
+    };
 }
 
 fn resolveExplicit(types: []Class, levels: []u8, base_level: u8) void {
@@ -1225,6 +1314,15 @@ fn resetParagraphLevels(
     levels: []u8,
     base_level: u8,
 ) void {
+    resetSeparatorLevels(initial_types, levels, base_level);
+    resetTrailingLevels(initial_types, levels, base_level);
+}
+
+fn resetSeparatorLevels(
+    initial_types: []const Class,
+    levels: []u8,
+    base_level: u8,
+) void {
     for (initial_types, 0..) |value, index| {
         if (value != .b and value != .s) continue;
         levels[index] = base_level;
@@ -1242,6 +1340,13 @@ fn resetParagraphLevels(
             break;
         }
     }
+}
+
+fn resetTrailingLevels(
+    initial_types: []const Class,
+    levels: []u8,
+    base_level: u8,
+) void {
     var index = initial_types.len;
     while (index > 0) {
         index -= 1;
