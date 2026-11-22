@@ -937,7 +937,7 @@ fn beforeDotAt(text: []const u8, next: usize) bool {
     return false;
 }
 
-fn appendMapping(
+inline fn appendMapping(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
     mapping: []const u21,
@@ -954,7 +954,7 @@ fn appendMapping(
     output.items.len += written;
 }
 
-fn appendCodepoint(
+inline fn appendCodepoint(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
     codepoint: u21,
