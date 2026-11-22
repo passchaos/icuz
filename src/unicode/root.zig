@@ -679,6 +679,15 @@ pub fn sentenceSegments(
     return sentence_boundary.segments(text);
 }
 
+/// Segment UTF-8 that the caller already validated, matching the
+/// `graphemeClustersAssumeValid`, `wordSegmentsAssumeValid`, and
+/// `lineBreaksAssumeValid` contracts.
+pub fn sentenceSegmentsAssumeValid(
+    text: []const u8,
+) SentenceBoundaryIterator {
+    return sentence_boundary.assumeValid(text);
+}
+
 pub const LineBreakKind = line_break.BreakKind;
 pub const LineBreak = line_break.Break;
 pub const LineBreakIterator = line_break.Iterator;

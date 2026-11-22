@@ -210,7 +210,9 @@ fn benchSentences(name: []const u8, text: []const u8) void {
     for (0..trials) |_| {
         const start = now();
         for (0..rounds) |_| {
-            var iterator = icuz.unicode.sentenceSegments(text) catch unreachable;
+            // Match the grapheme, word, and line rows: the caller has
+            // validated the text, so segmentation alone is measured.
+            var iterator = icuz.unicode.sentenceSegmentsAssumeValid(text);
             while (iterator.next()) |_| count += 1;
         }
         const elapsed: u64 = @intCast(now() - start);
