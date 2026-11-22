@@ -8,6 +8,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const properties = @import("properties.zig");
+const property_bitmap = @import("properties/bits.zig");
 const trie = @import("properties/trie.zig");
 const aliases = @import("properties/aliases.zig");
 const script = @import("script/root.zig");
@@ -182,6 +183,9 @@ pub const Set = struct {
     /// Borrowed immutable membership bits, used for process-wide sets such
     /// as the regex `\w` table. Mutating the set drops the borrow.
     static_bits: ?[]const u64 = null,
+    /// Borrowed bitmap from `property_bits.bin` for single-property sets.
+    /// Mutating the set drops the borrow.
+    property_bits: ?property_bitmap.Bitmap = null,
 
     pub fn init(allocator: std.mem.Allocator) Set {
         return .{
@@ -190,6 +194,7 @@ pub const Set = struct {
             .strings = .empty,
             .bits = null,
             .static_bits = null,
+            .property_bits = null,
         };
     }
 
@@ -216,6 +221,7 @@ pub const Set = struct {
 
     fn invalidateBits(self: *Set) void {
         self.static_bits = null;
+        self.property_bits = null;
         if (self.bits) |bits| {
             self.allocator.free(bits);
             self.bits = null;
@@ -228,7 +234,8 @@ pub const Set = struct {
     /// invalidate the bitset; call `finalize` again before heavy membership
     /// testing.
     pub fn finalize(self: *Set) !void {
-        if (self.bits != null or self.static_bits != null) return;
+        if (self.bits != null or self.static_bits != null or
+            self.property_bits != null) return;
         const total = self.count();
         if (total < 4096) return;
 
@@ -373,6 +380,9 @@ pub const Set = struct {
             const word = bits[index];
             const mask = @as(u64, 1) << @as(u6, @intCast(codepoint & 63));
             return (word & mask) != 0;
+        }
+        if (self.property_bits) |bitmap| {
+            return property_bitmap.has(bitmap, codepoint);
         }
         if (self.bits) |bits| {
             // The final word is an always-zero sentinel, so clamping the
@@ -1177,6 +1187,9 @@ pub const Set = struct {
         errdefer result.deinit();
         try result.ranges.appendSlice(allocator, self.ranges.items);
         for (self.strings.items) |text| try result.addString(text);
+        // Immutable borrows stay valid for the copied ranges.
+        result.static_bits = self.static_bits;
+        result.property_bits = self.property_bits;
         return result;
     }
 
@@ -1566,6 +1579,14 @@ pub fn fromMasks(
     var set = Set.init(allocator);
     errdefer set.deinit();
     try set.addMasks(category_mask, property_mask);
+    // Single binary properties can borrow their precomputed bitmap from the
+    // generated blob instead of materializing one.
+    if (category_mask == 0 and @popCount(property_mask) == 1) {
+        if (property_bitmap.lookup(@intCast(@ctz(property_mask)))) |bitmap| {
+            set.property_bits = bitmap;
+            return set;
+        }
+    }
     try set.finalize();
     return set;
 }

@@ -33,7 +33,7 @@ pub const Bitmap = struct {
     words: u32,
 };
 
-fn lookup(bit: u6) ?Bitmap {
+pub fn lookup(bit: u6) ?Bitmap {
     var index: usize = 0;
     while (index < property_count) : (index += 1) {
         const base = entries_offset + index * entry_len;
