@@ -216,6 +216,25 @@ pub inline fn assertValidUtf8(text: []const u8) void {
 /// Encode one valid scalar into `dest`, which must have at least four bytes.
 /// Inlines the length branches that `std.unicode.utf8Encode` keeps out of
 /// line in hot mapping loops.
+/// Count the UTF-8 scalars in `text` without validating it. Every byte that is
+/// not a continuation starts one scalar, which is exact for valid input and an
+/// upper bound for invalid input, so callers can size a decoded buffer once.
+pub fn countCodepoints(text: []const u8) usize {
+    var count: usize = 0;
+    var index: usize = 0;
+    const mask_c0: @Vector(32, u8) = @splat(0xc0);
+    const cont_marker: @Vector(32, u8) = @splat(0x80);
+    while (index + 32 <= text.len) : (index += 32) {
+        const bytes: @Vector(32, u8) = text[index..][0..32].*;
+        const is_cont = (bytes & mask_c0) == cont_marker;
+        count += 32 - @popCount(@as(u32, @bitCast(is_cont)));
+    }
+    while (index < text.len) : (index += 1) {
+        if (text[index] & 0xc0 != 0x80) count += 1;
+    }
+    return count;
+}
+
 pub inline fn encodeUtf8(dest: []u8, codepoint: u21) usize {
     if (codepoint < 0x80) {
         dest[0] = @intCast(codepoint);

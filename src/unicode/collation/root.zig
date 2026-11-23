@@ -279,7 +279,7 @@ pub fn collationElementsAlloc(
 ) error{ InvalidUtf8, OutOfMemory }![]CollationElement {
     var codepoints = std.ArrayList(u21).empty;
     defer codepoints.deinit(allocator);
-    try codepoints.ensureTotalCapacity(allocator, text.len);
+    try codepoints.ensureTotalCapacity(allocator, scalar.countCodepoints(text));
     var cursor: usize = 0;
     while (cursor < text.len) {
         const decoded = scalar.decodeValidatingPacked(text, cursor);
@@ -1468,7 +1468,9 @@ fn sortKeyUtf8Decode(
 
     var codepoints = std.ArrayList(u21).empty;
     defer codepoints.deinit(allocator);
-    try codepoints.ensureTotalCapacity(allocator, text.len);
+    // Size the decoded buffer exactly: `text.len` over-reserves threefold for
+    // CJK prose and pushes the allocation past the allocator's slab classes.
+    try codepoints.ensureTotalCapacity(allocator, scalar.countCodepoints(text));
 
     var cursor: usize = 0;
     var nfd_scan = normalization.NfdScan{};
