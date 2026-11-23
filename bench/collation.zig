@@ -303,6 +303,49 @@ fn benchLines(name: []const u8, text: []const u8) void {
     report(name, rounds * text.len, best);
 }
 
+fn benchQuickCheckUtf16(
+    name: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    const units = std.unicode.utf8ToUtf16LeAlloc(allocator, text) catch
+        unreachable;
+    defer allocator.free(units);
+    const rounds: usize = 20_000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            sink +%= @intFromBool(
+                icuz.normalization.isNormalizedUtf16(units, .nfc) catch
+                    unreachable,
+            );
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * text.len, best);
+}
+
+fn benchQuickCheck(
+    name: []const u8,
+    text: []const u8,
+) void {
+    const rounds: usize = 20_000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            sink +%= @intFromBool(
+                icuz.normalization.isNormalizedAssumeValid(text),
+            );
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * text.len, best);
+}
+
 fn benchNormalizeInto(
     name: []const u8,
     text: []const u8,
@@ -838,6 +881,25 @@ pub fn main(init: std.process.Init.Minimal) !void {
             "NFC precomposed (reuse)",
             "\u{00e9} \u{00ef} \u{00df} \u{4e16}\u{754c} " ** 8,
             allocator,
+        );
+    }
+    if (selected(filter, "quickcheck", "quickcheck Chinese (utf16)")) {
+        benchQuickCheckUtf16(
+            "quickcheck Chinese (utf16)",
+            "\u{4f60}\u{597d}\u{ff0c}\u{4e16}\u{754c}\u{ff01}\u{4e2d}\u{6587}\u{7f16}\u{7801}\u{8f6c}\u{6362}\u{57fa}\u{51c6}\u{6d4b}\u{8bd5}\u{3002}" ** 8,
+            allocator,
+        );
+    }
+    if (selected(filter, "quickcheck", "quickcheck mixed")) {
+        benchQuickCheck("quickcheck mixed", mixed_text);
+    }
+    if (selected(filter, "quickcheck", "quickcheck ASCII")) {
+        benchQuickCheck("quickcheck ASCII", ascii_text);
+    }
+    if (selected(filter, "quickcheck", "quickcheck Chinese")) {
+        benchQuickCheck(
+            "quickcheck Chinese",
+            "\u{4f60}\u{597d}\u{ff0c}\u{4e16}\u{754c}\u{ff01}\u{4e2d}\u{6587}\u{7f16}\u{7801}\u{8f6c}\u{6362}\u{57fa}\u{51c6}\u{6d4b}\u{8bd5}\u{3002}" ** 8,
         );
     }
     if (selected(filter, "normalize", "NFC mixed (reuse)")) {

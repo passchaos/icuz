@@ -1855,6 +1855,19 @@ pub fn isNormalizedUtf16(
             previous_input_class = 0;
             continue;
         }
+        // CJK punctuation and fullwidth forms are inert under the canonical
+        // forms, so the scan skips them without a table probe.
+        if (form == .nfc or form == .nfd) {
+            const inert_punctuation = (unit >= 0x3000 and unit <= 0x303f and
+                (unit < 0x302a or unit > 0x302f)) or
+                (unit >= 0xff00 and unit <= 0xffef);
+            if (inert_punctuation) {
+                starter = null;
+                previous_input_class = 0;
+                cursor += 1;
+                continue;
+            }
+        }
         const decoded = utf16.decodePacked(units, cursor);
         if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
         const codepoint = utf16.packedCodepoint(decoded);
@@ -2310,6 +2323,28 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
             previous_input_class = 0;
             index = cursor;
             continue;
+        }
+        // CJK punctuation and fullwidth forms are inert under the canonical
+        // forms, so the scan skips them without a decoder or table probe,
+        // matching the fused normalizer's fast path.
+        if (form == .nfc or form == .nfd) {
+            const lead = text[index];
+            if ((lead | 0x0c) == 0xef and index + 3 <= text.len) {
+                const second = text[index + 1];
+                const third = text[index + 2];
+                if ((lead == 0xe3 and second == 0x80 and
+                    (third < 0xaa or third > 0xaf)) or
+                    (lead == 0xef and second == 0xbc))
+                {
+                    if (third & 0xc0 != 0x80) {
+                        return .{ .normalized = false, .valid_until = start };
+                    }
+                    starter = null;
+                    previous_input_class = 0;
+                    index += 3;
+                    continue;
+                }
+            }
         }
         const decoded = scalar.decodeValidatingPacked(text, index);
         if (decoded == scalar.packed_invalid) {
