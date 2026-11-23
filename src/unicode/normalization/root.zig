@@ -1193,11 +1193,17 @@ pub fn normalizeUtf16Into(
     output: *std.ArrayList(u16),
 ) error{ InvalidUtf16, OutOfMemory }!bool {
     const before = output.items.len;
-    const changed = normalizeUtf16Fused(allocator, units, form, output) catch |err| {
+    const changed = switch (form) {
+        inline else => |specialized| normalizeUtf16IntoForm(
+            specialized,
+            allocator,
+            units,
+            output,
+        ),
+    } catch |err| {
         output.shrinkRetainingCapacity(before);
         return err;
     };
-    if (!changed) try output.appendSlice(allocator, units);
     return changed;
 }
 
@@ -1207,27 +1213,11 @@ pub fn normalizeUtf16Alloc(
     units: []const u16,
     form: Form,
 ) error{ InvalidUtf16, OutOfMemory }!?[]u16 {
-    var output = std.ArrayList(u16).empty;
-    errdefer output.deinit(allocator);
-    if (!try normalizeUtf16Fused(allocator, units, form, &output)) {
-        output.deinit(allocator);
-        return null;
-    }
-    return try output.toOwnedSlice(allocator);
-}
-
-fn normalizeUtf16Fused(
-    allocator: std.mem.Allocator,
-    units: []const u16,
-    form: Form,
-    output: *std.ArrayList(u16),
-) error{ OutOfMemory, InvalidUtf16 }!bool {
     return switch (form) {
-        inline else => |specialized| normalizeFusedUtf16Into(
+        inline else => |specialized| normalizeUtf16AllocForm(
             specialized,
             allocator,
             units,
-            output,
         ),
     };
 }
@@ -1539,6 +1529,9 @@ fn normalizeSegmentFallback16(
 
 /// Fused UTF-16 normalizer: the scan mirrors the UTF-8 path but decodes and
 /// emits UTF-16 units directly, avoiding a codepoint intermediate.
+///
+/// Callers may pass a sub-slice that starts at a segment boundary; the state
+/// there is empty, so the scan is identical to resuming a full pass.
 fn normalizeFusedUtf16Into(
     comptime form: Form,
     allocator: std.mem.Allocator,
@@ -1817,6 +1810,76 @@ fn normalizeFusedUtf16Into(
     return true;
 }
 
+/// True when the first unit begins CJK prose: the kana, CJK punctuation,
+/// ideograph, and CJK extension blocks. The quick-check run paths are much
+/// cheaper than the fused segment machinery there, while Latin-leading text
+/// already stays inside its own run fast paths.
+fn cjkLeading(units: []const u16) bool {
+    if (units.len == 0) return false;
+    const first = units[0];
+    return (first >= 0x3000 and first <= 0x30ff) or
+        (first >= 0x3400 and first <= 0x9fff);
+}
+
+/// Quick-check the slice, then run the fused normalizer from the first
+/// unstable segment. Normalized text only pays for the cheap scan and a copy;
+/// partially normalized text never rescans its stable prefix.
+fn normalizeUtf16IntoForm(
+    comptime form: Form,
+    allocator: std.mem.Allocator,
+    units: []const u16,
+    output: *std.ArrayList(u16),
+) error{ OutOfMemory, InvalidUtf16 }!bool {
+    if (!cjkLeading(units)) {
+        const changed = try normalizeFusedUtf16Into(
+            form,
+            allocator,
+            units,
+            output,
+        );
+        if (!changed) try output.appendSlice(allocator, units);
+        return changed;
+    }
+    const restart = (try quickCheckUtf16(units, form)) orelse {
+        try output.appendSlice(allocator, units);
+        return false;
+    };
+    try output.appendSlice(allocator, units[0..restart]);
+    // The tail starts at a segment boundary, so the fused scan can treat it as
+    // a standalone slice and never see the stable prefix.
+    if (!try normalizeFusedUtf16Into(form, allocator, units[restart..], output)) {
+        // The quick check promised a change; keep the output exact anyway.
+        try output.appendSlice(allocator, units[restart..]);
+        return false;
+    }
+    return true;
+}
+
+fn normalizeUtf16AllocForm(
+    comptime form: Form,
+    allocator: std.mem.Allocator,
+    units: []const u16,
+) error{ OutOfMemory, InvalidUtf16 }!?[]u16 {
+    if (!cjkLeading(units)) {
+        var output = std.ArrayList(u16).empty;
+        errdefer output.deinit(allocator);
+        if (!try normalizeFusedUtf16Into(form, allocator, units, &output)) {
+            output.deinit(allocator);
+            return null;
+        }
+        return try output.toOwnedSlice(allocator);
+    }
+    const restart = (try quickCheckUtf16(units, form)) orelse return null;
+    var output = std.ArrayList(u16).empty;
+    errdefer output.deinit(allocator);
+    try output.appendSlice(allocator, units[0..restart]);
+    if (!try normalizeFusedUtf16Into(form, allocator, units[restart..], &output)) {
+        output.deinit(allocator);
+        return null;
+    }
+    return try output.toOwnedSlice(allocator);
+}
+
 /// Report whether a UTF-16 slice is in `form` without allocating.
 pub fn isNormalizedUtf16(
     units: []const u16,
@@ -1934,6 +1997,173 @@ inline fn invalidSuffixOrFalse(
 ) error{InvalidUtf16}!bool {
     if (!utf16.validate(units[index..])) return error.InvalidUtf16;
     return false;
+}
+
+/// Scan UTF-16 units for the first scalar that `form` would change.
+///
+/// Returns the unit offset of the segment a fused normalizer must reopen, or
+/// null when the text is already normalized. Resuming at that segment start
+/// with empty state reproduces the state of a full scan, so the stable prefix
+/// is never scanned twice. The scan mirrors `normalizeFusedUtf16Into`, plus a
+/// kana run for the composed forms, which keeps kana prose out of the tables.
+fn quickCheckUtf16(
+    units: []const u16,
+    form: Form,
+) error{InvalidUtf16}!?usize {
+    const compatibility = form == .nfkc or form == .nfkd;
+    const compose = form == .nfc or form == .nfkc;
+    const canonical = form == .nfc or form == .nfd;
+    // U+30FF is inert under the canonical forms only.
+    const kana_hi: u16 = if (compatibility) 0x30fe else 0x30ff;
+    const latin1_mode = latin1_mode_by_form[@intFromEnum(form)];
+    const latin1_mask = &latin1_inert_by_form[@intFromEnum(form)];
+    const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
+    var starter: ?u21 = null;
+    var starter_offset: usize = 0;
+    var previous_input_class: u8 = 0;
+    var cursor: usize = 0;
+    while (cursor < units.len) {
+        const unit = units[cursor];
+        if (unit < 0x80 or (latin1_mode != .none and unit < 0x100 and
+            (latin1_mode == .all or latin1_mask[unit - 0x80])))
+        {
+            var end = cursor;
+            if (latin1_mode == .none) {
+                while (end < units.len and units[end] < 0x80) end += 1;
+            } else if (latin1_mode == .all) {
+                while (end < units.len and units[end] < 0x100) end += 1;
+            } else {
+                while (end < units.len) {
+                    const value = units[end];
+                    if (value < 0x80 or
+                        (value < 0x100 and latin1_mask[value - 0x80]))
+                    {
+                        end += 1;
+                        continue;
+                    }
+                    break;
+                }
+            }
+            starter = units[end - 1];
+            starter_offset = end - 1;
+            previous_input_class = 0;
+            cursor = end;
+            continue;
+        }
+        if (jamo_run and unit >= 0x1100 and unit <= 0x11ff) {
+            var end = cursor + 1;
+            while (end < units.len and units[end] >= 0x1100 and
+                units[end] <= 0x11ff)
+            {
+                end += 1;
+            }
+            starter = units[end - 1];
+            starter_offset = end - 1;
+            previous_input_class = 0;
+            cursor = end;
+            continue;
+        }
+        // CJK ideographs are simple starters in both canonical forms. Inert
+        // punctuation and fullwidth forms between ideographs join the run so
+        // mixed Chinese prose stays in one loop.
+        if (unit >= 0x4e00 and unit <= 0x9fff) {
+            const run_start = cursor;
+            cursor += 1;
+            while (cursor < units.len) {
+                const value = units[cursor];
+                if (value >= 0x4e00 and value <= 0x9fff) {
+                    cursor += 1;
+                    continue;
+                }
+                if (canonical and
+                    ((value >= 0x3000 and value <= 0x303f and
+                        (value < 0x302a or value > 0x302f)) or
+                        (value >= 0xff00 and value <= 0xffef)))
+                {
+                    cursor += 1;
+                    continue;
+                }
+                break;
+            }
+            starter = null;
+            starter_offset = run_start;
+            previous_input_class = 0;
+            continue;
+        }
+        // Kana are inert starters under the composed forms, so a run of them
+        // is skipped like the Han block. Unlike ideographs they can compose
+        // with a following voiced sound mark, so the last unit stays the
+        // starter. U+3094..U+309F holds the marks and digraphs that break the
+        // run; the compatibility forms also decompose U+30FF.
+        if (compose and ((unit >= 0x3040 and unit <= 0x3093) or
+            (unit >= 0x30a0 and unit <= kana_hi)))
+        {
+            var end = cursor + 1;
+            while (end < units.len) {
+                const value = units[end];
+                if (!((value >= 0x3040 and value <= 0x3093) or
+                    (value >= 0x30a0 and value <= kana_hi))) break;
+                end += 1;
+            }
+            starter = units[end - 1];
+            starter_offset = end - 1;
+            previous_input_class = 0;
+            cursor = end;
+            continue;
+        }
+        // CJK punctuation and fullwidth forms are inert under the canonical
+        // forms and start no composition pair, matching the fused scan.
+        if (!compatibility and isInertCjkPunctuation(unit)) {
+            starter = null;
+            starter_offset = cursor;
+            previous_input_class = 0;
+            cursor += 1;
+            continue;
+        }
+        // A leading jamo that composes with the next unit is a change at the
+        // jamo itself; answering it here keeps jamo runs out of the general
+        // pair test.
+        if (compose and previous_input_class == 0 and
+            unit >= hangul_l_base and unit < hangul_l_base + hangul_l_count)
+        {
+            var syllable_end: usize = undefined;
+            if (hangulSyllableAt16(units, unit, cursor + 1, &syllable_end) != null) {
+                return cursor;
+            }
+        }
+        const start = cursor;
+        const decoded = utf16.decodePacked(units, cursor);
+        if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
+        const codepoint = utf16.packedCodepoint(decoded);
+        cursor += utf16.packedLength(decoded);
+        if (inert.isInert(codepoint, form)) {
+            starter = codepoint;
+            starter_offset = start;
+            previous_input_class = 0;
+            continue;
+        }
+        const quick_check = data.quickCheck(codepoint, form);
+        const current_class = combining_class.forCodepoint(codepoint);
+        const change = quick_check == .no or
+            (current_class != 0 and previous_input_class > current_class) or
+            (quick_check == .maybe and starter != null and
+                (previous_input_class == 0 or
+                    previous_input_class < current_class) and
+                pairChangesUnderForm(starter.?, codepoint, form));
+        if (change) {
+            return if (current_class == 0 and previous_input_class == 0 and
+                !continuesSegment(codepoint, compatibility))
+                start
+            else
+                starter_offset;
+        }
+        if (current_class == 0) {
+            starter = codepoint;
+            starter_offset = start;
+        }
+        previous_input_class = current_class;
+    }
+    return null;
 }
 
 /// Incremental normalizer for chunked UTF-8 input.
@@ -3363,6 +3593,108 @@ test "UTF-16 normalization matches the UTF-8 path" {
         &.{ 0x4e16, 0x754c, 0x41 },
         .nfc,
     ));
+}
+
+fn appendUtf16Scalar(
+    list: *std.ArrayList(u16),
+    allocator: std.mem.Allocator,
+    codepoint: u21,
+) error{OutOfMemory}!void {
+    if (codepoint <= 0xFFFF) {
+        try list.append(allocator, @intCast(codepoint));
+        return;
+    }
+    const value = codepoint - 0x10000;
+    try list.append(allocator, @intCast(0xD800 + (value >> 10)));
+    try list.append(allocator, @intCast(0xDC00 + (value & 0x3FF)));
+}
+
+test "UTF-16 normalization agrees with the codepoint path on mixed scripts" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    // Scalars chosen to hit every UTF-16 scan path: runs, marks, kana and
+    // jamo composition, Hangul syllables, fullwidth forms, and compatibility
+    // mappings. The quick-check pre-pass only runs for CJK-leading text, so
+    // the pool also starts sequences with CJK scalars.
+    const pool = [_]u21{
+        'a',     'e',     'A',     ' ',     0x00e9,
+        0x00c5,  0x00df,  0x00b5,  0x00aa,  0x00bc,
+        0x0301,  0x0323,  0x0327,  0x0316,  0x0308,
+        0x0345,  0x05b0,  0x093c,  0x094d,  0x3042,
+        0x304b,  0x304c,  0x3093,  0x3099,  0x309a,
+        0x309b,  0x309c,  0x309d,  0x309e,  0x309f,
+        0x30a2,  0x30ab,  0x30ac,  0x30f7,  0x30fa,
+        0x30fc,  0x30fe,  0x30ff,  0x3040,  0x3097,
+        0x4e16,  0x754c,  0x9fff,  0x4e00,  0x3002,
+        0x3001,  0x3000,  0x302a,  0x302f,  0x303f,
+        0xff01,  0xff21,  0xff66,  0xff9e,  0xffef,
+        0xff00,  0x1100,  0x1161,  0x11a8,  0xac00,
+        0xac01,  0x1175,  0x11c2,  0x115f,  0x05e9,
+        0x0645,  0x0915,  0x0937,  0x093f,  0x0e01,
+        0x0e33,  0x1f600, 0x1f469, 0x200d,  0x212b,
+        0xfb01,  0x1e9b,  0x2122,  0x00a8,  0x0385,
+        0x1d160, 0x0344,  0x0f73,  0x2f800, 0x0340,
+    };
+    var random = std.Random.DefaultPrng.init(0x1c0ffee);
+    const forms = [_]Form{ .nfc, .nfd, .nfkc, .nfkd };
+    var units = std.ArrayList(u16).empty;
+    defer units.deinit(allocator);
+    var codepoints = std.ArrayList(u21).empty;
+    defer codepoints.deinit(allocator);
+    var expected = std.ArrayList(u21).empty;
+    defer expected.deinit(allocator);
+    var want = std.ArrayList(u16).empty;
+    defer want.deinit(allocator);
+    var buffer = std.ArrayList(u16).empty;
+    defer buffer.deinit(allocator);
+    for (0..1000) |_| {
+        units.clearRetainingCapacity();
+        codepoints.clearRetainingCapacity();
+        const length = random.random().uintLessThan(usize, 20);
+        for (0..length) |_| {
+            const codepoint = pool[random.random().uintLessThan(usize, pool.len)];
+            try codepoints.append(allocator, codepoint);
+            try appendUtf16Scalar(&units, allocator, codepoint);
+        }
+        for (forms) |form| {
+            expected.clearRetainingCapacity();
+            try normalizeCodepointsInto(
+                allocator,
+                codepoints.items,
+                form,
+                &expected,
+            );
+            want.clearRetainingCapacity();
+            for (expected.items) |codepoint| {
+                try appendUtf16Scalar(&want, allocator, codepoint);
+            }
+            const changed_expected = !std.mem.eql(u16, want.items, units.items);
+
+            const actual = try normalizeUtf16Alloc(allocator, units.items, form);
+            defer if (actual) |owned| allocator.free(owned);
+            try testing.expectEqual(changed_expected, actual != null);
+            try testing.expectEqualSlices(
+                u16,
+                want.items,
+                actual orelse units.items,
+            );
+
+            buffer.clearRetainingCapacity();
+            const changed = try normalizeUtf16Into(
+                allocator,
+                units.items,
+                form,
+                &buffer,
+            );
+            try testing.expectEqual(changed_expected, changed);
+            try testing.expectEqualSlices(u16, want.items, buffer.items);
+
+            try testing.expectEqual(
+                !changed_expected,
+                try isNormalizedUtf16(units.items, form),
+            );
+        }
+    }
 }
 
 test "streaming normalizer matches one-shot normalization" {
