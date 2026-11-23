@@ -117,6 +117,27 @@ const latin1_run_inert_by_form = [4]bool{
     latin1RunInert(.nfkd),
 };
 
+/// `jamoRunInert` for the scans that take a runtime form.
+const jamo_run_inert_by_form = [4]bool{
+    jamoRunInert(.nfc),
+    jamoRunInert(.nfd),
+    jamoRunInert(.nfkc),
+    jamoRunInert(.nfkd),
+};
+
+/// True when every Hangul jamo scalar is inert for `form`. The decomposed
+/// forms leave the block untouched; the composed forms treat V and T as
+/// composition seconds.
+fn jamoRunInert(comptime form: Form) bool {
+    @setEvalBranchQuota(100_000);
+    for (0x1100..0x1200) |codepoint| {
+        const value: u21 = @intCast(codepoint);
+        if (data.quickCheck(value, form) != .yes) return false;
+        if (combining_class.forCodepoint(value) != 0) return false;
+    }
+    return true;
+}
+
 fn normalizeFusedInto(
     comptime form: Form,
     allocator: std.mem.Allocator,
@@ -129,6 +150,7 @@ fn normalizeFusedInto(
     const compatibility = form == .nfkc or form == .nfkd;
     const compose = form == .nfc or form == .nfkc;
     const latin1_run = comptime latin1RunInert(form);
+    const jamo_run = comptime jamoRunInert(form);
     var engine = SegmentEngine(Utf8Sink){
         .allocator = allocator,
         .sink = .{ .list = output, .allocator = allocator },
@@ -173,6 +195,27 @@ fn normalizeFusedInto(
             continue;
         }
         const start = index;
+        if (jamo_run and text[index] == 0xe1 and index + 2 < text.len and
+            (text[index + 1] & 0xfc) == 0x84 and
+            (text[index + 2] & 0xc0) == 0x80)
+        {
+            // The decomposed forms leave the jamo block untouched, so a run
+            // of it is skipped like ASCII.
+            var end = index;
+            while (end + 2 < text.len and text[end] == 0xe1 and
+                (text[end + 1] & 0xfc) == 0x84 and
+                (text[end + 2] & 0xc0) == 0x80)
+            {
+                end += 3;
+            }
+            starter = (@as(u21, text[end - 3] & 0x0f) << 12) |
+                (@as(u21, text[end - 2] & 0x3f) << 6) |
+                (text[end - 1] & 0x3f);
+            starter_offset = end - 3;
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
         if (cjk_lead_simple and text[index] >= 0xe4 and
             text[index] <= 0xe9)
         {
@@ -1258,6 +1301,7 @@ fn normalizeFusedUtf16Into(
     const compatibility = form == .nfkc or form == .nfkd;
     const compose = form == .nfc or form == .nfkc;
     const latin1_run = comptime latin1RunInert(form);
+    const jamo_run = comptime jamoRunInert(form);
     // Latin-1 prose is inert under the composed forms, so it joins the ASCII
     // run scan there.
     const run_limit: u16 = if (latin1_run) 0x100 else 0x80;
@@ -1280,6 +1324,21 @@ fn normalizeFusedUtf16Into(
             continue;
         }
         const start = index;
+        if (jamo_run and unit >= 0x1100 and unit <= 0x11ff) {
+            // The decomposed forms leave the jamo block untouched, so a run
+            // of it is skipped like ASCII.
+            var end = index + 1;
+            while (end < units.len and units[end] >= 0x1100 and
+                units[end] <= 0x11ff)
+            {
+                end += 1;
+            }
+            starter = units[end - 1];
+            starter_offset = end - 1;
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
         if (unit >= 0x4e00 and unit <= 0x9fff) {
             var cursor = index + 1;
             while (cursor < units.len and
@@ -1437,6 +1496,7 @@ pub fn isNormalizedUtf16(
     form: Form,
 ) error{InvalidUtf16}!bool {
     const latin1_run = latin1_run_inert_by_form[@intFromEnum(form)];
+    const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
     var starter: ?u21 = null;
     var previous_input_class: u8 = 0;
     var cursor: usize = 0;
@@ -1453,6 +1513,18 @@ pub fn isNormalizedUtf16(
         if (latin1_run and unit < 0x100) {
             var end = cursor;
             while (end < units.len and units[end] < 0x100) end += 1;
+            starter = units[end - 1];
+            previous_input_class = 0;
+            cursor = end;
+            continue;
+        }
+        if (jamo_run and unit >= 0x1100 and unit <= 0x11ff) {
+            var end = cursor + 1;
+            while (end < units.len and units[end] >= 0x1100 and
+                units[end] <= 0x11ff)
+            {
+                end += 1;
+            }
             starter = units[end - 1];
             previous_input_class = 0;
             cursor = end;
@@ -1857,6 +1929,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
     }
 
     const latin1_run = latin1_run_inert_by_form[@intFromEnum(form)];
+    const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
     var index: usize = ascii_end;
@@ -1886,6 +1959,24 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
             continue;
         }
         const start = index;
+        if (jamo_run and text[index] == 0xe1 and index + 2 < text.len and
+            (text[index + 1] & 0xfc) == 0x84 and
+            (text[index + 2] & 0xc0) == 0x80)
+        {
+            var end = index;
+            while (end + 2 < text.len and text[end] == 0xe1 and
+                (text[end + 1] & 0xfc) == 0x84 and
+                (text[end + 2] & 0xc0) == 0x80)
+            {
+                end += 3;
+            }
+            starter = (@as(u21, text[end - 3] & 0x0f) << 12) |
+                (@as(u21, text[end - 2] & 0x3f) << 6) |
+                (text[end - 1] & 0x3f);
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
         if (cjk_lead_simple and text[index] >= 0xe4 and
             text[index] <= 0xe9)
         {
@@ -1982,6 +2073,7 @@ fn spanQuickCheckYesImpl(
     if (ascii_end == text.len) return text.len;
 
     const latin1_run = latin1_run_inert_by_form[@intFromEnum(form)];
+    const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
     var starter_offset: usize = if (ascii_end > 0) ascii_end - 1 else 0;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
@@ -2014,6 +2106,24 @@ fn spanQuickCheckYesImpl(
             continue;
         }
         const start = index;
+        if (jamo_run and text[index] == 0xe1 and index + 2 < text.len and
+            (text[index + 1] & 0xfc) == 0x84 and
+            (text[index + 2] & 0xc0) == 0x80)
+        {
+            var end = index;
+            while (end + 2 < text.len and text[end] == 0xe1 and
+                (text[end + 1] & 0xfc) == 0x84 and
+                (text[end + 2] & 0xc0) == 0x80)
+            {
+                end += 3;
+            }
+            starter = (@as(u21, text[end - 3] & 0x0f) << 12) |
+                (@as(u21, text[end - 2] & 0x3f) << 6) |
+                (text[end - 1] & 0x3f);
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
         if (cjk_lead_simple and text[index] >= 0xe4 and
             text[index] <= 0xe9)
         {
