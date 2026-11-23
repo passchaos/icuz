@@ -182,6 +182,28 @@ fn convertAlloc(
     options: Options,
     ascii_output: bool,
 ) Error!Result {
+    // Domains are short, so run the general path against a stack arena and
+    // hand back one exact allocation. Longer inputs retry on the heap.
+    var stack: [8192]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&stack);
+    if (convertInner(fixed.allocator(), domain, options, ascii_output)) |result| {
+        return .{
+            .text = try allocator.dupe(u8, result.text),
+            .had_error = result.had_error,
+        };
+    } else |err| switch (err) {
+        error.OutOfMemory => {},
+        else => return err,
+    }
+    return convertInner(allocator, domain, options, ascii_output);
+}
+
+fn convertInner(
+    allocator: std.mem.Allocator,
+    domain: []const u8,
+    options: Options,
+    ascii_output: bool,
+) Error!Result {
     // ASCII domains dominate real traffic and need no decoding, NFC, or
     // punycode. A-label labels still take the general path so their punycode
     // is decoded and revalidated.

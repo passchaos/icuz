@@ -222,6 +222,46 @@ fn benchCompareValidating(
     });
 }
 
+const idna_domains = [_][]const u8{
+    "example.com",
+    "m\u{00fc}nchen.de",
+    "\u{4f8b}\u{3048}.\u{30c6}\u{30b9}\u{30c8}",
+    "\u{03c0}\u{03b1}\u{03c1}\u{03ac}\u{03b4}\u{03b5}\u{03b9}\u{03b3}\u{03bc}\u{03b1}.\u{03b4}\u{03bf}\u{03ba}\u{03b9}\u{03bc}\u{03ae}",
+    "\u{09ac}\u{09be}\u{0982}\u{09b2}\u{09be}.\u{09ad}\u{09be}\u{09b0}\u{09a4}",
+    "xn--mnchen-3ya.de",
+    "\u{043f}\u{0440}\u{0435}\u{0437}\u{0438}\u{0434}\u{0435}\u{043d}\u{0442}.\u{0440}\u{0444}",
+    "\u{65e5}\u{672c}\u{8a9e}.jp",
+};
+
+fn benchIdna(
+    name: []const u8,
+    ascii: bool,
+    allocator: std.mem.Allocator,
+) void {
+    const rounds: usize = 2000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            for (idna_domains) |domain| {
+                const result = if (ascii)
+                    icuz.idna.toAsciiResultAlloc(allocator, domain, .{})
+                else
+                    icuz.idna.toUnicodeResultAlloc(allocator, domain, .{});
+                const value = result catch unreachable;
+                sink +%= value.text.len;
+                allocator.free(value.text);
+            }
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    std.debug.print("{s:<28} {d:8.3} ns/domain\n", .{
+        name,
+        @as(f64, @floatFromInt(best)) / @as(f64, @floatFromInt(rounds * idna_domains.len)),
+    });
+}
+
 fn benchCanonicalize(
     name: []const u8,
     tag: []const u8,
@@ -1026,6 +1066,12 @@ pub fn main(init: std.process.Init.Minimal) !void {
         mixed_other.appendSlice(allocator, mixed_text) catch unreachable;
         mixed_other.items[mixed_other.items.len - 3] = 'u';
         benchPrefix("prefix mixed diff", mixed_text, mixed_other.items);
+    }
+    if (selected(filter, "idna", "idna toASCII")) {
+        benchIdna("idna toASCII", true, allocator);
+    }
+    if (selected(filter, "idna", "idna toUnicode")) {
+        benchIdna("idna toUnicode", false, allocator);
     }
     if (selected(filter, "locale", "canonicalize en-US")) {
         benchCanonicalize("canonicalize en-US", "en-US", allocator);
