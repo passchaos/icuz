@@ -291,6 +291,26 @@ pub fn collationElementsAlloc(
     return collator.elementsAlloc(allocator, codepoints.items);
 }
 
+/// First primary-level difference between two sort keys when that difference
+/// is decisive for the complete strings, or null when the remaining text can
+/// still change the order.
+///
+/// A bounded region can end before the strings do, so a secondary or tertiary
+/// difference inside the region may be preceded by a primary difference in
+/// the text that follows. The same holds when one primary level ends while the
+/// other continues: the next primary of the longer string decides before the
+/// region's later levels do.
+fn decisivePrimaryOrder(a: []const u32, b: []const u32) ?std.math.Order {
+    var index: usize = 0;
+    while (index < a.len and index < b.len) : (index += 1) {
+        const left = a[index];
+        const right = b[index];
+        if (left == 0 or right == 0) return null;
+        if (left != right) return if (left < right) .lt else .gt;
+    }
+    return null;
+}
+
 /// A collator with the locale tailoring resolved once, mirroring ICU's
 /// `UCollator`. Reuse one across many sort keys to skip the locale lookup
 /// and page-index claim on every call.
@@ -987,8 +1007,22 @@ pub const Collator = struct {
                     if (self.safeRegionEnd(b, diff, true)) |end_b| {
                         try self.sortKeyInto(allocator, a[0..end_a], key_a);
                         try self.sortKeyInto(allocator, b[0..end_b], key_b);
-                        const order = std.mem.order(u32, key_a.items, key_b.items);
-                        if (order != .eq) return order;
+                        if (end_a == a.len and end_b == b.len) {
+                            return std.mem.order(
+                                u32,
+                                key_a.items,
+                                key_b.items,
+                            );
+                        }
+                        // A region that stops short of either string can only
+                        // decide from its primary level; later levels may be
+                        // preceded by a primary difference in the remainder.
+                        if (decisivePrimaryOrder(
+                            key_a.items,
+                            key_b.items,
+                        )) |order| {
+                            return order;
+                        }
                     }
                 }
             }
@@ -1092,12 +1126,19 @@ pub const Collator = struct {
                             b[0..end_b],
                             key_b,
                         );
-                        const order = std.mem.order(
-                            u32,
+                        if (end_a == a.len and end_b == b.len) {
+                            return std.mem.order(
+                                u32,
+                                key_a.items,
+                                key_b.items,
+                            );
+                        }
+                        if (decisivePrimaryOrder(
                             key_a.items,
                             key_b.items,
-                        );
-                        if (order != .eq) return order;
+                        )) |order| {
+                            return order;
+                        }
                     }
                 }
             }
@@ -2081,11 +2122,16 @@ pub fn compare(
     b: []const u8,
     options: Options,
 ) error{ InvalidUtf8, OutOfMemory }!std.math.Order {
-    const key_a = try sortKeyAlloc(allocator, a, options);
-    defer allocator.free(key_a);
-    const key_b = try sortKeyAlloc(allocator, b, options);
-    defer allocator.free(key_b);
-    return std.mem.order(u32, key_a, key_b);
+    // Resolve the collator once and share the scratch key lists. Most
+    // comparisons decide from the common prefix and first primaries without
+    // materializing either key, so building two full keys here cost an order
+    // of magnitude more than the comparison itself.
+    const collator = Collator.init(options);
+    var key_a = std.ArrayList(u32).empty;
+    defer key_a.deinit(allocator);
+    var key_b = std.ArrayList(u32).empty;
+    defer key_b.deinit(allocator);
+    return collator.compare(allocator, a, b, &key_a, &key_b);
 }
 
 /// Compare two UTF-16 strings.
@@ -5352,6 +5398,53 @@ test "identical strength collation" {
     try testing.expectEqual(
         std.math.Order.lt,
         try compare(allocator, "a", "A", level),
+    );
+}
+
+test "bounded compare regions only decide from decisive primaries" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    // Standard German sorts `ä` by a secondary difference, but its primary
+    // key is a prefix of `ae`. A region ending after the first `a` must not
+    // return the secondary order; the trailing `e` decides at the primary
+    // level.
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try compare(allocator, "\u{00e4}", "ae", .{ .locale = "de" }),
+    );
+    // The same region logic backs the assume-valid entry point.
+    const collator = Collator.init(.{ .locale = "de" });
+    var key_a = std.ArrayList(u32).empty;
+    defer key_a.deinit(allocator);
+    var key_b = std.ArrayList(u32).empty;
+    defer key_b.deinit(allocator);
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try collator.compareAssumeValid(
+            allocator,
+            "\u{00e4}",
+            "ae",
+            &key_a,
+            &key_b,
+        ),
+    );
+    // Canonical equivalents with a secondary-only difference.
+    const identical = Options{ .strength = .identical };
+    try testing.expectEqual(
+        std.math.Order.eq,
+        try compare(allocator, "\u{e9}", "e\u{301}", identical),
+    );
+    const identical_collator = Collator.init(identical);
+    try testing.expectEqual(
+        std.math.Order.eq,
+        try identical_collator.compareAssumeValid(
+            allocator,
+            "\u{e9}",
+            "e\u{301}",
+            &key_a,
+            &key_b,
+        ),
     );
 }
 

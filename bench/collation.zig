@@ -222,6 +222,30 @@ fn benchCompareValidating(
     });
 }
 
+fn benchCompareConvenience(
+    name: []const u8,
+    a: []const u8,
+    b: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    const rounds: usize = 20_000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const order = icuz.collation.compare(allocator, a, b, .{}) catch
+                unreachable;
+            sink +%= @intFromEnum(order);
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    std.debug.print("{s:<28} {d:8.3} ns/op\n", .{
+        name,
+        @as(f64, @floatFromInt(best)) / @as(f64, @floatFromInt(rounds)),
+    });
+}
+
 fn benchValidate(name: []const u8, text: []const u8) void {
     const rounds: usize = 4000;
     var best: u64 = std.math.maxInt(u64);
@@ -804,6 +828,18 @@ pub fn main(init: std.process.Init.Minimal) !void {
     }
     if (selected(filter, "normalize", "NFC jamo (utf16 reuse)")) {
         benchNormalizeUtf16Into("NFC jamo (utf16 reuse)", jamo_text, allocator);
+    }
+    if (selected(filter, "compare", "compare mixed convenience")) {
+        var other = std.ArrayList(u8).empty;
+        defer other.deinit(allocator);
+        other.appendSlice(allocator, mixed_text) catch unreachable;
+        other.items[other.items.len - 3] = 'u';
+        benchCompareConvenience(
+            "compare mixed convenience",
+            mixed_text,
+            other.items,
+            allocator,
+        );
     }
     if (selected(filter, "compare", "compare mixed validating")) {
         var other = std.ArrayList(u8).empty;
