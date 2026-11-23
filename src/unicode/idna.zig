@@ -62,7 +62,7 @@ comptime {
     }
 }
 
-fn statusFor(codepoint: u21) Status {
+fn statusForPage(codepoint: u21) Status {
     if (codepoint > 0x10ffff) return .disallowed;
     const page = @as(usize, codepoint) >> 8;
     const slot = readU16(index_offset + page * 2);
@@ -70,6 +70,22 @@ fn statusFor(codepoint: u21) Status {
         pages_offset + @as(usize, slot) * 256 +
             (@as(usize, codepoint) & 0xff)
     ]);
+}
+
+/// ASCII statuses are one load instead of two dependent ones; mixed labels
+/// are mostly ASCII.
+const ascii_status = blk: {
+    @setEvalBranchQuota(200_000);
+    var table: [128]Status = undefined;
+    for (0..128) |codepoint| {
+        table[codepoint] = statusForPage(@intCast(codepoint));
+    }
+    break :blk table;
+};
+
+inline fn statusFor(codepoint: u21) Status {
+    if (codepoint < 0x80) return ascii_status[codepoint];
+    return statusForPage(codepoint);
 }
 
 fn mappingFor(codepoint: u21) ?[]const u8 {
@@ -229,6 +245,11 @@ fn convertInner(
             .valid, .disallowed => try mapped.append(allocator, codepoint),
             .ignored => {},
             .mapped => {
+                if (codepoint < 0x80) {
+                    // Only A-Z map inside ASCII.
+                    try mapped.append(allocator, codepoint + ('a' - 'A'));
+                    continue;
+                }
                 if (options.transitional and codepoint == 0x1e9e) {
                     try mapped.append(allocator, 's');
                     try mapped.append(allocator, 's');
@@ -505,6 +526,7 @@ fn validateLabel(
     if (label.len == 0) return false;
     if (!normalization.isNormalizedCodepoints(label, .nfc)) return false;
     for (label) |codepoint| {
+        if (codepoint == '.') return false;
         switch (statusFor(codepoint)) {
             .valid, .deviation => {},
             else => return false,
@@ -522,9 +544,6 @@ fn validateLabel(
         label[2] == '-' and label[3] == '-')
     {
         return false;
-    }
-    for (label) |codepoint| {
-        if (codepoint == '.') return false;
     }
     if (properties.matchesCategoryMask(label[0], 0xe0)) return false;
     if (options.check_bidi and domain_has_rtl and !checkBidi(label)) {
