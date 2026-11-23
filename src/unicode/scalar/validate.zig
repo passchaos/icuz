@@ -97,8 +97,8 @@ fn shiftMask(comptime shift: usize) [vector_len]i32 {
 /// and the one following byte are readable.
 inline fn windowValid(text: []const u8, offset: usize) bool {
     const bytes: V = text[offset..][0..vector_len].*;
-    const carry: @Vector(4, u8) = text[offset - 3 ..][0..4].*;
-    const after: @Vector(1, u8) = text[offset + vector_len ..][0..1].*;
+    const carry: @Vector(4, u8) = @bitCast(text[offset - 3 ..][0..4].*);
+    const after: @Vector(1, u8) = @bitCast(text[offset + vector_len ..][0..1].*);
 
     // ASCII-heavy windows need no classification at all: when the window is
     // all ASCII and the byte before it is too, no earlier lead can reach into
