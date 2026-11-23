@@ -651,8 +651,9 @@ generic `std.unicode` helpers, the fused scan jumps to the first high-bit byte
 eight bytes at a time while keeping single-byte runs on the scalar loop, CJK
 scalars whose whole 3-byte lead range is simple are validated and
 skipped in runs without decoding, inert CJK punctuation and fullwidth forms
-skip both the decoder and the table probes in the fused scan and in the
-UTF-8/UTF-16 quick checks, stable spans before and between changes are
+skip both the decoder and the table probes and join the surrounding
+ideograph run in the fused scan and in the UTF-8/UTF-16 quick checks, stable
+spans before and between changes are
 copied verbatim, and the segment engine streams UTF-8 straight to the output
 sink with ASCII runs bulk-copied. Decoded scalars and their byte lengths travel
 as one packed `u32`, avoiding the stack temporaries an optional struct return

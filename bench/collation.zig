@@ -897,6 +897,13 @@ pub fn main(init: std.process.Init.Minimal) !void {
             allocator,
         );
     }
+    if (selected(filter, "normalize", "NFC Chinese (utf16 reuse)")) {
+        benchNormalizeUtf16Into(
+            "NFC Chinese (utf16 reuse)",
+            "\u{4f60}\u{597d}\u{ff0c}\u{4e16}\u{754c}\u{ff01}\u{4e2d}\u{6587}\u{7f16}\u{7801}\u{8f6c}\u{6362}\u{57fa}\u{51c6}\u{6d4b}\u{8bd5}\u{3002}" ** 8,
+            allocator,
+        );
+    }
     if (selected(filter, "quickcheck", "quickcheck Chinese (utf16)")) {
         benchQuickCheckUtf16(
             "quickcheck Chinese (utf16)",
@@ -914,6 +921,13 @@ pub fn main(init: std.process.Init.Minimal) !void {
         benchQuickCheck(
             "quickcheck Chinese",
             "\u{4f60}\u{597d}\u{ff0c}\u{4e16}\u{754c}\u{ff01}\u{4e2d}\u{6587}\u{7f16}\u{7801}\u{8f6c}\u{6362}\u{57fa}\u{51c6}\u{6d4b}\u{8bd5}\u{3002}" ** 8,
+        );
+    }
+    if (selected(filter, "normalize", "NFC Chinese (reuse)")) {
+        benchNormalizeInto(
+            "NFC Chinese (reuse)",
+            "\u{4f60}\u{597d}\u{ff0c}\u{4e16}\u{754c}\u{ff01}\u{4e2d}\u{6587}\u{7f16}\u{7801}\u{8f6c}\u{6362}\u{57fa}\u{51c6}\u{6d4b}\u{8bd5}\u{3002}" ** 8,
+            allocator,
         );
     }
     if (selected(filter, "normalize", "NFC mixed (reuse)")) {
