@@ -1169,14 +1169,13 @@ fn sortKeyCodepointsResolved(
     if (!shifted and (case_first != .upper or options.case_level)) {
         // The common path can emit levels straight from the collation
         // elements without materializing the weighted copy.
-        if (!backwards and !options.case_level and
+        if (!backwards and !options.case_level) {
             try appendLevelElementsAll(
                 allocator,
                 output,
                 ces.items(),
                 options.strength,
-            ))
-        {
+            );
             if (options.strength == .identical) {
                 try appendIdenticalLevel(allocator, output, codepoints);
             }
@@ -2887,57 +2886,62 @@ fn appendLevelElements(
     try output.append(allocator, 0);
 }
 
-/// Emit primary/secondary/tertiary levels from one pass over the collation
-/// elements. Returns false when the stack level buffers overflow.
+/// Emit primary/secondary/tertiary levels straight into `output`, one pass
+/// per level. The element buffer is small and cache-resident, so scanning it
+/// again is cheaper than staging the weights through stack level buffers.
 fn appendLevelElementsAll(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u32),
     elements: []const CollationElement,
     strength: Strength,
-) error{OutOfMemory}!bool {
-    var primary: [1024]u32 = undefined;
-    var secondary: [1024]u32 = undefined;
-    var tertiary: [1024]u32 = undefined;
-    var primary_len: usize = 0;
-    var secondary_len: usize = 0;
-    var tertiary_len: usize = 0;
+) error{OutOfMemory}!void {
     const need_secondary = strength != .primary;
     const need_tertiary = strength != .primary and strength != .secondary;
+    const separator = strength == .quaternary or strength == .identical;
+    const level_count: usize = 1 + @as(usize, @intFromBool(need_secondary)) +
+        @as(usize, @intFromBool(need_tertiary));
+    // Each level holds at most one weight per element.
+    try output.ensureUnusedCapacity(
+        allocator,
+        elements.len * level_count + level_count + @as(usize, @intFromBool(separator)),
+    );
+    // Append through a local cursor: the list header cannot alias the
+    // element buffer, but the compiler cannot prove that for field stores.
+    var buffer = output.items.ptr;
+    var len = output.items.len;
     for (elements) |element| {
         if (element.primary != 0) {
-            if (primary_len == primary.len) return false;
-            primary[primary_len] = element.primary;
-            primary_len += 1;
-        }
-        if (need_secondary and element.secondary != 0) {
-            if (secondary_len == secondary.len) return false;
-            secondary[secondary_len] = element.secondary;
-            secondary_len += 1;
-        }
-        if (need_tertiary and element.tertiary != 0) {
-            if (tertiary_len == tertiary.len) return false;
-            tertiary[tertiary_len] = element.tertiary;
-            tertiary_len += 1;
+            buffer[len] = element.primary;
+            len += 1;
         }
     }
-    const separator = strength == .quaternary or strength == .identical;
-    const total: usize = primary_len + 1 +
-        (if (need_secondary) secondary_len + 1 else 0) +
-        (if (need_tertiary) tertiary_len + 1 else 0) +
-        @as(usize, @intFromBool(separator));
-    try output.ensureTotalCapacityPrecise(allocator, total);
-    output.appendSliceAssumeCapacity(primary[0..primary_len]);
-    output.appendAssumeCapacity(0);
+    buffer[len] = 0;
+    len += 1;
     if (need_secondary) {
-        output.appendSliceAssumeCapacity(secondary[0..secondary_len]);
-        output.appendAssumeCapacity(0);
+        for (elements) |element| {
+            if (element.secondary != 0) {
+                buffer[len] = element.secondary;
+                len += 1;
+            }
+        }
+        buffer[len] = 0;
+        len += 1;
     }
     if (need_tertiary) {
-        output.appendSliceAssumeCapacity(tertiary[0..tertiary_len]);
-        output.appendAssumeCapacity(0);
+        for (elements) |element| {
+            if (element.tertiary != 0) {
+                buffer[len] = element.tertiary;
+                len += 1;
+            }
+        }
+        buffer[len] = 0;
+        len += 1;
     }
-    if (separator) output.appendAssumeCapacity(0);
-    return true;
+    if (separator) {
+        buffer[len] = 0;
+        len += 1;
+    }
+    output.items.len = len;
 }
 
 fn appendCaseLevelElements(
