@@ -12,6 +12,7 @@
 //! [`ErrorMode`] so callers can fail, substitute, or skip invalid input.
 
 const std = @import("std");
+const scalar = @import("scalar/root.zig");
 const types = @import("charset/types.zig");
 const tables = @import("charset/tables.zig");
 const cjk = @import("charset/cjk.zig");
@@ -1003,6 +1004,19 @@ fn utf8ToUtf16Into(
     options: Options,
     output: *std.ArrayList(u8),
 ) Error!void {
+    return switch (endian) {
+        .little => utf8ToUtf16IntoEndian(.little, allocator, input, options, output),
+        .big => utf8ToUtf16IntoEndian(.big, allocator, input, options, output),
+    };
+}
+
+fn utf8ToUtf16IntoEndian(
+    comptime endian: std.builtin.Endian,
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    options: Options,
+    output: *std.ArrayList(u8),
+) Error!void {
     try output.ensureUnusedCapacity(allocator, input.len * 2);
     var index: usize = 0;
     while (index < input.len) {
@@ -1047,33 +1061,76 @@ fn utf8ToUtf16Into(
             index = end;
             continue;
         }
-        const length: usize = std.unicode.utf8ByteSequenceLength(input[index]) catch {
+        // Three-byte sequences dominate CJK input; decode a run of them
+        // without the general decoder's length ladder or the encoder union.
+        if (input[index] >= 0xe0 and input[index] < 0xf0 and
+            index + 3 <= input.len)
+        {
+            var consumed = false;
+            while (index + 3 <= input.len and
+                input[index] >= 0xe0 and input[index] < 0xf0)
+            {
+                const first = input[index];
+                const second = input[index + 1];
+                const third = input[index + 2];
+                if (((second | third) & 0xc0) != 0x80) break;
+                const codepoint = (@as(u21, first & 0x0f) << 12) |
+                    (@as(u21, second & 0x3f) << 6) | (third & 0x3f);
+                if (codepoint < 0x800 or
+                    (codepoint & 0xf800) == 0xd800) break;
+                const start = output.items.len;
+                output.items.len = start + 2;
+                const value: u16 = @intCast(codepoint);
+                const encoded = if (endian == .little) value else @byteSwap(value);
+                const dest: *align(1) u16 = @ptrCast(output.items.ptr + start);
+                dest.* = encoded;
+                index += 3;
+                consumed = true;
+            }
+            if (consumed) continue;
+        }
+        const decoded = scalar.decodeValidatingPacked(input, index);
+        if (decoded == scalar.packed_invalid) {
+            // Preserve the replacement contract: a truncated tail consumes
+            // the rest, an invalid scalar consumes one byte.
+            const length: usize = std.unicode.utf8ByteSequenceLength(
+                input[index],
+            ) catch 1;
             try appendUtf16Replacement(allocator, output, endian, options);
-            index += 1;
-            continue;
-        };
-        if (index + length > input.len) {
-            try appendUtf16Replacement(allocator, output, endian, options);
-            index = input.len;
+            if (index + length > input.len) {
+                index = input.len;
+            } else {
+                index += 1;
+            }
             continue;
         }
-        const codepoint = std.unicode.utf8Decode(input[index..][0..length]) catch {
-            try appendUtf16Replacement(allocator, output, endian, options);
-            index += 1;
+        const codepoint = scalar.packedCodepoint(decoded);
+        index += scalar.packedLength(decoded);
+        if (codepoint <= 0xFFFF) {
+            const start = output.items.len;
+            output.items.len = start + 2;
+            const value: u16 = @intCast(codepoint);
+            const encoded = if (endian == .little) value else @byteSwap(value);
+            const dest: *align(1) u16 = @ptrCast(output.items.ptr + start);
+            dest.* = encoded;
             continue;
-        };
-        index += length;
-        var buffer: [4]u8 = undefined;
-        switch (utf16Encode(codepoint, &buffer, endian)) {
-            .written => |written| output.appendSliceAssumeCapacity(
-                buffer[0..written],
-            ),
-            else => try appendUtf16Replacement(
-                allocator,
-                output,
-                endian,
-                options,
-            ),
+        }
+        const value = codepoint - 0x10000;
+        const high: u16 = @intCast(0xD800 + (value >> 10));
+        const low: u16 = @intCast(0xDC00 + (value & 0x3FF));
+        const start = output.items.len;
+        output.items.len = start + 4;
+        const dest = output.items[start..];
+        if (endian == .little) {
+            dest[0] = @truncate(high);
+            dest[1] = @truncate(high >> 8);
+            dest[2] = @truncate(low);
+            dest[3] = @truncate(low >> 8);
+        } else {
+            dest[0] = @truncate(high >> 8);
+            dest[1] = @truncate(high);
+            dest[2] = @truncate(low >> 8);
+            dest[3] = @truncate(low);
         }
     }
 }

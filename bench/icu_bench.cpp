@@ -391,6 +391,18 @@ int main() {
         });
     }
     {
+        const auto& utf8 = texts[4].utf8;
+        std::vector<UChar> out(utf8.size() + 32);
+        bench_bytes("UTF-8 -> UTF-16LE Chinese", utf8.size(), 4000, [&] {
+            UErrorCode status = U_ZERO_ERROR;
+            int32_t length = 0;
+            u_strFromUTF8(out.data(), static_cast<int32_t>(out.size()),
+                &length, utf8.data(), static_cast<int32_t>(utf8.size()),
+                &status);
+            (void)length;
+        });
+    }
+    {
         UErrorCode status = U_ZERO_ERROR;
         UConverter* conv = ucnv_open("GBK", &status);
         const auto& u16 = texts[12].u16;

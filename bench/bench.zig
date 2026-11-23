@@ -1884,6 +1884,13 @@ pub fn main() !void {
         .utf16_le,
         allocator,
     );
+    benchCharsetInto(
+        "UTF-8 -> UTF-16LE Chinese",
+        chinese_runtime,
+        .utf8,
+        .utf16_le,
+        allocator,
+    );
     benchCharset(
         "UTF-8 -> windows-1252 ASCII",
         ascii_runtime,
