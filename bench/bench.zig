@@ -1316,6 +1316,44 @@ fn benchSkeleton(allocator: std.mem.Allocator) void {
     reportOps("number skeleton", rounds, best);
 }
 
+const idna_domains = [_][]const u8{
+    "example.com",
+    "m\u{00fc}nchen.de",
+    "\u{4f8b}\u{3048}.\u{30c6}\u{30b9}\u{30c8}",
+    "\u{03c0}\u{03b1}\u{03c1}\u{03ac}\u{03b4}\u{03b5}\u{03b9}\u{03b3}\u{03bc}\u{03b1}.\u{03b4}\u{03bf}\u{03ba}\u{03b9}\u{03bc}\u{03ae}",
+    "\u{09ac}\u{09be}\u{0982}\u{09b2}\u{09be}.\u{09ad}\u{09be}\u{09b0}\u{09a4}",
+    "xn--mnchen-3ya.de",
+    "\u{043f}\u{0440}\u{0435}\u{0437}\u{0438}\u{0434}\u{0435}\u{043d}\u{0442}.\u{0440}\u{0444}",
+    "\u{65e5}\u{672c}\u{8a9e}.jp",
+};
+
+fn benchIdna(
+    name: []const u8,
+    ascii: bool,
+    allocator: std.mem.Allocator,
+) void {
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 2000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            for (idna_domains) |domain| {
+                const result = if (ascii)
+                    icuz.idna.toAsciiResultAlloc(allocator, domain, .{})
+                else
+                    icuz.idna.toUnicodeResultAlloc(allocator, domain, .{});
+                const value = result catch unreachable;
+                sink +%= value.text.len;
+                allocator.free(value.text);
+            }
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps(name, rounds * idna_domains.len, best);
+}
+
 fn benchLocaleCanonicalize(
     name: []const u8,
     tag: []const u8,
@@ -1842,6 +1880,10 @@ pub fn main() !void {
     benchLocaleCanonicalize("canonicalize zh-hant-tw", "zh-hant-tw", allocator);
     benchLocaleCanonicalize("canonicalize sh-RS", "sh-RS", allocator);
     benchLocaleCanonicalize("canonicalize sr-Latn-RS", "sr-Latn-RS", allocator);
+
+    std.debug.print("\n-- idna --\n", .{});
+    benchIdna("idna toASCII", true, allocator);
+    benchIdna("idna toUnicode", false, allocator);
 
     std.debug.print("\n-- locale formatting --\n", .{});
     benchList(allocator);

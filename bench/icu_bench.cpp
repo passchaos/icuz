@@ -11,6 +11,7 @@
 #include <unicode/ucal.h>
 #include <unicode/ucnv.h>
 #include <unicode/ucol.h>
+#include <unicode/uidna.h>
 #include <unicode/udat.h>
 #include <unicode/ulistformatter.h>
 #include <unicode/unorm2.h>
@@ -629,6 +630,48 @@ int main() {
         });
         ucal_close(calendar);
         udat_close(format);
+    }
+
+    std::printf("\n-- idna --\n");
+    {
+        const char* domains[] = {
+            "example.com",
+            "m\xC3\xBCnchen.de",
+            "\xE4\xBE\x8B\xE3\x81\x88.\xE3\x83\x86\xE3\x82\xB9\xE3\x83\x88",
+            "\xCF\x80\xCE\xB1\xCF\x81\xCE\xAC\xCE\xB4\xCE\xB5\xCE\xB9\xCE\xB3\xCE\xBC\xCE\xB1.\xCE\xB4\xCE\xBF\xCE\xBA\xCE\xB9\xCE\xBC\xCE\xAE",
+            "\xE0\xA6\xAC\xE0\xA6\xBE\xE0\xA6\x82\xE0\xA6\xB2\xE0\xA6\xBE.\xE0\xA6\xAD\xE0\xA6\xBE\xE0\xA6\xB0\xE0\xA6\xA4",
+            "xn--mnchen-3ya.de",
+            "\xD0\xBF\xD1\x80\xD0\xB5\xD0\xB7\xD0\xB8\xD0\xB4\xD0\xB5\xD0\xBD\xD1\x82.\xD1\x80\xD1\x84",
+            "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E.jp",
+        };
+        const int count = (int)(sizeof(domains) / sizeof(domains[0]));
+        UErrorCode status = U_ZERO_ERROR;
+        UIDNA* idna = uidna_openUTS46(0, &status);
+        char buffer[512];
+        UIDNAInfo info = UIDNA_INFO_INITIALIZER;
+        if (U_SUCCESS(status)) {
+            int next = 0;
+            bench_ops("idna toASCII", 4000 * count, [&] {
+                const char* domain = domains[next % count];
+                next++;
+                status = U_ZERO_ERROR;
+                info = UIDNA_INFO_INITIALIZER;
+                int32_t length = uidna_nameToASCII_UTF8(idna, domain, -1,
+                    buffer, sizeof(buffer), &info, &status);
+                (void)length;
+            });
+            next = 0;
+            bench_ops("idna toUnicode", 4000 * count, [&] {
+                const char* domain = domains[next % count];
+                next++;
+                status = U_ZERO_ERROR;
+                info = UIDNA_INFO_INITIALIZER;
+                int32_t length = uidna_nameToUnicodeUTF8(idna, domain, -1,
+                    buffer, sizeof(buffer), &info, &status);
+                (void)length;
+            });
+            uidna_close(idna);
+        }
     }
 
     std::printf("\n-- number formatting --\n");
