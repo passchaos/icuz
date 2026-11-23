@@ -1370,9 +1370,33 @@ pub fn main() !void {
         allocator,
     );
     benchCollationInto(
+        "UCA sort key ASCII (reuse)",
+        ascii_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationInto(
+        "UCA sort key mixed (reuse)",
+        mixed_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationInto(
+        "UCA sort key German phonebook (reuse)",
+        german_runtime,
+        .{ .locale = "de", .collation = "phonebook" },
+        allocator,
+    );
+    benchCollationInto(
         "UCA sort key Swedish (reuse)",
         swedish_runtime,
         .{ .locale = "sv" },
+        allocator,
+    );
+    benchCollationInto(
+        "UCA sort key Chinese pinyin (reuse)",
+        chinese_collation_runtime,
+        .{ .locale = "zh", .collation = "pinyin" },
         allocator,
     );
     benchCollationUtf16(

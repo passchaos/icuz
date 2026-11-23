@@ -48,7 +48,9 @@ need without pulling in a font or layout engine.
   `fullUpperWithEditsAlloc`, `fullTitleWithEditsAlloc`,
   `caseFoldWithEditsAlloc`) tracks unchanged and
   replaced source spans and maps source/destination indices like ICU's
-  `CaseMap` with `Edits`.
+  `CaseMap` with `Edits`. Reusable-buffer entry points (`lowerInto`,
+  `upperInto`, `foldInto`) and UTF-16 variants in `case.utf16` map into a
+  caller-owned list without allocating.
 - UAX #24 script runs.
 - UAX #29 grapheme, word, and sentence boundaries.
 - ICU break dictionaries for Thai, Lao, Khmer, Burmese, and CJK word
@@ -592,6 +594,7 @@ not in `icuz`.
 zig build test
 zig build unicode-verify
 zig build bench
+zig build bench-collation
 ```
 
 `unicode-verify` checks committed blob headers, layouts, hashes, generated
@@ -602,6 +605,9 @@ checkout.
 of several trials for scalar properties, segmentation, normalization, and case
 mapping. Run it on an idle machine when comparing changes; the harness prints
 ns/op for scalar lookups and ns/byte plus MB/s for text pipelines.
+`bench-collation` is the same harness restricted to the collation, case, and
+UTF-8 decode rows, optionally filtered by an exact row name, so a single
+change can be measured and profiled without running the whole suite.
 
 ## Performance notes
 
@@ -618,7 +624,11 @@ ASCII case conversion is a single byte loop instead of a generated record
 search, while non-ASCII case mapping decodes with the packed scalar decoder,
 maps ASCII runs in place, resolves each scalar through a per-page index and
 mapped-codepoint mask before a short in-page search, and serves Latin-1
-mappings from compile-time tables. Normalization runs per
+mappings from compile-time tables, the full mappings share the Latin-1
+byte-offset path because their result equals the simple mapping there, short
+ASCII runs between non-ASCII scalars map the leading bytes of a failed vector
+chunk in one store, and UTF-16 entry points (`lowerInto`, `upperInto`,
+`foldInto`) map units directly with the same tables. Normalization runs per
 starter segment: one-code-point segments skip
 canonical ordering and composition entirely, a composition-second page table
 keeps ordinary starters out of the composition binary search, and simple-page
@@ -641,7 +651,7 @@ units, so no codepoint intermediate is allocated. `*AssumeValid` entry
 points run their UTF-8 assertion only in safe builds, so release callers do not
 pay for a second validation pass.
 
-Collation keeps five fast paths: a 128-entry ASCII table, a compile-time table
+Collation keeps five fast paths: a flat 128-entry ASCII table, a compile-time table
 for Latin-1 and Latin Extended-A/B (decomposed on the stack) that bypasses the
 page tables for un-tailored Latin text, a tailored Latin path that matches the
 locale's rules through the page index and fills the rest from the root table,
@@ -649,14 +659,18 @@ a direct emitter for text whose code points all take implicit weights (Han,
 unassigned), and per-tailoring first-code-point page indexes built on first
 use and published lock-free. Each page index also carries a direct table for
 code points below U+1000, so Latin and other early-script rules resolve
-without a search, and a 256-entry atomic cache of the first rule for recently
-matched code points; above U+1000, rule records carry their first code point
-inline so binary-search probes are a single load. Collation elements start in
+without a search, a 256-entry atomic cache of the first rule for recently
+matched code points, and a small open-addressed table of two-scalar rules so
+the common tailored contraction skips the ordered matcher; above U+1000, rule
+records carry their first code point inline so binary-search probes are a
+single load. Collation elements start in
 a stack buffer, so typical sort keys allocate only the returned key, and the
 NFD pass over Latin text handles ASCII without a decomposition lookup. Element
-appends inline into the stack buffer, ASCII entries are iterated in place
-instead of copied, implicit weights are computed inline, and ASCII runs widen
-eight scalars per step while UTF-8 input is decoded.
+appends inline into the stack buffer, implicit weights are computed inline,
+and ASCII runs widen eight scalars per step while UTF-8 input is decoded.
+Three-byte sequences, which dominate CJK keys, decode in a run without the
+general decoder, and tailored keys emit their levels while the elements are
+produced instead of rescanning an element buffer once per level.
 UAX #29 word, sentence, and grapheme segmentation classify ASCII bytes through
 compile-time tables, and ASCII grapheme clusters are returned without decoding;
 the word, sentence, and line-break iterators carry scalars and offsets as
