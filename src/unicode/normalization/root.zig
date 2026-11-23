@@ -256,28 +256,54 @@ fn normalizeFusedInto(
                 try output.ensureTotalCapacityPrecise(allocator, text.len);
                 changed = true;
             }
-            if (starter_offset > stable_start) {
+            // A starter that does not continue the previous segment begins a
+            // new one; every scalar before it is stable and can be copied
+            // verbatim instead of reopening the previous starter's segment.
+            const segment_start = if (current_class == 0 and
+                previous_input_class == 0 and
+                !continuesSegment(codepoint, compatibility))
+                start
+            else
+                starter_offset;
+            if (segment_start > stable_start) {
                 try appendBytes(
                     allocator,
                     output,
-                    text[stable_start..starter_offset],
+                    text[stable_start..segment_start],
                 );
+            }
+            // A starter that no following scalar continues is its own
+            // segment, so it can skip the generic segment machinery.
+            if (segment_start == start and
+                nextStartsSegment(text, index, compatibility))
+            {
+                try emitSingleScalar(
+                    &engine.sink,
+                    codepoint,
+                    compatibility,
+                    compose,
+                );
+                stable_start = index;
+                starter = null;
+                starter_offset = index;
+                previous_input_class = 0;
+                continue;
             }
             const end = (try normalizeSegmentFastAt(
                 allocator,
                 text,
-                starter_offset,
+                segment_start,
                 form,
                 output,
             )) orelse blk: {
                 const fallback_end = segmentEnd(
                     text,
-                    starter_offset,
+                    segment_start,
                     compatibility,
                 );
                 try normalizeSegmentInto(
                     &engine,
-                    text[starter_offset..fallback_end],
+                    text[segment_start..fallback_end],
                 );
                 break :blk fallback_end;
             };
@@ -435,6 +461,37 @@ const mark_has_decomposition: [mark_decomposition_limit - 0x300]bool = blk: {
     }
     break :blk table;
 };
+const mark_has_compatibility_decomposition: [mark_decomposition_limit - 0x300]bool = blk: {
+    @setEvalBranchQuota(200_000);
+    var table: [mark_decomposition_limit - 0x300]bool = undefined;
+    for (0x300..mark_decomposition_limit) |codepoint| {
+        table[codepoint - 0x300] =
+            decomposition.compatibilityForCodepoint(@intCast(codepoint)) != null;
+    }
+    break :blk table;
+};
+
+/// Latin-1 decomposition mappings indexed directly by scalar. Precomposed
+/// Latin letters dominate decomposed prose, and the generated page lookup
+/// costs a short binary search per scalar.
+const latin1_decomposition: [0x100]?[]const u21 = blk: {
+    @setEvalBranchQuota(100_000);
+    var table: [0x100]?[]const u21 = [_]?[]const u21{null} ** 0x100;
+    for (0x80..0x100) |codepoint| {
+        table[codepoint] = decomposition.forCodepoint(@intCast(codepoint));
+    }
+    break :blk table;
+};
+const latin1_compatibility_decomposition: [0x100]?[]const u21 = blk: {
+    @setEvalBranchQuota(100_000);
+    var table: [0x100]?[]const u21 = [_]?[]const u21{null} ** 0x100;
+    for (0x80..0x100) |codepoint| {
+        table[codepoint] = decomposition.compatibilityForCodepoint(
+            @intCast(codepoint),
+        );
+    }
+    break :blk table;
+};
 
 /// Decompose one code point into `buffer` and return the component count.
 pub fn decomposeInto(
@@ -446,14 +503,28 @@ pub fn decomposeInto(
         buffer[0] = codepoint;
         return 1;
     }
+    if (codepoint < 0x100) {
+        const mapping = if (compatibility)
+            latin1_compatibility_decomposition[codepoint]
+        else
+            latin1_decomposition[codepoint];
+        if (mapping) |components| {
+            @memcpy(buffer[0..components.len], components);
+            return components.len;
+        }
+        buffer[0] = codepoint;
+        return 1;
+    }
     if (decomposeHangul(codepoint)) |parts| {
         const slice = parts.slice();
         @memcpy(buffer[0..slice.len], slice);
         return slice.len;
     }
-    if (!compatibility and codepoint >= 0x300 and
-        codepoint < mark_decomposition_limit and
-        !mark_has_decomposition[codepoint - 0x300])
+    if (codepoint >= 0x300 and codepoint < mark_decomposition_limit and
+        !(if (compatibility)
+            mark_has_compatibility_decomposition[codepoint - 0x300]
+        else
+            mark_has_decomposition[codepoint - 0x300]))
     {
         buffer[0] = codepoint;
         return 1;
@@ -826,10 +897,10 @@ const Utf16Sink = struct {
         self: *Utf16Sink,
         codepoints: []const u21,
     ) error{OutOfMemory}!void {
-        try self.list.ensureUnusedCapacity(
-            self.allocator,
-            codepoints.len * 2,
-        );
+        const needed = codepoints.len * 2;
+        if (self.list.unusedCapacitySlice().len < needed) {
+            try self.list.ensureUnusedCapacity(self.allocator, needed);
+        }
         for (codepoints) |codepoint| {
             if (codepoint <= 0xFFFF) {
                 self.list.appendAssumeCapacity(@intCast(codepoint));
@@ -849,13 +920,23 @@ const Utf16Sink = struct {
         self: *Utf16Sink,
         codepoint: u21,
     ) error{OutOfMemory}!void {
-        if (codepoint <= 0xFFFF) {
-            try self.list.append(self.allocator, @intCast(codepoint));
+        if (codepoint > 0xFFFF) {
+            if (self.list.unusedCapacitySlice().len < 2) {
+                try self.list.ensureUnusedCapacity(self.allocator, 2);
+            }
+            const value = codepoint - 0x10000;
+            self.list.appendAssumeCapacity(
+                @intCast(0xD800 + (value >> 10)),
+            );
+            self.list.appendAssumeCapacity(
+                @intCast(0xDC00 + (value & 0x3FF)),
+            );
             return;
         }
-        const value = codepoint - 0x10000;
-        try self.list.append(self.allocator, @intCast(0xD800 + (value >> 10)));
-        try self.list.append(self.allocator, @intCast(0xDC00 + (value & 0x3FF)));
+        if (self.list.unusedCapacitySlice().len == 0) {
+            try self.list.ensureUnusedCapacity(self.allocator, 1);
+        }
+        self.list.appendAssumeCapacity(@intCast(codepoint));
     }
 };
 
@@ -890,6 +971,21 @@ fn hangulSyllableAt16(
 /// mark or jamo (such as the halfwidth voiced-sound mark U+FF9E under the
 /// compatibility forms) still belong to the previous starter.
 fn continuesSegment(codepoint: u21, compatibility: bool) bool {
+    // ASCII scalars are always starters with no decomposition, and this check
+    // runs at every segment boundary, where the next scalar is usually ASCII.
+    if (codepoint < 0x80) return false;
+    // Latin-1 prose hits this check at nearly every segment boundary, so the
+    // block is answered from a table built with the same rule. The table also
+    // covers U+00B5, whose compatibility decomposition begins in a page that
+    // holds composition seconds.
+    if (codepoint < 0x100) {
+        return latin1_continues_segment[@intFromBool(compatibility)][codepoint - 0x80];
+    }
+    return continuesSegmentLookup(codepoint, compatibility);
+}
+
+/// General `continuesSegment` rule; also builds the Latin-1 table.
+fn continuesSegmentLookup(codepoint: u21, compatibility: bool) bool {
     if (combining_class.forCodepoint(codepoint) != 0) return true;
     if (data.isCompositionSecond(codepoint)) return true;
     if (isHangulVOrT(codepoint)) return true;
@@ -903,6 +999,75 @@ fn continuesSegment(codepoint: u21, compatibility: bool) bool {
     return combining_class.forCodepoint(first) != 0 or
         isHangulVOrT(first) or
         data.isCompositionSecond(first);
+}
+
+const latin1_continues_segment = blk: {
+    @setEvalBranchQuota(200_000);
+    var table: [2][0x80]bool = undefined;
+    for (0..2) |form_index| {
+        const compatibility = form_index == 1;
+        for (0x80..0x100) |codepoint| {
+            table[form_index][codepoint - 0x80] = continuesSegmentLookup(
+                @intCast(codepoint),
+                compatibility,
+            );
+        }
+    }
+    break :blk table;
+};
+
+/// True when the scalar at `index` begins a new starter segment: the text
+/// ends or the next scalar does not continue the current one. Invalid UTF-8
+/// reports false so the main scan surfaces the error.
+fn nextStartsSegment(
+    text: []const u8,
+    index: usize,
+    compatibility: bool,
+) bool {
+    if (index >= text.len) return true;
+    if (text[index] < 0x80) return true;
+    const decoded = scalar.decodeValidatingPacked(text, index);
+    if (decoded == scalar.packed_invalid) return false;
+    return !continuesSegment(scalar.packedCodepoint(decoded), compatibility);
+}
+
+/// UTF-16 counterpart of `nextStartsSegment`.
+fn nextStartsSegment16(
+    units: []const u16,
+    index: usize,
+    compatibility: bool,
+) bool {
+    if (index >= units.len) return true;
+    const decoded = utf16.decodePacked(units, index);
+    if (decoded == utf16.packed_invalid) return false;
+    return !continuesSegment(utf16.packedCodepoint(decoded), compatibility);
+}
+
+/// Emit the normalization of a segment that holds exactly one scalar.
+/// Recursive decompositions are already canonically ordered, so only the
+/// composed forms need a composition pass.
+fn emitSingleScalar(
+    sink: anytype,
+    codepoint: u21,
+    comptime compatibility: bool,
+    comptime compose: bool,
+) error{OutOfMemory}!void {
+    var storage: [64]u21 = undefined;
+    if (!compose) {
+        const count = decomposeInto(&storage, codepoint, compatibility);
+        try sink.appendCodepoints(storage[0..count]);
+        return;
+    }
+    var classes: [64]u8 = undefined;
+    const count = decomposeInto(&storage, codepoint, compatibility);
+    for (storage[0..count], 0..) |part, index| {
+        classes[index] = combining_class.forCodepoint(part);
+    }
+    const final_len = composeSliceWithClasses(
+        storage[0..count],
+        classes[0..count],
+    );
+    try sink.appendCodepoints(storage[0..final_len]);
 }
 
 /// Normalize one starter segment of UTF-16 units using stack storage.
@@ -943,9 +1108,11 @@ fn normalizeSegmentFastAt16(
             length += 1;
             continue;
         }
-        if (!compatibility and codepoint >= 0x300 and
-            codepoint < mark_decomposition_limit and
-            !mark_has_decomposition[codepoint - 0x300])
+        if (codepoint >= 0x300 and codepoint < mark_decomposition_limit and
+            !(if (compatibility)
+                mark_has_compatibility_decomposition[codepoint - 0x300]
+            else
+                mark_has_decomposition[codepoint - 0x300]))
         {
             if (length == storage.len) return null;
             storage[length] = codepoint;
@@ -1126,27 +1293,53 @@ fn normalizeFusedUtf16Into(
                 try output.ensureUnusedCapacity(allocator, units.len + 16);
                 changed = true;
             }
-            if (starter_offset > stable_start) {
+            // A starter that does not continue the previous segment begins a
+            // new one; every unit before it is stable and can be copied
+            // verbatim instead of reopening the previous starter's segment.
+            const segment_start = if (current_class == 0 and
+                previous_input_class == 0 and
+                !continuesSegment(codepoint, compatibility))
+                start
+            else
+                starter_offset;
+            if (segment_start > stable_start) {
                 try output.appendSlice(
                     allocator,
-                    units[stable_start..starter_offset],
+                    units[stable_start..segment_start],
                 );
+            }
+            // A starter that no following scalar continues is its own
+            // segment, so it can skip the generic segment machinery.
+            if (segment_start == start and
+                nextStartsSegment16(units, index, compatibility))
+            {
+                try emitSingleScalar(
+                    &sink,
+                    codepoint,
+                    compatibility,
+                    compose,
+                );
+                stable_start = index;
+                starter = null;
+                starter_offset = index;
+                previous_input_class = 0;
+                continue;
             }
             const end = (try normalizeSegmentFastAt16(
                 units,
-                starter_offset,
+                segment_start,
                 form,
                 &sink,
             )) orelse blk: {
                 const fallback_end = try segmentEnd16(
                     units,
-                    starter_offset,
+                    segment_start,
                     compatibility,
                 );
                 try normalizeSegmentFallback16(
                     allocator,
                     units,
-                    starter_offset,
+                    segment_start,
                     fallback_end,
                     form,
                     &sink,
@@ -1421,9 +1614,11 @@ fn normalizeSegmentFastAt(
         // for accent-heavy text, and almost all of them are their own
         // decomposition. Copying them directly avoids the out-of-line
         // decompose call and its stack parts array.
-        if (!compatibility and codepoint >= 0x300 and
-            codepoint < mark_decomposition_limit and
-            !mark_has_decomposition[codepoint - 0x300])
+        if (codepoint >= 0x300 and codepoint < mark_decomposition_limit and
+            !(if (compatibility)
+                mark_has_compatibility_decomposition[codepoint - 0x300]
+            else
+                mark_has_decomposition[codepoint - 0x300]))
         {
             if (length == storage.len) return null;
             storage[length] = codepoint;
@@ -2308,6 +2503,51 @@ test "segments keep composed, mark-leading, and non-CJK scalars" {
     );
     defer if (utf16_result) |value| testing.allocator.free(value);
     try testing.expectEqualSlices(u16, &expected_units, utf16_result.?);
+}
+
+test "Latin-1 segment fast path matches the general rule" {
+    const testing = @import("std").testing;
+    // The table shortcut must agree with the general rule for every scalar in
+    // the block, including U+00B5, whose compatibility decomposition starts in
+    // a page that holds composition seconds.
+    for (0x80..0x100) |codepoint| {
+        inline for (.{ false, true }) |compatibility| {
+            try testing.expectEqual(
+                continuesSegmentLookup(@intCast(codepoint), compatibility),
+                continuesSegment(@intCast(codepoint), compatibility),
+            );
+        }
+    }
+}
+
+test "recursive decompositions are canonically ordered" {
+    const testing = @import("std").testing;
+    // The single-scalar segment path emits recursive decompositions without
+    // running the ordering pass, so every generated mapping must already be
+    // ordered. Pages without mappings are skipped by the simple-page bit.
+    var codepoint: u21 = 0;
+    while (codepoint <= 0x10ffff) : (codepoint += 1) {
+        inline for (.{ false, true }) |compatibility| {
+            if (!data.isSimplePage(codepoint, compatibility)) {
+                const mapping = if (compatibility)
+                    decomposition.compatibilityForCodepoint(codepoint)
+                else
+                    decomposition.forCodepoint(codepoint);
+                if (mapping) |components| {
+                    var previous: u8 = 0;
+                    for (components) |component| {
+                        const class = combining_class.forCodepoint(component);
+                        if (class == 0) {
+                            previous = 0;
+                            continue;
+                        }
+                        try testing.expect(previous <= class);
+                        previous = class;
+                    }
+                }
+            }
+        }
+    }
 }
 
 test "normalization rejects invalid UTF-8 before allocating" {
