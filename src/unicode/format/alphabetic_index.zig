@@ -7,6 +7,7 @@
 //! skipped scripts are not implemented.
 
 const std = @import("std");
+const scalar = @import("../scalar/root.zig");
 const collation = @import("../collation/root.zig");
 const tailorings = @import("../collation/tailorings.zig");
 const locale_mod = @import("../locale.zig");
@@ -352,7 +353,7 @@ pub const AlphabeticIndex = struct {
     /// Bucket index for a name.
     pub fn bucketFor(self: *AlphabeticIndex, name: []const u8) Error!usize {
         if (self.labels.len == 0) return 0;
-        if (!std.unicode.utf8ValidateSlice(name)) return error.InvalidUtf8;
+        if (!scalar.validate.isValid(name)) return error.InvalidUtf8;
 
         if (self.pinyin) {
             if (decodeFirst(name)) |codepoint| {

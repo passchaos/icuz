@@ -6,6 +6,10 @@ const icuz = @import("icuz");
 
 var sink: u64 = 0;
 
+/// Read through a volatile pointer so a pure validation call cannot be hoisted
+/// out of a benchmark loop; the value stays zero.
+var validate_salt: u8 = 0;
+
 fn now() u64 {
     var ts: std.c.timespec = undefined;
     if (std.c.clock_gettime(.MONOTONIC, &ts) != 0) unreachable;
@@ -184,6 +188,130 @@ fn benchFullCase(
     report(name, rounds * text.len, best);
 }
 
+fn benchCompareValidating(
+    name: []const u8,
+    a: []const u8,
+    b: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    const collator = icuz.collation.Collator.init(.{});
+    var key_a = std.ArrayList(u32).empty;
+    defer key_a.deinit(allocator);
+    var key_b = std.ArrayList(u32).empty;
+    defer key_b.deinit(allocator);
+    const rounds: usize = 20_000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const order = collator.compare(
+                allocator,
+                a,
+                b,
+                &key_a,
+                &key_b,
+            ) catch unreachable;
+            sink +%= @intFromEnum(order);
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    std.debug.print("{s:<28} {d:8.3} ns/op\n", .{
+        name,
+        @as(f64, @floatFromInt(best)) / @as(f64, @floatFromInt(rounds)),
+    });
+}
+
+fn benchValidate(name: []const u8, text: []const u8) void {
+    const rounds: usize = 4000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            sink +%= @intFromBool(std.unicode.utf8ValidateSlice(text));
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * text.len, best);
+}
+
+fn benchLines(name: []const u8, text: []const u8) void {
+    var count: usize = 0;
+    const rounds: usize = 4000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            var iterator = icuz.unicode.lineBreaksAssumeValid(text);
+            while (iterator.next()) |_| count += 1;
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    sink +%= count;
+    report(name, rounds * text.len, best);
+}
+
+fn benchNormalizeInto(
+    name: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    var buffer = std.ArrayList(u8).empty;
+    defer buffer.deinit(allocator);
+    buffer.ensureTotalCapacity(allocator, text.len * 4) catch unreachable;
+    const rounds: usize = 4000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const changed = icuz.normalization.normalizeFormInto(
+                allocator,
+                text,
+                .nfc,
+                &buffer,
+            ) catch unreachable;
+            sink +%= @intFromBool(changed);
+            buffer.clearRetainingCapacity();
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * text.len, best);
+}
+
+fn benchNormalizeUtf16Into(
+    name: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    const units = std.unicode.utf8ToUtf16LeAlloc(allocator, text) catch
+        unreachable;
+    defer allocator.free(units);
+    var buffer = std.ArrayList(u16).empty;
+    defer buffer.deinit(allocator);
+    buffer.ensureTotalCapacity(allocator, units.len * 2) catch unreachable;
+    const rounds: usize = 4000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const changed = icuz.normalization.normalizeUtf16Into(
+                allocator,
+                units,
+                .nfc,
+                &buffer,
+            ) catch unreachable;
+            sink +%= @intFromBool(changed);
+            buffer.clearRetainingCapacity();
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * text.len, best);
+}
+
 fn benchCaseInto(
     name: []const u8,
     text: []const u8,
@@ -345,13 +473,16 @@ fn benchCompare(
     });
 }
 
-fn benchValidate(name: []const u8, text: []const u8) void {
+fn benchValidateVector(name: []const u8, text: []const u8) void {
     const rounds: usize = 4000;
     var best: u64 = std.math.maxInt(u64);
     for (0..5) |_| {
         const start = now();
         for (0..rounds) |_| {
-            sink +%= @intFromBool(std.unicode.utf8ValidateSlice(text));
+            const salt = @as(*volatile u8, &validate_salt).*;
+            sink +%= @intFromBool(icuz.scalar.validate.isValid(
+                text[0 .. text.len - salt],
+            ));
         }
         const elapsed = now() - start;
         if (elapsed < best) best = elapsed;
@@ -421,6 +552,8 @@ const mixed_text = "Hello, 世界! café naïve Straße \u{1f600}\u{1f469}\u{200
 const swedish_text = "Ångström älskar blåbär och öar. ÅÄÖ åäö " ** 8;
 const german_text = "Böttger Mühsam Überlingen ÄÖÜ äöü Straße " ** 8;
 const greek_case_text = "ΟΔΟΣ ΣΟΦΟΣ ΑΘΗΝΑ " ** 8;
+const e_marks_text = "e\u{0301}\u{0323} " ** 16;
+const jamo_text = "\u{1100}\u{1161}\u{11a8} " ** 12;
 const chinese_text = "你好世界中国汉字排序拼音" ** 8;
 const chinese_long_text = "你好世界中国汉字排序拼音" ** 256;
 const ascii_long_text =
@@ -632,6 +765,39 @@ pub fn main(init: std.process.Init.Minimal) !void {
     if (selected(filter, "case", "fold mixed (full)")) {
         benchFullCase("fold mixed (full)", mixed_text, .fold, allocator);
     }
+    if (selected(filter, "break", "line break mixed")) {
+        benchLines("line break mixed", mixed_text);
+    }
+    if (selected(filter, "break", "line break ASCII")) {
+        benchLines("line break ASCII", ascii_text);
+    }
+    if (selected(filter, "normalize", "NFC mixed (reuse)")) {
+        benchNormalizeInto("NFC mixed (reuse)", mixed_text, allocator);
+    }
+    if (selected(filter, "normalize", "NFC jamo (reuse)")) {
+        benchNormalizeInto("NFC jamo (reuse)", jamo_text, allocator);
+    }
+    if (selected(filter, "normalize", "NFC e+marks (reuse)")) {
+        benchNormalizeInto("NFC e+marks (reuse)", e_marks_text, allocator);
+    }
+    if (selected(filter, "normalize", "NFC mixed (utf16 reuse)")) {
+        benchNormalizeUtf16Into("NFC mixed (utf16 reuse)", mixed_text, allocator);
+    }
+    if (selected(filter, "normalize", "NFC jamo (utf16 reuse)")) {
+        benchNormalizeUtf16Into("NFC jamo (utf16 reuse)", jamo_text, allocator);
+    }
+    if (selected(filter, "compare", "compare mixed validating")) {
+        var other = std.ArrayList(u8).empty;
+        defer other.deinit(allocator);
+        other.appendSlice(allocator, mixed_text) catch unreachable;
+        other.items[other.items.len - 3] = 'u';
+        benchCompareValidating(
+            "compare mixed validating",
+            mixed_text,
+            other.items,
+            allocator,
+        );
+    }
     if (selected(filter, "compare", "compare long")) {
         var long_other = std.ArrayList(u8).empty;
         defer long_other.deinit(allocator);
@@ -663,14 +829,28 @@ pub fn main(init: std.process.Init.Minimal) !void {
         benchPrefix("prefix mixed diff", mixed_text, mixed_other.items);
     }
     if (selected(filter, "validate", "validate Swedish")) {
-        benchValidate("validate Swedish std", swedish_text);
-        benchValidateOurs("validate Swedish ours", swedish_text);
-        benchValidate("validate mixed std", mixed_text);
-        benchValidateOurs("validate mixed ours", mixed_text);
-        benchValidate("validate Chinese std", chinese_long_text);
-        benchValidateOurs("validate Chinese ours", chinese_long_text);
-        benchValidate("validate ASCII std", ascii_text);
-        benchValidateOurs("validate ASCII ours", ascii_text);
+        // Runtime copies keep the validator calls from being folded at
+        // comptime, which would report a meaningless zero.
+        const swedish_rt = allocator.dupe(u8, swedish_text) catch unreachable;
+        defer allocator.free(swedish_rt);
+        const mixed_rt = allocator.dupe(u8, mixed_text) catch unreachable;
+        defer allocator.free(mixed_rt);
+        const chinese_rt = allocator.dupe(u8, chinese_long_text) catch unreachable;
+        defer allocator.free(chinese_rt);
+        const ascii_rt = allocator.dupe(u8, ascii_text) catch unreachable;
+        defer allocator.free(ascii_rt);
+        benchValidate("validate Swedish std", swedish_rt);
+        benchValidateOurs("validate Swedish ours", swedish_rt);
+        benchValidateVector("validate Swedish vector", swedish_rt);
+        benchValidate("validate mixed std", mixed_rt);
+        benchValidateOurs("validate mixed ours", mixed_rt);
+        benchValidateVector("validate mixed vector", mixed_rt);
+        benchValidate("validate Chinese std", chinese_rt);
+        benchValidateOurs("validate Chinese ours", chinese_rt);
+        benchValidateVector("validate Chinese vector", chinese_rt);
+        benchValidate("validate ASCII std", ascii_rt);
+        benchValidateOurs("validate ASCII ours", ascii_rt);
+        benchValidateVector("validate ASCII vector", ascii_rt);
     }
     if (selected(filter, "decode", "decode Chinese")) {
         benchDecode("decode Chinese", chinese_text);

@@ -7,6 +7,7 @@
 //! space replacement follow CLDR's reference formatter.
 
 const std = @import("std");
+const scalar = @import("../scalar/root.zig");
 const properties = @import("../properties.zig");
 const grapheme_boundary = @import("../grapheme/iterator.zig");
 const word_boundary = @import("../word/iterator.zig");
@@ -815,7 +816,7 @@ pub fn formatAlloc(
     for (0..field_count) |field| {
         for ([_][field_count][]const u8{ name.base, name.informal, name.prefix, name.core }) |values| {
             const value = values[field];
-            if (value.len != 0 and !std.unicode.utf8ValidateSlice(value)) {
+            if (value.len != 0 and !scalar.validate.isValid(value)) {
                 return error.InvalidUtf8;
             }
         }

@@ -1905,7 +1905,7 @@ pub const Normalizer = struct {
         text: []const u8,
         output: *std.ArrayList(u8),
     ) Error!void {
-        if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+        if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
         var iterator = std.unicode.Utf8Iterator{ .bytes = text, .i = 0 };
         while (iterator.nextCodepoint()) |codepoint| {
             try self.process(codepoint, output);
@@ -2185,7 +2185,7 @@ pub fn isNormalizedForm(text: []const u8, form: Form) error{InvalidUtf8}!bool {
     // the unscanned suffix before reporting "not normalized".
     const result = isNormalizedFormScan(text, form);
     if (result.normalized) return true;
-    if (!std.unicode.utf8ValidateSlice(text[result.valid_until..])) {
+    if (!scalar.validate.isValid(text[result.valid_until..])) {
         return error.InvalidUtf8;
     }
     return false;
@@ -2340,7 +2340,7 @@ pub fn spanQuickCheckYes(
     // A full-length span proves the scan visited every scalar. Otherwise the
     // scan stopped at the first change and the suffix is still unvalidated.
     if (span == text.len) return span;
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
     return span;
 }
 

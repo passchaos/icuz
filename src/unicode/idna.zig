@@ -188,7 +188,7 @@ fn convertAlloc(
     if (isAsciiDomain(domain) and !hasAlabel(domain)) {
         return convertAsciiAlloc(allocator, domain, options, ascii_output);
     }
-    if (!std.unicode.utf8ValidateSlice(domain)) return error.InvalidUtf8;
+    if (!scalar.validate.isValid(domain)) return error.InvalidUtf8;
 
     var codepoints = std.ArrayList(u21).empty;
     defer codepoints.deinit(allocator);

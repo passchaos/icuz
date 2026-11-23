@@ -7,6 +7,7 @@
 //! per-character mapping, as UAX #15 and UAX #44 require.
 
 const std = @import("std");
+const scalar = @import("../scalar/root.zig");
 
 const normalization = @import("root.zig");
 
@@ -147,7 +148,7 @@ fn mapAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
 ) error{ InvalidUtf8, OutOfMemory }![]u8 {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
     // Both mappings send ASCII A-Z to lowercase and leave the rest unchanged;
     // ASCII is already NFC, so the whole pipeline collapses to a byte loop.
     if (isAscii(text)) {

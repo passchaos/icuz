@@ -14,6 +14,7 @@
 //! arrays; keep the message string alive while the message is used.
 
 const std = @import("std");
+const scalar = @import("../scalar/root.zig");
 const number = @import("number.zig");
 const plural = @import("plurals.zig");
 const dates = @import("dates.zig");
@@ -208,7 +209,7 @@ pub fn parse(
     allocator: std.mem.Allocator,
     text: []const u8,
 ) ParseError!Message {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
     var parser = Parser{

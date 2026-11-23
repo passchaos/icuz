@@ -5,6 +5,7 @@
 //! caller-excluded code points.
 
 const std = @import("std");
+const scalar = @import("../scalar/root.zig");
 const charset = @import("../charset.zig");
 const set_mod = @import("../set.zig");
 const utf16 = @import("../utf16.zig");
@@ -170,7 +171,7 @@ pub const ConverterSelector = struct {
         allocator: std.mem.Allocator,
         text: []const u8,
     ) Error![]bool {
-        if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+        if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
         const selected = try allocator.alloc(bool, self.encodings.len);
         for (self.encodings, 0..) |encoding, index| {
             selected[index] = self.canEncode(text, encoding);

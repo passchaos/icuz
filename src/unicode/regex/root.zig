@@ -6,6 +6,7 @@
 //! interop with ICU or Java callers needs them.
 
 const std = @import("std");
+const scalar = @import("../scalar/root.zig");
 const parser = @import("parser.zig");
 const compiler = @import("compiler.zig");
 const vm = @import("vm.zig");
@@ -82,7 +83,7 @@ pub const Regex = struct {
         flags: Flags,
         parse_error: ?*ParseError,
     ) Error!Regex {
-        if (!std.unicode.utf8ValidateSlice(pattern)) return error.InvalidUtf8;
+        if (!scalar.validate.isValid(pattern)) return error.InvalidUtf8;
 
         var offset: usize = 0;
         var parsed = parser.parse(allocator, pattern, flags, &offset) catch |err| switch (err) {
@@ -413,7 +414,7 @@ pub const Matcher = struct {
         text: []const u8,
         options: MatcherOptions,
     ) error{ InvalidUtf8, OutOfMemory }!Matcher {
-        if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+        if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
         const backend = regex.ensureBackend() catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             else => null,
@@ -449,7 +450,7 @@ pub const Matcher = struct {
     }
 
     pub fn reset(self: *Matcher, text: []const u8) error{InvalidUtf8}!void {
-        if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+        if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
         self.runner.reset(text);
     }
 

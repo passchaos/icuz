@@ -886,7 +886,7 @@ pub const Collator = struct {
         }
         if (boundary == 0) return null;
         if (validate and
-            !std.unicode.utf8ValidateSlice(a[0..boundary]))
+            !scalar.validate.isValid(a[0..boundary]))
         {
             return null;
         }
@@ -929,7 +929,7 @@ pub const Collator = struct {
         key_b: *std.ArrayList(u32),
     ) error{ InvalidUtf8, OutOfMemory }!std.math.Order {
         if (std.mem.eql(u8, a, b)) {
-            if (!std.unicode.utf8ValidateSlice(a)) return error.InvalidUtf8;
+            if (!scalar.validate.isValid(a)) return error.InvalidUtf8;
             return .eq;
         }
         if (self.simpleOrdering()) {
@@ -943,8 +943,8 @@ pub const Collator = struct {
             // a bounded region around the difference; a differing region key
             // decides the full order, and an equal one falls back.
             if (diff <= 32) {
-                if (!std.unicode.utf8ValidateSlice(a) or
-                    !std.unicode.utf8ValidateSlice(b))
+                if (!scalar.validate.isValid(a) or
+                    !scalar.validate.isValid(b))
                 {
                     return error.InvalidUtf8;
                 }

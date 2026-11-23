@@ -29,7 +29,7 @@ pub const BoundaryView = struct {
     tailoring: ScalarBreaker.Tailoring = .unicode_default,
 
     pub fn init(text: []const u8) Error!BoundaryView {
-        if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+        if (!scalar_value.validate.isValid(text)) return error.InvalidUtf8;
         return BoundaryView.assumeValid(text);
     }
 
@@ -37,7 +37,7 @@ pub const BoundaryView = struct {
         text: []const u8,
         tailoring: ScalarBreaker.Tailoring,
     ) Error!BoundaryView {
-        if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+        if (!scalar_value.validate.isValid(text)) return error.InvalidUtf8;
         return BoundaryView.assumeValidForTailoring(text, tailoring);
     }
 
@@ -491,7 +491,7 @@ pub const Iterator = struct {
 };
 
 pub fn clusters(text: []const u8) Error!Iterator {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar_value.validate.isValid(text)) return error.InvalidUtf8;
     return assumeValid(text);
 }
 
@@ -500,7 +500,7 @@ pub fn clustersWithTailoring(
     text: []const u8,
     tailoring: ScalarBreaker.Tailoring,
 ) Error!Iterator {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar_value.validate.isValid(text)) return error.InvalidUtf8;
     return assumeValidWithTailoring(text, tailoring);
 }
 

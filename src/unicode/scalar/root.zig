@@ -2,6 +2,8 @@
 
 const std = @import("std");
 
+pub const validate = @import("validate.zig");
+
 pub const Decoded = struct {
     codepoint: u21,
     next: usize,

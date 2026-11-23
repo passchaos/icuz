@@ -508,7 +508,7 @@ pub fn resolve(
 /// Resolve the first-strong paragraph direction without allocating a full
 /// paragraph. Characters inside isolates do not select the outer direction.
 pub fn direction(text: []const u8) error{InvalidUtf8}!BaseDirection {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar_value.validate.isValid(text)) return error.InvalidUtf8;
     var isolate_depth: usize = 0;
     var iterator = std.unicode.Utf8Iterator{ .bytes = text, .i = 0 };
     while (iterator.nextCodepoint()) |codepoint| {
@@ -542,7 +542,7 @@ pub fn resolveWithRanges(
     ranges: []const Range,
 ) !Paragraph {
     if (ranges.len == 0) return resolve(allocator, text, base_direction);
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar_value.validate.isValid(text)) return error.InvalidUtf8;
     try validateRanges(text, ranges);
 
     var scalar_list = std.ArrayList(Scalar).empty;

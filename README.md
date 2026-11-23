@@ -616,7 +616,12 @@ plus one packed payload word per scalar. `General_Category` and the binary
 properties share one `u16` word, while `Canonical_Combining_Class` and the four
 normalization quick-check forms use compact byte tables. ASCII is materialized
 at compile time, so prose lookups avoid both the page indirection and the
-generated-data cache footprint.
+generated-data cache footprint. Public UTF-8 entry points validate with a
+vectorized checker: 32 bytes per step derive the required continuation pattern
+from the three preceding bytes, reject overlongs, surrogates, and out-of-range
+scalars in the same pass, and skip classification entirely for ASCII windows,
+so validating `compare` and iterator entry points no longer walk scalar by
+scalar.
 
 Normalization and case mapping also have direct ASCII paths. Pure-ASCII text is
 already normalized in every form and can be checked with a word-at-a-time scan;

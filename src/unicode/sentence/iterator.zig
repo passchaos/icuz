@@ -101,7 +101,7 @@ pub const Iterator = struct {
 };
 
 pub fn segments(text: []const u8) Error!Iterator {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
     return assumeValid(text);
 }
 

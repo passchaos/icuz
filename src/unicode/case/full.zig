@@ -201,7 +201,7 @@ pub fn foldWithEditsAlloc(
     text: []const u8,
     edits: *Edits,
 ) Error![]u8 {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
     edits.clearRetainingCapacity();
 
     var output = try std.ArrayList(u8).initCapacity(allocator, text.len);

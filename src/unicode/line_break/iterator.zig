@@ -758,7 +758,7 @@ inline fn appendHistoryTail(
 }
 
 pub fn breaks(text: []const u8) Error!Iterator {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
     return breaksAssumeValid(text);
 }
 

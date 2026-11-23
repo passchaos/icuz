@@ -4,6 +4,7 @@
 //! should convert byte order before constructing the slice.
 
 const std = @import("std");
+const scalar = @import("scalar/root.zig");
 
 pub const Error = error{ InvalidUtf8, InvalidUtf16, OutOfMemory };
 
@@ -143,7 +144,7 @@ pub fn utf8ToUtf16Alloc(
     allocator: std.mem.Allocator,
     text: []const u8,
 ) Error![]u16 {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
 
     var result = std.ArrayList(u16).empty;
     errdefer result.deinit(allocator);

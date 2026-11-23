@@ -2118,7 +2118,7 @@ pub fn transliterateAlloc(
     text: []const u8,
     transform: Transform,
 ) Error![]u8 {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
     const ascii_identity = switch (transform) {
         .halfwidth_fullwidth, .latin_georgian => false,
         else => true,
@@ -2615,7 +2615,7 @@ pub fn transliterateByNameAlloc(
     text: []const u8,
     name: []const u8,
 ) Error![]u8 {
-    if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+    if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
     if (std.mem.eql(u8, name, "Latin-ASCII")) {
         if (isAscii(text)) return allocator.dupe(u8, text);
         return latinAsciiAlloc(allocator, text);

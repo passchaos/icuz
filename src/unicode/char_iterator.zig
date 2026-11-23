@@ -3,6 +3,7 @@
 //! indices are code-unit offsets.
 
 const std = @import("std");
+const scalar = @import("scalar/root.zig");
 const utf16_mod = @import("utf16.zig");
 
 pub const Error = error{ InvalidUtf8, InvalidUtf16 };
@@ -26,7 +27,7 @@ pub const CharIterator = struct {
     };
 
     pub fn initUTF8(text: []const u8) Error!CharIterator {
-        if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidUtf8;
+        if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
         return .{ .storage = .{ .utf8 = text } };
     }
 
