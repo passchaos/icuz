@@ -79,19 +79,6 @@ pub fn scalarValid(text: []const u8) bool {
     return true;
 }
 
-/// Lane mask that shifts `input` right by `shift` lanes, taking the first
-/// lanes from the four bytes before the window.
-fn shiftMask(comptime shift: usize) [vector_len]i32 {
-    var mask: [vector_len]i32 = undefined;
-    for (0..vector_len) |lane| {
-        mask[lane] = if (lane < shift)
-            ~@as(i32, @intCast(3 - shift + lane))
-        else
-            @as(i32, @intCast(lane - shift));
-    }
-    return mask;
-}
-
 /// Validate one 32-byte window starting at `offset`. The caller guarantees
 /// `offset >= 3` and `offset + 33 <= text.len`, so the three preceding bytes
 /// and the one following byte are readable.
@@ -108,7 +95,6 @@ inline fn windowValid(text: []const u8, offset: usize) bool {
         return true;
     }
 
-    const carry: @Vector(4, u8) = @bitCast(text[offset - 3 ..][0..4].*);
     const after: @Vector(1, u8) = @bitCast(text[offset + vector_len ..][0..1].*);
 
     const next = @shuffle(
@@ -136,20 +122,27 @@ inline fn windowValid(text: []const u8, offset: usize) bool {
     const lead2 = (bytes & mask_e0) == lead2_marker;
     const lead3 = (bytes & mask_f0) == lead3_marker;
     const lead4 = (bytes & mask_f8) == lead4_marker;
-    const carry2 = (carry & @as(@Vector(4, u8), @splat(0xe0))) ==
-        @as(@Vector(4, u8), @splat(0xc0));
-    const carry3 = (carry & @as(@Vector(4, u8), @splat(0xf0))) ==
-        @as(@Vector(4, u8), @splat(0xe0));
-    const carry4 = (carry & @as(@Vector(4, u8), @splat(0xf8))) ==
-        @as(@Vector(4, u8), @splat(0xf0));
 
     // A position must hold a continuation byte when the byte one, two, or
-    // three positions earlier starts a sequence that reaches it.
-    const prev1 = @shuffle(bool, lead2 | lead3 | lead4, carry2 | carry3 | carry4, shiftMask(1));
-    const prev2 = @shuffle(bool, lead3 | lead4, carry3 | carry4, shiftMask(2));
-    const prev3 = @shuffle(bool, lead4, carry4, shiftMask(3));
-    const expected = prev1 | prev2 | prev3;
-    if (@reduce(.Or, is_cont != expected)) return false;
+    // three positions earlier starts a sequence that reaches it. Shifting the
+    // lead masks as scalar bitmasks is one instruction each; shifting the
+    // bool vectors instead costs a lane permute per distance.
+    const lead234: u32 = @bitCast(lead2 | lead3 | lead4);
+    const lead34: u32 = @bitCast(lead3 | lead4);
+    const lead4_only: u32 = @bitCast(lead4);
+    var expected: u32 = (lead234 << 1) | (lead34 << 2) | (lead4_only << 3);
+    // Lanes 0..2 still depend on the three bytes before the window.
+    const carry1 = text[offset - 1];
+    const carry2 = text[offset - 2];
+    const carry3 = text[offset - 3];
+    if (carry1 >= 0xc2 and carry1 <= 0xf4) expected |= 1;
+    if (carry2 >= 0xe0 and carry2 <= 0xf4) expected |= 1;
+    if (carry3 >= 0xf0 and carry3 <= 0xf4) expected |= 1;
+    if (carry1 >= 0xe0 and carry1 <= 0xf4) expected |= 2;
+    if (carry2 >= 0xf0 and carry2 <= 0xf4) expected |= 2;
+    if (carry1 >= 0xf0 and carry1 <= 0xf4) expected |= 4;
+    const cont_mask: u32 = @bitCast(is_cont);
+    if (cont_mask != expected) return false;
 
     // C0 and C1 encode overlongs, and F5..FF exceed U+10FFFF or are not
     // leads at all. Only the second byte of a sequence needs a range check:
