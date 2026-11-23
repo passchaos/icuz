@@ -736,7 +736,6 @@ pub fn isNormalizedCodepoints(
     codepoints: []const u21,
     form: Form,
 ) bool {
-    const compatibility = form == .nfkc or form == .nfkd;
     var starter: ?u21 = null;
     var previous_input_class: u8 = 0;
     for (codepoints) |codepoint| {
@@ -745,7 +744,7 @@ pub fn isNormalizedCodepoints(
             previous_input_class = 0;
             continue;
         }
-        if (data.isSimplePage(codepoint, compatibility)) {
+        if (inert.isInert(codepoint, form)) {
             starter = codepoint;
             previous_input_class = 0;
             continue;
@@ -1578,7 +1577,6 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
         return .{ .normalized = true, .valid_until = text.len };
     }
 
-    const compatibility = form == .nfkc or form == .nfkd;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
     var index: usize = ascii_end;
@@ -1626,7 +1624,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
         }
         const codepoint = scalar.packedCodepoint(decoded);
         index += scalar.packedLength(decoded);
-        if (data.isSimplePage(codepoint, compatibility)) {
+        if (inert.isInert(codepoint, form)) {
             starter = codepoint;
             previous_input_class = 0;
             continue;
