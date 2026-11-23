@@ -1153,14 +1153,21 @@ fn sortKeyCodepointsResolved(
 
     // Root collation without weighting or case-level options can emit the
     // three levels directly while scanning, skipping the collation-element
-    // buffer and its second pass. Short inputs stay on the buffered path:
-    // their elements fit in the stack buffer, where the extra pass is
-    // cheaper than three interleaved level buffers.
-    if (source.len > 512 and locale_tailoring == null and !shifted and
+    // buffer and its second pass.
+    if (locale_tailoring == null and !shifted and
         case_first == .off and !backwards and !options.numeric and
         !options.case_level and options.strength != .quaternary)
     {
-        return appendRootLevelsDirect(
+        if (source.len > 512) {
+            return appendRootLevelsDirect(
+                allocator,
+                output,
+                codepoints,
+                source,
+                options.strength,
+            );
+        }
+        return appendRootLevelsFused(
             allocator,
             output,
             codepoints,
@@ -1767,6 +1774,167 @@ fn appendRootLevelsDirect(
         ),
         .quaternary => unreachable,
     };
+}
+
+/// Emit root levels while the elements are produced, without an element
+/// buffer. Short sort keys use this instead of materializing collation
+/// elements and scanning them once per level. A level that outgrows its
+/// stack array falls back to the buffered path.
+fn appendRootLevelsFused(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    codepoints: []const u21,
+    source: []const u21,
+    strength: Strength,
+) error{OutOfMemory}!void {
+    return switch (strength) {
+        .primary => appendRootLevelsFusedStrength(
+            allocator,
+            output,
+            codepoints,
+            source,
+            .primary,
+        ),
+        .secondary => appendRootLevelsFusedStrength(
+            allocator,
+            output,
+            codepoints,
+            source,
+            .secondary,
+        ),
+        .tertiary => appendRootLevelsFusedStrength(
+            allocator,
+            output,
+            codepoints,
+            source,
+            .tertiary,
+        ),
+        .identical => appendRootLevelsFusedStrength(
+            allocator,
+            output,
+            codepoints,
+            source,
+            .identical,
+        ),
+        .quaternary => unreachable,
+    };
+}
+
+fn appendRootLevelsFusedStrength(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    codepoints: []const u21,
+    source: []const u21,
+    comptime strength: Strength,
+) error{OutOfMemory}!void {
+    const need_secondary = strength != .primary;
+    const need_tertiary = strength != .primary and strength != .secondary;
+    const Sink = struct {
+        primary: [2048]u32 = undefined,
+        secondary: [if (need_secondary) 2048 else 0]u32 = undefined,
+        tertiary: [if (need_tertiary) 2048 else 0]u32 = undefined,
+        primary_len: usize = 0,
+        secondary_len: usize = 0,
+        tertiary_len: usize = 0,
+        overflow: bool = false,
+
+        inline fn append(
+            self: *@This(),
+            _: std.mem.Allocator,
+            element: CollationElement,
+        ) error{OutOfMemory}!void {
+            if (element.primary != 0) {
+                if (self.primary_len == self.primary.len) {
+                    self.overflow = true;
+                } else {
+                    self.primary[self.primary_len] = element.primary;
+                    self.primary_len += 1;
+                }
+            }
+            if (need_secondary and element.secondary != 0) {
+                if (self.secondary_len == self.secondary.len) {
+                    self.overflow = true;
+                } else {
+                    self.secondary[self.secondary_len] = element.secondary;
+                    self.secondary_len += 1;
+                }
+            }
+            if (need_tertiary and element.tertiary != 0) {
+                if (self.tertiary_len == self.tertiary.len) {
+                    self.overflow = true;
+                } else {
+                    self.tertiary[self.tertiary_len] = element.tertiary;
+                    self.tertiary_len += 1;
+                }
+            }
+        }
+    };
+    // A struct literal would zero the level arrays; initialize the scalar
+    // fields directly so only the used entries are touched.
+    var sink: Sink = undefined;
+    sink.primary_len = 0;
+    sink.secondary_len = 0;
+    sink.tertiary_len = 0;
+    sink.overflow = false;
+    var index: usize = 0;
+    while (index < source.len) {
+        index += try appendElements(
+            allocator,
+            &sink,
+            source,
+            index,
+            null,
+            false,
+            &root_tables_storage,
+        );
+        if (sink.overflow) break;
+    }
+    if (!sink.overflow) {
+        const separator = strength == .identical;
+        const total = sink.primary_len + 1 +
+            (if (need_secondary) sink.secondary_len + 1 else 0) +
+            (if (need_tertiary) sink.tertiary_len + 1 else 0) +
+            @as(usize, @intFromBool(separator));
+        try output.ensureTotalCapacityPrecise(allocator, total);
+        output.appendSliceAssumeCapacity(sink.primary[0..sink.primary_len]);
+        output.appendAssumeCapacity(0);
+        if (need_secondary) {
+            output.appendSliceAssumeCapacity(
+                sink.secondary[0..sink.secondary_len],
+            );
+            output.appendAssumeCapacity(0);
+        }
+        if (need_tertiary) {
+            output.appendSliceAssumeCapacity(
+                sink.tertiary[0..sink.tertiary_len],
+            );
+            output.appendAssumeCapacity(0);
+        }
+        if (separator) {
+            output.appendAssumeCapacity(0);
+            try appendIdenticalLevel(allocator, output, codepoints);
+        }
+        return;
+    }
+    // A long expansion exceeded the stack level arrays; materialize the
+    // elements so the levels can grow without bound.
+    var stack_ces: [512]CollationElement = undefined;
+    var ces = CeBuffer.init(allocator, &stack_ces);
+    defer ces.deinit();
+    try buildElements(
+        allocator,
+        source,
+        .{ .strength = strength },
+        null,
+        null,
+        null,
+        false,
+        &ces,
+    );
+    try appendLevelElementsAll(allocator, output, ces.items(), strength);
+    if (strength == .identical) {
+        try appendIdenticalLevel(allocator, output, codepoints);
+    }
 }
 
 fn appendRootLevelsStrength(
