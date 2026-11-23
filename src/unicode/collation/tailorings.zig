@@ -410,6 +410,10 @@ pub const PageIndex = struct {
     /// Latin code points below 0x370: 0 = no tailoring, 1 = contraction or
     /// multiple rules, otherwise the single-code-point rule index + 2.
     single_rules: [0x370]u32,
+    /// True when every rule for the code point is a contraction whose second
+    /// scalar is a combining mark. The matcher cannot match unless the next
+    /// scalar is a mark, so callers can keep plain letters on the root path.
+    mark_only: [0x370]bool,
     cache: [256]std.atomic.Value(u64),
     /// True when no rule starts with an ASCII code point, so ASCII text
     /// sorts exactly like the root collation.
@@ -446,7 +450,10 @@ fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
     @memset(&pages.rules, 0);
     @memset(&pages.direct, direct_absent);
     @memset(&pages.single_rules, 0);
+    @memset(&pages.mark_only, false);
     for (&pages.cache) |*entry| entry.* = std.atomic.Value(u64).init(0);
+    var single_rule: [0x370]bool = [_]bool{false} ** 0x370;
+    var nonmark_second: [0x370]bool = [_]bool{false} ** 0x370;
     var rule_index: usize = 0;
     const end: usize = tailoring.rule_count;
     for (0..0x1100) |page| {
@@ -476,7 +483,18 @@ fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
             } else {
                 pages.single_rules[first] = @intCast(index + 2);
             }
+            if (rule.sequence_len == 1) {
+                single_rule[first] = true;
+            } else if (combining_class.forCodepoint(
+                sequenceCodepoint(rule, 1),
+            ) == 0) {
+                nonmark_second[first] = true;
+            }
         }
+    }
+    for (0..pages.mark_only.len) |first| {
+        pages.mark_only[first] = pages.single_rules[first] == 1 and
+            !single_rule[first] and !nonmark_second[first];
     }
     pages.ascii_untailored = for (0..128) |codepoint| {
         if (pages.single_rules[codepoint] != 0) break false;

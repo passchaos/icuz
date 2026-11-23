@@ -2338,6 +2338,7 @@ fn appendTailoredLatinSortKey(
     var index: usize = 0;
     while (index < source.len) {
         const codepoint = source[index];
+        var skip_match = false;
         if (pages) |page_index| {
             if (codepoint < latin_limit) {
                 const direct = page_index.single_rules[codepoint];
@@ -2364,11 +2365,15 @@ fn appendTailoredLatinSortKey(
                     index += 1;
                     continue;
                 }
-                // direct == 1: a contraction or multiple rules; use the
-                // general matcher below.
+                // direct == 1: a contraction or multiple rules. When every
+                // rule continues with a combining mark, a plain following
+                // scalar cannot match, so the root element applies.
+                skip_match = page_index.mark_only[codepoint] and
+                    (index + 1 >= source.len or source[index + 1] < 0x300 or
+                        combining_class.forCodepoint(source[index + 1]) == 0);
             }
         }
-        if (tailorings.couldMatch(pages, codepoint)) {
+        if (!skip_match and tailorings.couldMatch(pages, codepoint)) {
             if (tailorings.match(tailoring, pages, source, index)) |matched| {
                 const rule = matched.rule;
                 var element_index: usize = 0;
@@ -2497,7 +2502,7 @@ fn normalizeNfdLatinInto(
     var segment_len: usize = 0;
     var pending: ?u21 = null;
 
-    for (codepoints) |codepoint| {
+    for (codepoints, 0..) |codepoint, codepoint_index| {
         // ASCII is a starter with no decomposition; skip the decomposition
         // lookup for the common prose case.
         if (codepoint < 0x80) {
@@ -2523,6 +2528,26 @@ fn normalizeNfdLatinInto(
         }
         if (codepoint >= latin_limit) return null;
         const entry = &latin_nfd[codepoint];
+        // A decomposition of at most a starter plus one mark is already in
+        // canonical order. When the next scalar starts a fresh segment, the
+        // whole decomposition can be copied out without the segment
+        // machinery; accented prose takes this path for every letter.
+        if (entry.len != 0 and entry.len <= 2 and segment_len == 0 and
+            (codepoint_index + 1 == codepoints.len or
+                codepoints[codepoint_index + 1] < 0x300 or
+                combining_class.forCodepoint(codepoints[codepoint_index + 1]) == 0))
+        {
+            if (pending) |previous| {
+                if (length == buffer.len) return null;
+                buffer[length] = previous;
+                length += 1;
+                pending = null;
+            }
+            if (length + entry.len > buffer.len) return null;
+            @memcpy(buffer[length..][0..entry.len], entry.parts[0..entry.len]);
+            length += entry.len;
+            continue;
+        }
         var single: [1]u21 = undefined;
         const parts: []const u21 = if (entry.len == 0) blk: {
             single[0] = codepoint;
