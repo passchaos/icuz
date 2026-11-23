@@ -931,9 +931,9 @@ pub const Collator = struct {
         key_a: *std.ArrayList(u32),
         key_b: *std.ArrayList(u32),
     ) error{ InvalidUtf8, OutOfMemory }!std.math.Order {
-        if (std.mem.eql(u8, a, b)) return .eq;
+        const diff = commonBytePrefix(a, b);
+        if (diff == @min(a.len, b.len) and a.len == b.len) return .eq;
         if (self.simpleOrdering()) {
-            const diff = commonBytePrefix(a, b);
             if (diff == 0 and self.tailoring == null and
                 a[0] < 0x80 and b[0] < 0x80 and
                 !ascii_contractions[a[0]] and !ascii_contractions[b[0]])
