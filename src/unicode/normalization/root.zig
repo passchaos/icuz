@@ -96,6 +96,27 @@ const cjk_lead_simple = blk: {
     break :blk true;
 };
 
+/// True when every Latin-1 scalar is inert for `form`, so a scan can treat a
+/// run of them like ASCII prose. This holds for the composed forms: all of
+/// U+0080..U+00FF are already composed and none carry a combining class.
+fn latin1RunInert(comptime form: Form) bool {
+    @setEvalBranchQuota(100_000);
+    for (0x80..0x100) |codepoint| {
+        const value: u21 = @intCast(codepoint);
+        if (data.quickCheck(value, form) != .yes) return false;
+        if (combining_class.forCodepoint(value) != 0) return false;
+    }
+    return true;
+}
+
+/// `latin1RunInert` for the scans that take a runtime form.
+const latin1_run_inert_by_form = [4]bool{
+    latin1RunInert(.nfc),
+    latin1RunInert(.nfd),
+    latin1RunInert(.nfkc),
+    latin1RunInert(.nfkd),
+};
+
 fn normalizeFusedInto(
     comptime form: Form,
     allocator: std.mem.Allocator,
@@ -107,6 +128,7 @@ fn normalizeFusedInto(
 
     const compatibility = form == .nfkc or form == .nfkd;
     const compose = form == .nfc or form == .nfkc;
+    const latin1_run = comptime latin1RunInert(form);
     var engine = SegmentEngine(Utf8Sink){
         .allocator = allocator,
         .sink = .{ .list = output, .allocator = allocator },
@@ -127,6 +149,25 @@ fn normalizeFusedInto(
             while (end < text.len and text[end] < 0x80) end += 1;
             starter = text[end - 1];
             starter_offset = end - 1;
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
+        if (latin1_run and (text[index] == 0xc2 or text[index] == 0xc3) and
+            index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80)
+        {
+            // Latin-1 prose is inert under the composed forms, so a run of
+            // two-byte sequences is skipped like ASCII.
+            var end = index;
+            while (end + 1 < text.len and
+                (text[end] == 0xc2 or text[end] == 0xc3) and
+                (text[end + 1] & 0xc0) == 0x80)
+            {
+                end += 2;
+            }
+            starter = (@as(u21, text[end - 2] & 0x1f) << 6) |
+                (text[end - 1] & 0x3f);
+            starter_offset = end - 2;
             previous_input_class = 0;
             index = end;
             continue;
@@ -1194,6 +1235,10 @@ fn normalizeFusedUtf16Into(
     if (units.len == 0) return false;
     const compatibility = form == .nfkc or form == .nfkd;
     const compose = form == .nfc or form == .nfkc;
+    const latin1_run = comptime latin1RunInert(form);
+    // Latin-1 prose is inert under the composed forms, so it joins the ASCII
+    // run scan there.
+    const run_limit: u16 = if (latin1_run) 0x100 else 0x80;
     var sink = Utf16Sink{ .list = output, .allocator = allocator };
     var stable_start: usize = 0;
     var changed = false;
@@ -1203,9 +1248,9 @@ fn normalizeFusedUtf16Into(
     var index: usize = 0;
     while (index < units.len) {
         const unit = units[index];
-        if (unit < 0x80) {
+        if (unit < run_limit) {
             var end = index;
-            while (end < units.len and units[end] < 0x80) end += 1;
+            while (end < units.len and units[end] < run_limit) end += 1;
             starter = units[end - 1];
             starter_offset = end - 1;
             previous_input_class = 0;
@@ -1775,6 +1820,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
         return .{ .normalized = true, .valid_until = text.len };
     }
 
+    const latin1_run = latin1_run_inert_by_form[@intFromEnum(form)];
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
     var index: usize = ascii_end;
@@ -1783,6 +1829,22 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
             var end = index;
             while (end < text.len and text[end] < 0x80) end += 1;
             starter = text[end - 1];
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
+        if (latin1_run and (text[index] == 0xc2 or text[index] == 0xc3) and
+            index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80)
+        {
+            var end = index;
+            while (end + 1 < text.len and
+                (text[end] == 0xc2 or text[end] == 0xc3) and
+                (text[end + 1] & 0xc0) == 0x80)
+            {
+                end += 2;
+            }
+            starter = (@as(u21, text[end - 2] & 0x1f) << 6) |
+                (text[end - 1] & 0x3f);
             previous_input_class = 0;
             index = end;
             continue;
@@ -1883,6 +1945,7 @@ fn spanQuickCheckYesImpl(
     const ascii_end = asciiPrefixLen(text);
     if (ascii_end == text.len) return text.len;
 
+    const latin1_run = latin1_run_inert_by_form[@intFromEnum(form)];
     var starter_offset: usize = if (ascii_end > 0) ascii_end - 1 else 0;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
@@ -1893,6 +1956,23 @@ fn spanQuickCheckYesImpl(
             while (end < text.len and text[end] < 0x80) end += 1;
             starter = text[end - 1];
             starter_offset = end - 1;
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
+        if (latin1_run and (text[index] == 0xc2 or text[index] == 0xc3) and
+            index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80)
+        {
+            var end = index;
+            while (end + 1 < text.len and
+                (text[end] == 0xc2 or text[end] == 0xc3) and
+                (text[end + 1] & 0xc0) == 0x80)
+            {
+                end += 2;
+            }
+            starter = (@as(u21, text[end - 2] & 0x1f) << 6) |
+                (text[end - 1] & 0x3f);
+            starter_offset = end - 2;
             previous_input_class = 0;
             index = end;
             continue;
