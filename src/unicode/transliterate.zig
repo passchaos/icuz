@@ -675,6 +675,21 @@ fn canStreamPass(range: EntryRange) bool {
     return true;
 }
 
+const literal_cache_len = 64;
+
+const LiteralCacheEntry = struct {
+    range_start: usize = 0,
+    first: u21 = 0,
+    index: usize = 0,
+    valid: bool = false,
+};
+
+/// Lower-bound results for repeated first code points. Prose reuses the same
+/// letters, so a hit replaces the binary search over the sorted literal
+/// entries with one probe.
+threadlocal var literal_cache: [literal_cache_len]LiteralCacheEntry =
+    [_]LiteralCacheEntry{.{}} ** literal_cache_len;
+
 fn findMatchInRange(
     range: EntryRange,
     codepoints: []const u21,
@@ -847,14 +862,46 @@ fn findMatchInRange(
         }
     }
 
-    var low = literals_start;
-    var high = literals_end;
-    while (low < high) {
-        const middle = low + (high - low) / 2;
-        if (entryFirstCodepoint(middle) < first) {
-            low = middle + 1;
+    var low: usize = undefined;
+    // Short literal tables need at most four probes, which is cheaper than
+    // the thread-local cache probe.
+    if (literals_end > literals_start + 32) {
+        const cache_slot = &literal_cache[
+            ((@as(u32, first) *% 0x9E3779B1) >> 26) &
+                (literal_cache_len - 1)
+        ];
+        if (cache_slot.valid and cache_slot.range_start == range.start and
+            cache_slot.first == first)
+        {
+            low = cache_slot.index;
         } else {
-            high = middle;
+            low = literals_start;
+            var high = literals_end;
+            while (low < high) {
+                const middle = low + (high - low) / 2;
+                if (entryFirstCodepoint(middle) < first) {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            }
+            cache_slot.* = .{
+                .range_start = range.start,
+                .first = first,
+                .index = low,
+                .valid = true,
+            };
+        }
+    } else {
+        low = literals_start;
+        var high = literals_end;
+        while (low < high) {
+            const middle = low + (high - low) / 2;
+            if (entryFirstCodepoint(middle) < first) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
         }
     }
     var entry_index = low;
