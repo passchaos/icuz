@@ -222,6 +222,32 @@ fn benchCompareValidating(
     });
 }
 
+fn benchCanonicalize(
+    name: []const u8,
+    tag: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    const rounds: usize = 20_000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const result = icuz.locale.canonicalizeAlloc(
+                allocator,
+                tag,
+            ) catch unreachable;
+            sink +%= result.len;
+            allocator.free(result);
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    std.debug.print("{s:<28} {d:8.3} ns/op\n", .{
+        name,
+        @as(f64, @floatFromInt(best)) / @as(f64, @floatFromInt(rounds)),
+    });
+}
+
 fn benchCompareConvenience(
     name: []const u8,
     a: []const u8,
@@ -896,6 +922,18 @@ pub fn main(init: std.process.Init.Minimal) !void {
         mixed_other.appendSlice(allocator, mixed_text) catch unreachable;
         mixed_other.items[mixed_other.items.len - 3] = 'u';
         benchPrefix("prefix mixed diff", mixed_text, mixed_other.items);
+    }
+    if (selected(filter, "locale", "canonicalize en-US")) {
+        benchCanonicalize("canonicalize en-US", "en-US", allocator);
+    }
+    if (selected(filter, "locale", "canonicalize zh-hant-tw")) {
+        benchCanonicalize("canonicalize zh-hant-tw", "zh-hant-tw", allocator);
+    }
+    if (selected(filter, "locale", "canonicalize sh-RS")) {
+        benchCanonicalize("canonicalize sh-RS", "sh-RS", allocator);
+    }
+    if (selected(filter, "locale", "canonicalize sr-Latn-RS")) {
+        benchCanonicalize("canonicalize sr-Latn-RS", "sr-Latn-RS", allocator);
     }
     if (selected(filter, "validate", "validate Swedish")) {
         // Runtime copies keep the validator calls from being folded at

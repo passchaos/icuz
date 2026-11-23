@@ -101,20 +101,77 @@ fn indexEntry(index_offset: usize, entry: usize) IndexEntry {
 
 const IndexRange = struct { start: usize, count: usize };
 
-fn lookupIndex(index_offset: usize, key: []const u8) ?IndexRange {
-    var low: usize = 0;
-    var high = indexEntryCount(index_offset);
-    while (low < high) {
-        const middle = low + (high - low) / 2;
-        const entry = indexEntry(index_offset, middle);
-        const entry_key = alias_blob[pool_offset + entry.key_offset ..][0..entry.key_len];
-        switch (std.mem.order(u8, entry_key, key)) {
-            .lt => low = middle + 1,
-            .gt => high = middle,
-            .eq => return .{ .start = entry.start, .count = entry.count },
-        }
+fn hashKey(key: []const u8) usize {
+    var hash: u32 = 2166136261;
+    for (key) |byte| hash = (hash ^ byte) *% 16777619;
+    return hash;
+}
+
+/// Smallest power-of-two table that keeps the alias index below half full.
+fn tableLength(comptime index_offset: usize) usize {
+    const count = indexEntryCount(index_offset);
+    var length: usize = 8;
+    while (length < count * 2) length *= 2;
+    return length;
+}
+
+/// Open-addressed index of the alias entries, built at compile time. The
+/// subtag lookups are the hot part of canonicalization, and a hash probe
+/// replaces a nine-step binary search over the packed entries.
+fn buildIndexTable(
+    comptime index_offset: usize,
+    comptime length: usize,
+) [length]u16 {
+    @setEvalBranchQuota(2_000_000);
+    var table = [_]u16{0} ** length;
+    const count = indexEntryCount(index_offset);
+    for (0..count) |entry_index| {
+        const entry = indexEntry(index_offset, entry_index);
+        const key = alias_blob[pool_offset + entry.key_offset ..][0..entry.key_len];
+        var slot = hashKey(key) & (length - 1);
+        while (table[slot] != 0) : (slot = (slot + 1) & (length - 1)) {}
+        table[slot] = @intCast(entry_index + 1);
     }
-    return null;
+    return table;
+}
+
+const language_table = buildIndexTable(
+    language_index_offset,
+    tableLength(language_index_offset),
+);
+const script_table = buildIndexTable(
+    script_index_offset,
+    tableLength(script_index_offset),
+);
+const region_table = buildIndexTable(
+    region_index_offset,
+    tableLength(region_index_offset),
+);
+const variant_table = buildIndexTable(
+    variant_index_offset,
+    tableLength(variant_index_offset),
+);
+
+fn lookupIndex(comptime index_offset: usize, key: []const u8) ?IndexRange {
+    const table: [*]const u16 = switch (index_offset) {
+        language_index_offset => &language_table,
+        script_index_offset => &script_table,
+        region_index_offset => &region_table,
+        variant_index_offset => &variant_table,
+        else => @compileError("unknown alias index"),
+    };
+    const mask = tableLength(index_offset) - 1;
+    var slot = hashKey(key) & mask;
+    while (true) {
+        const value = table[slot];
+        if (value == 0) return null;
+        const entry = indexEntry(index_offset, value - 1);
+        const entry_key = alias_blob[pool_offset + entry.key_offset ..][0..entry.key_len];
+        if (std.mem.eql(u8, entry_key, key)) {
+            return .{ .start = entry.start, .count = entry.count };
+        }
+        slot = (slot + 1) & mask;
+    }
 }
 
 fn indexOrdinal(index_offset: usize, ordinal: usize) u16 {
@@ -137,7 +194,11 @@ const CandidateBuffer = struct {
     }
 };
 
-fn gatherIndex(buffer: *CandidateBuffer, index_offset: usize, key: []const u8) void {
+fn gatherIndex(
+    buffer: *CandidateBuffer,
+    comptime index_offset: usize,
+    key: []const u8,
+) void {
     const range = lookupIndex(index_offset, key) orelse return;
     for (range.start..range.start + range.count) |ordinal| {
         buffer.add(indexOrdinal(index_offset, ordinal));
