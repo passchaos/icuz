@@ -116,6 +116,25 @@ fn mapInto(
             index += 1;
         }
         if (mode == .fold) {
+            // Copy runs of identity BMP units in bulk; the per-unit fold
+            // check still runs, but the output write is one memcpy.
+            var run_end = index - 1;
+            while (run_end < units.len) {
+                const candidate = units[run_end];
+                if (candidate >= 0xd800 and candidate <= 0xdfff) break;
+                if (full.foldInteresting(candidate, true)) break;
+                run_end += 1;
+            }
+            if (run_end > index - 1) {
+                const run = units[index - 1 .. run_end];
+                if (output.unusedCapacitySlice().len >= run.len) {
+                    output.appendSliceAssumeCapacity(run);
+                } else {
+                    try output.appendSlice(allocator, run);
+                }
+                index = run_end;
+                continue;
+            }
             const may_map = full.foldInteresting(codepoint, true);
             if (may_map) {
                 if (data.fullFold(codepoint)) |components| {
