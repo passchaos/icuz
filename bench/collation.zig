@@ -31,12 +31,30 @@ const Workload = struct {
     codepoints: bool = false,
     utf16: bool = false,
     reuse: bool = false,
+    fresh: bool = false,
 };
 
 fn bench(work: Workload, allocator: std.mem.Allocator) void {
     const rounds: usize = 2000;
     var best: u64 = std.math.maxInt(u64);
-    if (work.reuse) {
+    if (work.fresh) {
+        for (0..5) |_| {
+            const start = now();
+            for (0..rounds) |_| {
+                var key = std.ArrayList(u32).empty;
+                icuz.collation.sortKeyInto(
+                    allocator,
+                    work.text,
+                    work.options,
+                    &key,
+                ) catch unreachable;
+                sink +%= key.items.len;
+                key.deinit(allocator);
+            }
+            const elapsed = now() - start;
+            if (elapsed < best) best = elapsed;
+        }
+    } else if (work.reuse) {
         var key = std.ArrayList(u32).empty;
         defer key.deinit(allocator);
         for (0..5) |_| {
@@ -333,6 +351,12 @@ pub fn main(init: std.process.Init.Minimal) !void {
             .text = chinese_long_text,
             .options = .{ .locale = "zh", .collation = "pinyin" },
             .reuse = true,
+        },
+        .{
+            .name = "Chinese long pinyin (fresh)",
+            .text = chinese_long_text,
+            .options = .{ .locale = "zh", .collation = "pinyin" },
+            .fresh = true,
         },
         .{
             .name = "Swedish (utf16)",

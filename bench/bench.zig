@@ -1416,6 +1416,18 @@ pub fn main() !void {
         .{ .locale = "zh", .collation = "pinyin" },
         allocator,
     );
+    benchCollationInto(
+        "UCA sort key Chinese long (reuse)",
+        chinese_collation_long_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationInto(
+        "UCA sort key Chinese long pinyin (reuse)",
+        chinese_collation_long_runtime,
+        .{ .locale = "zh", .collation = "pinyin" },
+        allocator,
+    );
     benchCollationUtf16(
         "UCA sort key Chinese pinyin (utf16)",
         chinese_collation_runtime,
