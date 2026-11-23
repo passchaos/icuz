@@ -2342,6 +2342,48 @@ fn formatCurrencyNameAlloc(
     locale: *const data.Locale,
     code: []const u8,
 ) Error![]u8 {
+    // The unit pattern, number, and name fit a stack buffer for ordinary
+    // values, so the caller-owned slice costs one exact allocation.
+    var stack: [256]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&stack);
+    var output = std.ArrayList(u8).empty;
+    formatCurrencyNameInto(
+        fixed.allocator(),
+        value,
+        locale_name,
+        options,
+        locale,
+        code,
+        &output,
+    ) catch |err| switch (err) {
+        error.OutOfMemory => {
+            var owned = std.ArrayList(u8).empty;
+            errdefer owned.deinit(allocator);
+            try formatCurrencyNameInto(
+                allocator,
+                value,
+                locale_name,
+                options,
+                locale,
+                code,
+                &owned,
+            );
+            return owned.toOwnedSlice(allocator);
+        },
+        else => return err,
+    };
+    return allocator.dupe(u8, output.items);
+}
+
+fn formatCurrencyNameInto(
+    allocator: std.mem.Allocator,
+    value: f64,
+    locale_name: []const u8,
+    options: *const Options,
+    locale: *const data.Locale,
+    code: []const u8,
+    output: *std.ArrayList(u8),
+) Error!void {
     const fraction_digits = options.max_fraction_digits orelse
         currencyDigits(code);
     const min_fraction = options.min_fraction_digits orelse fraction_digits;
@@ -2371,9 +2413,7 @@ fn formatCurrencyNameAlloc(
     if (unit_pattern.len == 0) unit_pattern = "{0} {1}";
 
     // The number is formatted directly at its placeholder, so the unit
-    // pattern, the number, and the currency name share one allocation.
-    var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
+    // pattern, the number, and the currency name share one output.
     if (value < 0) {
         if (options.accounting) {
             try output.append(allocator, '(');
@@ -2401,7 +2441,7 @@ fn formatCurrencyNameAlloc(
                         },
                         null,
                         null,
-                        &output,
+                        output,
                     );
                     index += 3;
                     continue;
@@ -2420,7 +2460,6 @@ fn formatCurrencyNameAlloc(
     if (value < 0 and options.accounting) {
         try output.append(allocator, ')');
     }
-    return output.toOwnedSlice(allocator);
 }
 
 fn replaceTwoPlaceholdersAlloc(
