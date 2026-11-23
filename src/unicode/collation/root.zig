@@ -645,11 +645,8 @@ pub const Collator = struct {
             !self.options.numeric and !self.options.case_level;
     }
 
-    /// Byte offset after the longest common prefix that can be skipped
-    /// without changing the comparison. The prefix is validated UTF-8, and
-    /// its last eight scalars must be NFD-inert and start no contraction, so
-    /// no rule can span into the differing suffix.
-    fn commonPrefixSkip(self: *const Collator, a: []const u8, b: []const u8) ?usize {
+    /// Byte offset of the first difference between `a` and `b`.
+    fn commonBytePrefix(a: []const u8, b: []const u8) usize {
         const limit = @min(a.len, b.len);
         var index: usize = 0;
         while (index + 8 <= limit) : (index += 8) {
@@ -658,6 +655,34 @@ pub const Collator = struct {
             if (word_a != word_b) break;
         }
         while (index < limit and a[index] == b[index]) : (index += 1) {}
+        return index;
+    }
+
+    /// True when the eight scalars ending at `end` are NFD-inert and start
+    /// no contraction, so no rule can span from the prefix into the text
+    /// that follows `end`.
+    fn safeBoundaryBefore(self: *const Collator, text: []const u8, end: usize) bool {
+        var cursor = end;
+        var checked: usize = 0;
+        while (cursor > 0 and checked < 8) : (checked += 1) {
+            var start = cursor - 1;
+            while (start > 0 and (text[start] & 0xc0) == 0x80) start -= 1;
+            const decoded = scalar.decodeValid(text, start) orelse return false;
+            if (decoded.next != cursor) return false;
+            if (!normalization.isNfdInert(decoded.codepoint)) return false;
+            if (self.startsContraction(decoded.codepoint)) return false;
+            cursor = start;
+        }
+        return true;
+    }
+
+    /// Byte offset after the longest common prefix that can be skipped
+    /// without changing the comparison.
+    fn commonPrefixSkip(
+        self: *const Collator,
+        a: []const u8,
+        index: usize,
+    ) ?usize {
         if (index == 0) return null;
         var boundary = index;
         if (boundary < a.len) {
@@ -667,18 +692,25 @@ pub const Collator = struct {
         }
         if (boundary == 0) return null;
         if (!std.unicode.utf8ValidateSlice(a[0..boundary])) return null;
-        var end = boundary;
-        var checked: usize = 0;
-        while (end > 0 and checked < 8) : (checked += 1) {
-            var start = end - 1;
-            while (start > 0 and (a[start] & 0xc0) == 0x80) start -= 1;
-            const decoded = scalar.decodeValid(a, start) orelse return null;
-            if (decoded.next != end) return null;
-            if (!normalization.isNfdInert(decoded.codepoint)) return null;
-            if (self.startsContraction(decoded.codepoint)) return null;
-            end = start;
-        }
+        if (!self.safeBoundaryBefore(a, boundary)) return null;
         return boundary;
+    }
+
+    /// First byte offset at or after `diff` that ends a region whose weights
+    /// are independent of the following text, or null when no such boundary
+    /// appears within 64 scalars.
+    fn safeRegionEnd(self: *const Collator, text: []const u8, diff: usize) ?usize {
+        var end = diff;
+        if (end >= text.len) return end;
+        while (end > 0 and (text[end] & 0xc0) == 0x80) end -= 1;
+        var count: usize = 0;
+        while (count < 64) : (count += 1) {
+            const decoded = scalar.decodeValidating(text, end) orelse return null;
+            end = decoded.next;
+            if (end >= text.len) return end;
+            if (self.safeBoundaryBefore(text, end)) return end;
+        }
+        return null;
     }
 
     /// Compare two UTF-8 strings using caller-owned scratch lists.
@@ -695,10 +727,29 @@ pub const Collator = struct {
             return .eq;
         }
         if (self.simpleOrdering()) {
-            if (self.commonPrefixSkip(a, b)) |start| {
+            const diff = commonBytePrefix(a, b);
+            if (self.commonPrefixSkip(a, diff)) |start| {
                 try self.sortKeyInto(allocator, a[start..], key_a);
                 try self.sortKeyInto(allocator, b[start..], key_b);
                 return std.mem.order(u32, key_a.items, key_b.items);
+            }
+            // The strings differ before any safely skippable prefix. Compare
+            // a bounded region around the difference; a differing region key
+            // decides the full order, and an equal one falls back.
+            if (diff <= 32) {
+                if (!std.unicode.utf8ValidateSlice(a) or
+                    !std.unicode.utf8ValidateSlice(b))
+                {
+                    return error.InvalidUtf8;
+                }
+                if (self.safeRegionEnd(a, diff)) |end_a| {
+                    if (self.safeRegionEnd(b, diff)) |end_b| {
+                        try self.sortKeyInto(allocator, a[0..end_a], key_a);
+                        try self.sortKeyInto(allocator, b[0..end_b], key_b);
+                        const order = std.mem.order(u32, key_a.items, key_b.items);
+                        if (order != .eq) return order;
+                    }
+                }
             }
         }
         try self.sortKeyInto(allocator, a, key_a);
@@ -4916,5 +4967,14 @@ test "compare matches full keys across shared prefixes" {
     try testing.expectError(
         error.InvalidUtf8,
         collator.compare(allocator, "\xffa", "b", &scratch_a, &scratch_b),
+    );
+    // The bounded-region path still validates the entire inputs.
+    try testing.expectError(
+        error.InvalidUtf8,
+        collator.compare(allocator, "a\xff", "b", &scratch_a, &scratch_b),
+    );
+    try testing.expectError(
+        error.InvalidUtf8,
+        collator.compare(allocator, "b", "a\xff", &scratch_a, &scratch_b),
     );
 }
