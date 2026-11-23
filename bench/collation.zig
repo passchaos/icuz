@@ -78,6 +78,32 @@ fn bench(work: Workload, allocator: std.mem.Allocator) void {
     report(work.name, rounds * work.text.len, best);
 }
 
+fn benchDecode(name: []const u8, text: []const u8) void {
+    const rounds: usize = 2000;
+    var out: [512]u21 = undefined;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            var cursor: usize = 0;
+            var count: usize = 0;
+            while (cursor < text.len) {
+                const decoded = icuz.scalar.decodeValidatingPacked(
+                    text,
+                    cursor,
+                );
+                out[count] = icuz.scalar.packedCodepoint(decoded);
+                count += 1;
+                cursor += icuz.scalar.packedLength(decoded);
+            }
+            sink +%= count + out[0];
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * text.len, best);
+}
+
 const ascii_text =
     "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. " ++
     "How vexingly quick daft zebras jump! 0123456789 hello_world@example.com https://example.com/path?q=1\n";
@@ -186,6 +212,11 @@ pub fn main(init: std.process.Init.Minimal) !void {
         const length = @min(argument.len, filter_buffer.len);
         @memcpy(filter_buffer[0..length], argument[0..length]);
         filter = filter_buffer[0..length];
+    }
+    if (filter.len == 0 or std.mem.eql(u8, "decode", filter)) {
+        benchDecode("decode Chinese", chinese_text);
+        benchDecode("decode mixed", mixed_text);
+        benchDecode("decode ASCII", ascii_text);
     }
     for (workloads) |work| {
         if (filter.len != 0 and !std.mem.eql(u8, work.name, filter)) {
