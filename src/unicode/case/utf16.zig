@@ -48,6 +48,7 @@ fn mapInto(
     output: *std.ArrayList(u16),
 ) Error!void {
     output.clearRetainingCapacity();
+    if (mode == .fold) full.ensureFoldInterest();
     // Simple mappings preserve the UTF-16 length, so one exact reservation
     // covers every write. Folding may expand and keeps checked appends.
     if (mode == .simple) {
@@ -115,7 +116,7 @@ fn mapInto(
             index += 1;
         }
         if (mode == .fold) {
-            const may_map = full_data.foldInteresting(codepoint, true);
+            const may_map = full.foldInteresting(codepoint, true);
             if (may_map) {
                 if (data.fullFold(codepoint)) |components| {
                     for (components) |component| {

@@ -39,6 +39,40 @@ const condition_before_dot: u6 = 8;
 const condition_not_before_dot: u6 = 16;
 const condition_after_i: u6 = 32;
 
+var fold_interest_bitmap: [0x10000 / 8]u8 = undefined;
+var fold_interest_state = std.atomic.Value(u8).init(0);
+
+/// Build the BMP fold-interest bitmap once per process. Scanning the fold
+/// table costs about a millisecond, after which the fold quick check is one
+/// bitmap load instead of the union of the lower and upper filters plus a
+/// record search for lowercase letters that map only under uppercase.
+pub fn ensureFoldInterest() void {
+    if (fold_interest_state.load(.acquire) == 2) return;
+    while (fold_interest_state.cmpxchgStrong(0, 1, .acquire, .monotonic) != null) {
+        if (fold_interest_state.load(.acquire) == 2) return;
+        std.atomic.spinLoopHint();
+    }
+    @memset(&fold_interest_bitmap, 0);
+    var codepoint: u21 = 0;
+    while (codepoint < 0x10000) : (codepoint += 1) {
+        if (data.fullFold(codepoint) != null) {
+            fold_interest_bitmap[codepoint >> 3] |=
+                @as(u8, 1) << @intCast(codepoint & 7);
+        }
+    }
+    fold_interest_state.store(2, .release);
+}
+
+/// True when the scalar's full fold is not the identity.
+pub inline fn foldInteresting(codepoint: u21, root: bool) bool {
+    if (!root or codepoint >= 0x10000) {
+        return full_data.interesting(codepoint, .lower, root) or
+            full_data.interesting(codepoint, .upper, root);
+    }
+    const bit = @as(u8, 1) << @intCast(codepoint & 7);
+    return fold_interest_bitmap[codepoint >> 3] & bit != 0;
+}
+
 /// Lowercase UTF-8 text using full mappings.
 pub fn fullLowerAlloc(
     allocator: std.mem.Allocator,
@@ -441,6 +475,7 @@ fn mapStreamingInto(
     output: *std.ArrayList(u8),
 ) Error!void {
     output.clearRetainingCapacity();
+    if (mode == .fold) ensureFoldInterest();
     var cursor: usize = 0;
     while (cursor < text.len) {
         const first = text[cursor];
@@ -624,7 +659,7 @@ fn mapStreamingInto(
             // Folding only changes scalars that also have a simple case
             // mapping, so the union of the lower and upper filters is exact
             // enough and never skips a folding scalar.
-            .fold => full_data.foldInteresting(codepoint, root),
+            .fold => foldInteresting(codepoint, root),
             .full, .simple => full_data.interesting(codepoint, kind, root),
         };
         if (!may_map) {
