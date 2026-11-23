@@ -792,6 +792,7 @@ fn pickSymbol(values: []const []const u8, fallback: []const u8) []const u8 {
 fn formatStandardInto(
     allocator: std.mem.Allocator,
     value: f64,
+    resolved_locale: ?*const data.Locale,
     locale_name: []const u8,
     options: *const Options,
     fields: ?*std.ArrayList(NumberFieldPosition),
@@ -799,7 +800,8 @@ fn formatStandardInto(
     output: *std.ArrayList(u8),
 ) Error!void {
     var locale_storage: data.Locale = undefined;
-    const locale = resolveLocale(locale_name, options, &locale_storage);
+    const locale = resolved_locale orelse
+        resolveLocale(locale_name, options, &locale_storage);
     var currency_display_text: []const u8 = "";
     if (options.style == .currency) {
         const code = options.currency orelse return error.MissingCurrency;
@@ -1102,6 +1104,7 @@ fn formatStandardAlloc(
     try formatStandardInto(
         allocator,
         value,
+        null,
         locale_name,
         options,
         fields,
@@ -1704,6 +1707,7 @@ fn formatScientificAlloc(
     try formatStandardInto(
         allocator,
         mantissa,
+        locale,
         locale_name,
         &.{
             .style = .decimal,
@@ -1984,6 +1988,7 @@ fn formatCompactAlloc(
     try formatStandardInto(
         allocator,
         scaled,
+        locale,
         locale_name,
         &.{
             .style = .decimal,
@@ -2366,6 +2371,7 @@ fn formatCurrencyNameAlloc(
                     try formatStandardInto(
                         allocator,
                         magnitude,
+                        locale,
                         locale_name,
                         &.{
                             .style = .decimal,
