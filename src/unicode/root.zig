@@ -612,6 +612,7 @@ pub const ShapeLamAlef = shape_mod.LamAlef;
 pub const ShapeDigits = shape_mod.Digits;
 pub const ShapeDigitType = shape_mod.DigitType;
 pub const shapeArabicAlloc = shape_mod.shapeArabicAlloc;
+pub const shapeArabicUtf16Alloc = shape_mod.shapeArabicUtf16Alloc;
 
 pub const ListStyle = list_mod.Style;
 pub const Gender = gender_mod.Gender;

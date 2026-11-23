@@ -1375,6 +1375,39 @@ fn benchShapeArabic(allocator: std.mem.Allocator) void {
     reportBytes("Arabic shaping", rounds * bytes, best);
 }
 
+fn benchShapeArabicUtf16(allocator: std.mem.Allocator) void {
+    var units_list: [shape_texts.len][]u16 = undefined;
+    var bytes: usize = 0;
+    for (shape_texts, 0..) |text, index| {
+        units_list[index] = std.unicode.utf8ToUtf16LeAlloc(
+            allocator,
+            text,
+        ) catch unreachable;
+        bytes += text.len;
+    }
+    defer for (units_list) |units| allocator.free(units);
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 2000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            for (units_list) |units| {
+                const shaped = icuz.shape.shapeArabicUtf16Alloc(
+                    allocator,
+                    units,
+                    .{ .letters = .shape },
+                ) catch unreachable;
+                sink +%= shaped.len;
+                allocator.free(shaped);
+            }
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes("Arabic shaping (utf16)", rounds * bytes, best);
+}
+
 fn benchSpoofSkeleton(allocator: std.mem.Allocator) void {
     var checker = icuz.spoof.Checker.init();
     var best: u64 = std.math.maxInt(u64);
@@ -1955,6 +1988,7 @@ pub fn main() !void {
 
     std.debug.print("\n-- shaping --\n", .{});
     benchShapeArabic(allocator);
+    benchShapeArabicUtf16(allocator);
 
     std.debug.print("\n-- spoof --\n", .{});
     benchSpoofSkeleton(allocator);

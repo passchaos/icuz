@@ -13,6 +13,7 @@ const std = @import("std");
 const tables = @import("tables.zig");
 const scalar = @import("../scalar/root.zig");
 const bidi = @import("../bidi/paragraph.zig");
+const utf16 = @import("../utf16.zig");
 
 const IRRELEVANT: u16 = 4;
 const LAMTYPE: u16 = 16;
@@ -158,6 +159,7 @@ pub const Options = struct {
 
 pub const Error = error{
     InvalidUtf8,
+    InvalidUtf16,
     InvalidOption,
     NoSpaceAvailable,
     OutOfMemory,
@@ -183,45 +185,141 @@ pub fn shapeArabicAlloc(
     text: []const u8,
     options: Options,
 ) Error![]u8 {
-    // Shaping inputs are short and the pipeline allocates decoded scalars,
-    // a work buffer, and the encoded result; run it against a stack arena and
-    // hand back one exact allocation. Longer inputs retry on the heap.
+    return shapeAlloc(.utf8, allocator, text, options);
+}
+
+/// Shape or unshape Arabic text in UTF-16. The result is allocator-owned.
+pub fn shapeArabicUtf16Alloc(
+    allocator: std.mem.Allocator,
+    units: []const u16,
+    options: Options,
+) Error![]u16 {
+    return shapeAlloc(.utf16, allocator, units, options);
+}
+
+const Encoding = enum { utf8, utf16 };
+
+fn Input(comptime encoding: Encoding) type {
+    return switch (encoding) {
+        .utf8 => []const u8,
+        .utf16 => []const u16,
+    };
+}
+
+fn Output(comptime encoding: Encoding) type {
+    return switch (encoding) {
+        .utf8 => []u8,
+        .utf16 => []u16,
+    };
+}
+
+fn Unit(comptime encoding: Encoding) type {
+    return if (encoding == .utf8) u8 else u16;
+}
+
+/// Shaping inputs are short and the pipeline allocates decoded scalars, a
+/// work buffer, and the encoded result; run it against a stack arena and hand
+/// back one exact allocation. Longer inputs retry on the heap.
+fn shapeAlloc(
+    comptime encoding: Encoding,
+    allocator: std.mem.Allocator,
+    text: Input(encoding),
+    options: Options,
+) Error!Output(encoding) {
     var stack: [8192]u8 = undefined;
     var fixed = std.heap.FixedBufferAllocator.init(&stack);
-    if (shapeArabicInner(fixed.allocator(), text, options)) |result| {
-        return allocator.dupe(u8, result);
+    if (shapeArabicInner(encoding, fixed.allocator(), text, options)) |result| {
+        return allocator.dupe(Unit(encoding), result);
     } else |err| switch (err) {
         error.OutOfMemory => {},
         else => return err,
     }
-    return shapeArabicInner(allocator, text, options);
+    return shapeArabicInner(encoding, allocator, text, options);
+}
+
+/// Decode and validate `text` into `source`. Returns whether any presentation
+/// form appears, so the buffer-wide conversion pass can be skipped.
+fn decodeSource(
+    comptime encoding: Encoding,
+    allocator: std.mem.Allocator,
+    text: Input(encoding),
+    source: *std.ArrayList(u21),
+) Error!bool {
+    try source.ensureTotalCapacity(allocator, text.len);
+    var has_presentation = false;
+    var cursor: usize = 0;
+    // The packed decoders validate each sequence and return in registers, so
+    // the decode loop avoids the store-forwarding stall of a struct result.
+    switch (encoding) {
+        .utf8 => {
+            while (cursor < text.len) {
+                // Arabic letters encode as two-byte sequences with a D8..DB
+                // lead. Those leads can never be overlong or a surrogate, so
+                // a run of them decodes without the general length ladder or
+                // the presentation-form check (U+0600..U+07FF is below it).
+                if (text[cursor] >= 0xd8 and text[cursor] <= 0xdb and
+                    cursor + 2 <= text.len)
+                {
+                    while (cursor + 2 <= text.len and
+                        text[cursor] >= 0xd8 and text[cursor] <= 0xdb)
+                    {
+                        const second = text[cursor + 1];
+                        if (second & 0xc0 != 0x80) return error.InvalidUtf8;
+                        source.appendAssumeCapacity(
+                            (@as(u21, text[cursor] & 0x1f) << 6) |
+                                (second & 0x3f),
+                        );
+                        cursor += 2;
+                    }
+                    continue;
+                }
+                const decoded = scalar.decodeValidatingPacked(text, cursor);
+                if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+                const codepoint = scalar.packedCodepoint(decoded);
+                if (codepoint >= 0xfb50 and codepoint <= 0xfefc) {
+                    has_presentation = true;
+                }
+                source.appendAssumeCapacity(codepoint);
+                cursor += scalar.packedLength(decoded);
+            }
+        },
+        .utf16 => {
+            while (cursor < text.len) {
+                const unit = text[cursor];
+                // The Arabic block is BMP, never a surrogate, and holds no
+                // presentation forms, so the general decoder and the
+                // presentation check can both be skipped.
+                if (unit >= 0x0600 and unit <= 0x06ff) {
+                    source.appendAssumeCapacity(unit);
+                    cursor += 1;
+                    continue;
+                }
+                const decoded = utf16.decodePacked(text, cursor);
+                if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
+                const codepoint = utf16.packedCodepoint(decoded);
+                if (codepoint >= 0xfb50 and codepoint <= 0xfefc) {
+                    has_presentation = true;
+                }
+                source.appendAssumeCapacity(codepoint);
+                cursor += utf16.packedLength(decoded);
+            }
+        },
+    }
+    return has_presentation;
 }
 
 fn shapeArabicInner(
+    comptime encoding: Encoding,
     allocator: std.mem.Allocator,
-    text: []const u8,
+    text: Input(encoding),
     options: Options,
-) Error![]u8 {
+) Error!Output(encoding) {
     try validateOptions(options);
 
     var source = std.ArrayList(u21).empty;
     defer source.deinit(allocator);
-    try source.ensureTotalCapacity(allocator, text.len);
-    // The packed decoder validates each sequence and returns in registers, so
-    // the decode loop avoids the store-forwarding stall of the struct result.
-    var has_presentation = false;
-    var cursor: usize = 0;
-    while (cursor < text.len) {
-        const decoded = scalar.decodeValidatingPacked(text, cursor);
-        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
-        const codepoint = scalar.packedCodepoint(decoded);
-        if (codepoint >= 0xfb50 and codepoint <= 0xfefc) {
-            has_presentation = true;
-        }
-        source.appendAssumeCapacity(codepoint);
-        cursor += scalar.packedLength(decoded);
-    }
-    if (source.items.len == 0) return allocator.alloc(u8, 0);
+    const has_presentation = try decodeSource(encoding, allocator, text, &source);
+    if (source.items.len == 0) return allocator.alloc(Unit(encoding), 0);
 
     // Presentation forms only need converting when the input contains them;
     // the buffer-wide conversion pass is skipped otherwise.
@@ -250,8 +348,11 @@ fn shapeArabicInner(
     var result: []const u21 = working;
 
     if (options.letters != .noop) {
-        const output_size = if (options.lam_alef == .resize or
-            options.tashkeel == .resize)
+        // Only the decomposed forms expand: a resize unshape splits each
+        // Lam-Alef presentation form into two scalars. The composed forms
+        // write in place or compact markers, so the input length always fits.
+        const output_size = if (options.letters == .unshape and
+            options.lam_alef == .resize)
             calculateSize(working, options)
         else
             working.len;
@@ -330,7 +431,10 @@ fn shapeArabicInner(
     }
 
     try shapeDigits(@constCast(result), options);
-    return encodeUtf8(allocator, result);
+    return switch (encoding) {
+        .utf8 => encodeUtf8(allocator, result),
+        .utf16 => encodeUtf16(allocator, result),
+    };
 }
 
 fn validateOptions(options: Options) Error!void {
@@ -348,6 +452,25 @@ fn validateOptions(options: Options) Error!void {
             return error.InvalidOption;
         }
     }
+}
+
+fn encodeUtf16(
+    allocator: std.mem.Allocator,
+    codepoints: []const u21,
+) Error![]u16 {
+    var output = std.ArrayList(u16).empty;
+    errdefer output.deinit(allocator);
+    try output.ensureTotalCapacity(allocator, codepoints.len * 2);
+    for (codepoints) |codepoint| {
+        if (codepoint <= 0xffff) {
+            output.appendAssumeCapacity(@intCast(codepoint));
+            continue;
+        }
+        const value = codepoint - 0x10000;
+        output.appendAssumeCapacity(@intCast(0xd800 + (value >> 10)));
+        output.appendAssumeCapacity(@intCast(0xdc00 + (value & 0x3ff)));
+    }
+    return output.toOwnedSlice(allocator);
 }
 
 fn encodeUtf8(
@@ -1276,15 +1399,31 @@ test "ICU Arabic shaping conformance" {
         const expected = conformance[offset..][0..expected_len];
         offset += expected_len;
 
-        const actual = try shapeArabicAlloc(
-            allocator,
-            input,
-            Options.fromRaw(raw),
-        );
+        const options = Options.fromRaw(raw);
+        const actual = try shapeArabicAlloc(allocator, input, options);
         defer allocator.free(actual);
         testing.expectEqualStrings(expected, actual) catch |err| {
             std.debug.print(
                 "shaping case {d} options=0x{x}\n",
+                .{ index, raw },
+            );
+            return err;
+        };
+
+        // The UTF-16 entry must produce the same text for the same options.
+        const units = try utf16.utf8ToUtf16Alloc(allocator, input);
+        defer allocator.free(units);
+        const expected_units = try utf16.utf8ToUtf16Alloc(allocator, expected);
+        defer allocator.free(expected_units);
+        const actual_units = try shapeArabicUtf16Alloc(
+            allocator,
+            units,
+            options,
+        );
+        defer allocator.free(actual_units);
+        testing.expectEqualSlices(u16, expected_units, actual_units) catch |err| {
+            std.debug.print(
+                "UTF-16 shaping case {d} options=0x{x}\n",
                 .{ index, raw },
             );
             return err;
