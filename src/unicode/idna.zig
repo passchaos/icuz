@@ -102,9 +102,7 @@ fn mappingFor(codepoint: u21) ?[]const u8 {
         } else {
             const offset = readU32(record_offset + 4);
             const length = data[record_offset + 8];
-            return data[
-                pool_offset + @as(usize, offset) * 4 ..
-            ][0 .. @as(usize, length) * 4];
+            return data[pool_offset + @as(usize, offset) * 4 ..][0 .. @as(usize, length) * 4];
         }
     }
     return null;
@@ -242,24 +240,34 @@ fn convertInner(
 
     var mapped = std.ArrayList(u21).empty;
     defer mapped.deinit(allocator);
-    try mapped.ensureTotalCapacity(allocator, codepoints.items.len);
     // True when every scalar keeps its value, so a later no-op check can
     // trust that the mapped array matches the decoded input. ASCII domains
     // never take that path, so they skip the tracking.
     const track_clean = !ascii_domain;
     var status_clean = true;
-    for (codepoints.items) |codepoint| {
-        switch (statusFor(codepoint)) {
-            .valid => try mapped.append(allocator, codepoint),
-            .disallowed => {
-                if (track_clean) status_clean = false;
-                try mapped.append(allocator, codepoint);
-            },
-            .ignored => if (track_clean) {
-                status_clean = false;
-            },
+    // Copy on first change: a domain whose scalars all keep their value needs
+    // no mapped buffer at all, which is the common case.
+    var copied = false;
+    for (codepoints.items, 0..) |codepoint, index| {
+        const status = statusFor(codepoint);
+        if (status == .valid) {
+            if (copied) try mapped.append(allocator, codepoint);
+            continue;
+        }
+        // A deviation scalar keeps its value unless transitional processing
+        // maps it.
+        const keeps_value = status == .deviation and !options.transitional;
+        if (!keeps_value and track_clean) status_clean = false;
+        if (!copied) {
+            copied = true;
+            try mapped.ensureTotalCapacity(allocator, codepoints.items.len);
+            try mapped.appendSlice(allocator, codepoints.items[0..index]);
+        }
+        switch (status) {
+            .valid => unreachable,
+            .disallowed => try mapped.append(allocator, codepoint),
+            .ignored => {},
             .mapped => {
-                if (track_clean) status_clean = false;
                 if (codepoint < 0x80) {
                     // Only A-Z map inside ASCII.
                     try mapped.append(allocator, codepoint + ('a' - 'A'));
@@ -278,7 +286,6 @@ fn convertInner(
             },
             .deviation => {
                 if (options.transitional) {
-                    if (track_clean) status_clean = false;
                     const mapping = mappingFor(codepoint) orelse continue;
                     try appendMapping(allocator, &mapped, mapping);
                 } else {
@@ -288,13 +295,14 @@ fn convertInner(
         }
     }
 
+    const mapped_items = if (copied) mapped.items else codepoints.items;
     const normalized = try normalization.normalizeCodepointsAlloc(
         allocator,
-        mapped.items,
+        mapped_items,
         .nfc,
     );
     defer if (normalized) |owned| allocator.free(owned);
-    const source = normalized orelse mapped.items;
+    const source = normalized orelse mapped_items;
 
     var labels = std.ArrayList(Label).empty;
     defer {
@@ -865,8 +873,7 @@ fn digitValue(byte: u8) ?u32 {
 }
 
 fn digitChar(value: u32) u8 {
-    return if (value < 26) @intCast('a' + value) else
-        @intCast('0' + (value - 26));
+    return if (value < 26) @intCast('a' + value) else @intCast('0' + (value - 26));
 }
 
 fn encodePunycode(
