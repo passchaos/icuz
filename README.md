@@ -129,7 +129,11 @@ need without pulling in a font or layout engine.
   their locale weights; contraction prefixes and combining sequences are
   handled, and results match ICU usearch on the covered cases.
 - UTS #46 IDNA 16.0.0: ToASCII/ToUnicode, NFC mapping, punycode, RFC 5893
-  bidi checks, ContextJ/ContextO, and official conformance fixtures.
+  bidi checks, ContextJ/ContextO, and official conformance fixtures. The
+  general path runs against a stack arena and hands back one allocation;
+  ASCII statuses come from a compile-time table, and a domain whose scalars
+  are already NFC and need no mapping converts to itself without rebuilding
+  the output.
 - UTS #39 confusable detection from the Unicode 17.0.0 security data:
   skeletons (NFD, prototype mapping, NFD, default-ignorable removal) and
   `areConfusable` with optional case folding, validated by a 6,603-case

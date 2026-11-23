@@ -223,7 +223,8 @@ fn convertInner(
     // ASCII domains dominate real traffic and need no decoding, NFC, or
     // punycode. A-label labels still take the general path so their punycode
     // is decoded and revalidated.
-    if (isAsciiDomain(domain) and !hasAlabel(domain)) {
+    const ascii_domain = isAsciiDomain(domain);
+    if (ascii_domain and !hasAlabel(domain)) {
         return convertAsciiAlloc(allocator, domain, options, ascii_output);
     }
     if (!scalar.validate.isValid(domain)) return error.InvalidUtf8;
@@ -240,11 +241,23 @@ fn convertInner(
     var mapped = std.ArrayList(u21).empty;
     defer mapped.deinit(allocator);
     try mapped.ensureTotalCapacity(allocator, codepoints.items.len);
+    // True when every scalar keeps its value, so a later no-op check can
+    // trust that the mapped array matches the decoded input. ASCII domains
+    // never take that path, so they skip the tracking.
+    const track_clean = !ascii_domain;
+    var status_clean = true;
     for (codepoints.items) |codepoint| {
         switch (statusFor(codepoint)) {
-            .valid, .disallowed => try mapped.append(allocator, codepoint),
-            .ignored => {},
+            .valid => try mapped.append(allocator, codepoint),
+            .disallowed => {
+                if (track_clean) status_clean = false;
+                try mapped.append(allocator, codepoint);
+            },
+            .ignored => if (track_clean) {
+                status_clean = false;
+            },
             .mapped => {
+                if (track_clean) status_clean = false;
                 if (codepoint < 0x80) {
                     // Only A-Z map inside ASCII.
                     try mapped.append(allocator, codepoint + ('a' - 'A'));
@@ -263,6 +276,7 @@ fn convertInner(
             },
             .deviation => {
                 if (options.transitional) {
+                    if (track_clean) status_clean = false;
                     const mapping = mappingFor(codepoint) orelse continue;
                     try appendMapping(allocator, &mapped, mapping);
                 } else {
@@ -360,12 +374,48 @@ fn convertInner(
         break :blk false;
     };
 
+    // A non-ASCII domain without A-labels whose scalars are already NFC and
+    // need no mapping converts to itself: the output is the input bytes, so
+    // only the label validation remains.
+    if (!ascii_output and status_clean and normalized == null) {
+        var any_decoded = false;
+        for (labels.items) |label| {
+            if (label.owned != null) {
+                any_decoded = true;
+                break;
+            }
+        }
+        if (!any_decoded) {
+            for (labels.items) |label| {
+                if (label.unicode.len > 0 and
+                    !validateLabel(
+                        label.unicode,
+                        options,
+                        domain_has_rtl,
+                        false,
+                    ))
+                {
+                    had_error = true;
+                }
+            }
+            return .{
+                .text = try allocator.dupe(u8, domain),
+                .had_error = had_error,
+            };
+        }
+    }
+
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
     for (labels.items, 0..) |label, label_index| {
         if (label_index > 0) try output.append(allocator, '.');
         if (label.unicode.len > 0 and
-            !validateLabel(label.unicode, options, domain_has_rtl))
+            !validateLabel(
+                label.unicode,
+                options,
+                domain_has_rtl,
+                label.owned != null,
+            ))
         {
             had_error = true;
         }
@@ -522,9 +572,15 @@ fn validateLabel(
     label: []const u21,
     options: Options,
     domain_has_rtl: bool,
+    check_nfc: bool,
 ) bool {
     if (label.len == 0) return false;
-    if (!normalization.isNormalizedCodepoints(label, .nfc)) return false;
+    // Labels cut from the mapped domain are already NFC: either the domain
+    // passed the quick check or it was normalized. Only decoded A-labels can
+    // still decompose.
+    if (check_nfc and !normalization.isNormalizedCodepoints(label, .nfc)) {
+        return false;
+    }
     for (label) |codepoint| {
         if (codepoint == '.') return false;
         switch (statusFor(codepoint)) {
