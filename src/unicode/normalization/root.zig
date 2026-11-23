@@ -1287,7 +1287,10 @@ pub const Normalizer = struct {
         output: *std.ArrayList(u8),
     ) Error!void {
         if (self.pending.items.len == 0 or
-            combining_class.forCodepoint(codepoint) != 0)
+            continuesSegment(
+                codepoint,
+                self.form == .nfkc or self.form == .nfkd,
+            ))
         {
             try self.pending.append(self.allocator, codepoint);
             return;
@@ -2511,6 +2514,9 @@ test "streaming normalizer matches one-shot normalization" {
         "\u{0301}A",
         "plain ASCII",
         "a\u{0323}\u{0301}b",
+        "\u{00e0}\u{0325}",
+        "i\u{0300}\u{ff9e}",
+        "\u{1128}\u{1100}\u{3152}",
     };
     const forms = [_]Form{ .nfc, .nfd, .nfkc, .nfkd };
 
