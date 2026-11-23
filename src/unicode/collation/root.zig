@@ -1003,6 +1003,23 @@ pub const Collator = struct {
                 {
                     return error.InvalidUtf8;
                 }
+                // When the strings differ at the first scalar, a differing
+                // pair of root primaries decides the order before any region
+                // key is built. Both inputs are already validated above.
+                if (diff == 0 and self.tailoring == null and
+                    a.len > 0 and b.len > 0 and
+                    a[0] < 0x80 and b[0] < 0x80 and
+                    !ascii_contractions[a[0]] and
+                    !ascii_contractions[b[0]])
+                {
+                    const primary_a = ascii_elements_table[a[0]].primary;
+                    const primary_b = ascii_elements_table[b[0]].primary;
+                    if (primary_a != 0 and primary_b != 0 and
+                        primary_a != primary_b)
+                    {
+                        return if (primary_a < primary_b) .lt else .gt;
+                    }
+                }
                 if (self.safeRegionEnd(a, diff, true)) |end_a| {
                     if (self.safeRegionEnd(b, diff, true)) |end_b| {
                         try self.sortKeyInto(allocator, a[0..end_a], key_a);
