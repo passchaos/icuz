@@ -1237,6 +1237,10 @@ pub fn main() !void {
     const swedish_runtime = try allocator.dupe(u8, swedish_text);
     const german_runtime = try allocator.dupe(u8, german_text);
     const chinese_collation_runtime = try allocator.dupe(u8, chinese_collation_text);
+    const chinese_collation_long_runtime = try allocator.dupe(
+        u8,
+        chinese_collation_text ** 32,
+    );
     const fullwidth_runtime = try allocator.dupe(u8, fullwidth_text);
     const georgian_runtime = try allocator.dupe(u8, georgian_text);
     const russian_runtime = try allocator.dupe(u8, russian_text);
@@ -1257,6 +1261,7 @@ pub fn main() !void {
     std.mem.doNotOptimizeAway(swedish_runtime.ptr);
     std.mem.doNotOptimizeAway(german_runtime.ptr);
     std.mem.doNotOptimizeAway(chinese_collation_runtime.ptr);
+    std.mem.doNotOptimizeAway(chinese_collation_long_runtime.ptr);
     std.mem.doNotOptimizeAway(fullwidth_runtime.ptr);
     std.mem.doNotOptimizeAway(georgian_runtime.ptr);
     std.mem.doNotOptimizeAway(russian_runtime.ptr);
@@ -1331,6 +1336,18 @@ pub fn main() !void {
         "UCA sort key Chinese zhuyin",
         chinese_collation_runtime,
         .{ .locale = "zh", .collation = "zhuyin" },
+        allocator,
+    );
+    benchCollation(
+        "UCA sort key Chinese long",
+        chinese_collation_long_runtime,
+        .{},
+        allocator,
+    );
+    benchCollation(
+        "UCA sort key Chinese long pinyin",
+        chinese_collation_long_runtime,
+        .{ .locale = "zh", .collation = "pinyin" },
         allocator,
     );
     benchCollationCodepoints(

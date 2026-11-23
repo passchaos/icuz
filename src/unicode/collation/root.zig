@@ -149,7 +149,20 @@ fn LevelSink(comptime strength: Strength) type {
         secondary: *LevelBuffer,
         tertiary: *LevelBuffer,
 
-        fn append(
+        inline fn ensureTotalCapacity(
+            self: *@This(),
+            capacity: usize,
+        ) error{OutOfMemory}!void {
+            try self.primary.ensureTotalCapacity(capacity);
+            if (strength != .primary) {
+                try self.secondary.ensureTotalCapacity(capacity);
+            }
+            if (strength != .primary and strength != .secondary) {
+                try self.tertiary.ensureTotalCapacity(capacity);
+            }
+        }
+
+        inline fn append(
             self: *@This(),
             allocator: std.mem.Allocator,
             element: CollationElement,
@@ -751,12 +764,61 @@ fn sortKeyUtf8Resolved(
 
     var cursor: usize = 0;
     var nfd_scan = normalization.NfdScan{};
+    var scan_complete = true;
     while (cursor < text.len) {
+        if (text[cursor] < 0x80) {
+            // Long inputs keep the same ASCII and three-byte run decoding as
+            // the stack path, so documents do not fall back to the scalar
+            // decoder for every CJK scalar.
+            const ascii_start = cursor;
+            while (cursor + 8 <= text.len and
+                codepoints.unusedCapacitySlice().len >= 8)
+            {
+                const bytes: @Vector(8, u8) = text[cursor..][0..8].*;
+                const quad: u64 = @bitCast(bytes);
+                if (quad & 0x8080_8080_8080_8080 != 0) break;
+                const wide: @Vector(8, u21) = @intCast(bytes);
+                codepoints.addManyAsArrayAssumeCapacity(8).* = wide;
+                cursor += 8;
+            }
+            while (cursor < text.len and text[cursor] < 0x80) {
+                codepoints.appendAssumeCapacity(text[cursor]);
+                cursor += 1;
+            }
+            if (cursor > ascii_start and scan_complete) {
+                nfd_scan.feedAsciiRun();
+            }
+            continue;
+        }
+        if (text[cursor] >= 0xe0 and text[cursor] < 0xf0 and
+            cursor + 3 <= text.len)
+        {
+            while (cursor + 3 <= text.len and
+                text[cursor] >= 0xe0 and text[cursor] < 0xf0)
+            {
+                const first = text[cursor];
+                const second = text[cursor + 1];
+                const third = text[cursor + 2];
+                if (((second & third) & 0xc0) != 0x80) {
+                    return error.InvalidUtf8;
+                }
+                const codepoint = (@as(u21, first & 0x0f) << 12) |
+                    (@as(u21, second & 0x3f) << 6) |
+                    @as(u21, third & 0x3f);
+                if (codepoint < 0x800 or (codepoint & 0xf800) == 0xd800) {
+                    return error.InvalidUtf8;
+                }
+                codepoints.appendAssumeCapacity(codepoint);
+                if (scan_complete) nfd_scan.feed(codepoint);
+                cursor += 3;
+            }
+            continue;
+        }
         const decoded = scalar.decodeValidatingPacked(text, cursor);
         if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
         const codepoint = scalar.packedCodepoint(decoded);
-        try codepoints.append(allocator, codepoint);
-        nfd_scan.feed(codepoint);
+        codepoints.appendAssumeCapacity(codepoint);
+        scan_complete = false;
         cursor += scalar.packedLength(decoded);
     }
     try sortKeyCodepointsResolved(
@@ -765,7 +827,7 @@ fn sortKeyUtf8Resolved(
         options,
         locale_tailoring,
         tailoring_pages,
-        nfd_scan.ok,
+        if (scan_complete) nfd_scan.ok else null,
         output,
     );
 }
@@ -2047,6 +2109,14 @@ fn appendRootLevelsStrength(
         .secondary = &secondary,
         .tertiary = &tertiary,
     };
+    // Implicit weights contribute two elements per scalar; reserve that up
+    // front so long runs do not grow the level buffers repeatedly.
+    const reserve = source.len * 2 + 8;
+    try primary.ensureTotalCapacity(reserve);
+    if (strength != .primary) try secondary.ensureTotalCapacity(reserve);
+    if (strength != .primary and strength != .secondary) {
+        try tertiary.ensureTotalCapacity(reserve);
+    }
 
     var index: usize = 0;
     while (index < source.len) {
@@ -3344,44 +3414,143 @@ noinline fn appendTailoredLevels(
     reorder: ?tailorings.Reorder,
     shifted: bool,
 ) error{OutOfMemory}!void {
+    // The fixed fused sink holds 2048 weights per level; longer inputs
+    // collect levels in growable buffers instead.
+    const long = source.len > 512;
     switch (options.strength) {
-        .primary => return appendElementsFused(
-            allocator,
-            output,
-            source,
-            codepoints,
-            options,
-            locale_tailoring,
-            tailoring_pages,
-            reorder,
-            shifted,
-            .primary,
-        ),
-        .secondary => return appendElementsFused(
-            allocator,
-            output,
-            source,
-            codepoints,
-            options,
-            locale_tailoring,
-            tailoring_pages,
-            reorder,
-            shifted,
-            .secondary,
-        ),
-        .tertiary => return appendElementsFused(
-            allocator,
-            output,
-            source,
-            codepoints,
-            options,
-            locale_tailoring,
-            tailoring_pages,
-            reorder,
-            shifted,
-            .tertiary,
-        ),
+        .primary => return if (long)
+            appendTailoredLevelsLong(
+                allocator,
+                output,
+                source,
+                options,
+                locale_tailoring,
+                tailoring_pages,
+                reorder,
+                shifted,
+                .primary,
+            )
+        else
+            appendElementsFused(
+                allocator,
+                output,
+                source,
+                codepoints,
+                options,
+                locale_tailoring,
+                tailoring_pages,
+                reorder,
+                shifted,
+                .primary,
+            ),
+        .secondary => return if (long)
+            appendTailoredLevelsLong(
+                allocator,
+                output,
+                source,
+                options,
+                locale_tailoring,
+                tailoring_pages,
+                reorder,
+                shifted,
+                .secondary,
+            )
+        else
+            appendElementsFused(
+                allocator,
+                output,
+                source,
+                codepoints,
+                options,
+                locale_tailoring,
+                tailoring_pages,
+                reorder,
+                shifted,
+                .secondary,
+            ),
+        .tertiary => return if (long)
+            appendTailoredLevelsLong(
+                allocator,
+                output,
+                source,
+                options,
+                locale_tailoring,
+                tailoring_pages,
+                reorder,
+                shifted,
+                .tertiary,
+            )
+        else
+            appendElementsFused(
+                allocator,
+                output,
+                source,
+                codepoints,
+                options,
+                locale_tailoring,
+                tailoring_pages,
+                reorder,
+                shifted,
+                .tertiary,
+            ),
         .quaternary, .identical => unreachable,
+    }
+}
+
+/// Long-input counterpart of `appendElementsFused`: the fixed stack sink
+/// would overflow, so collect each level in a growable buffer and emit it
+/// once. This avoids the element buffer and its per-level rescans for long
+/// tailored keys.
+noinline fn appendTailoredLevelsLong(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    source: []const u21,
+    options: Options,
+    locale_tailoring: ?tailorings.Tailoring,
+    tailoring_pages: ?*tailorings.PageIndex,
+    reorder: ?tailorings.Reorder,
+    shifted: bool,
+    comptime strength: Strength,
+) error{OutOfMemory}!void {
+    var primary_stack: [512]u32 = undefined;
+    var secondary_stack: [512]u32 = undefined;
+    var tertiary_stack: [512]u32 = undefined;
+    var primary = LevelBuffer.init(allocator, &primary_stack);
+    defer primary.deinit();
+    var secondary = LevelBuffer.init(allocator, &secondary_stack);
+    defer secondary.deinit();
+    var tertiary = LevelBuffer.init(allocator, &tertiary_stack);
+    defer tertiary.deinit();
+    var sink = LevelSink(strength){
+        .primary = &primary,
+        .secondary = &secondary,
+        .tertiary = &tertiary,
+    };
+    try buildElements(
+        allocator,
+        source,
+        options,
+        locale_tailoring,
+        tailoring_pages,
+        reorder,
+        shifted,
+        &sink,
+    );
+    const need_secondary = strength != .primary;
+    const need_tertiary = strength != .primary and strength != .secondary;
+    const total = primary.items().len + 1 +
+        (if (need_secondary) secondary.items().len + 1 else 0) +
+        (if (need_tertiary) tertiary.items().len + 1 else 0);
+    try output.ensureTotalCapacityPrecise(allocator, total);
+    output.appendSliceAssumeCapacity(primary.items());
+    output.appendAssumeCapacity(0);
+    if (need_secondary) {
+        output.appendSliceAssumeCapacity(secondary.items());
+        output.appendAssumeCapacity(0);
+    }
+    if (need_tertiary) {
+        output.appendSliceAssumeCapacity(tertiary.items());
+        output.appendAssumeCapacity(0);
     }
 }
 
@@ -3598,6 +3767,12 @@ test "sort key buffer and UTF-16 APIs" {
             .options = .{ .locale = "sv" },
         },
         .{ .text = "\u{4f60}\u{597d}\u{4e16}\u{754c}", .options = .{} },
+        // Longer than the stack decode buffer, so the heap run decoders and
+        // the UTF-16 stack path must agree.
+        .{
+            .text = "\u{4f60}\u{597d}\u{4e16}\u{754c}" ** 60,
+            .options = .{},
+        },
     };
 
     var reused = std.ArrayList(u32).empty;
@@ -3644,6 +3819,12 @@ test "sort key buffer and UTF-16 APIs" {
             sortKeyAlloc(allocator, invalid, .{}),
         );
     }
+    var long_invalid: [600]u8 = @splat('a');
+    long_invalid[long_invalid.len - 1] = 0xff;
+    try testing.expectError(
+        error.InvalidUtf8,
+        sortKeyAlloc(allocator, &long_invalid, .{}),
+    );
 }
 
 test "collation elements match the sort key weights" {

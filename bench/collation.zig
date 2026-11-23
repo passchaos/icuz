@@ -29,12 +29,51 @@ const Workload = struct {
     text: []const u8,
     options: icuz.collation.Options = .{},
     codepoints: bool = false,
+    utf16: bool = false,
+    reuse: bool = false,
 };
 
 fn bench(work: Workload, allocator: std.mem.Allocator) void {
     const rounds: usize = 2000;
     var best: u64 = std.math.maxInt(u64);
-    if (work.codepoints) {
+    if (work.reuse) {
+        var key = std.ArrayList(u32).empty;
+        defer key.deinit(allocator);
+        for (0..5) |_| {
+            const start = now();
+            for (0..rounds) |_| {
+                icuz.collation.sortKeyInto(
+                    allocator,
+                    work.text,
+                    work.options,
+                    &key,
+                ) catch unreachable;
+                sink +%= key.items.len;
+            }
+            const elapsed = now() - start;
+            if (elapsed < best) best = elapsed;
+        }
+    } else if (work.utf16) {
+        const units = std.unicode.utf8ToUtf16LeAlloc(
+            allocator,
+            work.text,
+        ) catch unreachable;
+        defer allocator.free(units);
+        for (0..5) |_| {
+            const start = now();
+            for (0..rounds) |_| {
+                const key = icuz.collation.sortKeyUtf16Alloc(
+                    allocator,
+                    units,
+                    work.options,
+                ) catch unreachable;
+                sink +%= key.len;
+                allocator.free(key);
+            }
+            const elapsed = now() - start;
+            if (elapsed < best) best = elapsed;
+        }
+    } else if (work.codepoints) {
         var codepoints: [512]u21 = undefined;
         var count: usize = 0;
         var view = std.unicode.Utf8View.initUnchecked(work.text).iterator();
@@ -212,6 +251,9 @@ const mixed_text = "Hello, 世界! café naïve Straße \u{1f600}\u{1f469}\u{200
 const swedish_text = "Ångström älskar blåbär och öar. ÅÄÖ åäö " ** 8;
 const german_text = "Böttger Mühsam Überlingen ÄÖÜ äöü Straße " ** 8;
 const chinese_text = "你好世界中国汉字排序拼音" ** 8;
+const chinese_long_text = "你好世界中国汉字排序拼音" ** 256;
+const ascii_long_text =
+    "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. " ** 4;
 
 pub fn main(init: std.process.Init.Minimal) !void {
     const allocator = std.heap.smp_allocator;
@@ -266,6 +308,48 @@ pub fn main(init: std.process.Init.Minimal) !void {
             .text = chinese_text,
             .options = .{ .locale = "zh", .collation = "zhuyin" },
             .codepoints = true,
+        },
+        .{
+            .name = "Chinese long",
+            .text = chinese_long_text,
+        },
+        .{
+            .name = "Chinese long pinyin",
+            .text = chinese_long_text,
+            .options = .{ .locale = "zh", .collation = "pinyin" },
+        },
+        .{
+            .name = "ASCII long",
+            .text = ascii_long_text,
+        },
+        .{
+            .name = "Chinese long pinyin (cp)",
+            .text = chinese_long_text,
+            .options = .{ .locale = "zh", .collation = "pinyin" },
+            .codepoints = true,
+        },
+        .{
+            .name = "Chinese long pinyin (reuse)",
+            .text = chinese_long_text,
+            .options = .{ .locale = "zh", .collation = "pinyin" },
+            .reuse = true,
+        },
+        .{
+            .name = "Swedish (utf16)",
+            .text = swedish_text,
+            .options = .{ .locale = "sv" },
+            .utf16 = true,
+        },
+        .{
+            .name = "mixed (utf16)",
+            .text = mixed_text,
+            .utf16 = true,
+        },
+        .{
+            .name = "Chinese pinyin (utf16)",
+            .text = chinese_text,
+            .options = .{ .locale = "zh", .collation = "pinyin" },
+            .utf16 = true,
         },
         .{
             .name = "Chinese pinyin (cp, primary)",

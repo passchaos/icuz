@@ -142,6 +142,11 @@ int main() {
         for (int i = 0; i < 8; i++) s += "\u4f60\u597d\uff0c\u4e16\u754c\uff01\u4e2d\u6587\u7f16\u7801\u8f6c\u6362\u57fa\u51c6\u6d4b\u8bd5\u3002";
         return s;
     }();
+    const std::string chinese_collation_long_text = [] {
+        std::string s;
+        for (int i = 0; i < 32; i++) s += "\u4f60\u597d\u4e16\u754c\u4e2d\u56fd\u6c49\u5b57\u6392\u5e8f\u62fc\u97f3";
+        return s;
+    }();
     const std::string greek_case_text = [] {
         std::string s;
         for (int i = 0; i < 8; i++) s += "\u039f\u0394\u039f\u03a3 \u03a3\u039f\u03a6\u039f\u03a3 \u0391\u0398\u0397\u039d\u0391 ";
@@ -168,6 +173,7 @@ int main() {
         {"korean", korean_text, {}},
         {"chinese_long", chinese_long_text, {}},
         {"greek_case", greek_case_text, {}},
+        {"chinese_collation_long", chinese_collation_long_text, {}},
     };
     for (auto& text : texts) text.u16 = to_u16(text.utf8);
 
@@ -183,6 +189,8 @@ int main() {
         {"UCA sort key Chinese pinyin", "zh@collation=pinyin", 5},
         {"UCA sort key Chinese stroke", "zh@collation=stroke", 5},
         {"UCA sort key Chinese zhuyin", "zh@collation=zhuyin", 5},
+        {"UCA sort key Chinese long", "en", 14},
+        {"UCA sort key Chinese long pinyin", "zh@collation=pinyin", 14},
     };
     for (const auto& item : coll_cases) {
         UErrorCode status = U_ZERO_ERROR;
