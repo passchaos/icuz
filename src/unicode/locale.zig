@@ -530,9 +530,40 @@ pub fn canonicalizeAlloc(
         }
     }.lessThan);
 
+    // Canonical tags are short, so build into a stack buffer and hand back
+    // one exact allocation instead of growing a list and shrinking it.
+    var stack: [192]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&stack);
     var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
-    try appendLowered(allocator, &output, parsed.language);
+    if (writeCanonical(
+        fixed.allocator(),
+        &parsed,
+        ordered[0..parsed.variant_count],
+        &output,
+    )) |_| {
+        return allocator.dupe(u8, output.items);
+    } else |err| switch (err) {
+        error.OutOfMemory => {},
+        else => return err,
+    }
+    var owned = std.ArrayList(u8).empty;
+    errdefer owned.deinit(allocator);
+    try writeCanonical(
+        allocator,
+        &parsed,
+        ordered[0..parsed.variant_count],
+        &owned,
+    );
+    return owned.toOwnedSlice(allocator);
+}
+
+fn writeCanonical(
+    allocator: std.mem.Allocator,
+    parsed: *const Tag,
+    ordered: []const []const u8,
+    output: *std.ArrayList(u8),
+) Error!void {
+    try appendLowered(allocator, output, parsed.language);
     if (parsed.script.len != 0) {
         if (output.items.len != 0) try output.append(allocator, '-');
         try output.appendSlice(allocator, parsed.script);
@@ -541,8 +572,8 @@ pub fn canonicalizeAlloc(
         if (output.items.len != 0) try output.append(allocator, '-');
         try output.appendSlice(allocator, parsed.region);
     }
-    for (ordered[0..parsed.variant_count]) |variant| {
-        try appendLowered(allocator, &output, variant);
+    for (ordered) |variant| {
+        try appendLowered(allocator, output, variant);
     }
     if (parsed.tail.len != 0) {
         if (output.items.len != 0) try output.append(allocator, '-');
@@ -550,7 +581,6 @@ pub fn canonicalizeAlloc(
         defer allocator.free(tail);
         try output.appendSlice(allocator, tail);
     }
-    return output.toOwnedSlice(allocator);
 }
 
 fn lowerInto(buffer: []u8, text: []const u8) []const u8 {
