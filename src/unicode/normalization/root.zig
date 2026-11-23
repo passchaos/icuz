@@ -270,7 +270,11 @@ fn normalizeFusedInto(
                 form,
                 output,
             )) orelse blk: {
-                const fallback_end = segmentEnd(text, starter_offset);
+                const fallback_end = segmentEnd(
+                    text,
+                    starter_offset,
+                    compatibility,
+                );
                 try normalizeSegmentInto(
                     &engine,
                     text[starter_offset..fallback_end],
@@ -611,13 +615,26 @@ fn SegmentEngine(comptime Sink: type) type {
         }
 
         fn feed(self: *Self, codepoint: u21) error{OutOfMemory}!void {
-            // Inert scalars have no decomposition, combining class 0, and
-            // cannot compose with a previous starter.
+            // Inert scalars are unchanged by the form and cannot compose with
+            // a previous starter. Under the composed forms they can still
+            // decompose when a following mark joins their segment, so keep
+            // them pending until that is known.
             if (codepoint >= 0x80 and inert.isInert(codepoint, self.form)) {
                 try self.settle();
                 self.pending = codepoint;
                 return;
             }
+            try self.feedDecomposed(codepoint);
+        }
+
+        /// Decompose `codepoint` and feed its components. A pending starter is
+        /// decomposed too: a composed scalar such as `à` is inert on its own
+        /// but must expand before a lower-class mark can reorder past its
+        /// decomposition.
+        fn feedDecomposed(
+            self: *Self,
+            codepoint: u21,
+        ) error{OutOfMemory}!void {
             // Unicode 17's longest recursive compatibility decomposition has
             // 18 components; 64 leaves generous headroom.
             var parts: [64]u21 = undefined;
@@ -633,8 +650,15 @@ fn SegmentEngine(comptime Sink: type) type {
                     self.pending = part;
                 } else {
                     if (self.pending) |pending| {
-                        try self.segment.append(self.allocator, pending);
                         self.pending = null;
+                        try self.feedDecomposed(pending);
+                        if (self.pending) |last_starter| {
+                            self.pending = null;
+                            try self.segment.append(
+                                self.allocator,
+                                last_starter,
+                            );
+                        }
                     }
                     try self.segment.append(self.allocator, part);
                 }
@@ -861,6 +885,27 @@ fn hangulSyllableAt16(
     return lv;
 }
 
+/// True when `codepoint` belongs to the preceding starter segment. A scalar
+/// with combining class 0 normally starts a new segment, but composition
+/// seconds, Hangul V/T jamo, and scalars whose decomposition begins with a
+/// mark or jamo (such as the halfwidth voiced-sound mark U+FF9E under the
+/// compatibility forms) still belong to the previous starter.
+fn continuesSegment(codepoint: u21, compatibility: bool) bool {
+    if (combining_class.forCodepoint(codepoint) != 0) return true;
+    if (data.isCompositionSecond(codepoint)) return true;
+    if (isHangulVOrT(codepoint)) return true;
+    if (data.isSimplePage(codepoint, compatibility)) return false;
+    const mapping = if (compatibility)
+        decomposition.compatibilityForCodepoint(codepoint)
+    else
+        decomposition.forCodepoint(codepoint);
+    const components = mapping orelse return false;
+    const first = components[0];
+    return combining_class.forCodepoint(first) != 0 or
+        isHangulVOrT(first) or
+        data.isCompositionSecond(first);
+}
+
 /// Normalize one starter segment of UTF-16 units using stack storage.
 /// Returns the unit offset just past the segment, or null when the
 /// decomposed segment exceeds the stack buffer.
@@ -882,14 +927,7 @@ fn normalizeSegmentFastAt16(
         if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
         const codepoint = utf16.packedCodepoint(decoded);
         const sequence_len = utf16.packedLength(decoded);
-        if (!first) {
-            const class = combining_class.forCodepoint(codepoint);
-            if (class == 0 and !data.isCompositionSecond(codepoint) and
-                !isHangulVOrT(codepoint))
-            {
-                break;
-            }
-        }
+        if (!first and !continuesSegment(codepoint, compatibility)) break;
         first = false;
         index += sequence_len;
         if (codepoint < 0x80) {
@@ -938,6 +976,7 @@ fn normalizeSegmentFastAt16(
 fn segmentEnd16(
     units: []const u16,
     index: usize,
+    compatibility: bool,
 ) error{InvalidUtf16}!usize {
     var cursor = index;
     var first = true;
@@ -945,10 +984,7 @@ fn segmentEnd16(
         const decoded = utf16.decodePacked(units, cursor);
         if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
         const codepoint = utf16.packedCodepoint(decoded);
-        if (!first and combining_class.forCodepoint(codepoint) == 0 and
-            !data.isCompositionSecond(codepoint) and
-            !isHangulVOrT(codepoint))
-        {
+        if (!first and !continuesSegment(codepoint, compatibility)) {
             return cursor;
         }
         first = false;
@@ -1106,6 +1142,7 @@ fn normalizeFusedUtf16Into(
                 const fallback_end = try segmentEnd16(
                     units,
                     starter_offset,
+                    compatibility,
                 );
                 try normalizeSegmentFallback16(
                     allocator,
@@ -1361,14 +1398,7 @@ fn normalizeSegmentFastAt(
         if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
         const codepoint = scalar.packedCodepoint(decoded);
         const sequence_len = scalar.packedLength(decoded);
-        if (!first) {
-            const class = combining_class.forCodepoint(codepoint);
-            if (class == 0 and !data.isCompositionSecond(codepoint) and
-                !isHangulVOrT(codepoint))
-            {
-                break;
-            }
-        }
+        if (!first and !continuesSegment(codepoint, compatibility)) break;
         first = false;
         index += sequence_len;
         if (codepoint < 0x80) {
@@ -1484,7 +1514,11 @@ fn normalizeWithEditsInto(
             position += span;
             if (position == text.len) break;
         }
-        const end = segmentEnd(text, position);
+        const end = segmentEnd(
+            text,
+            position,
+            form == .nfkc or form == .nfkd,
+        );
         try normalizeChangedFormInto(
             allocator,
             text[position..end],
@@ -1733,7 +1767,11 @@ fn spanQuickCheckYesImpl(
 /// A segment starts at a starter that cannot compose with or reorder
 /// against the preceding character; normalizing `[index, result)` in
 /// isolation is safe.
-fn segmentEnd(text: []const u8, index: usize) usize {
+fn segmentEnd(
+    text: []const u8,
+    index: usize,
+    compatibility: bool,
+) usize {
     var cursor = index;
     var first = true;
     while (cursor < text.len) {
@@ -1741,10 +1779,7 @@ fn segmentEnd(text: []const u8, index: usize) usize {
         if (decoded == scalar.packed_invalid) return text.len;
         const codepoint = scalar.packedCodepoint(decoded);
         const length = scalar.packedLength(decoded);
-        if (!first and combining_class.forCodepoint(codepoint) == 0 and
-            !data.isCompositionSecond(codepoint) and
-            !isHangulVOrT(codepoint))
-        {
+        if (!first and !continuesSegment(codepoint, compatibility)) {
             return cursor;
         }
         first = false;
@@ -2219,6 +2254,56 @@ test "NFKC and NFKD apply compatibility mappings" {
     try expectFormNormalized("\u{00c5}", "A\u{030a}", .nfkd);
     try expectFormNormalized("\u{1ea4}", "A\u{0302}\u{0301}", .nfkd);
     try expectFormNormalized("\u{ff21}", "A", .nfkc);
+}
+
+test "segments keep composed, mark-leading, and non-CJK scalars" {
+    const testing = @import("std").testing;
+    // A non-CJK scalar between two ideographic scalars must still decompose.
+    try expectFormNormalized(
+        "\u{4e12}\u{4e3a}\u{ac0f}\u{4e3c}",
+        "\u{4e12}\u{4e3a}\u{1100}\u{1161}\u{11b6}\u{4e3c}",
+        .nfd,
+    );
+    // A composed starter decomposes before a lower-class mark reorders past it.
+    try expectFormNormalized("\u{00e0}\u{0325}", "\u{1e01}\u{0300}", .nfc);
+    try expectFormNormalized("\u{00e9}\u{0323}", "\u{1eb9}\u{0301}", .nfc);
+    try expectFormNormalized("a\u{0325}\u{0300}", "\u{1e01}\u{0300}", .nfc);
+    // The halfwidth voiced sound mark decomposes to a mark and must reorder
+    // inside the preceding segment.
+    try expectFormNormalized(
+        "\u{00ec}\u{ff9e}\u{00f3}",
+        "i\u{3099}\u{0300}o\u{0301}",
+        .nfkd,
+    );
+    // A compatibility jamo must compose with the preceding L jamo.
+    try expectFormNormalized(
+        "\u{1128}\u{1100}\u{3152}",
+        "\u{1128}\u{ac54}",
+        .nfkc,
+    );
+
+    // The code-point and UTF-16 paths share the segment engine.
+    const input_nfc = [_]u21{ 0x00e0, 0x0325 };
+    const expected_nfc = [_]u21{ 0x1e01, 0x0300 };
+    const codepoint_result = try normalizeCodepointsAlloc(
+        testing.allocator,
+        &input_nfc,
+        .nfc,
+    );
+    defer if (codepoint_result) |value| testing.allocator.free(value);
+    try testing.expectEqualSlices(u21, &expected_nfc, codepoint_result.?);
+
+    const units = [_]u16{ 0x4e12, 0x4e3a, 0xac0f, 0x4e3c };
+    const expected_units = [_]u16{
+        0x4e12, 0x4e3a, 0x1100, 0x1161, 0x11b6, 0x4e3c,
+    };
+    const utf16_result = try normalizeUtf16Alloc(
+        testing.allocator,
+        &units,
+        .nfd,
+    );
+    defer if (utf16_result) |value| testing.allocator.free(value);
+    try testing.expectEqualSlices(u16, &expected_units, utf16_result.?);
 }
 
 test "normalization rejects invalid UTF-8 before allocating" {
