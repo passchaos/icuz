@@ -147,6 +147,20 @@ fn mapInto(
             try appendChecked(allocator, output, codepoint);
             continue;
         }
+        // Bulk-copy runs of identity BMP units; simple mappings are 1:1,
+        // so the reserved capacity covers the whole run.
+        var run_end = index - 1;
+        while (run_end < units.len) {
+            const candidate = units[run_end];
+            if (candidate >= 0xd800 and candidate <= 0xdfff) break;
+            if (full_data.interesting(candidate, kind, true)) break;
+            run_end += 1;
+        }
+        if (run_end > index - 1) {
+            output.appendSliceAssumeCapacity(units[index - 1 .. run_end]);
+            index = run_end;
+            continue;
+        }
         const mapped = switch (kind) {
             .lower => full.simpleLowerFast(codepoint),
             .upper => full.simpleUpperFast(codepoint),
