@@ -96,25 +96,58 @@ const cjk_lead_simple = blk: {
     break :blk true;
 };
 
-/// True when every Latin-1 scalar is inert for `form`, so a scan can treat a
-/// run of them like ASCII prose. This holds for the composed forms: all of
-/// U+0080..U+00FF are already composed and none carry a combining class.
-fn latin1RunInert(comptime form: Form) bool {
-    @setEvalBranchQuota(100_000);
-    for (0x80..0x100) |codepoint| {
-        const value: u21 = @intCast(codepoint);
-        if (data.quickCheck(value, form) != .yes) return false;
-        if (combining_class.forCodepoint(value) != 0) return false;
-    }
-    return true;
+/// True when `codepoint` is inert for `form`: unchanged and unable to compose
+/// with a preceding starter.
+fn latin1Inert(form: Form, codepoint: u21) bool {
+    if (data.quickCheck(codepoint, form) != .yes) return false;
+    return combining_class.forCodepoint(codepoint) == 0;
 }
 
-/// `latin1RunInert` for the scans that take a runtime form.
-const latin1_run_inert_by_form = [4]bool{
-    latin1RunInert(.nfc),
-    latin1RunInert(.nfd),
-    latin1RunInert(.nfkc),
-    latin1RunInert(.nfkd),
+const Latin1Run = enum {
+    /// No Latin-1 scalar joins a run.
+    none,
+    /// Every Latin-1 scalar joins a run.
+    all,
+    /// Only the scalars marked in `latin1_inert_by_form` join a run.
+    some,
+};
+
+fn latin1RunMode(comptime form: Form) Latin1Run {
+    @setEvalBranchQuota(100_000);
+    var any = false;
+    var all = true;
+    for (0x80..0x100) |codepoint| {
+        if (latin1Inert(form, @intCast(codepoint))) {
+            any = true;
+        } else {
+            all = false;
+        }
+    }
+    return if (all) .all else if (any) .some else .none;
+}
+
+/// Per-scalar inertness of the Latin-1 block, used by the scans that take a
+/// runtime form and by the `some` run mode.
+const latin1_inert_by_form: [4][0x80]bool = blk: {
+    @setEvalBranchQuota(200_000);
+    var table: [4][0x80]bool = undefined;
+    for (0..4) |form_index| {
+        const form: Form = @enumFromInt(form_index);
+        for (0x80..0x100) |codepoint| {
+            table[form_index][codepoint - 0x80] = latin1Inert(
+                form,
+                @intCast(codepoint),
+            );
+        }
+    }
+    break :blk table;
+};
+
+const latin1_mode_by_form = [4]Latin1Run{
+    latin1RunMode(.nfc),
+    latin1RunMode(.nfd),
+    latin1RunMode(.nfkc),
+    latin1RunMode(.nfkd),
 };
 
 /// `jamoRunInert` for the scans that take a runtime form.
@@ -146,13 +179,15 @@ const ScanRun = struct {
     last_offset: usize,
 };
 
-/// Scan one run of ASCII scalars and, when `latin1` is set, two-byte Latin-1
+/// Scan one run of ASCII scalars and, when `mode` allows, two-byte Latin-1
 /// scalars, merging alternations of the two so a prose span is one run.
-/// `start` must point at an ASCII byte or a Latin-1 lead.
-fn scanAsciiLatin1Run(
+/// `start` must point at an ASCII byte or a Latin-1 lead. Returns an empty
+/// run when the first scalar is Latin-1 and not inert.
+inline fn scanAsciiLatin1Run(
     text: []const u8,
     start: usize,
-    latin1: bool,
+    comptime mode: Latin1Run,
+    mask: *const [0x80]bool,
 ) ScanRun {
     var end = start;
     var last_codepoint: u21 = undefined;
@@ -164,14 +199,16 @@ fn scanAsciiLatin1Run(
             last_codepoint = text[end - 1];
             last_offset = end - 1;
         }
-        if (!latin1 or end + 1 >= text.len or
+        if (mode == .none or end + 1 >= text.len or
             (text[end] != 0xc2 and text[end] != 0xc3) or
             (text[end + 1] & 0xc0) != 0x80)
         {
             break;
         }
-        last_codepoint = (@as(u21, text[end] & 0x1f) << 6) |
+        const codepoint = (@as(u21, text[end] & 0x1f) << 6) |
             (text[end + 1] & 0x3f);
+        if (mode == .some and !mask[codepoint - 0x80]) break;
+        last_codepoint = codepoint;
         last_offset = end;
         end += 2;
     }
@@ -193,7 +230,8 @@ fn normalizeFusedInto(
 
     const compatibility = form == .nfkc or form == .nfkd;
     const compose = form == .nfc or form == .nfkc;
-    const latin1_run = comptime latin1RunInert(form);
+    const latin1_mode = comptime latin1RunMode(form);
+    const latin1_mask = &latin1_inert_by_form[@intFromEnum(form)];
     const jamo_run = comptime jamoRunInert(form);
     var engine = SegmentEngine(Utf8Sink){
         .allocator = allocator,
@@ -211,15 +249,22 @@ fn normalizeFusedInto(
     var index: usize = ascii_end;
     while (index < text.len) {
         if (text[index] < 0x80 or
-            (latin1_run and (text[index] == 0xc2 or text[index] == 0xc3) and
+            (latin1_mode != .none and
+                (text[index] == 0xc2 or text[index] == 0xc3) and
                 index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80))
         {
-            const run = scanAsciiLatin1Run(text, index, latin1_run);
-            starter = run.last_codepoint;
-            starter_offset = run.last_offset;
-            previous_input_class = 0;
-            index = run.end;
-            continue;
+            const run = switch (latin1_mode) {
+                .none => scanAsciiLatin1Run(text, index, .none, latin1_mask),
+                .all => scanAsciiLatin1Run(text, index, .all, latin1_mask),
+                .some => scanAsciiLatin1Run(text, index, .some, latin1_mask),
+            };
+            if (run.end > index) {
+                starter = run.last_codepoint;
+                starter_offset = run.last_offset;
+                previous_input_class = 0;
+                index = run.end;
+                continue;
+            }
         }
         const start = index;
         if (jamo_run and text[index] == 0xe1 and index + 2 < text.len and
@@ -1327,11 +1372,9 @@ fn normalizeFusedUtf16Into(
     if (units.len == 0) return false;
     const compatibility = form == .nfkc or form == .nfkd;
     const compose = form == .nfc or form == .nfkc;
-    const latin1_run = comptime latin1RunInert(form);
+    const latin1_mode = comptime latin1RunMode(form);
+    const latin1_mask = &latin1_inert_by_form[@intFromEnum(form)];
     const jamo_run = comptime jamoRunInert(form);
-    // Latin-1 prose is inert under the composed forms, so it joins the ASCII
-    // run scan there.
-    const run_limit: u16 = if (latin1_run) 0x100 else 0x80;
     var sink = Utf16Sink{ .list = output, .allocator = allocator };
     var stable_start: usize = 0;
     var changed = false;
@@ -1341,9 +1384,26 @@ fn normalizeFusedUtf16Into(
     var index: usize = 0;
     while (index < units.len) {
         const unit = units[index];
-        if (unit < run_limit) {
+        if (unit < 0x80 or (latin1_mode != .none and unit < 0x100 and
+            (latin1_mode == .all or latin1_mask[unit - 0x80])))
+        {
             var end = index;
-            while (end < units.len and units[end] < run_limit) end += 1;
+            if (latin1_mode == .none) {
+                while (end < units.len and units[end] < 0x80) end += 1;
+            } else if (latin1_mode == .all) {
+                while (end < units.len and units[end] < 0x100) end += 1;
+            } else {
+                while (end < units.len) {
+                    const value = units[end];
+                    if (value < 0x80 or
+                        (value < 0x100 and latin1_mask[value - 0x80]))
+                    {
+                        end += 1;
+                        continue;
+                    }
+                    break;
+                }
+            }
             starter = units[end - 1];
             starter_offset = end - 1;
             previous_input_class = 0;
@@ -1522,17 +1582,34 @@ pub fn isNormalizedUtf16(
     units: []const u16,
     form: Form,
 ) error{InvalidUtf16}!bool {
-    const latin1_run = latin1_run_inert_by_form[@intFromEnum(form)];
+    const latin1_mode = latin1_mode_by_form[@intFromEnum(form)];
+    const latin1_mask = &latin1_inert_by_form[@intFromEnum(form)];
     const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
-    const run_limit: u16 = if (latin1_run) 0x100 else 0x80;
     var starter: ?u21 = null;
     var previous_input_class: u8 = 0;
     var cursor: usize = 0;
     while (cursor < units.len) {
         const unit = units[cursor];
-        if (unit < run_limit) {
+        if (unit < 0x80 or (latin1_mode != .none and unit < 0x100 and
+            (latin1_mode == .all or latin1_mask[unit - 0x80])))
+        {
             var end = cursor;
-            while (end < units.len and units[end] < run_limit) end += 1;
+            if (latin1_mode == .none) {
+                while (end < units.len and units[end] < 0x80) end += 1;
+            } else if (latin1_mode == .all) {
+                while (end < units.len and units[end] < 0x100) end += 1;
+            } else {
+                while (end < units.len) {
+                    const value = units[end];
+                    if (value < 0x80 or
+                        (value < 0x100 and latin1_mask[value - 0x80]))
+                    {
+                        end += 1;
+                        continue;
+                    }
+                    break;
+                }
+            }
             starter = units[end - 1];
             previous_input_class = 0;
             cursor = end;
@@ -1948,21 +2025,29 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
         return .{ .normalized = true, .valid_until = text.len };
     }
 
-    const latin1_run = latin1_run_inert_by_form[@intFromEnum(form)];
+    const latin1_mode = latin1_mode_by_form[@intFromEnum(form)];
+    const latin1_mask = &latin1_inert_by_form[@intFromEnum(form)];
     const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
     var index: usize = ascii_end;
     while (index < text.len) {
         if (text[index] < 0x80 or
-            (latin1_run and (text[index] == 0xc2 or text[index] == 0xc3) and
+            (latin1_mode != .none and
+                (text[index] == 0xc2 or text[index] == 0xc3) and
                 index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80))
         {
-            const run = scanAsciiLatin1Run(text, index, latin1_run);
-            starter = run.last_codepoint;
-            previous_input_class = 0;
-            index = run.end;
-            continue;
+            const run = switch (latin1_mode) {
+                .none => scanAsciiLatin1Run(text, index, .none, latin1_mask),
+                .all => scanAsciiLatin1Run(text, index, .all, latin1_mask),
+                .some => scanAsciiLatin1Run(text, index, .some, latin1_mask),
+            };
+            if (run.end > index) {
+                starter = run.last_codepoint;
+                previous_input_class = 0;
+                index = run.end;
+                continue;
+            }
         }
         const start = index;
         if (jamo_run and text[index] == 0xe1 and index + 2 < text.len and
@@ -2078,7 +2163,8 @@ fn spanQuickCheckYesImpl(
     const ascii_end = asciiPrefixLen(text);
     if (ascii_end == text.len) return text.len;
 
-    const latin1_run = latin1_run_inert_by_form[@intFromEnum(form)];
+    const latin1_mode = latin1_mode_by_form[@intFromEnum(form)];
+    const latin1_mask = &latin1_inert_by_form[@intFromEnum(form)];
     const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
     var starter_offset: usize = if (ascii_end > 0) ascii_end - 1 else 0;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
@@ -2086,15 +2172,22 @@ fn spanQuickCheckYesImpl(
     var index: usize = ascii_end;
     while (index < text.len) {
         if (text[index] < 0x80 or
-            (latin1_run and (text[index] == 0xc2 or text[index] == 0xc3) and
+            (latin1_mode != .none and
+                (text[index] == 0xc2 or text[index] == 0xc3) and
                 index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80))
         {
-            const run = scanAsciiLatin1Run(text, index, latin1_run);
-            starter = run.last_codepoint;
-            starter_offset = run.last_offset;
-            previous_input_class = 0;
-            index = run.end;
-            continue;
+            const run = switch (latin1_mode) {
+                .none => scanAsciiLatin1Run(text, index, .none, latin1_mask),
+                .all => scanAsciiLatin1Run(text, index, .all, latin1_mask),
+                .some => scanAsciiLatin1Run(text, index, .some, latin1_mask),
+            };
+            if (run.end > index) {
+                starter = run.last_codepoint;
+                starter_offset = run.last_offset;
+                previous_input_class = 0;
+                index = run.end;
+                continue;
+            }
         }
         const start = index;
         if (jamo_run and text[index] == 0xe1 and index + 2 < text.len and
