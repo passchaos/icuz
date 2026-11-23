@@ -227,15 +227,17 @@ fn convertInner(
     if (ascii_domain and !hasAlabel(domain)) {
         return convertAsciiAlloc(allocator, domain, options, ascii_output);
     }
-    if (!scalar.validate.isValid(domain)) return error.InvalidUtf8;
-
     var codepoints = std.ArrayList(u21).empty;
     defer codepoints.deinit(allocator);
     try codepoints.ensureTotalCapacity(allocator, domain.len);
+    // The packed decoder validates each sequence, so one pass replaces the
+    // separate UTF-8 validation scan.
     var cursor: usize = 0;
-    while (scalar.decodeValid(domain, cursor)) |decoded| {
-        codepoints.appendAssumeCapacity(decoded.codepoint);
-        cursor = decoded.next;
+    while (cursor < domain.len) {
+        const decoded = scalar.decodeValidatingPacked(domain, cursor);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        codepoints.appendAssumeCapacity(scalar.packedCodepoint(decoded));
+        cursor += scalar.packedLength(decoded);
     }
 
     var mapped = std.ArrayList(u21).empty;
@@ -393,6 +395,7 @@ fn convertInner(
                         options,
                         domain_has_rtl,
                         false,
+                        true,
                     ))
                 {
                     had_error = true;
@@ -415,6 +418,7 @@ fn convertInner(
                 options,
                 domain_has_rtl,
                 label.owned != null,
+                false,
             ))
         {
             had_error = true;
@@ -573,6 +577,7 @@ fn validateLabel(
     options: Options,
     domain_has_rtl: bool,
     check_nfc: bool,
+    status_known_ok: bool,
 ) bool {
     if (label.len == 0) return false;
     // Labels cut from the mapped domain are already NFC: either the domain
@@ -581,11 +586,15 @@ fn validateLabel(
     if (check_nfc and !normalization.isNormalizedCodepoints(label, .nfc)) {
         return false;
     }
-    for (label) |codepoint| {
-        if (codepoint == '.') return false;
-        switch (statusFor(codepoint)) {
-            .valid, .deviation => {},
-            else => return false,
+    // A label cut from the mapped domain cannot contain '.', and a clean
+    // mapping pass already proved every scalar's status.
+    if (!status_known_ok) {
+        for (label) |codepoint| {
+            if (codepoint == '.') return false;
+            switch (statusFor(codepoint)) {
+                .valid, .deviation => {},
+                else => return false,
+            }
         }
     }
     if (options.check_hyphens) {
