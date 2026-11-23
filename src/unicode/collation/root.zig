@@ -446,13 +446,11 @@ pub const Collator = struct {
         {
             return .{};
         }
-        const entry = ascii_elements_table[codepoint];
+        const element = ascii_elements_table[codepoint];
         var result = AsciiPrimary{};
-        for (entry.elements[0..entry.count]) |element| {
-            if (element.primary != 0 and result.count < result.values.len) {
-                result.values[result.count] = element.primary;
-                result.count += 1;
-            }
+        if (element.primary != 0) {
+            result.values[0] = element.primary;
+            result.count = 1;
         }
         return result;
     }
@@ -464,12 +462,8 @@ pub const Collator = struct {
         if (self.tailoring != null) return null;
         if (codepoint >= 128) return null;
         if (!ascii_usable) return null;
-        const entry = ascii_elements_table[codepoint];
-        if (entry.count == 0) return null;
-        for (entry.elements[0..entry.count]) |element| {
-            if (element.primary != 0) return element.primary;
-        }
-        return null;
+        const element = ascii_elements_table[codepoint];
+        return if (element.primary != 0) element.primary else null;
     }
 
     /// True when a contraction starting at `codepoints[index]` could
@@ -1506,19 +1500,19 @@ const ReorderAsciiSlot = struct {
     /// 0 = empty, 1 = building, 2 = published.
     state: std.atomic.Value(u8) = std.atomic.Value(u8).init(0),
     index: u16 = 0,
-    entries: [128]AsciiEntry = undefined,
+    entries: [128]LatinElement = undefined,
 };
 
 var reorder_ascii_slots = [_]ReorderAsciiSlot{.{}} ** 4;
 var reorder_ascii_next = std.atomic.Value(usize).init(0);
 
 threadlocal var cached_reorder_index: u16 = 0xFFFF;
-threadlocal var cached_reorder_ascii: ?*const [128]AsciiEntry = null;
+threadlocal var cached_reorder_ascii: ?*const [128]LatinElement = null;
 
 /// ASCII elements remapped by `map`. Script reordering also moves Latin
 /// primary weights, so the root table cannot be used directly; the remapped
 /// copy is built once per plan and cached per thread.
-fn reorderedAsciiTable(map: tailorings.Reorder) ?*const [128]AsciiEntry {
+fn reorderedAsciiTable(map: tailorings.Reorder) ?*const [128]LatinElement {
     if (cached_reorder_index == map.index) {
         if (cached_reorder_ascii) |table| return table;
     }
@@ -1536,16 +1530,12 @@ fn reorderedAsciiTable(map: tailorings.Reorder) ?*const [128]AsciiEntry {
         return null;
     }
     for (0..128) |codepoint| {
-        const entry = ascii_elements_table[codepoint];
-        var stored = AsciiEntry{ .count = entry.count, .elements = undefined };
-        for (entry.elements[0..entry.count], 0..) |element, element_index| {
-            stored.elements[element_index] = .{
-                .primary = reorderPrimary(map, element.primary),
-                .secondary = element.secondary,
-                .tertiary = element.tertiary,
-            };
-        }
-        slot.entries[codepoint] = stored;
+        const element = ascii_elements_table[codepoint];
+        slot.entries[codepoint] = .{
+            .primary = reorderPrimary(map, element.primary),
+            .secondary = element.secondary,
+            .tertiary = element.tertiary,
+        };
     }
     slot.index = map.index;
     slot.state.store(2, .release);
@@ -1600,7 +1590,7 @@ inline fn reorderedLatinElement(
 inline fn asciiEntryFor(
     first: u21,
     reorder: ?tailorings.Reorder,
-) ?*const AsciiEntry {
+) ?*const LatinElement {
     if (reorder) |map| {
         const table = reorderedAsciiTable(map) orelse return null;
         return &table[@as(usize, first)];
@@ -1659,14 +1649,12 @@ inline fn appendElements(
                 shifted,
                 tables,
             );
-        for (ascii_entry.elements[0..ascii_entry.count]) |element| {
-            try ces.append(allocator, .{
-                .primary = element.primary,
-                .secondary = element.secondary,
-                .tertiary = element.tertiary,
-                .variable = false,
-            });
-        }
+        try ces.append(allocator, .{
+            .primary = ascii_entry.primary,
+            .secondary = ascii_entry.secondary,
+            .tertiary = ascii_entry.tertiary,
+            .variable = false,
+        });
         return 1;
     } else if (!shifted and first >= 128 and first < latin_limit) {
         if (reorder) |map| {
@@ -2246,47 +2234,32 @@ inline fn latinEntryElements(codepoint: u21) []const LatinElement {
 const ascii_usable = ascii_layout.usable;
 /// Runtime copy so the hot path can take a pointer into the table instead of
 /// copying an entry by value.
-var ascii_elements_table: [128]AsciiEntry = ascii_layout.table;
+var ascii_elements_table: [128]LatinElement = ascii_layout.table;
 
-const AsciiEntry = struct {
-    count: u8,
-    elements: [2]LatinElement,
-};
-
-/// Compact table for pure-ASCII text. Latin-1/Extended entries need up to
-/// four elements and would quadruple the cache footprint of the hottest
-/// collation path.
+/// Compact table for pure-ASCII text. Every ASCII scalar has exactly one
+/// collation element, so the entry is a single 12-byte record; Latin-1 and
+/// Extended-A entries need up to four elements and keep the pooled layout.
 const ascii_layout = blk: {
     @setEvalBranchQuota(2_000_000);
-    var table: [128]AsciiEntry = undefined;
+    var table: [128]LatinElement = undefined;
     var usable = true;
     for (0..128) |codepoint| {
         const sequence = [_]u21{@intCast(codepoint)};
         if (findEntryExact(&sequence)) |entry| {
-            if (entry.len != 1 or entry.ce_count > 2) {
+            if (entry.len != 1 or entry.ce_count != 1) {
                 usable = false;
-                table[codepoint] = .{ .count = 0, .elements = undefined };
+                table[codepoint] = .{ .primary = 0, .secondary = 0, .tertiary = 0 };
                 continue;
             }
-            var stored = AsciiEntry{
-                .count = entry.ce_count,
-                .elements = undefined,
+            const element = ceAt(entry.ce_offset);
+            table[codepoint] = .{
+                .primary = element.primary,
+                .secondary = element.secondary,
+                .tertiary = element.tertiary,
             };
-            var element_index: usize = 0;
-            while (element_index < entry.ce_count) : (element_index += 1) {
-                const element = ceAt(
-                    @as(usize, entry.ce_offset) + element_index,
-                );
-                stored.elements[element_index] = .{
-                    .primary = element.primary,
-                    .secondary = element.secondary,
-                    .tertiary = element.tertiary,
-                };
-            }
-            table[codepoint] = stored;
         } else {
             usable = false;
-            table[codepoint] = .{ .count = 0, .elements = undefined };
+            table[codepoint] = .{ .primary = 0, .secondary = 0, .tertiary = 0 };
         }
     }
     // A contraction whose continuation is also ASCII could match inside a
@@ -2333,23 +2306,21 @@ fn appendAsciiLevels(
     const need_secondary = strength != .primary;
     const need_tertiary = strength != .primary and strength != .secondary;
     for (codepoints) |codepoint| {
-        const entry = ascii_elements_table[codepoint];
-        for (entry.elements[0..entry.count]) |element| {
-            if (element.primary != 0) {
-                if (primary_len == primary.len) return false;
-                primary[primary_len] = element.primary;
-                primary_len += 1;
-            }
-            if (need_secondary and element.secondary != 0) {
-                if (secondary_len == secondary.len) return false;
-                secondary[secondary_len] = element.secondary;
-                secondary_len += 1;
-            }
-            if (need_tertiary and element.tertiary != 0) {
-                if (tertiary_len == tertiary.len) return false;
-                tertiary[tertiary_len] = element.tertiary;
-                tertiary_len += 1;
-            }
+        const element = ascii_elements_table[codepoint];
+        if (element.primary != 0) {
+            if (primary_len == primary.len) return false;
+            primary[primary_len] = element.primary;
+            primary_len += 1;
+        }
+        if (need_secondary and element.secondary != 0) {
+            if (secondary_len == secondary.len) return false;
+            secondary[secondary_len] = element.secondary;
+            secondary_len += 1;
+        }
+        if (need_tertiary and element.tertiary != 0) {
+            if (tertiary_len == tertiary.len) return false;
+            tertiary[tertiary_len] = element.tertiary;
+            tertiary_len += 1;
         }
     }
     const separator = strength == .quaternary or strength == .identical;
@@ -2379,16 +2350,14 @@ fn appendAsciiLevel(
     level: Level,
 ) error{OutOfMemory}!void {
     for (codepoints) |codepoint| {
-        const entry = ascii_elements_table[codepoint];
-        for (entry.elements[0..entry.count]) |element| {
-            const weight = switch (level) {
-                .primary => element.primary,
-                .secondary => element.secondary,
-                .tertiary => element.tertiary,
-                .quaternary => 0,
-            };
-            if (weight != 0) try output.append(allocator, weight);
-        }
+        const element = ascii_elements_table[codepoint];
+        const weight = switch (level) {
+            .primary => element.primary,
+            .secondary => element.secondary,
+            .tertiary => element.tertiary,
+            .quaternary => 0,
+        };
+        if (weight != 0) try output.append(allocator, weight);
     }
     try output.append(allocator, 0);
 }
