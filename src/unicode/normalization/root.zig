@@ -140,6 +140,7 @@ fn normalizeFusedInto(
             // scan state once when the run ends.
             var cursor = index;
             while (cursor + 6 <= text.len and
+                text[cursor] >= 0xe4 and text[cursor] <= 0xe9 and
                 text[cursor + 3] >= 0xe4 and text[cursor + 3] <= 0xe9 and
                 ((text[cursor + 1] | text[cursor + 2] |
                     text[cursor + 4] | text[cursor + 5]) & 0xc0) == 0x80)
@@ -1559,6 +1560,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
         {
             var cursor = index;
             while (cursor + 6 <= text.len and
+                text[cursor] >= 0xe4 and text[cursor] <= 0xe9 and
                 text[cursor + 3] >= 0xe4 and text[cursor + 3] <= 0xe9 and
                 ((text[cursor + 1] | text[cursor + 2] |
                     text[cursor + 4] | text[cursor + 5]) & 0xc0) == 0x80)
@@ -1668,6 +1670,7 @@ fn spanQuickCheckYesImpl(
         {
             var cursor = index;
             while (cursor + 6 <= text.len and
+                text[cursor] >= 0xe4 and text[cursor] <= 0xe9 and
                 text[cursor + 3] >= 0xe4 and text[cursor + 3] <= 0xe9 and
                 ((text[cursor + 1] | text[cursor + 2] |
                     text[cursor + 4] | text[cursor + 5]) & 0xc0) == 0x80)
