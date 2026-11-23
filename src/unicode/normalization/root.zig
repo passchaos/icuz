@@ -3001,8 +3001,8 @@ fn pairChangesUnderForm(starter: u21, current: u21, form: Form) bool {
         // [starter, current], so the direct composition check above already
         // answered. Hangul syllables decompose algorithmically, but their
         // only pair compositions are L+V/T, which `composePair` covers.
-        if (decomposition.forCodepoint(starter) == null and
-            decomposition.forCodepoint(current) == null)
+        if (!decomposition.hasCanonical(starter) and
+            !decomposition.hasCanonical(current))
         {
             return false;
         }

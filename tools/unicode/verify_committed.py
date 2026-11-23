@@ -506,7 +506,7 @@ GENERATORS = {
     "tools/unicode/charset/generate_hkscs.cpp": "49d5b58699b87396cbb4d12b558b850fcaffcb7adc0fa13493fe4d979d728a36",
     "tools/unicode/charset/generate_euctw.cpp": "76abbddddaa54f531aead7d06116ed62ba776da4237b1b1746e7ade772fb1151",
     "tools/unicode/resource/generate_fixtures.sh": "0192498b15e091adad4c099264eec11176d7c213d160feabd03c46b39a867dc5",
-    "tools/generate_canonical_decomposition.py": "450c932dbd278208bccd3ab8bb26f04f1b18a96051fc03944393f5d73e3ad6d8",
+    "tools/generate_canonical_decomposition.py": "a018a8df6ee769884dbcd5e34d91a6fe33c05cfad6f1c911a90af0ef9ce403b7",
     "tools/generate_nonspacing_marks.py": "12d45f34ce2891ccf1b342bc8f44c6fe32e15e019d7a41489d8036dee9f8555c",
     "tools/unicode/normalization/generate_conformance.py": "c3e9f80b8fb410a2d142cfbb228941d01322672b28261c1e0c0de53eb662ee43",
     "tools/unicode/normalization/generate_data.py": "3d8f5c4d5e928c97ef049556c1eab8efb4129f1aafd91bf2fa696184245dbc56",
@@ -623,7 +623,7 @@ GENERATED_TEXT = (
     GeneratedText(
         "src/unicode/canonical/decomposition.zig",
         "tools/generate_canonical_decomposition.py",
-        "deb8804398b767eaaf0c0bd3765ea5e0059073612005aed80f8ac9a193c3f240",
+        "af533a7de52db7d88dffd4e3cd41d34db3602b74fd5438b7294d139a2ffba21f",
     ),
     GeneratedText(
         "src/unicode/mark/nonspacing.zig",

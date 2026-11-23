@@ -17652,6 +17652,40 @@ const mark_leading_index = buildPageIndex(&mark_leading_records);
 const compat_direct_index = buildPageIndex(&compat_direct_records);
 const compat_recursive_index = buildPageIndex(&compat_recursive_records);
 
+/// Bitmap of scalars with a recursive canonical decomposition, built from the
+/// same records as `forCodepoint`. The quick-check pair test only needs the
+/// yes/no answer, and two loads beat a binary search over the record pages.
+const canonical_mask = blk: {
+    @setEvalBranchQuota(10_000_000);
+    var used = [_]bool{false} ** 0x1100;
+    for (recursive_records) |record| {
+        used[record.codepoint >> 8] = true;
+    }
+    var slots = [_]u16{0xffff} ** 0x1100;
+    var slot_count: usize = 0;
+    for (0..0x1100) |page| {
+        if (used[page]) {
+            slots[page] = @intCast(slot_count);
+            slot_count += 1;
+        }
+    }
+    var masks = [_]u8{0} ** (slot_count * 32);
+    for (recursive_records) |record| {
+        const slot = slots[record.codepoint >> 8];
+        const low: usize = record.codepoint & 0xff;
+        masks[slot * 32 + low / 8] |= @as(u8, 1) << @intCast(low & 7);
+    }
+    break :blk .{ .slots = slots, .masks = masks };
+};
+
+/// True when `codepoint` has a recursive canonical decomposition.
+pub inline fn hasCanonical(codepoint: u21) bool {
+    const slot = canonical_mask.slots[codepoint >> 8];
+    if (slot == 0xffff) return false;
+    return canonical_mask.masks[slot * 32 + ((codepoint & 0xff) >> 3)] &
+        (@as(u8, 1) << @intCast(codepoint & 7)) != 0;
+}
+
 fn lookup(
     codepoint: u21,
     records: []const Record,
