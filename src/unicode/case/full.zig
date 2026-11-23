@@ -732,8 +732,10 @@ fn mapStreamingInto(
                 else
                     &pair_upper_table,
             };
-            var entry = table[(@as(usize, first) - pair_lead_first) * 64 +
-                (second & 0x3f)];
+            var entry = table[
+                (@as(usize, first) - pair_lead_first) * 64 +
+                    (second & 0x3f)
+            ];
             if (entry != pair_slow) {
                 if (entry == pair_conditional) {
                     entry = if (mode == .full and
