@@ -41,6 +41,7 @@ const time_scale_mod = @import("./format/time_scale.zig");
 const regex_mod = @import("./regex/root.zig");
 const calendar_preferences_mod = @import("./format/calendar_preferences.zig");
 const currencies_mod = @import("./format/currencies.zig");
+const numbering_systems_mod = @import("./format/numbering_systems.zig");
 const week_mod = @import("./format/week.zig");
 const gender_mod = @import("./format/gender.zig");
 const message_mod = @import("./format/message.zig");
@@ -352,6 +353,13 @@ pub const currencyName = currencies_mod.name;
 pub const findCurrency = currencies_mod.find;
 pub const currencyCodeForRegion = currencies_mod.codeForRegion;
 pub const currencyCodeForLocale = currencies_mod.codeForLocale;
+pub const NumberingSystem = numbering_systems_mod.System;
+pub fn numberingSystemCount() usize {
+    return numbering_systems_mod.systems.len;
+}
+pub fn numberingSystemAt(index: usize) NumberingSystem {
+    return numbering_systems_mod.systems[index];
+}
 pub const NumberOptions = number_mod.Options;
 pub const NumberParseOptions = number_mod.ParseOptions;
 pub const NumberField = number_mod.NumberField;
