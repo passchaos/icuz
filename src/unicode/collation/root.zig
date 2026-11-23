@@ -649,36 +649,25 @@ pub const Collator = struct {
         count: u8 = 0,
     };
 
-    /// First two nonzero primary weights of a root-collation string, or null
-    /// when the leading eight scalars are not inert starters or no weight
-    /// appears within them. Two weights decide implicit (Han) differences,
-    /// where the block primary is shared and the second primary differs.
-    fn firstRootPrimaries(
+    /// First two nonzero primary weights of an inert-starter codepoint
+    /// window. Two weights decide implicit (Han) differences, where the block
+    /// primary is shared and the second primary differs.
+    fn firstRootPrimariesCodepoints(
         self: *const Collator,
         allocator: std.mem.Allocator,
-        text: []const u8,
+        codepoints: []const u21,
     ) ?FirstPrimaries {
         if (self.tailoring != null) return null;
         ensureRootTables();
-        var codepoints: [8]u21 = undefined;
-        var count: usize = 0;
-        var cursor: usize = 0;
-        while (count < codepoints.len and cursor < text.len) {
-            const decoded = scalar.decodeValid(text, cursor) orelse return null;
-            if (!normalization.isNfdInert(decoded.codepoint)) return null;
-            codepoints[count] = decoded.codepoint;
-            count += 1;
-            cursor = decoded.next;
-        }
         var result = FirstPrimaries{};
         var sink = FirstPrimarySink{};
         var index: usize = 0;
-        while (index < count and result.count < result.values.len) {
+        while (index < codepoints.len and result.count < result.values.len) {
             sink.len = 0;
             index += appendElements(
                 allocator,
                 &sink,
-                codepoints[0..count],
+                codepoints,
                 index,
                 null,
                 false,
@@ -694,6 +683,50 @@ pub const Collator = struct {
         return if (result.count == 0) null else result;
     }
 
+    /// First two nonzero primary weights of a UTF-8 root-collation string, or
+    /// null when the leading eight scalars are not inert starters or no
+    /// weight appears within them.
+    fn firstRootPrimaries(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        text: []const u8,
+    ) ?FirstPrimaries {
+        if (self.tailoring != null) return null;
+        var codepoints: [8]u21 = undefined;
+        var count: usize = 0;
+        var cursor: usize = 0;
+        while (count < codepoints.len and cursor < text.len) {
+            const decoded = scalar.decodeValid(text, cursor) orelse return null;
+            if (!normalization.isNfdInert(decoded.codepoint)) return null;
+            codepoints[count] = decoded.codepoint;
+            count += 1;
+            cursor = decoded.next;
+        }
+        return self.firstRootPrimariesCodepoints(allocator, codepoints[0..count]);
+    }
+
+    /// UTF-16 counterpart of `firstRootPrimaries`.
+    fn firstRootPrimaries16(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        units: []const u16,
+    ) ?FirstPrimaries {
+        if (self.tailoring != null) return null;
+        var codepoints: [8]u21 = undefined;
+        var count: usize = 0;
+        var index: usize = 0;
+        while (count < codepoints.len and index < units.len) {
+            const decoded = utf16.decodePacked(units, index);
+            if (decoded == utf16.packed_invalid) return null;
+            const codepoint = utf16.packedCodepoint(decoded);
+            if (!normalization.isNfdInert(codepoint)) return null;
+            codepoints[count] = codepoint;
+            count += 1;
+            index += utf16.packedLength(decoded);
+        }
+        return self.firstRootPrimariesCodepoints(allocator, codepoints[0..count]);
+    }
+
     /// Order decided by the first two primary weights, when one differs.
     fn firstPrimariesOrder(
         self: *const Collator,
@@ -704,6 +737,34 @@ pub const Collator = struct {
         const primaries_a = self.firstRootPrimaries(allocator, a) orelse
             return null;
         const primaries_b = self.firstRootPrimaries(allocator, b) orelse
+            return null;
+        if (primaries_a.values[0] != primaries_b.values[0]) {
+            return if (primaries_a.values[0] < primaries_b.values[0])
+                .lt
+            else
+                .gt;
+        }
+        if (primaries_a.count == 2 and primaries_b.count == 2 and
+            primaries_a.values[1] != primaries_b.values[1])
+        {
+            return if (primaries_a.values[1] < primaries_b.values[1])
+                .lt
+            else
+                .gt;
+        }
+        return null;
+    }
+
+    /// UTF-16 counterpart of `firstPrimariesOrder`.
+    fn firstPrimariesOrder16(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        a: []const u16,
+        b: []const u16,
+    ) ?std.math.Order {
+        const primaries_a = self.firstRootPrimaries16(allocator, a) orelse
+            return null;
+        const primaries_b = self.firstRootPrimaries16(allocator, b) orelse
             return null;
         if (primaries_a.values[0] != primaries_b.values[0]) {
             return if (primaries_a.values[0] < primaries_b.values[0])
@@ -935,6 +996,7 @@ pub const Collator = struct {
         if (diff == @min(a.len, b.len) and a.len == b.len) return .eq;
         if (self.simpleOrdering()) {
             if (diff == 0 and self.tailoring == null and
+                a.len > 0 and b.len > 0 and
                 a[0] < 0x80 and b[0] < 0x80 and
                 !ascii_contractions[a[0]] and !ascii_contractions[b[0]])
             {
@@ -1007,6 +1069,144 @@ pub const Collator = struct {
         }
         try self.sortKeyIntoAssumeValid(allocator, a, key_a);
         try self.sortKeyIntoAssumeValid(allocator, b, key_b);
+        return std.mem.order(u32, key_a.items, key_b.items);
+    }
+
+    /// Unit offset of the first difference between two UTF-16 slices.
+    fn commonUnitPrefix(a: []const u16, b: []const u16) usize {
+        const limit = @min(a.len, b.len);
+        var index: usize = 0;
+        while (index + 32 <= limit) : (index += 32) {
+            const a0: @Vector(16, u16) = a[index..][0..16].*;
+            const b0: @Vector(16, u16) = b[index..][0..16].*;
+            const a1: @Vector(16, u16) = a[index + 16 ..][0..16].*;
+            const b1: @Vector(16, u16) = b[index + 16 ..][0..16].*;
+            const mask0: u16 = @bitCast(a0 != b0);
+            const mask1: u16 = @bitCast(a1 != b1);
+            if ((mask0 | mask1) != 0) {
+                if (mask0 != 0) return index + @ctz(mask0);
+                return index + 16 + @ctz(mask1);
+            }
+        }
+        while (index < limit and a[index] == b[index]) : (index += 1) {}
+        return index;
+    }
+
+    /// True when the scalars ending at unit `end` are inert at the boundary
+    /// and start no contraction that could span it.
+    fn safeBoundaryBefore16(
+        self: *const Collator,
+        text: []const u16,
+        end: usize,
+    ) bool {
+        const window: usize = if (self.tailoring == null) 3 else 8;
+        var cursor = end;
+        var checked: usize = 0;
+        while (cursor > 0 and checked < window) : (checked += 1) {
+            var start = cursor - 1;
+            if (text[start] >= 0xdc00 and text[start] <= 0xdfff and
+                start > 0 and text[start - 1] >= 0xd800 and
+                text[start - 1] <= 0xdbff)
+            {
+                start -= 1;
+            }
+            const decoded = utf16.decodePacked(text, start);
+            if (decoded == utf16.packed_invalid) return false;
+            if (start + utf16.packedLength(decoded) != cursor) return false;
+            const codepoint = utf16.packedCodepoint(decoded);
+            if (checked == 0 and !normalization.isNfdInert(codepoint)) {
+                return false;
+            }
+            if (self.startsContraction(codepoint)) return false;
+            cursor = start;
+        }
+        return true;
+    }
+
+    /// Unit offset after the longest skippable UTF-16 common prefix.
+    fn commonPrefixSkip16(
+        self: *const Collator,
+        a: []const u16,
+        index: usize,
+    ) ?usize {
+        if (index == 0) return null;
+        var boundary = index;
+        // Do not split a surrogate pair; the differing scalar stays in the
+        // suffix.
+        if (boundary < a.len and
+            a[boundary] >= 0xdc00 and a[boundary] <= 0xdfff and
+            a[boundary - 1] >= 0xd800 and a[boundary - 1] <= 0xdbff)
+        {
+            boundary -= 1;
+        }
+        if (boundary == 0) return null;
+        if (!self.safeBoundaryBefore16(a, boundary)) return null;
+        return boundary;
+    }
+
+    /// Compare two UTF-16 strings already proven valid. Mirrors
+    /// `compareAssumeValid` for UTF-16 input.
+    pub fn compareUtf16AssumeValid(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        a: []const u16,
+        b: []const u16,
+        key_a: *std.ArrayList(u32),
+        key_b: *std.ArrayList(u32),
+    ) error{ InvalidUtf16, OutOfMemory }!std.math.Order {
+        const diff = commonUnitPrefix(a, b);
+        if (diff == @min(a.len, b.len) and a.len == b.len) return .eq;
+        if (self.simpleOrdering()) {
+            if (diff == 0 and self.tailoring == null and
+                a.len > 0 and b.len > 0 and
+                a[0] < 0x80 and b[0] < 0x80 and
+                !ascii_contractions[a[0]] and !ascii_contractions[b[0]])
+            {
+                const primary_a = ascii_elements_table[a[0]].primary;
+                const primary_b = ascii_elements_table[b[0]].primary;
+                if (primary_a != 0 and primary_b != 0 and
+                    primary_a != primary_b)
+                {
+                    return if (primary_a < primary_b) .lt else .gt;
+                }
+            }
+            if (diff <= 32) {
+                if (self.firstPrimariesOrder16(allocator, a, b)) |order| {
+                    return order;
+                }
+            }
+            if (self.commonPrefixSkip16(a, diff)) |start| {
+                if (start < a.len and start < b.len) {
+                    if (self.tailoring == null and
+                        a[start] < 0x80 and b[start] < 0x80 and
+                        !ascii_contractions[a[start]] and
+                        !ascii_contractions[b[start]])
+                    {
+                        const primary_a =
+                            ascii_elements_table[a[start]].primary;
+                        const primary_b =
+                            ascii_elements_table[b[start]].primary;
+                        if (primary_a != 0 and primary_b != 0 and
+                            primary_a != primary_b)
+                        {
+                            return if (primary_a < primary_b) .lt else .gt;
+                        }
+                    }
+                    if (self.firstPrimariesOrder16(
+                        allocator,
+                        a[start..],
+                        b[start..],
+                    )) |order| {
+                        return order;
+                    }
+                }
+                try self.sortKeyUtf16Into(allocator, a[start..], key_a);
+                try self.sortKeyUtf16Into(allocator, b[start..], key_b);
+                return std.mem.order(u32, key_a.items, key_b.items);
+            }
+        }
+        try self.sortKeyUtf16Into(allocator, a, key_a);
+        try self.sortKeyUtf16Into(allocator, b, key_b);
         return std.mem.order(u32, key_a.items, key_b.items);
     }
 
@@ -5330,6 +5530,36 @@ test "compare matches full keys across shared prefixes" {
                 allocator,
                 case.b,
                 case.a,
+                &scratch_a,
+                &scratch_b,
+            ),
+        );
+        const units_a = try std.unicode.utf8ToUtf16LeAlloc(
+            allocator,
+            case.a,
+        );
+        defer allocator.free(units_a);
+        const units_b = try std.unicode.utf8ToUtf16LeAlloc(
+            allocator,
+            case.b,
+        );
+        defer allocator.free(units_b);
+        try testing.expectEqual(
+            expected,
+            try collator.compareUtf16AssumeValid(
+                allocator,
+                units_a,
+                units_b,
+                &scratch_a,
+                &scratch_b,
+            ),
+        );
+        try testing.expectEqual(
+            expected.invert(),
+            try collator.compareUtf16AssumeValid(
+                allocator,
+                units_b,
+                units_a,
                 &scratch_a,
                 &scratch_b,
             ),

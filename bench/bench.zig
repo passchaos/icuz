@@ -938,6 +938,45 @@ fn benchCollationCompare(
     reportOps(name, rounds, best);
 }
 
+fn benchCollationCompareUtf16(
+    name: []const u8,
+    a: []const u8,
+    b: []const u8,
+    options: icuz.collation.Options,
+    allocator: std.mem.Allocator,
+) void {
+    const units_a = std.unicode.utf8ToUtf16LeAlloc(allocator, a) catch
+        unreachable;
+    defer allocator.free(units_a);
+    const units_b = std.unicode.utf8ToUtf16LeAlloc(allocator, b) catch
+        unreachable;
+    defer allocator.free(units_b);
+    const collator = icuz.collation.Collator.init(options);
+    var key_a = std.ArrayList(u32).empty;
+    defer key_a.deinit(allocator);
+    var key_b = std.ArrayList(u32).empty;
+    defer key_b.deinit(allocator);
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 20_000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const order = collator.compareUtf16AssumeValid(
+                allocator,
+                units_a,
+                units_b,
+                &key_a,
+                &key_b,
+            ) catch unreachable;
+            sink +%= @intFromEnum(order);
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps(name, rounds, best);
+}
+
 fn benchCollationCompareAssumeValid(
     name: []const u8,
     a: []const u8,
@@ -1621,6 +1660,27 @@ pub fn main() !void {
     );
     benchCollationCompareAssumeValid(
         "UCA compare Swedish (assume valid)",
+        swedish_runtime,
+        swedish_compare_runtime,
+        .{ .locale = "sv" },
+        allocator,
+    );
+    benchCollationCompareUtf16(
+        "UCA compare mixed (utf16)",
+        mixed_runtime,
+        mixed_compare_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationCompareUtf16(
+        "UCA compare mixed early (utf16)",
+        mixed_runtime,
+        mixed_early_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationCompareUtf16(
+        "UCA compare Swedish (utf16)",
         swedish_runtime,
         swedish_compare_runtime,
         .{ .locale = "sv" },
