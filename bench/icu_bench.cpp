@@ -210,6 +210,58 @@ int main() {
         ucol_close(coll);
     }
 
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        UCollator* coll = ucol_open("en", &status);
+        if (!U_FAILURE(status)) {
+            ucol_setStrength(coll, UCOL_TERTIARY);
+            const auto& u16 = texts[1].u16;
+            std::vector<UChar> other = u16;
+            // Mutate near the end so the comparison cannot stop early.
+            other[other.size() - 3] = static_cast<UChar>('u');
+            {
+                std::vector<UChar> long_other = texts[14].u16;
+                long_other[long_other.size() - 3] = static_cast<UChar>('u');
+                bench_ops("UCA compare Chinese long", 2000, [&] {
+                    const int32_t result = ucol_strcoll(coll,
+                        texts[14].u16.data(),
+                        static_cast<int32_t>(texts[14].u16.size()),
+                        long_other.data(),
+                        static_cast<int32_t>(long_other.size()));
+                    (void)result;
+                });
+            }
+            {
+                std::vector<UChar> early = u16;
+                early[0] = static_cast<UChar>('Z');
+                bench_ops("UCA compare mixed early", 20000, [&] {
+                    const int32_t result = ucol_strcoll(coll, u16.data(),
+                        static_cast<int32_t>(u16.size()), early.data(),
+                        static_cast<int32_t>(early.size()));
+                    (void)result;
+                });
+            }
+            {
+                std::vector<UChar> swedish_other = texts[2].u16;
+                bench_ops("UCA compare Swedish", 20000, [&] {
+                    const int32_t result = ucol_strcoll(coll,
+                        texts[2].u16.data(),
+                        static_cast<int32_t>(texts[2].u16.size()),
+                        swedish_other.data(),
+                        static_cast<int32_t>(swedish_other.size()));
+                    (void)result;
+                });
+            }
+            bench_ops("UCA compare mixed", 20000, [&] {
+                const int32_t result = ucol_strcoll(coll, u16.data(),
+                    static_cast<int32_t>(u16.size()), other.data(),
+                    static_cast<int32_t>(other.size()));
+                (void)result;
+            });
+            ucol_close(coll);
+        }
+    }
+
     std::printf("\n-- normalization and case --\n");
     {
         UErrorCode status = U_ZERO_ERROR;

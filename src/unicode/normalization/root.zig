@@ -1083,6 +1083,13 @@ pub fn isNormalizedCodepoints(
     return true;
 }
 
+/// True when the scalar is inert under NFD: ASCII, or no canonical
+/// decomposition with a zero combining class.
+pub inline fn isNfdInert(codepoint: u21) bool {
+    if (codepoint < 0x80) return true;
+    return inert.isInert(codepoint, .nfd);
+}
+
 /// Streaming NFD quick-check state. Callers that already decode UTF-8 can
 /// feed each scalar as it is produced instead of scanning the decoded array
 /// again; the state matches `isNormalizedCodepoints(codepoints, .nfd)`.

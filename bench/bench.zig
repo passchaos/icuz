@@ -905,6 +905,66 @@ fn benchCollationCollator(
     reportBytes(name, rounds * text.len, best);
 }
 
+fn benchCollationCompare(
+    name: []const u8,
+    a: []const u8,
+    b: []const u8,
+    options: icuz.collation.Options,
+    allocator: std.mem.Allocator,
+) void {
+    const collator = icuz.collation.Collator.init(options);
+    var key_a = std.ArrayList(u32).empty;
+    defer key_a.deinit(allocator);
+    var key_b = std.ArrayList(u32).empty;
+    defer key_b.deinit(allocator);
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 20_000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const order = collator.compare(
+                allocator,
+                a,
+                b,
+                &key_a,
+                &key_b,
+            ) catch unreachable;
+            sink +%= @intFromEnum(order);
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps(name, rounds, best);
+}
+
+fn benchCollationCompareAlloc(
+    name: []const u8,
+    a: []const u8,
+    b: []const u8,
+    options: icuz.collation.Options,
+    allocator: std.mem.Allocator,
+) void {
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 5_000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const order = icuz.collation.compare(
+                allocator,
+                a,
+                b,
+                options,
+            ) catch unreachable;
+            sink +%= @intFromEnum(order);
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps(name, rounds, best);
+}
+
 fn benchCharset(
     name: []const u8,
     text: []const u8,
@@ -1235,6 +1295,19 @@ pub fn main() !void {
         .{},
     );
     const swedish_runtime = try allocator.dupe(u8, swedish_text);
+    const mixed_compare_runtime = try allocator.dupe(u8, mixed_text);
+    // Mutate near the end so the comparison cannot stop early.
+    mixed_compare_runtime[mixed_compare_runtime.len - 3] = 'u';
+    const mixed_early_runtime = try allocator.dupe(u8, mixed_text);
+    mixed_early_runtime[0] = 'Z';
+    const chinese_collation_long_compare_runtime = try allocator.dupe(
+        u8,
+        chinese_collation_text ** 32,
+    );
+    chinese_collation_long_compare_runtime[
+        chinese_collation_long_compare_runtime.len - 3
+    ] = 'u';
+    const swedish_compare_runtime = try allocator.dupe(u8, swedish_text);
     const german_runtime = try allocator.dupe(u8, german_text);
     const chinese_collation_runtime = try allocator.dupe(u8, chinese_collation_text);
     const chinese_collation_long_runtime = try allocator.dupe(
@@ -1259,6 +1332,10 @@ pub fn main() !void {
     std.mem.doNotOptimizeAway(korean_runtime.ptr);
     std.mem.doNotOptimizeAway(gbk_runtime.ptr);
     std.mem.doNotOptimizeAway(swedish_runtime.ptr);
+    std.mem.doNotOptimizeAway(mixed_compare_runtime.ptr);
+    std.mem.doNotOptimizeAway(swedish_compare_runtime.ptr);
+    std.mem.doNotOptimizeAway(mixed_early_runtime.ptr);
+    std.mem.doNotOptimizeAway(chinese_collation_long_compare_runtime.ptr);
     std.mem.doNotOptimizeAway(german_runtime.ptr);
     std.mem.doNotOptimizeAway(chinese_collation_runtime.ptr);
     std.mem.doNotOptimizeAway(chinese_collation_long_runtime.ptr);
@@ -1450,6 +1527,41 @@ pub fn main() !void {
         "UCA sort key Swedish (collator)",
         swedish_runtime,
         .{ .locale = "sv" },
+        allocator,
+    );
+    benchCollationCompare(
+        "UCA compare mixed",
+        mixed_runtime,
+        mixed_compare_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationCompare(
+        "UCA compare Swedish",
+        swedish_runtime,
+        swedish_compare_runtime,
+        .{ .locale = "sv" },
+        allocator,
+    );
+    benchCollationCompareAlloc(
+        "UCA compare mixed (alloc)",
+        mixed_runtime,
+        mixed_compare_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationCompare(
+        "UCA compare mixed early",
+        mixed_runtime,
+        mixed_early_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationCompare(
+        "UCA compare Chinese long",
+        chinese_collation_long_runtime,
+        chinese_collation_long_compare_runtime,
+        .{},
         allocator,
     );
     benchCollationCollator(

@@ -633,6 +633,54 @@ pub const Collator = struct {
         return owned.toOwnedSlice(allocator);
     }
 
+    /// True when the sort key has no option-dependent level transforms, so a
+    /// shared prefix contributes identical weights to both keys.
+    fn simpleOrdering(self: *const Collator) bool {
+        const case_first = self.options.case_first orelse
+            (if (self.tailoring) |value| value.case_first else .off);
+        const backwards = self.options.backwards_secondary orelse
+            (if (self.tailoring) |value| value.backwards else false);
+        return self.options.variable_weighting != .shifted and
+            case_first != .upper and !backwards and
+            !self.options.numeric and !self.options.case_level;
+    }
+
+    /// Byte offset after the longest common prefix that can be skipped
+    /// without changing the comparison. The prefix is validated UTF-8, and
+    /// its last eight scalars must be NFD-inert and start no contraction, so
+    /// no rule can span into the differing suffix.
+    fn commonPrefixSkip(self: *const Collator, a: []const u8, b: []const u8) ?usize {
+        const limit = @min(a.len, b.len);
+        var index: usize = 0;
+        while (index + 8 <= limit) : (index += 8) {
+            const word_a = std.mem.readInt(u64, a[index..][0..8], .little);
+            const word_b = std.mem.readInt(u64, b[index..][0..8], .little);
+            if (word_a != word_b) break;
+        }
+        while (index < limit and a[index] == b[index]) : (index += 1) {}
+        if (index == 0) return null;
+        var boundary = index;
+        if (boundary < a.len) {
+            while (boundary > 0 and (a[boundary] & 0xc0) == 0x80) {
+                boundary -= 1;
+            }
+        }
+        if (boundary == 0) return null;
+        if (!std.unicode.utf8ValidateSlice(a[0..boundary])) return null;
+        var end = boundary;
+        var checked: usize = 0;
+        while (end > 0 and checked < 8) : (checked += 1) {
+            var start = end - 1;
+            while (start > 0 and (a[start] & 0xc0) == 0x80) start -= 1;
+            const decoded = scalar.decodeValid(a, start) orelse return null;
+            if (decoded.next != end) return null;
+            if (!normalization.isNfdInert(decoded.codepoint)) return null;
+            if (self.startsContraction(decoded.codepoint)) return null;
+            end = start;
+        }
+        return boundary;
+    }
+
     /// Compare two UTF-8 strings using caller-owned scratch lists.
     pub fn compare(
         self: *const Collator,
@@ -642,6 +690,17 @@ pub const Collator = struct {
         key_a: *std.ArrayList(u32),
         key_b: *std.ArrayList(u32),
     ) error{ InvalidUtf8, OutOfMemory }!std.math.Order {
+        if (std.mem.eql(u8, a, b)) {
+            if (!std.unicode.utf8ValidateSlice(a)) return error.InvalidUtf8;
+            return .eq;
+        }
+        if (self.simpleOrdering()) {
+            if (self.commonPrefixSkip(a, b)) |start| {
+                try self.sortKeyInto(allocator, a[start..], key_a);
+                try self.sortKeyInto(allocator, b[start..], key_b);
+                return std.mem.order(u32, key_a.items, key_b.items);
+            }
+        }
         try self.sortKeyInto(allocator, a, key_a);
         try self.sortKeyInto(allocator, b, key_b);
         return std.mem.order(u32, key_a.items, key_b.items);
@@ -656,6 +715,10 @@ pub const Collator = struct {
         key_a: *std.ArrayList(u32),
         key_b: *std.ArrayList(u32),
     ) error{ InvalidUtf16, OutOfMemory }!std.math.Order {
+        if (std.mem.eql(u16, a, b)) {
+            if (!utf16.validate(a)) return error.InvalidUtf16;
+            return .eq;
+        }
         try self.sortKeyUtf16Into(allocator, a, key_a);
         try self.sortKeyUtf16Into(allocator, b, key_b);
         return std.mem.order(u32, key_a.items, key_b.items);
@@ -4777,4 +4840,81 @@ test "direct collation table matches the generic lookup" {
             root_tables_storage.page_has_entries[page],
         );
     }
+}
+
+test "compare matches full keys across shared prefixes" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const cases = [_]struct {
+        a: []const u8,
+        b: []const u8,
+        options: Options,
+    }{
+        .{ .a = "hello world", .b = "hello worle", .options = .{} },
+        .{ .a = "hello world", .b = "zello world", .options = .{} },
+        .{ .a = "l\u{00b7}", .b = "la", .options = .{} },
+        .{ .a = "l\u{00b7}a", .b = "l\u{00b7}b", .options = .{} },
+        .{ .a = "a\u{0301}b", .b = "a\u{0300}b", .options = .{} },
+        .{
+            .a = "\u{00e5}ngstr\u{00f6}m",
+            .b = "\u{00e5}ngstr\u{00f6}n",
+            .options = .{ .locale = "sv" },
+        },
+        .{ .a = "chata", .b = "chata", .options = .{ .locale = "cs" } },
+        .{ .a = "chata", .b = "chaty", .options = .{ .locale = "cs" } },
+        .{
+            .a = "\u{4f60}\u{597d}\u{4e16}\u{754c}",
+            .b = "\u{4f60}\u{597d}\u{4e16}\u{754d}",
+            .options = .{},
+        },
+        .{ .a = "Stra\u{00df}e", .b = "Strasse", .options = .{} },
+        .{ .a = "abc", .b = "abc", .options = .{} },
+        .{ .a = "abc", .b = "abcd", .options = .{} },
+        .{ .a = "abcd", .b = "abc", .options = .{} },
+    };
+    for (cases) |case| {
+        const key_a = try sortKeyAlloc(allocator, case.a, case.options);
+        defer allocator.free(key_a);
+        const key_b = try sortKeyAlloc(allocator, case.b, case.options);
+        defer allocator.free(key_b);
+        const expected = std.mem.order(u32, key_a, key_b);
+        const collator = Collator.init(case.options);
+        var scratch_a = std.ArrayList(u32).empty;
+        defer scratch_a.deinit(allocator);
+        var scratch_b = std.ArrayList(u32).empty;
+        defer scratch_b.deinit(allocator);
+        try testing.expectEqual(
+            expected,
+            try collator.compare(
+                allocator,
+                case.a,
+                case.b,
+                &scratch_a,
+                &scratch_b,
+            ),
+        );
+        try testing.expectEqual(
+            expected.invert(),
+            try collator.compare(
+                allocator,
+                case.b,
+                case.a,
+                &scratch_a,
+                &scratch_b,
+            ),
+        );
+    }
+    const collator = Collator.init(.{});
+    var scratch_a = std.ArrayList(u32).empty;
+    defer scratch_a.deinit(allocator);
+    var scratch_b = std.ArrayList(u32).empty;
+    defer scratch_b.deinit(allocator);
+    try testing.expectError(
+        error.InvalidUtf8,
+        collator.compare(allocator, "\xff", "\xff", &scratch_a, &scratch_b),
+    );
+    try testing.expectError(
+        error.InvalidUtf8,
+        collator.compare(allocator, "\xffa", "b", &scratch_a, &scratch_b),
+    );
 }
