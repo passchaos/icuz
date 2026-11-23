@@ -353,6 +353,12 @@ pub const currencyName = currencies_mod.name;
 pub const findCurrency = currencies_mod.find;
 pub const currencyCodeForRegion = currencies_mod.codeForRegion;
 pub const currencyCodeForLocale = currencies_mod.codeForLocale;
+pub fn currencyCount() usize {
+    return currencies_mod.count();
+}
+pub fn currencyCodeAt(index: usize) []const u8 {
+    return currencies_mod.codeAtPublic(index);
+}
 pub const NumberingSystem = numbering_systems_mod.System;
 pub fn numberingSystemCount() usize {
     return numbering_systems_mod.systems.len;
@@ -620,6 +626,15 @@ pub const RelativeOptions = relative_mod.Options;
 pub const formatRelativeAlloc = relative_mod.formatAlloc;
 
 pub const Unit = units_mod.Unit;
+pub fn unitCount() usize {
+    return @typeInfo(Unit).@"enum".fields.len;
+}
+pub fn unitId(unit: Unit) []const u8 {
+    return units_mod.unitId(unit);
+}
+pub fn unitIdAt(index: usize) []const u8 {
+    return units_mod.unitId(@enumFromInt(index));
+}
 pub const UnitStyle = units_mod.Style;
 pub const UnitOptions = units_mod.Options;
 pub const formatUnitAlloc = units_mod.formatAlloc;

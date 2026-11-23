@@ -54,6 +54,16 @@ fn codeAt(index: usize) []const u8 {
     return strAt(readU32(code_offset + index * 8));
 }
 
+/// Number of CLDR currency codes in the table.
+pub fn count() usize {
+    return currency_count;
+}
+
+/// Currency code at `index` in sorted order (for enumeration surfaces).
+pub fn codeAtPublic(index: usize) []const u8 {
+    return codeAt(index);
+}
+
 fn codeIndex(code: []const u8) ?usize {
     var low: usize = 0;
     var high: usize = currency_count;
