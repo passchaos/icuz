@@ -84,4 +84,24 @@ pub fn build(b: *std.Build) void {
     const run_bench = b.addRunArtifact(bench);
     const bench_step = b.step("bench", "Run icuz microbenchmarks");
     bench_step.dependOn(&run_bench.step);
+
+    const collation_bench = b.addExecutable(.{
+        .name = "icuz-collation-bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/collation.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .link_libc = true,
+            .imports = &.{
+                .{ .name = "icuz", .module = bench_icuz },
+            },
+        }),
+    });
+    const run_collation_bench = b.addRunArtifact(collation_bench);
+    if (b.args) |args| run_collation_bench.addArgs(args);
+    const collation_bench_step = b.step(
+        "bench-collation",
+        "Run focused collation microbenchmarks",
+    );
+    collation_bench_step.dependOn(&run_collation_bench.step);
 }
