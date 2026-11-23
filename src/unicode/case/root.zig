@@ -256,3 +256,17 @@ test "Latin-1 uppercase fast paths match the generic mappings" {
         try testing.expectEqualStrings(simple, folded);
     }
 }
+
+test "into APIs handle a leading non-ASCII identity run" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const text = "\u{05e9}\u{05dc}\u{05d5}\u{05dd} abc";
+    var lower = std.ArrayList(u8).empty;
+    defer lower.deinit(allocator);
+    try lowerInto(allocator, text, &lower);
+    try testing.expectEqualStrings(text, lower.items);
+    var folded = std.ArrayList(u8).empty;
+    defer folded.deinit(allocator);
+    try foldInto(allocator, text, &folded);
+    try testing.expectEqualStrings(text, folded.items);
+}

@@ -394,6 +394,9 @@ pub fn simpleLowerInto(
     text: []const u8,
     output: *std.ArrayList(u8),
 ) Error!void {
+    // Identity fast paths write up to four bytes while the output trails the
+    // source; reserving the input length makes that spare provable.
+    try output.ensureTotalCapacity(allocator, text.len);
     return mapStreamingInto(
         allocator,
         text,
@@ -411,6 +414,7 @@ pub fn simpleUpperInto(
     text: []const u8,
     output: *std.ArrayList(u8),
 ) Error!void {
+    try output.ensureTotalCapacity(allocator, text.len);
     return mapStreamingInto(
         allocator,
         text,
@@ -428,6 +432,7 @@ pub fn foldStreamingInto(
     text: []const u8,
     output: *std.ArrayList(u8),
 ) Error!void {
+    try output.ensureTotalCapacity(allocator, text.len);
     return mapStreamingInto(
         allocator,
         text,
@@ -566,9 +571,7 @@ fn mapStreamingInto(
                 const length: usize = (meta >> 16) & 7;
                 if (cursor + length > text.len) return error.InvalidUtf8;
                 // When the source quad and the output spare both exist, one
-                // 32-bit load validates and copies the whole sequence: the
-                // output position never exceeds the source position, so
-                // `cursor + 4 <= text.len` proves four spare bytes.
+                // 32-bit load validates and copies the whole sequence.
                 if (output.items.len <= cursor and cursor + 4 <= text.len) {
                     const quad = std.mem.readInt(
                         u32,
@@ -1174,9 +1177,9 @@ inline fn asciiMapVector(
 
 /// Copy an identity sequence of `length` (2-4) bytes.
 ///
-/// While the output has not outgrown the input position, the reserved
-/// capacity covers the whole input and a single word load and store copies
-/// the sequence plus one byte that a later write overwrites.
+/// While the output has not outgrown the input position and four spare bytes
+/// exist, one word load and store copies the sequence plus one byte that a
+/// later write overwrites.
 inline fn copyIdentityBytes(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
