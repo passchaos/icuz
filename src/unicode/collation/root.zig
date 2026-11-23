@@ -688,6 +688,33 @@ fn sortKeyUtf8Resolved(
                 }
                 continue;
             }
+            // Three-byte sequences dominate CJK sort keys. Decode a run of
+            // them without the general decoder's length ladder; the branch
+            // only runs when at least one sequence fits.
+            if (text[cursor] >= 0xe0 and text[cursor] < 0xf0 and
+                cursor + 3 <= text.len)
+            {
+                while (cursor + 3 <= text.len and
+                    text[cursor] >= 0xe0 and text[cursor] < 0xf0)
+                {
+                    const first = text[cursor];
+                    const second = text[cursor + 1];
+                    const third = text[cursor + 2];
+                    if (((second & third) & 0xc0) != 0x80) {
+                        return error.InvalidUtf8;
+                    }
+                    const codepoint = (@as(u21, first & 0x0f) << 12) |
+                        (@as(u21, second & 0x3f) << 6) |
+                        @as(u21, third & 0x3f);
+                    if (codepoint < 0x800 or (codepoint & 0xf800) == 0xd800) {
+                        return error.InvalidUtf8;
+                    }
+                    stack_codepoints[count] = codepoint;
+                    count += 1;
+                    cursor += 3;
+                }
+                continue;
+            }
             const decoded = scalar.decodeValidatingPacked(text, cursor);
             if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
             stack_codepoints[count] = scalar.packedCodepoint(decoded);
@@ -3570,6 +3597,19 @@ test "sort key buffer and UTF-16 APIs" {
         error.InvalidUtf8,
         sortKeyAlloc(allocator, "\xff", .{}),
     );
+    // The three-byte run decoder validates continuations, overlongs,
+    // surrogates, and truncation.
+    for ([_][]const u8{
+        "\xe2\x28\xa1",
+        "\xe0\x80\x80",
+        "\xed\xa0\x80",
+        "\xe2\x82",
+    }) |invalid| {
+        try testing.expectError(
+            error.InvalidUtf8,
+            sortKeyAlloc(allocator, invalid, .{}),
+        );
+    }
 }
 
 test "collation elements match the sort key weights" {
