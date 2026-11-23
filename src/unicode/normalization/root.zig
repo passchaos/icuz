@@ -1843,13 +1843,27 @@ pub fn isNormalizedUtf16(
             continue;
         }
         // CJK ideographs are simple starters in both canonical forms; the
-        // same run fast path keeps the UTF-8 scan out of the tables.
+        // same run fast path keeps the UTF-8 scan out of the tables. Inert
+        // punctuation and fullwidth forms between ideographs join the run so
+        // mixed Chinese prose stays in one loop.
         if (unit >= 0x4e00 and unit <= 0x9fff) {
+            const canonical = form == .nfc or form == .nfd;
             cursor += 1;
-            while (cursor < units.len and
-                units[cursor] >= 0x4e00 and units[cursor] <= 0x9fff)
-            {
-                cursor += 1;
+            while (cursor < units.len) {
+                const value = units[cursor];
+                if (value >= 0x4e00 and value <= 0x9fff) {
+                    cursor += 1;
+                    continue;
+                }
+                if (canonical and
+                    ((value >= 0x3000 and value <= 0x303f and
+                        (value < 0x302a or value > 0x302f)) or
+                        (value >= 0xff00 and value <= 0xffef)))
+                {
+                    cursor += 1;
+                    continue;
+                }
+                break;
             }
             starter = null;
             previous_input_class = 0;
@@ -2286,25 +2300,51 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
         if (cjk_lead_simple and text[index] >= 0xe4 and
             text[index] <= 0xe9)
         {
+            const canonical = form == .nfc or form == .nfd;
             var cursor = index;
-            while (cursor + 6 <= text.len and
-                text[cursor] >= 0xe4 and text[cursor] <= 0xe9 and
-                text[cursor + 3] >= 0xe4 and text[cursor + 3] <= 0xe9 and
-                ((text[cursor + 1] | text[cursor + 2] |
-                    text[cursor + 4] | text[cursor + 5]) & 0xc0) == 0x80)
-            {
-                cursor += 6;
-            }
-            if (cursor < text.len and text[cursor] >= 0xe4 and
-                text[cursor] <= 0xe9)
-            {
-                if (cursor + 3 > text.len or
-                    text[cursor + 1] & 0xc0 != 0x80 or
-                    text[cursor + 2] & 0xc0 != 0x80)
+            while (true) {
+                while (cursor + 6 <= text.len and
+                    text[cursor] >= 0xe4 and text[cursor] <= 0xe9 and
+                    text[cursor + 3] >= 0xe4 and text[cursor + 3] <= 0xe9 and
+                    ((text[cursor + 1] | text[cursor + 2] |
+                        text[cursor + 4] | text[cursor + 5]) & 0xc0) == 0x80)
                 {
-                    return .{ .normalized = false, .valid_until = cursor };
+                    cursor += 6;
                 }
-                cursor += 3;
+                if (cursor < text.len and text[cursor] >= 0xe4 and
+                    text[cursor] <= 0xe9)
+                {
+                    if (cursor + 3 > text.len or
+                        text[cursor + 1] & 0xc0 != 0x80 or
+                        text[cursor + 2] & 0xc0 != 0x80)
+                    {
+                        return .{ .normalized = false, .valid_until = cursor };
+                    }
+                    cursor += 3;
+                    continue;
+                }
+                // Inert CJK punctuation and fullwidth forms between
+                // ideographs join the run.
+                if (canonical and cursor + 3 <= text.len and
+                    (text[cursor] | 0x0c) == 0xef)
+                {
+                    const second = text[cursor + 1];
+                    const third = text[cursor + 2];
+                    if ((text[cursor] == 0xe3 and second == 0x80 and
+                        (third < 0xaa or third > 0xaf)) or
+                        (text[cursor] == 0xef and second == 0xbc))
+                    {
+                        if (third & 0xc0 != 0x80) {
+                            return .{
+                                .normalized = false,
+                                .valid_until = cursor,
+                            };
+                        }
+                        cursor += 3;
+                        continue;
+                    }
+                }
+                break;
             }
             starter = null;
             previous_input_class = 0;
