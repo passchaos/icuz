@@ -159,6 +159,31 @@ fn benchCase(
     report(name, rounds * text.len, best);
 }
 
+fn benchFullCase(
+    name: []const u8,
+    text: []const u8,
+    kind: enum { lower, upper, fold },
+    allocator: std.mem.Allocator,
+) void {
+    const rounds: usize = 4000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const output = switch (kind) {
+                .lower => icuz.case.fullLowerAlloc(allocator, text, .{}),
+                .upper => icuz.case.fullUpperAlloc(allocator, text, .{}),
+                .fold => icuz.case.foldAlloc(allocator, text),
+            } catch unreachable;
+            sink +%= output.len;
+            allocator.free(output);
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * text.len, best);
+}
+
 fn benchCaseInto(
     name: []const u8,
     text: []const u8,
@@ -395,6 +420,7 @@ const mixed_text = "Hello, 世界! café naïve Straße \u{1f600}\u{1f469}\u{200
     "\u{0915}\u{094d}\u{0937}\u{093f} \u{1100}\u{1161}\u{11a8} text.\n";
 const swedish_text = "Ångström älskar blåbär och öar. ÅÄÖ åäö " ** 8;
 const german_text = "Böttger Mühsam Überlingen ÄÖÜ äöü Straße " ** 8;
+const greek_case_text = "ΟΔΟΣ ΣΟΦΟΣ ΑΘΗΝΑ " ** 8;
 const chinese_text = "你好世界中国汉字排序拼音" ** 8;
 const chinese_long_text = "你好世界中国汉字排序拼音" ** 256;
 const ascii_long_text =
@@ -584,6 +610,27 @@ pub fn main(init: std.process.Init.Minimal) !void {
     }
     if (selected(filter, "case", "lower ASCII (utf16)")) {
         benchCaseUtf16("lower ASCII (utf16)", ascii_text, .lower, allocator);
+    }
+    if (selected(filter, "case", "full lower Greek sigma")) {
+        benchFullCase("full lower Greek sigma", greek_case_text, .lower, allocator);
+    }
+    if (selected(filter, "case", "full upper mixed")) {
+        benchFullCase("full upper mixed", mixed_text, .upper, allocator);
+    }
+    if (selected(filter, "case", "full upper German")) {
+        benchFullCase("full upper German", german_text, .upper, allocator);
+    }
+    if (selected(filter, "case", "full lower mixed")) {
+        benchFullCase("full lower mixed", mixed_text, .lower, allocator);
+    }
+    if (selected(filter, "case", "full lower German")) {
+        benchFullCase("full lower German", german_text, .lower, allocator);
+    }
+    if (selected(filter, "case", "full lower Swedish")) {
+        benchFullCase("full lower Swedish", swedish_text, .lower, allocator);
+    }
+    if (selected(filter, "case", "fold mixed (full)")) {
+        benchFullCase("fold mixed (full)", mixed_text, .fold, allocator);
     }
     if (selected(filter, "compare", "compare long")) {
         var long_other = std.ArrayList(u8).empty;

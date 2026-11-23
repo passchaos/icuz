@@ -624,7 +624,10 @@ ASCII case conversion is a single byte loop instead of a generated record
 search, while non-ASCII case mapping decodes with the packed scalar decoder,
 maps ASCII runs in place, resolves each scalar through a per-page index and
 mapped-codepoint mask before a short in-page search, and serves Latin-1
-mappings from compile-time tables, the full mappings share the Latin-1
+mappings from compile-time tables; two-byte sequences whose mapping stays
+inside U+0080..U+07FF resolve through a lazily built pair table so the common
+non-ASCII mappings skip the decoder, record search, and re-encode, with final
+sigma as the only context check; the full mappings share the Latin-1
 byte-offset path because their result equals the simple mapping there, short
 ASCII runs between non-ASCII scalars map the leading bytes of a failed vector
 chunk in one store, and UTF-16 entry points (`lowerInto`, `upperInto`,

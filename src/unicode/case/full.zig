@@ -42,6 +42,67 @@ const condition_after_i: u6 = 32;
 var fold_interest_bitmap: [0x10000 / 8]u8 = undefined;
 var fold_interest_state = std.atomic.Value(u8).init(0);
 
+/// Direct mappings for two-byte UTF-8 sequences (U+0080..U+07FF), indexed by
+/// `(lead - 0xC2) * 64 + (second & 0x3F)`.
+///
+/// Most non-ASCII case mappings in this range stay inside it and need no
+/// context, so one table load replaces the packed decode, the interest and
+/// record filters, the mapping lookup, and the re-encode. Entries hold the
+/// mapped scalar (identity mappings store the source scalar), `pair_slow` for
+/// mappings that need the general path, or `pair_conditional` for the one
+/// scalar whose root-locale mapping depends on context (U+03A3).
+const pair_lead_first: u8 = 0xc2;
+const pair_lead_count: usize = 0xdf - pair_lead_first + 1;
+const pair_table_len: usize = pair_lead_count * 64;
+const pair_conditional: u16 = 0xfffe;
+const pair_slow: u16 = 0xffff;
+
+var pair_lower_table: [pair_table_len]u16 = undefined;
+var pair_upper_table: [pair_table_len]u16 = undefined;
+var pair_fold_table: [pair_table_len]u16 = undefined;
+var pair_table_state = std.atomic.Value(u8).init(0);
+
+/// Build the two-byte direct-map tables once per process. Each entry costs a
+/// few table probes, so the whole build stays well under the fold-interest
+/// scan.
+fn ensurePairTables() void {
+    if (pair_table_state.load(.acquire) == 2) return;
+    while (pair_table_state.cmpxchgStrong(0, 1, .acquire, .monotonic) != null) {
+        if (pair_table_state.load(.acquire) == 2) return;
+        std.atomic.spinLoopHint();
+    }
+    var codepoint: u21 = 0x80;
+    while (codepoint < 0x800) : (codepoint += 1) {
+        const index: usize = (@as(usize, codepoint >> 6) - 2) * 64 +
+            (codepoint & 0x3f);
+        // Final sigma is the only root-locale conditional mapping below
+        // U+0800; the general path resolves every other record.
+        pair_lower_table[index] = if (codepoint == 0x03a3)
+            pair_conditional
+        else if (full_data.hasRecords(codepoint, true))
+            pair_slow
+        else
+            pairEntry(simpleLowerFast(codepoint));
+        pair_upper_table[index] = if (full_data.hasRecords(codepoint, true))
+            pair_slow
+        else
+            pairEntry(simpleUpperFast(codepoint));
+        pair_fold_table[index] = pairFoldEntry(codepoint);
+    }
+    pair_table_state.store(2, .release);
+}
+
+inline fn pairEntry(mapped: u21) u16 {
+    if (mapped >= 0x80 and mapped < 0x800) return @intCast(mapped);
+    return pair_slow;
+}
+
+inline fn pairFoldEntry(codepoint: u21) u16 {
+    const components = data.fullFold(codepoint) orelse return @intCast(codepoint);
+    if (components.len != 1) return pair_slow;
+    return pairEntry(components[0]);
+}
+
 /// Build the BMP fold-interest bitmap once per process. Scanning the fold
 /// table costs about a millisecond, after which the fold quick check is one
 /// bitmap load instead of the union of the lower and upper filters plus a
@@ -480,6 +541,7 @@ fn mapStreamingInto(
     output: *std.ArrayList(u8),
 ) Error!void {
     output.clearRetainingCapacity();
+    if (root) ensurePairTables();
     if (mode == .fold) ensureFoldInterest();
     var cursor: usize = 0;
     while (cursor < text.len) {
@@ -648,6 +710,44 @@ fn mapStreamingInto(
                 const spare = output.unusedCapacitySlice();
                 spare[0] = 0xc3;
                 spare[1] = mapped;
+                output.items.len += 2;
+                cursor += 2;
+                continue;
+            }
+        }
+
+        // Two-byte scalars whose mapping stays inside the range need neither
+        // a decode nor a record lookup: one table load selects the mapped
+        // scalar, and final sigma is the only context to resolve.
+        if (root and kind != .title and
+            first >= pair_lead_first and first <= 0xdf and
+            cursor + 2 <= text.len)
+        {
+            const second = text[cursor + 1];
+            if (second & 0xc0 != 0x80) return error.InvalidUtf8;
+            const table = switch (mode) {
+                .fold => &pair_fold_table,
+                .full, .simple => if (kind == .lower)
+                    &pair_lower_table
+                else
+                    &pair_upper_table,
+            };
+            var entry = table[(@as(usize, first) - pair_lead_first) * 64 +
+                (second & 0x3f)];
+            if (entry != pair_slow) {
+                if (entry == pair_conditional) {
+                    entry = if (mode == .full and
+                        finalSigmaAt(text, cursor, cursor + 2))
+                        0x03c2
+                    else
+                        0x03c3;
+                }
+                if (output.unusedCapacitySlice().len < 2) {
+                    try output.ensureUnusedCapacity(allocator, 2);
+                }
+                const spare = output.unusedCapacitySlice();
+                spare[0] = 0xc0 | @as(u8, @intCast(entry >> 6));
+                spare[1] = 0x80 | @as(u8, @truncate(entry & 0x3f));
                 output.items.len += 2;
                 cursor += 2;
                 continue;
