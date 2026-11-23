@@ -1677,15 +1677,52 @@ fn formatScientificAlloc(
     locale_name: []const u8,
     options: *const Options,
 ) Error![]u8 {
+    // Scientific results are short; build them on the stack and allocate the
+    // returned slice exactly once.
+    var stack: [256]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&stack);
+    var output = std.ArrayList(u8).empty;
+    formatScientificInto(
+        fixed.allocator(),
+        value,
+        locale_name,
+        options,
+        &output,
+    ) catch |err| switch (err) {
+        error.OutOfMemory => {
+            var owned = std.ArrayList(u8).empty;
+            errdefer owned.deinit(allocator);
+            try formatScientificInto(
+                allocator,
+                value,
+                locale_name,
+                options,
+                &owned,
+            );
+            return owned.toOwnedSlice(allocator);
+        },
+        else => return err,
+    };
+    return allocator.dupe(u8, output.items);
+}
+
+fn formatScientificInto(
+    allocator: std.mem.Allocator,
+    value: f64,
+    locale_name: []const u8,
+    options: *const Options,
+    output: *std.ArrayList(u8),
+) Error!void {
     var locale_storage: data.Locale = undefined;
     const locale = resolveLocale(locale_name, options, &locale_storage);
-    if (std.math.isNan(value)) return allocator.dupe(u8, locale.nan);
+    if (std.math.isNan(value)) {
+        try output.appendSlice(allocator, locale.nan);
+        return;
+    }
     if (std.math.isInf(value)) {
-        var output = std.ArrayList(u8).empty;
-        errdefer output.deinit(allocator);
         if (value < 0) try output.appendSlice(allocator, locale.minus);
         try output.appendSlice(allocator, locale.infinity);
-        return output.toOwnedSlice(allocator);
+        return;
     }
 
     var exponent: i32 = 0;
@@ -1699,7 +1736,17 @@ fn formatScientificAlloc(
         exponent = @divFloor(exponent, 3) * 3;
     }
     const power = pow10Signed(exponent);
-    if (power == 0) return decimalFallback(allocator, value, locale_name, options);
+    if (power == 0) {
+        const fallback = try decimalFallback(
+            allocator,
+            value,
+            locale_name,
+            options,
+        );
+        defer allocator.free(fallback);
+        try output.appendSlice(allocator, fallback);
+        return;
+    }
     var mantissa = if (value == 0) 0.0 else value / power;
     const max_fraction = options.max_fraction_digits orelse 6;
     if (roundMagnitude(
@@ -1722,8 +1769,6 @@ fn formatScientificAlloc(
         }
     }
 
-    var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
     try formatStandardInto(
         allocator,
         mantissa,
@@ -1738,7 +1783,7 @@ fn formatScientificAlloc(
         },
         null,
         null,
-        &output,
+        output,
     );
     try output.appendSlice(allocator, locale.exponential);
     if (exponent < 0) {
@@ -1761,13 +1806,12 @@ fn formatScientificAlloc(
         try output.appendSlice(allocator, digits);
     } else {
         while (padding > 0) : (padding -= 1) {
-            try appendCodepoint(allocator, &output, locale.digits[0]);
+            try appendCodepoint(allocator, output, locale.digits[0]);
         }
         for (digits) |digit| {
-            try appendCodepoint(allocator, &output, locale.digits[digit - '0']);
+            try appendCodepoint(allocator, output, locale.digits[digit - '0']);
         }
     }
-    return output.toOwnedSlice(allocator);
 }
 
 const compact_magnitudes = [_]u64{
@@ -1895,6 +1939,36 @@ fn formatCompactAlloc(
     locale_name: []const u8,
     options: *const Options,
 ) Error![]u8 {
+    // Compact results are short; build them on the stack and allocate the
+    // returned slice exactly once.
+    var stack: [256]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&stack);
+    var output = std.ArrayList(u8).empty;
+    formatCompactInto(
+        fixed.allocator(),
+        value,
+        locale_name,
+        options,
+        &output,
+    ) catch |err| switch (err) {
+        error.OutOfMemory => {
+            var owned = std.ArrayList(u8).empty;
+            errdefer owned.deinit(allocator);
+            try formatCompactInto(allocator, value, locale_name, options, &owned);
+            return owned.toOwnedSlice(allocator);
+        },
+        else => return err,
+    };
+    return allocator.dupe(u8, output.items);
+}
+
+fn formatCompactInto(
+    allocator: std.mem.Allocator,
+    value: f64,
+    locale_name: []const u8,
+    options: *const Options,
+    output: *std.ArrayList(u8),
+) Error!void {
     if (options.currency != null) {
         // Compact notation formats the magnitude, then the currency affixes
         // wrap the whole compact string ("$1.2K", "1,2 k $US").
@@ -1912,7 +1986,7 @@ fn formatCompactAlloc(
         defer allocator.free(body);
         var locale_storage: data.Locale = undefined;
         const locale = resolveLocale(locale_name, options, &locale_storage);
-        return wrapCurrencyAlloc(
+        const wrapped = try wrapCurrencyAlloc(
             allocator,
             body,
             locale,
@@ -1920,10 +1994,21 @@ fn formatCompactAlloc(
             value < 0,
             @abs(value),
         );
+        defer allocator.free(wrapped);
+        try output.appendSlice(allocator, wrapped);
+        return;
     }
     const magnitude = @abs(value);
     if (!std.math.isFinite(value) or magnitude < 1000) {
-        return compactFallback(allocator, value, locale_name, options);
+        const fallback = try compactFallback(
+            allocator,
+            value,
+            locale_name,
+            options,
+        );
+        defer allocator.free(fallback);
+        try output.appendSlice(allocator, fallback);
+        return;
     }
     var locale_storage: data.Locale = undefined;
     const locale = resolveLocale(locale_name, options, &locale_storage);
@@ -1939,8 +2024,17 @@ fn formatCompactAlloc(
     {
         if (compactUsable(table[index])) chosen = index;
     }
-    const chosen_index = chosen orelse
-        return compactFallback(allocator, value, locale_name, options);
+    const chosen_index = chosen orelse {
+        const fallback = try compactFallback(
+            allocator,
+            value,
+            locale_name,
+            options,
+        );
+        defer allocator.free(fallback);
+        try output.appendSlice(allocator, fallback);
+        return;
+    };
     const entry = table[chosen_index];
 
     var reference: []const u8 = entry.patterns[@intFromEnum(plural.Category.other)];
@@ -1956,9 +2050,18 @@ fn formatCompactAlloc(
         if (entry.exact_one.len != 0 and
             magnitude == @as(f64, @floatFromInt(compact_magnitudes[chosen_index])))
         {
-            return allocator.dupe(u8, entry.exact_one);
+            try output.appendSlice(allocator, entry.exact_one);
+            return;
         }
-        return compactFallback(allocator, value, locale_name, options);
+        const fallback = try compactFallback(
+            allocator,
+            value,
+            locale_name,
+            options,
+        );
+        defer allocator.free(fallback);
+        try output.appendSlice(allocator, fallback);
+        return;
     };
 
     var divisor = compact_magnitudes[chosen_index];
@@ -1966,7 +2069,8 @@ fn formatCompactAlloc(
     while (digits < format_info.int_digits) : (digits += 1) divisor /= 10;
     const scaled = value / @as(f64, @floatFromInt(divisor));
     if (scaled == 1 and entry.exact_one.len != 0) {
-        return allocator.dupe(u8, entry.exact_one);
+        try output.appendSlice(allocator, entry.exact_one);
+        return;
     }
 
     var fraction_digits = format_info.fraction_digits;
@@ -1994,16 +2098,33 @@ fn formatCompactAlloc(
     var pattern = entry.patterns[@intFromEnum(category)];
     if (pattern.len == 0) pattern = entry.patterns[@intFromEnum(plural.Category.other)];
     const info = parseCompactFormat(pattern) orelse {
-        if (pattern.len != 0) return allocator.dupe(u8, pattern);
-        return compactFallback(allocator, value, locale_name, options);
+        if (pattern.len != 0) {
+            try output.appendSlice(allocator, pattern);
+            return;
+        }
+        const fallback = try compactFallback(
+            allocator,
+            value,
+            locale_name,
+            options,
+        );
+        defer allocator.free(fallback);
+        try output.appendSlice(allocator, fallback);
+        return;
     };
     if (info.end == pattern.len) {
         // The locale writes this magnitude in full.
-        return compactFallback(allocator, value, locale_name, options);
+        const fallback = try compactFallback(
+            allocator,
+            value,
+            locale_name,
+            options,
+        );
+        defer allocator.free(fallback);
+        try output.appendSlice(allocator, fallback);
+        return;
     }
 
-    var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
     try output.appendSlice(allocator, pattern[0..info.start]);
     try formatStandardInto(
         allocator,
@@ -2018,10 +2139,9 @@ fn formatCompactAlloc(
         },
         null,
         null,
-        &output,
+        output,
     );
     try output.appendSlice(allocator, pattern[info.end..]);
-    return output.toOwnedSlice(allocator);
 }
 
 /// ICU compact skeletons keep at most two significant digits of the
