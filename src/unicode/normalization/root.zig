@@ -1083,6 +1083,48 @@ pub fn isNormalizedCodepoints(
     return true;
 }
 
+/// Streaming NFD quick-check state. Callers that already decode UTF-8 can
+/// feed each scalar as it is produced instead of scanning the decoded array
+/// again; the state matches `isNormalizedCodepoints(codepoints, .nfd)`.
+///
+/// NFD's quick check only reports Yes or No, so the starter scalar is not
+/// needed for a Maybe pair test; only the previous combining class and the
+/// failure flag matter.
+pub const NfdScan = struct {
+    previous_class: u8 = 0,
+    ok: bool = true,
+
+    pub inline fn feed(self: *NfdScan, codepoint: u21) void {
+        if (!self.ok) return;
+        if (codepoint < 0x80) {
+            self.previous_class = 0;
+            return;
+        }
+        if (inert.isInert(codepoint, .nfd)) {
+            self.previous_class = 0;
+            return;
+        }
+        if (data.quickCheck(codepoint, .nfd) == .no) {
+            self.ok = false;
+            return;
+        }
+        const current_class = combining_class.forCodepoint(codepoint);
+        if (current_class != 0 and
+            self.previous_class > current_class)
+        {
+            self.ok = false;
+            return;
+        }
+        self.previous_class = current_class;
+    }
+
+    /// Reset the class after a run of ASCII starters.
+    pub inline fn feedAsciiRun(self: *NfdScan) void {
+        if (!self.ok) return;
+        self.previous_class = 0;
+    }
+};
+
 /// Append the normalized form of a UTF-16 slice to `output`.
 ///
 /// Returns whether the normalized text differs from the input. The output
@@ -3332,4 +3374,57 @@ test "isNormalized validates the unscanned suffix" {
         isNormalized("a\u{0301}\xff"),
     );
     try testing.expectError(error.InvalidUtf8, isNormalized("\xff"));
+}
+
+test "streaming NFD scan matches the array quick check" {
+    const testing = @import("std").testing;
+    // NFD's quick check is Yes/No only; the streaming scan relies on that.
+    var codepoint: u21 = 0;
+    while (codepoint <= 0x10ffff) : (codepoint += 1) {
+        if (codepoint >= 0xd800 and codepoint <= 0xdfff) continue;
+        try testing.expect(data.quickCheck(codepoint, .nfd) != .maybe);
+        const single = [_]u21{codepoint};
+        var scan = NfdScan{};
+        scan.feed(codepoint);
+        try testing.expectEqual(
+            isNormalizedCodepoints(&single, .nfd),
+            scan.ok,
+        );
+    }
+    const cases = [_][]const u8{
+        "Hello, world!",
+        "caf\u{00e9} na\u{00ef}ve",
+        "e\u{0301}\u{0323}",
+        "e\u{0323}\u{0301}",
+        "\u{1100}\u{1161}\u{11a8}",
+        "\u{ac00}\u{11a8}",
+        "\u{4e16}\u{754c}",
+        "\u{05e9}\u{05dc}\u{05d5}\u{05dd}",
+        "Stra\u{00df}e",
+        "\u{1f600}\u{1f469}\u{200d}\u{1f4bb}",
+    };
+    for (cases) |text| {
+        const codepoints = try utf8ToCodepointsAlloc(testing.allocator, text);
+        defer testing.allocator.free(codepoints);
+        var scan = NfdScan{};
+        for (codepoints) |value| scan.feed(value);
+        try testing.expectEqual(
+            isNormalizedCodepoints(codepoints, .nfd),
+            scan.ok,
+        );
+    }
+}
+
+fn utf8ToCodepointsAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+) ![]u21 {
+    var list = std.ArrayList(u21).empty;
+    errdefer list.deinit(allocator);
+    var view = try std.unicode.Utf8View.init(text);
+    var iterator = view.iterator();
+    while (iterator.nextCodepoint()) |value| {
+        try list.append(allocator, value);
+    }
+    return list.toOwnedSlice(allocator);
 }

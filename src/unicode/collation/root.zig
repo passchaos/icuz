@@ -425,6 +425,7 @@ pub const Collator = struct {
             self.options,
             self.tailoring,
             self.pages,
+            null,
             output,
         );
     }
@@ -663,11 +664,14 @@ fn sortKeyUtf8Resolved(
     if (text.len <= stack_codepoints.len) {
         var count: usize = 0;
         var cursor: usize = 0;
+        var nfd_scan = normalization.NfdScan{};
+        var scan_complete = true;
         while (cursor < text.len) {
             if (text[cursor] < 0x80) {
                 // Widen ASCII runs eight scalars at a time; ASCII prose is a
                 // large share of sort keys and the scalar decoder would
                 // otherwise touch it one byte per iteration.
+                const ascii_start = cursor;
                 while (cursor + 8 <= text.len and
                     count + 8 <= stack_codepoints.len)
                 {
@@ -685,6 +689,9 @@ fn sortKeyUtf8Resolved(
                     stack_codepoints[count] = text[cursor];
                     count += 1;
                     cursor += 1;
+                }
+                if (cursor > ascii_start and scan_complete) {
+                    nfd_scan.feedAsciiRun();
                 }
                 continue;
             }
@@ -710,6 +717,7 @@ fn sortKeyUtf8Resolved(
                         return error.InvalidUtf8;
                     }
                     stack_codepoints[count] = codepoint;
+                    if (scan_complete) nfd_scan.feed(codepoint);
                     count += 1;
                     cursor += 3;
                 }
@@ -717,7 +725,12 @@ fn sortKeyUtf8Resolved(
             }
             const decoded = scalar.decodeValidatingPacked(text, cursor);
             if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
-            stack_codepoints[count] = scalar.packedCodepoint(decoded);
+            const codepoint = scalar.packedCodepoint(decoded);
+            stack_codepoints[count] = codepoint;
+            // The run decoders only cover ASCII and three-byte scalars; a
+            // two- or four-byte scalar leaves the fused quick check
+            // incomplete, so the caller scans the decoded array instead.
+            scan_complete = false;
             count += 1;
             cursor += scalar.packedLength(decoded);
         }
@@ -727,6 +740,7 @@ fn sortKeyUtf8Resolved(
             options,
             locale_tailoring,
             tailoring_pages,
+            if (scan_complete) nfd_scan.ok else null,
             output,
         );
     }
@@ -736,10 +750,13 @@ fn sortKeyUtf8Resolved(
     try codepoints.ensureTotalCapacity(allocator, text.len);
 
     var cursor: usize = 0;
+    var nfd_scan = normalization.NfdScan{};
     while (cursor < text.len) {
         const decoded = scalar.decodeValidatingPacked(text, cursor);
         if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
-        try codepoints.append(allocator, scalar.packedCodepoint(decoded));
+        const codepoint = scalar.packedCodepoint(decoded);
+        try codepoints.append(allocator, codepoint);
+        nfd_scan.feed(codepoint);
         cursor += scalar.packedLength(decoded);
     }
     try sortKeyCodepointsResolved(
@@ -748,6 +765,7 @@ fn sortKeyUtf8Resolved(
         options,
         locale_tailoring,
         tailoring_pages,
+        nfd_scan.ok,
         output,
     );
 }
@@ -930,6 +948,7 @@ fn sortKeyUtf16Resolved(
             options,
             locale_tailoring,
             tailoring_pages,
+            null,
             output,
         );
     }
@@ -948,6 +967,7 @@ fn sortKeyUtf16Resolved(
         options,
         locale_tailoring,
         tailoring_pages,
+        null,
         output,
     );
 }
@@ -998,6 +1018,7 @@ pub fn sortKeyCodepointsInto(
         options,
         locale_tailoring,
         tailoring_pages,
+        null,
         output,
     );
 }
@@ -1129,6 +1150,7 @@ fn sortKeyCodepointsResolved(
     options: Options,
     locale_tailoring: ?tailorings.Tailoring,
     tailoring_pages: ?*tailorings.PageIndex,
+    known_nfd: ?bool,
     output: *std.ArrayList(u32),
 ) error{OutOfMemory}!void {
     output.clearRetainingCapacity();
@@ -1169,8 +1191,9 @@ fn sortKeyCodepointsResolved(
     }
 
     // The implicit-only fast path and the normalization step both need the
-    // NFD answer; scan the input once for both.
-    const nfd = normalization.isNormalizedCodepoints(codepoints, .nfd);
+    // NFD answer. The UTF-8 decoder already computed it while validating.
+    const nfd = known_nfd orelse
+        normalization.isNormalizedCodepoints(codepoints, .nfd);
 
     if (fast_conditions and locale_tailoring == null and nfd) {
         if (try appendImplicitSortKey(
