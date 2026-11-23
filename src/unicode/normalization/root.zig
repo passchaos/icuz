@@ -3015,6 +3015,9 @@ test "NFC performs canonical ordering composition and Hangul composition" {
     try expectNormalized("\u{1100}\u{1161}\u{11a8}", "\u{ac01}");
     try expectNormalized("\u{212b}", "\u{00c5}");
     try expectNormalized("\u{0958}", "\u{0915}\u{093c}");
+    // Voiced kana compose from the unvoiced syllable and a sound mark.
+    try expectNormalized("\u{30ab}\u{3099}", "\u{30ac}");
+    try expectNormalized("\u{304b}\u{3099}", "\u{304c}");
 }
 
 test "Hangul jamo runs compose directly" {
@@ -3054,6 +3057,10 @@ test "NFD decomposes and NFD output is stable" {
     try expectFormNormalized("\u{ac01}", "\u{1100}\u{1161}\u{11a8}", .nfd);
     try expectFormNormalized("\u{1ea4}", "A\u{0302}\u{0301}", .nfd);
     try expectFormNormalized("caf\xc3\xa9", "cafe\u{0301}", .nfd);
+    // Voiced kana decompose under NFD, so a kana run fast path must keep
+    // them on the generic segment path.
+    try expectFormNormalized("\u{30ac}", "\u{30ab}\u{3099}", .nfd);
+    try expectFormNormalized("\u{304c}", "\u{304b}\u{3099}", .nfd);
 }
 
 test "NFKC and NFKD apply compatibility mappings" {
