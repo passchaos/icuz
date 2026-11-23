@@ -138,6 +138,50 @@ fn jamoRunInert(comptime form: Form) bool {
     return true;
 }
 
+const ScanRun = struct {
+    /// Offset one past the run.
+    end: usize,
+    /// Last scalar of the run and its byte offset.
+    last_codepoint: u21,
+    last_offset: usize,
+};
+
+/// Scan one run of ASCII scalars and, when `latin1` is set, two-byte Latin-1
+/// scalars, merging alternations of the two so a prose span is one run.
+/// `start` must point at an ASCII byte or a Latin-1 lead.
+fn scanAsciiLatin1Run(
+    text: []const u8,
+    start: usize,
+    latin1: bool,
+) ScanRun {
+    var end = start;
+    var last_codepoint: u21 = undefined;
+    var last_offset: usize = start;
+    while (true) {
+        const ascii_start = end;
+        while (end < text.len and text[end] < 0x80) end += 1;
+        if (end > ascii_start) {
+            last_codepoint = text[end - 1];
+            last_offset = end - 1;
+        }
+        if (!latin1 or end + 1 >= text.len or
+            (text[end] != 0xc2 and text[end] != 0xc3) or
+            (text[end + 1] & 0xc0) != 0x80)
+        {
+            break;
+        }
+        last_codepoint = (@as(u21, text[end] & 0x1f) << 6) |
+            (text[end + 1] & 0x3f);
+        last_offset = end;
+        end += 2;
+    }
+    return .{
+        .end = end,
+        .last_codepoint = last_codepoint,
+        .last_offset = last_offset,
+    };
+}
+
 fn normalizeFusedInto(
     comptime form: Form,
     allocator: std.mem.Allocator,
@@ -166,32 +210,15 @@ fn normalizeFusedInto(
     var previous_input_class: u8 = 0;
     var index: usize = ascii_end;
     while (index < text.len) {
-        if (text[index] < 0x80) {
-            var end = index;
-            while (end < text.len and text[end] < 0x80) end += 1;
-            starter = text[end - 1];
-            starter_offset = end - 1;
-            previous_input_class = 0;
-            index = end;
-            continue;
-        }
-        if (latin1_run and (text[index] == 0xc2 or text[index] == 0xc3) and
-            index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80)
+        if (text[index] < 0x80 or
+            (latin1_run and (text[index] == 0xc2 or text[index] == 0xc3) and
+                index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80))
         {
-            // Latin-1 prose is inert under the composed forms, so a run of
-            // two-byte sequences is skipped like ASCII.
-            var end = index;
-            while (end + 1 < text.len and
-                (text[end] == 0xc2 or text[end] == 0xc3) and
-                (text[end + 1] & 0xc0) == 0x80)
-            {
-                end += 2;
-            }
-            starter = (@as(u21, text[end - 2] & 0x1f) << 6) |
-                (text[end - 1] & 0x3f);
-            starter_offset = end - 2;
+            const run = scanAsciiLatin1Run(text, index, latin1_run);
+            starter = run.last_codepoint;
+            starter_offset = run.last_offset;
             previous_input_class = 0;
-            index = end;
+            index = run.end;
             continue;
         }
         const start = index;
@@ -1497,22 +1524,15 @@ pub fn isNormalizedUtf16(
 ) error{InvalidUtf16}!bool {
     const latin1_run = latin1_run_inert_by_form[@intFromEnum(form)];
     const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
+    const run_limit: u16 = if (latin1_run) 0x100 else 0x80;
     var starter: ?u21 = null;
     var previous_input_class: u8 = 0;
     var cursor: usize = 0;
     while (cursor < units.len) {
         const unit = units[cursor];
-        if (unit < 0x80) {
+        if (unit < run_limit) {
             var end = cursor;
-            while (end < units.len and units[end] < 0x80) end += 1;
-            starter = units[end - 1];
-            previous_input_class = 0;
-            cursor = end;
-            continue;
-        }
-        if (latin1_run and unit < 0x100) {
-            var end = cursor;
-            while (end < units.len and units[end] < 0x100) end += 1;
+            while (end < units.len and units[end] < run_limit) end += 1;
             starter = units[end - 1];
             previous_input_class = 0;
             cursor = end;
@@ -1934,28 +1954,14 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
     var previous_input_class: u8 = 0;
     var index: usize = ascii_end;
     while (index < text.len) {
-        if (text[index] < 0x80) {
-            var end = index;
-            while (end < text.len and text[end] < 0x80) end += 1;
-            starter = text[end - 1];
-            previous_input_class = 0;
-            index = end;
-            continue;
-        }
-        if (latin1_run and (text[index] == 0xc2 or text[index] == 0xc3) and
-            index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80)
+        if (text[index] < 0x80 or
+            (latin1_run and (text[index] == 0xc2 or text[index] == 0xc3) and
+                index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80))
         {
-            var end = index;
-            while (end + 1 < text.len and
-                (text[end] == 0xc2 or text[end] == 0xc3) and
-                (text[end + 1] & 0xc0) == 0x80)
-            {
-                end += 2;
-            }
-            starter = (@as(u21, text[end - 2] & 0x1f) << 6) |
-                (text[end - 1] & 0x3f);
+            const run = scanAsciiLatin1Run(text, index, latin1_run);
+            starter = run.last_codepoint;
             previous_input_class = 0;
-            index = end;
+            index = run.end;
             continue;
         }
         const start = index;
@@ -2079,30 +2085,15 @@ fn spanQuickCheckYesImpl(
     var previous_input_class: u8 = 0;
     var index: usize = ascii_end;
     while (index < text.len) {
-        if (text[index] < 0x80) {
-            var end = index;
-            while (end < text.len and text[end] < 0x80) end += 1;
-            starter = text[end - 1];
-            starter_offset = end - 1;
-            previous_input_class = 0;
-            index = end;
-            continue;
-        }
-        if (latin1_run and (text[index] == 0xc2 or text[index] == 0xc3) and
-            index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80)
+        if (text[index] < 0x80 or
+            (latin1_run and (text[index] == 0xc2 or text[index] == 0xc3) and
+                index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80))
         {
-            var end = index;
-            while (end + 1 < text.len and
-                (text[end] == 0xc2 or text[end] == 0xc3) and
-                (text[end + 1] & 0xc0) == 0x80)
-            {
-                end += 2;
-            }
-            starter = (@as(u21, text[end - 2] & 0x1f) << 6) |
-                (text[end - 1] & 0x3f);
-            starter_offset = end - 2;
+            const run = scanAsciiLatin1Run(text, index, latin1_run);
+            starter = run.last_codepoint;
+            starter_offset = run.last_offset;
             previous_input_class = 0;
-            index = end;
+            index = run.end;
             continue;
         }
         const start = index;
