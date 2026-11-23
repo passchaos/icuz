@@ -2992,10 +2992,21 @@ fn composeSlice(items: []u21) usize {
 }
 
 fn pairChangesUnderForm(starter: u21, current: u21, form: Form) bool {
-    // A direct composition always changes the pair; this avoids the general
-    // decompose-order-compose path for the common composing-mark case.
-    if ((form == .nfc or form == .nfkc) and
-        composePair(starter, current) != null) return true;
+    if (form == .nfc or form == .nfkc) {
+        // A direct composition always changes the pair; this avoids the
+        // general decompose-order-compose path for the common composing-mark
+        // case.
+        if (composePair(starter, current) != null) return true;
+        // When neither scalar decomposes the ordered pair is simply
+        // [starter, current], so the direct composition check above already
+        // answered. Hangul syllables decompose algorithmically, but their
+        // only pair compositions are L+V/T, which `composePair` covers.
+        if (decomposition.forCodepoint(starter) == null and
+            decomposition.forCodepoint(current) == null)
+        {
+            return false;
+        }
+    }
     // Unicode 17's longest recursive compatibility decomposition has 18
     // components; 64 leaves room for both the starter and the current scalar.
     // A Maybe scalar only needs the current starter: any intervening input
