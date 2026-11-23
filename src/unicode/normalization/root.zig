@@ -1428,6 +1428,7 @@ pub fn isNormalizedUtf16(
     units: []const u16,
     form: Form,
 ) error{InvalidUtf16}!bool {
+    const latin1_run = latin1_run_inert_by_form[@intFromEnum(form)];
     var starter: ?u21 = null;
     var previous_input_class: u8 = 0;
     var cursor: usize = 0;
@@ -1436,6 +1437,14 @@ pub fn isNormalizedUtf16(
         if (unit < 0x80) {
             var end = cursor;
             while (end < units.len and units[end] < 0x80) end += 1;
+            starter = units[end - 1];
+            previous_input_class = 0;
+            cursor = end;
+            continue;
+        }
+        if (latin1_run and unit < 0x100) {
+            var end = cursor;
+            while (end < units.len and units[end] < 0x100) end += 1;
             starter = units[end - 1];
             previous_input_class = 0;
             cursor = end;
@@ -1458,6 +1467,11 @@ pub fn isNormalizedUtf16(
         if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
         const codepoint = utf16.packedCodepoint(decoded);
         cursor += utf16.packedLength(decoded);
+        if (inert.isInert(codepoint, form)) {
+            starter = codepoint;
+            previous_input_class = 0;
+            continue;
+        }
         const quick_check = data.quickCheck(codepoint, form);
         if (quick_check == .no) {
             return invalidSuffixOrFalse(units, cursor);
