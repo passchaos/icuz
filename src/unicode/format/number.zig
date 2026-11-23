@@ -1727,7 +1727,7 @@ fn formatScientificInto(
 
     var exponent: i32 = 0;
     if (value != 0) {
-        exponent = @intFromFloat(@floor(@log10(@abs(value))));
+        exponent = floorLog10(@abs(value));
         const scaled = @abs(value) / pow10Signed(exponent);
         if (scaled >= 10.0) exponent += 1;
         if (scaled < 1.0) exponent -= 1;
@@ -2980,6 +2980,26 @@ fn pow10Signed(exponent: i32) f64 {
         return 1.0 / pow10_exact[@intCast(-exponent)];
     }
     return std.math.pow(f64, 10.0, @floatFromInt(exponent));
+}
+
+/// floor(log10(value)) for finite positive values, using the binary
+/// exponent as an estimate and correcting against the power table.
+fn floorLog10(value: f64) i32 {
+    const bits: u64 = @bitCast(value);
+    const biased: u32 = @intCast((bits >> 52) & 0x7ff);
+    if (biased == 0 or biased == 0x7ff) {
+        return @intFromFloat(@floor(@log10(value)));
+    }
+    const binary_exponent = @as(i32, @intCast(biased)) - 1023;
+    var exponent: i32 = @intFromFloat(@floor(
+        @as(f64, @floatFromInt(binary_exponent)) * 0.3010299956639812,
+    ));
+    if (exponent < -21 or exponent > 21) {
+        return @intFromFloat(@floor(@log10(value)));
+    }
+    if (pow10Signed(exponent) > value) exponent -= 1;
+    if (pow10Signed(exponent + 1) <= value) exponent += 1;
+    return exponent;
 }
 
 fn pow10(digits: u8) f64 {
@@ -4909,5 +4929,26 @@ test "pow10Signed matches std.math.pow" {
     while (exponent <= 30) : (exponent += 1) {
         const expected = std.math.pow(f64, 10.0, @floatFromInt(exponent));
         try testing.expectEqual(expected, pow10Signed(exponent));
+    }
+}
+
+test "floorLog10 matches the libm result" {
+    const testing = @import("std").testing;
+    var state: u64 = 0x9e3779b97f4a7c15;
+    for (0..200000) |_| {
+        state = state *% 6364136223846793005 +% 1442695040888963407;
+        const value: f64 = @bitCast(state);
+        if (!std.math.isFinite(value) or value <= 0) continue;
+        const expected: i32 = @intFromFloat(@floor(@log10(value)));
+        try testing.expectEqual(expected, floorLog10(value));
+    }
+    const fixed = [_]f64{
+        1, 9.99, 10, 99.9, 100, 1000, 0.1, 0.01, 1e-300, 1e300,
+        1.7976931348623157e308, 2.2250738585072014e-308,
+        4.9e-324, 5e-324,
+    };
+    for (fixed) |value| {
+        const expected: i32 = @intFromFloat(@floor(@log10(value)));
+        try testing.expectEqual(expected, floorLog10(value));
     }
 }
