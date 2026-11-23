@@ -935,6 +935,41 @@ pub const Collator = struct {
         if (self.simpleOrdering()) {
             const diff = commonBytePrefix(a, b);
             if (self.commonPrefixSkip(a, diff, true)) |start| {
+                // A root collator often decides the suffix comparison from
+                // the first primaries without materializing keys. Validate
+                // the suffixes first so invalid input still reports an
+                // error; tailored collators fall through to the key path,
+                // which validates as it goes.
+                if (self.tailoring == null and
+                    start < a.len and start < b.len)
+                {
+                    if (!scalar.validate.isValid(a[start..]) or
+                        !scalar.validate.isValid(b[start..]))
+                    {
+                        return error.InvalidUtf8;
+                    }
+                    if (a[start] < 0x80 and b[start] < 0x80 and
+                        !ascii_contractions[a[start]] and
+                        !ascii_contractions[b[start]])
+                    {
+                        const primary_a =
+                            ascii_elements_table[a[start]].primary;
+                        const primary_b =
+                            ascii_elements_table[b[start]].primary;
+                        if (primary_a != 0 and primary_b != 0 and
+                            primary_a != primary_b)
+                        {
+                            return if (primary_a < primary_b) .lt else .gt;
+                        }
+                    }
+                    if (self.firstPrimariesOrder(
+                        allocator,
+                        a[start..],
+                        b[start..],
+                    )) |order| {
+                        return order;
+                    }
+                }
                 try self.sortKeyInto(allocator, a[start..], key_a);
                 try self.sortKeyInto(allocator, b[start..], key_b);
                 return std.mem.order(u32, key_a.items, key_b.items);
@@ -5586,5 +5621,37 @@ test "compare matches full keys across shared prefixes" {
     try testing.expectError(
         error.InvalidUtf8,
         collator.compare(allocator, "b", "a\xff", &scratch_a, &scratch_b),
+    );
+    // The skippable-prefix path validates the suffixes before a primary-only
+    // decision can return an order.
+    try testing.expectError(
+        error.InvalidUtf8,
+        collator.compare(
+            allocator,
+            "abcdefghij\xff",
+            "abcdefghik",
+            &scratch_a,
+            &scratch_b,
+        ),
+    );
+    try testing.expectError(
+        error.InvalidUtf8,
+        collator.compare(
+            allocator,
+            "abcdefghik",
+            "abcdefghij\xff",
+            &scratch_a,
+            &scratch_b,
+        ),
+    );
+    try testing.expectEqual(
+        std.math.Order.lt,
+        try collator.compare(
+            allocator,
+            "abcdefghij",
+            "abcdefghik",
+            &scratch_a,
+            &scratch_b,
+        ),
     );
 }
