@@ -1327,6 +1327,48 @@ const idna_domains = [_][]const u8{
     "\u{65e5}\u{672c}\u{8a9e}.jp",
 };
 
+const spoof_texts = [_][]const u8{
+    "paypal",
+    "p\u{0430}ypal",
+    "\u{0391}\u{0392}\u{0393}",
+    "\u{0410}\u{0412}\u{0421}",
+    "l",
+    "1",
+    "O",
+    "0",
+    "rn",
+    "m",
+    "scope",
+    "g\u{043e}\u{043e}gle",
+    "micros\u{043ef}t",
+    "fi",
+    "fl",
+};
+
+fn benchSpoofSkeleton(allocator: std.mem.Allocator) void {
+    var checker = icuz.spoof.Checker.init();
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 2000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            for (spoof_texts) |text| {
+                const skeleton = checker.bidiSkeletonAlloc(
+                    allocator,
+                    text,
+                    .ltr,
+                ) catch unreachable;
+                sink +%= skeleton.len;
+                allocator.free(skeleton);
+            }
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps("spoof bidi skeleton", rounds * spoof_texts.len, best);
+}
+
 fn benchIdna(
     name: []const u8,
     ascii: bool,
@@ -1880,6 +1922,9 @@ pub fn main() !void {
     benchLocaleCanonicalize("canonicalize zh-hant-tw", "zh-hant-tw", allocator);
     benchLocaleCanonicalize("canonicalize sh-RS", "sh-RS", allocator);
     benchLocaleCanonicalize("canonicalize sr-Latn-RS", "sr-Latn-RS", allocator);
+
+    std.debug.print("\n-- spoof --\n", .{});
+    benchSpoofSkeleton(allocator);
 
     std.debug.print("\n-- idna --\n", .{});
     benchIdna("idna toASCII", true, allocator);

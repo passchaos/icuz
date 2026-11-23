@@ -747,6 +747,25 @@ fn bidiSkeletonImpl(
     text: []const u8,
     direction: bidi_paragraph.BaseDirection,
 ) Error![]u8 {
+    // Skeleton inputs are short; the bidi and normalization stages allocate
+    // several scratch buffers, so run them against a stack arena and hand
+    // back one exact allocation. Longer inputs retry on the heap.
+    var stack: [8192]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&stack);
+    if (bidiSkeletonInner(fixed.allocator(), text, direction)) |result| {
+        return allocator.dupe(u8, result);
+    } else |err| switch (err) {
+        error.OutOfMemory => {},
+        else => return err,
+    }
+    return bidiSkeletonInner(allocator, text, direction);
+}
+
+fn bidiSkeletonInner(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    direction: bidi_paragraph.BaseDirection,
+) Error![]u8 {
     var paragraph = try bidi_paragraph.resolve(allocator, text, direction);
     defer paragraph.deinit();
     const reordered = try paragraph.reorderAlloc(allocator, text, .{

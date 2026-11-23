@@ -11,7 +11,9 @@
 #include <unicode/ucal.h>
 #include <unicode/ucnv.h>
 #include <unicode/ucol.h>
+#include <unicode/ubidi.h>
 #include <unicode/uidna.h>
+#include <unicode/uspoof.h>
 #include <unicode/udat.h>
 #include <unicode/ulistformatter.h>
 #include <unicode/unorm2.h>
@@ -630,6 +632,37 @@ int main() {
         });
         ucal_close(calendar);
         udat_close(format);
+    }
+
+    std::printf("\n-- spoof --\n");
+    {
+        const char* texts[] = {
+            "paypal",
+            "p\xD0\xB0ypal",
+            "\xCE\x91\xCE\x92\xCE\x93",
+            "\xD0\x90\xD0\x92\xD0\xA1",
+            "l", "1", "O", "0", "rn", "m", "scope",
+            "g\xD0\xBE\xD0\xBEgle",
+            "micros\xD0\xBE\xD1\x8Bt",
+            "fi", "fl",
+        };
+        const int count = (int)(sizeof(texts) / sizeof(texts[0]));
+        UErrorCode status = U_ZERO_ERROR;
+        USpoofChecker* sc = uspoof_open(&status);
+        if (U_SUCCESS(status)) {
+            uspoof_setChecks(sc, uspoof_getChecks(sc, &status) | USPOOF_CONFUSABLE, &status);
+            char buffer[256];
+            int next = 0;
+            bench_ops("spoof bidi skeleton", 4000 * count, [&] {
+                const char* text = texts[next % count];
+                next++;
+                status = U_ZERO_ERROR;
+                int32_t length = uspoof_getBidiSkeletonUTF8(sc, UBIDI_LTR, text,
+                    -1, buffer, sizeof(buffer), &status);
+                (void)length;
+            });
+            uspoof_close(sc);
+        }
     }
 
     std::printf("\n-- idna --\n");
