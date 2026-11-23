@@ -209,14 +209,24 @@ fn shapeArabicInner(
     try source.ensureTotalCapacity(allocator, text.len);
     // The packed decoder validates each sequence and returns in registers, so
     // the decode loop avoids the store-forwarding stall of the struct result.
+    var has_presentation = false;
     var cursor: usize = 0;
     while (cursor < text.len) {
         const decoded = scalar.decodeValidatingPacked(text, cursor);
         if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
-        source.appendAssumeCapacity(scalar.packedCodepoint(decoded));
+        const codepoint = scalar.packedCodepoint(decoded);
+        if (codepoint >= 0xfb50 and codepoint <= 0xfefc) {
+            has_presentation = true;
+        }
+        source.appendAssumeCapacity(codepoint);
         cursor += scalar.packedLength(decoded);
     }
     if (source.items.len == 0) return allocator.alloc(u8, 0);
+
+    // Presentation forms only need converting when the input contains them;
+    // the buffer-wide conversion pass is skipped otherwise.
+    var shape_options = options;
+    if (!has_presentation) shape_options.preserve_presentation = true;
 
     var shape_vars = ShapeVariables{
         .tail_char = if (options.tail_new_unicode) NEW_TAIL_CHAR else OLD_TAIL_CHAR,
@@ -273,7 +283,7 @@ fn shapeArabicInner(
                         allocator,
                         storage,
                         working.len,
-                        options,
+                        shape_options,
                         2,
                         shape_vars,
                     );
@@ -282,7 +292,7 @@ fn shapeArabicInner(
                         allocator,
                         storage,
                         working.len,
-                        options,
+                        shape_options,
                         1,
                         shape_vars,
                     );
@@ -296,7 +306,7 @@ fn shapeArabicInner(
                     allocator,
                     storage,
                     working.len,
-                    options,
+                    shape_options,
                     0,
                     shape_vars,
                 );
@@ -1081,6 +1091,24 @@ fn invertBufferSpaces(buffer: []u21) void {
     }
     var i = count_left;
     var j = buffer.len - count_right;
+    // The buffer holds scalars in four-byte slots, so reversing eight slots
+    // at a time with a lane permute avoids the scalar swap chain that
+    // dominates the two full-buffer passes of logical shaping.
+    const lanes = 8;
+    const Vec = @Vector(lanes, u32);
+    const reverse_mask = [_]i32{
+        lanes - 1, lanes - 2, lanes - 3, lanes - 4,
+        lanes - 5, lanes - 6, lanes - 7, lanes - 8,
+    };
+    const slots: []u32 = std.mem.bytesAsSlice(u32, std.mem.sliceAsBytes(buffer));
+    while (i + lanes <= j) {
+        j -= lanes;
+        const head: Vec = slots[i..][0..lanes].*;
+        const tail: Vec = slots[j..][0..lanes].*;
+        slots[i..][0..lanes].* = @bitCast(@shuffle(u32, tail, undefined, reverse_mask));
+        slots[j..][0..lanes].* = @bitCast(@shuffle(u32, head, undefined, reverse_mask));
+        i += lanes;
+    }
     while (i < j) {
         j -= 1;
         if (i >= j) break;
