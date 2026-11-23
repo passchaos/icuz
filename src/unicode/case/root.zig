@@ -236,3 +236,23 @@ test "pure ASCII text uses the direct byte path" {
 test {
     _ = full;
 }
+
+test "Latin-1 uppercase fast paths match the generic mappings" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    var codepoint: u21 = 0xc0;
+    while (codepoint <= 0xde) : (codepoint += 1) {
+        if (codepoint == 0xd7) continue;
+        var buffer: [4]u8 = undefined;
+        const length = scalar.encodeUtf8(&buffer, codepoint);
+        const text = buffer[0..length];
+        const simple = try lowerAlloc(allocator, text);
+        defer allocator.free(simple);
+        const full_key = try fullLowerAlloc(allocator, text, .{});
+        defer allocator.free(full_key);
+        try testing.expectEqualStrings(simple, full_key);
+        const folded = try foldAlloc(allocator, text);
+        defer allocator.free(folded);
+        try testing.expectEqualStrings(simple, folded);
+    }
+}

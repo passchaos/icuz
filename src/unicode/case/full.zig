@@ -591,9 +591,10 @@ fn mapStreamingInto(
         }
 
         // Latin-1 uppercase letters map with a byte offset, so accented
-        // prose can skip the decoder and the encoder entirely.
+        // prose can skip the decoder and the encoder entirely. Their full
+        // mappings equal the simple ones; only sharp s folds to two scalars.
         if (root and first == 0xc3 and kind == .lower and
-            (mode == .simple or mode == .fold) and cursor + 2 <= text.len)
+            cursor + 2 <= text.len)
         {
             const second = text[cursor + 1];
             if (second & 0xc0 != 0x80) return error.InvalidUtf8;
