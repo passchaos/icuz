@@ -512,27 +512,32 @@ const mark_has_compatibility_decomposition: [mark_decomposition_limit - 0x300]bo
     break :blk table;
 };
 
+/// Direct decomposition table for one 256-scalar block. Blocks that carry
+/// ordinary prose mappings skip the generated page lookup's binary search.
+fn blockDecomposition(
+    comptime base: u21,
+    comptime compatibility: bool,
+) [0x100]?[]const u21 {
+    @setEvalBranchQuota(200_000);
+    var table: [0x100]?[]const u21 = [_]?[]const u21{null} ** 0x100;
+    for (0..0x100) |offset| {
+        const codepoint = base + offset;
+        if (codepoint > 0x10ffff) break;
+        table[offset] = if (compatibility)
+            decomposition.compatibilityForCodepoint(@intCast(codepoint))
+        else
+            decomposition.forCodepoint(@intCast(codepoint));
+    }
+    return table;
+}
+
 /// Latin-1 decomposition mappings indexed directly by scalar. Precomposed
-/// Latin letters dominate decomposed prose, and the generated page lookup
-/// costs a short binary search per scalar.
-const latin1_decomposition: [0x100]?[]const u21 = blk: {
-    @setEvalBranchQuota(100_000);
-    var table: [0x100]?[]const u21 = [_]?[]const u21{null} ** 0x100;
-    for (0x80..0x100) |codepoint| {
-        table[codepoint] = decomposition.forCodepoint(@intCast(codepoint));
-    }
-    break :blk table;
-};
-const latin1_compatibility_decomposition: [0x100]?[]const u21 = blk: {
-    @setEvalBranchQuota(100_000);
-    var table: [0x100]?[]const u21 = [_]?[]const u21{null} ** 0x100;
-    for (0x80..0x100) |codepoint| {
-        table[codepoint] = decomposition.compatibilityForCodepoint(
-            @intCast(codepoint),
-        );
-    }
-    break :blk table;
-};
+/// Latin letters dominate decomposed prose.
+const latin1_decomposition = blockDecomposition(0x00, false);
+const latin1_compatibility_decomposition = blockDecomposition(0x00, true);
+/// Fullwidth and halfwidth forms decompose under the compatibility forms and
+/// dominate CJK prose.
+const fullwidth_compatibility_decomposition = blockDecomposition(0xff00, true);
 
 /// Decompose one code point into `buffer` and return the component count.
 pub fn decomposeInto(
@@ -555,6 +560,12 @@ pub fn decomposeInto(
         }
         buffer[0] = codepoint;
         return 1;
+    }
+    if (compatibility and codepoint >= 0xff00 and codepoint < 0x10000) {
+        if (fullwidth_compatibility_decomposition[codepoint - 0xff00]) |components| {
+            @memcpy(buffer[0..components.len], components);
+            return components.len;
+        }
     }
     if (decomposeHangul(codepoint)) |parts| {
         const slice = parts.slice();
@@ -1031,7 +1042,10 @@ fn continuesSegmentLookup(codepoint: u21, compatibility: bool) bool {
     if (data.isCompositionSecond(codepoint)) return true;
     if (isHangulVOrT(codepoint)) return true;
     if (data.isSimplePage(codepoint, compatibility)) return false;
-    const mapping = if (compatibility)
+    const mapping = if (compatibility and codepoint >= 0xff00 and
+        codepoint < 0x10000)
+        fullwidth_compatibility_decomposition[codepoint - 0xff00]
+    else if (compatibility)
         decomposition.compatibilityForCodepoint(codepoint)
     else
         decomposition.forCodepoint(codepoint);
