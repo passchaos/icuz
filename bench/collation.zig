@@ -234,6 +234,90 @@ fn selected(filter: []const u8, section: []const u8, name: []const u8) bool {
         std.mem.eql(u8, filter, name);
 }
 
+fn commonBytePrefix(a: []const u8, b: []const u8) usize {
+    const limit = @min(a.len, b.len);
+    var index: usize = 0;
+    while (index + 128 <= limit) : (index += 128) {
+        const a0: @Vector(32, u8) = a[index..][0..32].*;
+        const b0: @Vector(32, u8) = b[index..][0..32].*;
+        const a1: @Vector(32, u8) = a[index + 32 ..][0..32].*;
+        const b1: @Vector(32, u8) = b[index + 32 ..][0..32].*;
+        const a2: @Vector(32, u8) = a[index + 64 ..][0..32].*;
+        const b2: @Vector(32, u8) = b[index + 64 ..][0..32].*;
+        const a3: @Vector(32, u8) = a[index + 96 ..][0..32].*;
+        const b3: @Vector(32, u8) = b[index + 96 ..][0..32].*;
+        const mask0: u32 = @bitCast(a0 != b0);
+        const mask1: u32 = @bitCast(a1 != b1);
+        const mask2: u32 = @bitCast(a2 != b2);
+        const mask3: u32 = @bitCast(a3 != b3);
+        if (mask0 != 0) return index + @ctz(mask0);
+        if (mask1 != 0) return index + 32 + @ctz(mask1);
+        if (mask2 != 0) return index + 64 + @ctz(mask2);
+        if (mask3 != 0) return index + 96 + @ctz(mask3);
+    }
+    while (index + 64 <= limit) : (index += 64) {
+        const a0: @Vector(32, u8) = a[index..][0..32].*;
+        const b0: @Vector(32, u8) = b[index..][0..32].*;
+        const a1: @Vector(32, u8) = a[index + 32 ..][0..32].*;
+        const b1: @Vector(32, u8) = b[index + 32 ..][0..32].*;
+        const mask0: u32 = @bitCast(a0 != b0);
+        const mask1: u32 = @bitCast(a1 != b1);
+        if (mask0 != 0) return index + @ctz(mask0);
+        if (mask1 != 0) return index + 32 + @ctz(mask1);
+    }
+    while (index < limit and a[index] == b[index]) : (index += 1) {}
+    return index;
+}
+
+fn benchPrefix(name: []const u8, a: []const u8, b: []const u8) void {
+    const rounds: usize = 20_000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            sink +%= commonBytePrefix(a, b);
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * a.len, best);
+}
+
+fn benchCompare(
+    name: []const u8,
+    a: []const u8,
+    b: []const u8,
+    options: icuz.collation.Options,
+    allocator: std.mem.Allocator,
+) void {
+    const collator = icuz.collation.Collator.init(options);
+    var key_a = std.ArrayList(u32).empty;
+    defer key_a.deinit(allocator);
+    var key_b = std.ArrayList(u32).empty;
+    defer key_b.deinit(allocator);
+    const rounds: usize = 20_000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const order = collator.compareAssumeValid(
+                allocator,
+                a,
+                b,
+                &key_a,
+                &key_b,
+            ) catch unreachable;
+            sink +%= @intFromEnum(order);
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    std.debug.print("{s:<28} {d:8.3} ns/op\n", .{
+        name,
+        @as(f64, @floatFromInt(best)) / @as(f64, @floatFromInt(rounds)),
+    });
+}
+
 fn benchValidate(name: []const u8, text: []const u8) void {
     const rounds: usize = 4000;
     var best: u64 = std.math.maxInt(u64);
@@ -498,6 +582,36 @@ pub fn main(init: std.process.Init.Minimal) !void {
     }
     if (selected(filter, "case", "lower ASCII (utf16)")) {
         benchCaseUtf16("lower ASCII (utf16)", ascii_text, .lower, allocator);
+    }
+    if (selected(filter, "compare", "compare long")) {
+        var long_other = std.ArrayList(u8).empty;
+        defer long_other.deinit(allocator);
+        long_other.appendSlice(allocator, chinese_long_text) catch unreachable;
+        long_other.items[long_other.items.len - 1] = 0xb4;
+        benchCompare("compare long", chinese_long_text, long_other.items, .{}, allocator);
+        var mixed_other = std.ArrayList(u8).empty;
+        defer mixed_other.deinit(allocator);
+        mixed_other.appendSlice(allocator, mixed_text) catch unreachable;
+        mixed_other.items[mixed_other.items.len - 3] = 'u';
+        benchCompare("compare mixed late", mixed_text, mixed_other.items, .{}, allocator);
+        var mixed_early = std.ArrayList(u8).empty;
+        defer mixed_early.deinit(allocator);
+        mixed_early.appendSlice(allocator, mixed_text) catch unreachable;
+        mixed_early.items[0] = 'Z';
+        benchCompare("compare mixed early", mixed_text, mixed_early.items, .{}, allocator);
+    }
+    if (selected(filter, "prefix", "prefix long")) {
+        var other = std.ArrayList(u8).empty;
+        defer other.deinit(allocator);
+        other.appendSlice(allocator, chinese_long_text) catch unreachable;
+        other.items[other.items.len - 1] = 0xb4;
+        benchPrefix("prefix long", chinese_long_text, other.items);
+        benchPrefix("prefix mixed", mixed_text, mixed_text);
+        var mixed_other = std.ArrayList(u8).empty;
+        defer mixed_other.deinit(allocator);
+        mixed_other.appendSlice(allocator, mixed_text) catch unreachable;
+        mixed_other.items[mixed_other.items.len - 3] = 'u';
+        benchPrefix("prefix mixed diff", mixed_text, mixed_other.items);
     }
     if (selected(filter, "validate", "validate Swedish")) {
         benchValidate("validate Swedish std", swedish_text);

@@ -644,14 +644,20 @@ pub const Collator = struct {
         }
     };
 
-    /// First nonzero primary weight of a root-collation string, or null when
-    /// the leading eight scalars are not inert starters or no weight appears
-    /// within them.
-    fn firstRootPrimary(
+    const FirstPrimaries = struct {
+        values: [2]u32 = .{ 0, 0 },
+        count: u8 = 0,
+    };
+
+    /// First two nonzero primary weights of a root-collation string, or null
+    /// when the leading eight scalars are not inert starters or no weight
+    /// appears within them. Two weights decide implicit (Han) differences,
+    /// where the block primary is shared and the second primary differs.
+    fn firstRootPrimaries(
         self: *const Collator,
         allocator: std.mem.Allocator,
         text: []const u8,
-    ) ?u32 {
+    ) ?FirstPrimaries {
         if (self.tailoring != null) return null;
         ensureRootTables();
         var codepoints: [8]u21 = undefined;
@@ -664,9 +670,10 @@ pub const Collator = struct {
             count += 1;
             cursor = decoded.next;
         }
+        var result = FirstPrimaries{};
         var sink = FirstPrimarySink{};
         var index: usize = 0;
-        while (index < count) {
+        while (index < count and result.count < result.values.len) {
             sink.len = 0;
             index += appendElements(
                 allocator,
@@ -678,8 +685,39 @@ pub const Collator = struct {
                 &root_tables_storage,
             ) catch return null;
             for (sink.elements[0..sink.len]) |element| {
-                if (element.primary != 0) return element.primary;
+                if (element.primary == 0) continue;
+                result.values[result.count] = element.primary;
+                result.count += 1;
+                if (result.count == result.values.len) break;
             }
+        }
+        return if (result.count == 0) null else result;
+    }
+
+    /// Order decided by the first two primary weights, when one differs.
+    fn firstPrimariesOrder(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        a: []const u8,
+        b: []const u8,
+    ) ?std.math.Order {
+        const primaries_a = self.firstRootPrimaries(allocator, a) orelse
+            return null;
+        const primaries_b = self.firstRootPrimaries(allocator, b) orelse
+            return null;
+        if (primaries_a.values[0] != primaries_b.values[0]) {
+            return if (primaries_a.values[0] < primaries_b.values[0])
+                .lt
+            else
+                .gt;
+        }
+        if (primaries_a.count == 2 and primaries_b.count == 2 and
+            primaries_a.values[1] != primaries_b.values[1])
+        {
+            return if (primaries_a.values[1] < primaries_b.values[1])
+                .lt
+            else
+                .gt;
         }
         return null;
     }
@@ -700,6 +738,24 @@ pub const Collator = struct {
     fn commonBytePrefix(a: []const u8, b: []const u8) usize {
         const limit = @min(a.len, b.len);
         var index: usize = 0;
+        while (index + 128 <= limit) : (index += 128) {
+            const a0: @Vector(32, u8) = a[index..][0..32].*;
+            const b0: @Vector(32, u8) = b[index..][0..32].*;
+            const a1: @Vector(32, u8) = a[index + 32 ..][0..32].*;
+            const b1: @Vector(32, u8) = b[index + 32 ..][0..32].*;
+            const a2: @Vector(32, u8) = a[index + 64 ..][0..32].*;
+            const b2: @Vector(32, u8) = b[index + 64 ..][0..32].*;
+            const a3: @Vector(32, u8) = a[index + 96 ..][0..32].*;
+            const b3: @Vector(32, u8) = b[index + 96 ..][0..32].*;
+            const mask0: u32 = @bitCast(a0 != b0);
+            const mask1: u32 = @bitCast(a1 != b1);
+            const mask2: u32 = @bitCast(a2 != b2);
+            const mask3: u32 = @bitCast(a3 != b3);
+            if (mask0 != 0) return index + @ctz(mask0);
+            if (mask1 != 0) return index + 32 + @ctz(mask1);
+            if (mask2 != 0) return index + 64 + @ctz(mask2);
+            if (mask3 != 0) return index + 96 + @ctz(mask3);
+        }
         while (index + 64 <= limit) : (index += 64) {
             const a0: @Vector(32, u8) = a[index..][0..32].*;
             const b0: @Vector(32, u8) = b[index..][0..32].*;
@@ -887,12 +943,8 @@ pub const Collator = struct {
                 }
             }
             if (diff <= 32) {
-                if (self.firstRootPrimary(allocator, a)) |primary_a| {
-                    if (self.firstRootPrimary(allocator, b)) |primary_b| {
-                        if (primary_a != primary_b) {
-                            return if (primary_a < primary_b) .lt else .gt;
-                        }
-                    }
+                if (self.firstPrimariesOrder(allocator, a, b)) |order| {
+                    return order;
                 }
             }
             if (self.commonPrefixSkip(a, diff, false)) |start| {
@@ -914,12 +966,12 @@ pub const Collator = struct {
                             return if (primary_a < primary_b) .lt else .gt;
                         }
                     }
-                    if (self.firstRootPrimary(allocator, a[start..])) |primary_a| {
-                        if (self.firstRootPrimary(allocator, b[start..])) |primary_b| {
-                            if (primary_a != primary_b) {
-                                return if (primary_a < primary_b) .lt else .gt;
-                            }
-                        }
+                    if (self.firstPrimariesOrder(
+                        allocator,
+                        a[start..],
+                        b[start..],
+                    )) |order| {
+                        return order;
                     }
                 }
                 try self.sortKeyIntoAssumeValid(allocator, a[start..], key_a);
