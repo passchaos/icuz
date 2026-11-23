@@ -40,7 +40,8 @@ pub fn ordinalCategory(locale: []const u8, operands: Operands) Category {
 }
 
 fn categoryIn(rules: anytype, locale: []const u8, operands: Operands) Category {
-    const rule = findRuleIn(rules, locale) orelse return .other;
+    const index = findRuleIndex(rules, locale) orelse return .other;
+    const rule = rules[index];
     const categories = [_]Category{ .zero, .one, .two, .few, .many };
     for (categories) |candidate| {
         const expression = expressionFor(rule, candidate);
@@ -101,8 +102,46 @@ fn expressionFor(rule: anytype, category_value: Category) []const u8 {
     };
 }
 
-fn findRuleIn(rules: anytype, locale: []const u8) ?@TypeOf(rules[0]) {
-    if (lookupIn(rules, locale)) |rule| return rule;
+const rule_cache_len = 8;
+const rule_cache_name_len = 24;
+
+const RuleCacheEntry = struct {
+    rules_ptr: usize = 0,
+    locale: [rule_cache_name_len]u8 = [_]u8{0} ** rule_cache_name_len,
+    len: u8 = 0,
+    found: bool = false,
+    index: usize = 0,
+};
+
+/// Plural formatting repeats the same locale, so the fallback chain of
+/// binary searches runs once per thread and rule set.
+threadlocal var rule_cache: [rule_cache_len]RuleCacheEntry =
+    [_]RuleCacheEntry{.{}} ** rule_cache_len;
+
+fn findRuleIndex(rules: anytype, locale: []const u8) ?usize {
+    const rules_ptr = @intFromPtr(rules.ptr);
+    if (locale.len <= rule_cache_name_len) {
+        var hash: usize = rules_ptr ^ locale.len;
+        for (locale) |byte| hash = hash *% 31 +% byte;
+        const slot = &rule_cache[hash & (rule_cache_len - 1)];
+        if (slot.rules_ptr == rules_ptr and slot.len == locale.len and
+            std.mem.eql(u8, slot.locale[0..slot.len], locale))
+        {
+            return if (slot.found) slot.index else null;
+        }
+        const result = findRuleIndexUncached(rules, locale);
+        slot.rules_ptr = rules_ptr;
+        slot.len = @intCast(locale.len);
+        @memcpy(slot.locale[0..locale.len], locale);
+        slot.found = result != null;
+        if (result) |index| slot.index = index;
+        return result;
+    }
+    return findRuleIndexUncached(rules, locale);
+}
+
+fn findRuleIndexUncached(rules: anytype, locale: []const u8) ?usize {
+    if (lookupIndex(rules, locale)) |index| return index;
 
     var buffer: [64]u8 = undefined;
     var len: usize = 0;
@@ -112,24 +151,23 @@ fn findRuleIn(rules: anytype, locale: []const u8) ?@TypeOf(rules[0]) {
         len += 1;
     }
     const normalized = buffer[0..len];
-    if (lookupIn(rules, normalized)) |rule| return rule;
+    if (lookupIndex(rules, normalized)) |index| return index;
 
     if (std.mem.indexOfAny(u8, locale, "-_")) |position| {
-        if (lookupIn(rules, locale[0..position])) |rule| return rule;
+        if (lookupIndex(rules, locale[0..position])) |index| return index;
     }
-    return lookupIn(rules, "root");
+    return lookupIndex(rules, "root");
 }
 
-fn lookupIn(rules: anytype, locale: []const u8) ?@TypeOf(rules[0]) {
+fn lookupIndex(rules: anytype, locale: []const u8) ?usize {
     var low: usize = 0;
     var high = rules.len;
     while (low < high) {
         const mid = low + (high - low) / 2;
-        const rule = rules[mid];
-        switch (std.mem.order(u8, rule.locale, locale)) {
+        switch (std.mem.order(u8, rules[mid].locale, locale)) {
             .lt => low = mid + 1,
             .gt => high = mid,
-            .eq => return rule,
+            .eq => return mid,
         }
     }
     return null;
