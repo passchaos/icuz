@@ -220,8 +220,12 @@ pub const Iterator = struct {
                 // it rejects other leads with one comparison. A Hangul run
                 // never starts with a word class, so the word scanner cannot
                 // apply when the previous scalar is already inside one.
-                if (self.consumeHangulRun()) continue;
-                if (!rules.isHangulBlock(self.state.last.class) and
+                // Every Hangul jamo encodes with an 0xE1 lead, so other
+                // scripts skip the run scanner's call entirely.
+                if (self.text[self.cursor] == 0xe1 and
+                    self.consumeHangulRun()) continue;
+                if (self.text[self.cursor] < 0xf0 and
+                    !rules.isHangulBlock(self.state.last.class) and
                     self.consumeUnicodeWordRun()) continue;
             }
 
