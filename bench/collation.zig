@@ -883,6 +883,20 @@ pub fn main(init: std.process.Init.Minimal) !void {
             allocator,
         );
     }
+    if (selected(filter, "quickcheck", "quickcheck mixed (utf16)")) {
+        benchQuickCheckUtf16(
+            "quickcheck mixed (utf16)",
+            mixed_text,
+            allocator,
+        );
+    }
+    if (selected(filter, "quickcheck", "quickcheck e+marks (utf16)")) {
+        benchQuickCheckUtf16(
+            "quickcheck e+marks (utf16)",
+            e_marks_text,
+            allocator,
+        );
+    }
     if (selected(filter, "quickcheck", "quickcheck Chinese (utf16)")) {
         benchQuickCheckUtf16(
             "quickcheck Chinese (utf16)",

@@ -279,7 +279,11 @@ need without pulling in a font or layout engine.
   and variant ordering, validated by the official 1,773-case CLDR
   canonicalization fixture. Extension and private-use subtags are preserved,
   and `-u-` extension type aliases from CLDR BCP 47 data are applied (for
-  example `ca-islamicc` becomes `ca-islamic-civil`). A zero-allocation
+  example `ca-islamicc` becomes `ca-islamic-civil`). The language, script,
+  territory, and variant alias indexes are open-addressed tables built at
+  compile time, so each subtag resolves with a short hash probe instead of a
+  binary search, and the canonical form is written into a stack buffer before
+  the single returned allocation. A zero-allocation
   `Locale` parser (`Locale.parse`) exposes the language, script, region,
   variants, and `-u-` keyword values of a tag.
 - CLDR 48 language matching (`localeBestMatchAlloc`, `localeDistanceAlloc`,
@@ -646,7 +650,9 @@ scalar decoder that rejects truncation, overlongs, and surrogates without the
 generic `std.unicode` helpers, the fused scan jumps to the first high-bit byte
 eight bytes at a time while keeping single-byte runs on the scalar loop, CJK
 scalars whose whole 3-byte lead range is simple are validated and
-skipped in runs without decoding, stable spans before and between changes are
+skipped in runs without decoding, inert CJK punctuation and fullwidth forms
+skip both the decoder and the table probes in the fused scan and in the
+UTF-8/UTF-16 quick checks, stable spans before and between changes are
 copied verbatim, and the segment engine streams UTF-8 straight to the output
 sink with ASCII runs bulk-copied. Decoded scalars and their byte lengths travel
 as one packed `u32`, avoiding the stack temporaries an optional struct return
