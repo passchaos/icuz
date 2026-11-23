@@ -965,6 +965,23 @@ fn buildElements(
     try ces.ensureTotalCapacity(source.len + 8);
     const tables: ?*const RootTables =
         if (reorder == null and !shifted) &root_tables_storage else null;
+    // Root collation without numeric ordering never consults the tailoring
+    // cache, so the scan skips both per-scalar option tests.
+    if (locale_tailoring == null and !options.numeric) {
+        var root_index: usize = 0;
+        while (root_index < source.len) {
+            root_index += try appendElements(
+                allocator,
+                ces,
+                source,
+                root_index,
+                reorder,
+                shifted,
+                tables,
+            );
+        }
+        return;
+    }
     var index: usize = 0;
     while (index < source.len) {
         if (options.numeric) {
