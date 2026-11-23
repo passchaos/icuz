@@ -1853,7 +1853,7 @@ const latin_nfd: [latin_limit]LatinNfd = blk: {
 /// the BMP scripts that dominate mixed text (Hebrew, Arabic, Indic) have
 /// exactly one single-element entry, so the page lookup, contraction scan,
 /// and skipped-mark loop can be bypassed with one table read.
-const direct_bmp_limit: usize = 0x1000;
+const direct_bmp_limit: usize = 0x2100;
 
 const DirectKind = enum(u2) { complex, direct, implicit };
 
