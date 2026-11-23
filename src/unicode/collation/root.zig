@@ -993,7 +993,7 @@ fn buildElements(
     tailoring_pages: ?*tailorings.PageIndex,
     reorder: ?tailorings.Reorder,
     shifted: bool,
-    ces: *CeBuffer,
+    ces: anytype,
 ) error{OutOfMemory}!void {
     try ces.ensureTotalCapacity(source.len + 8);
     const tables: ?*const RootTables =
@@ -1211,6 +1211,24 @@ fn sortKeyCodepointsResolved(
         );
     }
 
+    if (!shifted and !backwards and !options.case_level and
+        case_first != .upper and
+        (options.strength == .primary or options.strength == .secondary or
+            options.strength == .tertiary))
+    {
+        return appendTailoredLevels(
+            allocator,
+            output,
+            source,
+            codepoints,
+            options,
+            locale_tailoring,
+            tailoring_pages,
+            reorder,
+            shifted,
+        );
+    }
+
     var stack_ces: [512]CollationElement = undefined;
     var ces = CeBuffer.init(allocator, &stack_ces);
     defer ces.deinit();
@@ -1226,20 +1244,7 @@ fn sortKeyCodepointsResolved(
     );
 
     if (!shifted and (case_first != .upper or options.case_level)) {
-        // The common path can emit levels straight from the collation
-        // elements without materializing the weighted copy.
-        if (!backwards and !options.case_level) {
-            try appendLevelElementsAll(
-                allocator,
-                output,
-                ces.items(),
-                options.strength,
-            );
-            if (options.strength == .identical) {
-                try appendIdenticalLevel(allocator, output, codepoints);
-            }
-            return;
-        }
+        // Only backwards secondary or case-level options reach this path.
         try appendLevelElements(allocator, output, ces.items(), .primary);
         if (options.strength == .primary) return;
         if (backwards) {
@@ -1433,7 +1438,7 @@ fn appendEntry(
 
 fn appendTailored(
     allocator: std.mem.Allocator,
-    ces: *CeBuffer,
+    ces: anytype,
     rule: tailorings.Rule,
 ) error{OutOfMemory}!void {
     var index: usize = 0;
@@ -2990,7 +2995,7 @@ comptime {
 /// digits from different numbering systems compare equal.
 fn appendNumeric(
     allocator: std.mem.Allocator,
-    ces: *CeBuffer,
+    ces: anytype,
     digits: []const u21,
 ) error{OutOfMemory}!void {
     var start: usize = 0;
@@ -3131,6 +3136,94 @@ fn transform(
 
 const Level = enum { primary, secondary, tertiary, quaternary };
 
+/// Collects the requested strength levels while collation elements are
+/// produced, so callers skip an element buffer and its per-level rescans.
+/// A level that outgrows its stack array sets `overflow`; the caller then
+/// falls back to the buffered path.
+fn FusedLevelSink(comptime strength: Strength) type {
+    return struct {
+        const Self = @This();
+        const need_secondary = strength != .primary;
+        const need_tertiary = strength != .primary and strength != .secondary;
+
+        primary: [2048]u32 = undefined,
+        secondary: [if (need_secondary) 2048 else 0]u32 = undefined,
+        tertiary: [if (need_tertiary) 2048 else 0]u32 = undefined,
+        primary_len: usize = 0,
+        secondary_len: usize = 0,
+        tertiary_len: usize = 0,
+        overflow: bool = false,
+
+        inline fn ensureTotalCapacity(
+            _: *Self,
+            _: usize,
+        ) error{OutOfMemory}!void {}
+
+        inline fn append(
+            self: *Self,
+            _: std.mem.Allocator,
+            element: CollationElement,
+        ) error{OutOfMemory}!void {
+            if (element.primary != 0) {
+                if (self.primary_len == self.primary.len) {
+                    self.overflow = true;
+                } else {
+                    self.primary[self.primary_len] = element.primary;
+                    self.primary_len += 1;
+                }
+            }
+            if (need_secondary and element.secondary != 0) {
+                if (self.secondary_len == self.secondary.len) {
+                    self.overflow = true;
+                } else {
+                    self.secondary[self.secondary_len] = element.secondary;
+                    self.secondary_len += 1;
+                }
+            }
+            if (need_tertiary and element.tertiary != 0) {
+                if (self.tertiary_len == self.tertiary.len) {
+                    self.overflow = true;
+                } else {
+                    self.tertiary[self.tertiary_len] = element.tertiary;
+                    self.tertiary_len += 1;
+                }
+            }
+        }
+
+        fn emit(
+            self: *Self,
+            allocator: std.mem.Allocator,
+            output: *std.ArrayList(u32),
+            codepoints: []const u21,
+        ) error{OutOfMemory}!void {
+            const separator = strength == .quaternary or strength == .identical;
+            const total = self.primary_len + 1 +
+                (if (need_secondary) self.secondary_len + 1 else 0) +
+                (if (need_tertiary) self.tertiary_len + 1 else 0) +
+                @as(usize, @intFromBool(separator));
+            try output.ensureTotalCapacityPrecise(allocator, total);
+            output.appendSliceAssumeCapacity(self.primary[0..self.primary_len]);
+            output.appendAssumeCapacity(0);
+            if (need_secondary) {
+                output.appendSliceAssumeCapacity(
+                    self.secondary[0..self.secondary_len],
+                );
+                output.appendAssumeCapacity(0);
+            }
+            if (need_tertiary) {
+                output.appendSliceAssumeCapacity(
+                    self.tertiary[0..self.tertiary_len],
+                );
+                output.appendAssumeCapacity(0);
+            }
+            if (separator) output.appendAssumeCapacity(0);
+            if (strength == .identical) {
+                try appendIdenticalLevel(allocator, output, codepoints);
+            }
+        }
+    };
+}
+
 fn appendLevelElements(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u32),
@@ -3205,6 +3298,115 @@ fn appendLevelElementsAll(
         len += 1;
     }
     output.items.len = len;
+}
+
+/// Dispatch the fused level emission for the common strengths. Keeping the
+/// strength switch out of line leaves the sort-key entry point small enough
+/// for the Latin fast paths to stay inlined.
+noinline fn appendTailoredLevels(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    source: []const u21,
+    codepoints: []const u21,
+    options: Options,
+    locale_tailoring: ?tailorings.Tailoring,
+    tailoring_pages: ?*tailorings.PageIndex,
+    reorder: ?tailorings.Reorder,
+    shifted: bool,
+) error{OutOfMemory}!void {
+    switch (options.strength) {
+        .primary => return appendElementsFused(
+            allocator,
+            output,
+            source,
+            codepoints,
+            options,
+            locale_tailoring,
+            tailoring_pages,
+            reorder,
+            shifted,
+            .primary,
+        ),
+        .secondary => return appendElementsFused(
+            allocator,
+            output,
+            source,
+            codepoints,
+            options,
+            locale_tailoring,
+            tailoring_pages,
+            reorder,
+            shifted,
+            .secondary,
+        ),
+        .tertiary => return appendElementsFused(
+            allocator,
+            output,
+            source,
+            codepoints,
+            options,
+            locale_tailoring,
+            tailoring_pages,
+            reorder,
+            shifted,
+            .tertiary,
+        ),
+        .quaternary, .identical => unreachable,
+    }
+}
+
+/// Emit the requested levels while the collation elements are produced.
+/// The tailored path otherwise materializes an element buffer and rescans it
+/// once per level; a level that outgrows the stack arrays falls back to that
+/// buffered path.
+fn appendElementsFused(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u32),
+    source: []const u21,
+    codepoints: []const u21,
+    options: Options,
+    locale_tailoring: ?tailorings.Tailoring,
+    tailoring_pages: ?*tailorings.PageIndex,
+    reorder: ?tailorings.Reorder,
+    shifted: bool,
+    comptime strength: Strength,
+) error{OutOfMemory}!void {
+    var sink: FusedLevelSink(strength) = undefined;
+    sink.primary_len = 0;
+    sink.secondary_len = 0;
+    sink.tertiary_len = 0;
+    sink.overflow = false;
+    try buildElements(
+        allocator,
+        source,
+        options,
+        locale_tailoring,
+        tailoring_pages,
+        reorder,
+        shifted,
+        &sink,
+    );
+    if (!sink.overflow) {
+        try sink.emit(allocator, output, codepoints);
+        return;
+    }
+    var stack_ces: [512]CollationElement = undefined;
+    var ces = CeBuffer.init(allocator, &stack_ces);
+    defer ces.deinit();
+    try buildElements(
+        allocator,
+        source,
+        options,
+        locale_tailoring,
+        tailoring_pages,
+        reorder,
+        shifted,
+        &ces,
+    );
+    try appendLevelElementsAll(allocator, output, ces.items(), strength);
+    if (strength == .identical) {
+        try appendIdenticalLevel(allocator, output, codepoints);
+    }
 }
 
 fn appendCaseLevelElements(
