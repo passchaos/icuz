@@ -643,8 +643,9 @@ keeps ordinary starters out of the composition binary search, and simple-page
 bitmaps let CJK and other non-decomposing scripts skip all three per-scalar
 lookups. UTF-8 validation is fused into the quick check through an inlined
 scalar decoder that rejects truncation, overlongs, and surrogates without the
-generic `std.unicode` helpers, the quick check bulk-skips interior ASCII
-runs, CJK scalars whose whole 3-byte lead range is simple are validated and
+generic `std.unicode` helpers, the fused scan jumps to the first high-bit byte
+eight bytes at a time while keeping single-byte runs on the scalar loop, CJK
+scalars whose whole 3-byte lead range is simple are validated and
 skipped in runs without decoding, stable spans before and between changes are
 copied verbatim, and the segment engine streams UTF-8 straight to the output
 sink with ASCII runs bulk-copied. Decoded scalars and their byte lengths travel
@@ -692,8 +693,10 @@ compile-time tables, and ASCII grapheme clusters are returned without decoding;
 the word, sentence, and line-break iterators carry scalars and offsets as
 separate registers instead of decoded-struct temporaries, and line-break
 decisions take the boundary offsets directly; CJK runs replay interior
-boundaries without property lookups, and a space run followed by an L jamo
-resolves its LB31 boundary without the rule engine. Bidi resolution reserves
+boundaries without property lookups, a space run followed by an L jamo
+resolves its LB31 boundary without the rule engine, and the Hangul and
+Unicode word-run scanners are gated on the lead byte so other scripts skip
+the call. Bidi resolution reserves
 the run and per-sequence scratch arrays once per paragraph, links isolating
 runs through a presence bitmap instead of clearing a 126-entry table, fuses
 UTF-8 validation into the scalar scan, and skips the European-separator and

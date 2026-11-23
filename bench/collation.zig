@@ -783,6 +783,13 @@ pub fn main(init: std.process.Init.Minimal) !void {
     if (selected(filter, "break", "line break devanagari")) {
         benchLines("line break devanagari", "\u{0915}\u{094d}\u{0937}\u{093f} " ** 8);
     }
+    if (selected(filter, "normalize", "NFC precomposed (reuse)")) {
+        benchNormalizeInto(
+            "NFC precomposed (reuse)",
+            "\u{00e9} \u{00ef} \u{00df} \u{4e16}\u{754c} " ** 8,
+            allocator,
+        );
+    }
     if (selected(filter, "normalize", "NFC mixed (reuse)")) {
         benchNormalizeInto("NFC mixed (reuse)", mixed_text, allocator);
     }
