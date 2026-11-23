@@ -246,6 +246,103 @@ pub fn skeletonPattern(
     return null;
 }
 
+/// Resolve an ICU date/time skeleton to the locale's CLDR pattern. Skeletons
+/// that contain both date and time fields are split and joined with the
+/// locale's date-time glue pattern, mirroring `formatSkeletonAlloc`.
+pub fn skeletonPatternAlloc(
+    allocator: std.mem.Allocator,
+    locale_name: []const u8,
+    skeleton: []const u8,
+) Error!?[]u8 {
+    var locale_storage: data.Locale = undefined;
+    const locale = resolveLocale(locale_name, &locale_storage) orelse
+        findLocale("en").?;
+    var pattern_buffer: [128]u8 = undefined;
+    if (skeletonPattern(locale_name, skeleton, &pattern_buffer)) |pattern| {
+        return try allocator.dupe(u8, pattern);
+    }
+    var date_part_buffer: [32]u8 = undefined;
+    var time_part_buffer: [32]u8 = undefined;
+    const split = splitSkeleton(
+        locale,
+        skeleton,
+        &date_part_buffer,
+        &time_part_buffer,
+    );
+    if (split.date.len > 0 and split.time.len > 0) {
+        var date_pattern_buffer: [128]u8 = undefined;
+        var time_pattern_buffer: [128]u8 = undefined;
+        const date_pattern = skeletonPattern(
+            locale_name,
+            split.date,
+            &date_pattern_buffer,
+        ) orelse locale.date_medium;
+        const time_pattern = skeletonPattern(
+            locale_name,
+            split.time,
+            &time_pattern_buffer,
+        ) orelse locale.time_medium;
+        return try substituteDateTimePatterns(
+            allocator,
+            dateTimeGlue(locale, split.date),
+            date_pattern,
+            time_pattern,
+        );
+    }
+    if (split.time.len > 0) {
+        var time_only_buffer: [128]u8 = undefined;
+        const pattern = skeletonPattern(
+            locale_name,
+            split.time,
+            &time_only_buffer,
+        ) orelse locale.time_medium;
+        return try allocator.dupe(u8, pattern);
+    }
+    if (split.date.len > 0) {
+        var date_only_buffer: [128]u8 = undefined;
+        const pattern = skeletonPattern(
+            locale_name,
+            split.date,
+            &date_only_buffer,
+        ) orelse locale.date_medium;
+        return try allocator.dupe(u8, pattern);
+    }
+    return null;
+}
+
+/// Join two CLDR patterns with a date-time glue pattern while preserving the
+/// pattern syntax of both sides (quoted literals included).
+fn substituteDateTimePatterns(
+    allocator: std.mem.Allocator,
+    pattern: []const u8,
+    date_pattern: []const u8,
+    time_pattern: []const u8,
+) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    var index: usize = 0;
+    while (index < pattern.len) {
+        if (pattern[index] == '{' and index + 2 < pattern.len and
+            pattern[index + 2] == '}')
+        {
+            const placeholder = pattern[index + 1];
+            if (placeholder == '1') {
+                try output.appendSlice(allocator, date_pattern);
+                index += 3;
+                continue;
+            }
+            if (placeholder == '0') {
+                try output.appendSlice(allocator, time_pattern);
+                index += 3;
+                continue;
+            }
+        }
+        try output.append(allocator, pattern[index]);
+        index += 1;
+    }
+    return output.toOwnedSlice(allocator);
+}
+
 /// ICU DateTimePatternGenerator::getBestPattern width distance: field width
 /// differences plus a penalty when numeric and textual month forms compete.
 fn skeletonDistance(request: []const u8, candidate: []const u8) u32 {

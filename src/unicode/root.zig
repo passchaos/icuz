@@ -478,6 +478,7 @@ pub const addCalendarMonths = dates_mod.addMonths;
 pub const addCalendarYears = dates_mod.addYears;
 pub const calendarFieldDifference = dates_mod.fieldDifference;
 pub const dateSkeletonPattern = dates_mod.skeletonPattern;
+pub const dateSkeletonPatternAlloc = dates_mod.skeletonPatternAlloc;
 pub const formatDateAlloc = dates_mod.formatDateAlloc;
 pub const formatTimeAlloc = dates_mod.formatTimeAlloc;
 pub const formatTimeWithZoneAlloc = dates_mod.formatTimeWithZoneAlloc;
