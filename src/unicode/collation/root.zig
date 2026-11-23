@@ -1851,7 +1851,7 @@ const latin_nfd: [latin_limit]LatinNfd = blk: {
 /// and skipped-mark loop can be bypassed with one table read.
 const direct_bmp_limit: usize = 0x2100;
 
-const DirectKind = enum(u2) { complex, direct, implicit };
+const DirectKind = enum(u2) { direct, implicit, complex };
 
 const DirectEntry = struct {
     kind: DirectKind = .complex,
