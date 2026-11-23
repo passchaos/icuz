@@ -751,10 +751,12 @@ pub const Collator = struct {
             const mask1: u32 = @bitCast(a1 != b1);
             const mask2: u32 = @bitCast(a2 != b2);
             const mask3: u32 = @bitCast(a3 != b3);
-            if (mask0 != 0) return index + @ctz(mask0);
-            if (mask1 != 0) return index + 32 + @ctz(mask1);
-            if (mask2 != 0) return index + 64 + @ctz(mask2);
-            if (mask3 != 0) return index + 96 + @ctz(mask3);
+            if ((mask0 | mask1 | mask2 | mask3) != 0) {
+                if (mask0 != 0) return index + @ctz(mask0);
+                if (mask1 != 0) return index + 32 + @ctz(mask1);
+                if (mask2 != 0) return index + 64 + @ctz(mask2);
+                return index + 96 + @ctz(mask3);
+            }
         }
         while (index + 64 <= limit) : (index += 64) {
             const a0: @Vector(32, u8) = a[index..][0..32].*;
@@ -763,8 +765,10 @@ pub const Collator = struct {
             const b1: @Vector(32, u8) = b[index + 32 ..][0..32].*;
             const mask0: u32 = @bitCast(a0 != b0);
             const mask1: u32 = @bitCast(a1 != b1);
-            if (mask0 != 0) return index + @ctz(mask0);
-            if (mask1 != 0) return index + 32 + @ctz(mask1);
+            if ((mask0 | mask1) != 0) {
+                if (mask0 != 0) return index + @ctz(mask0);
+                return index + 32 + @ctz(mask1);
+            }
         }
         while (index + 32 <= limit) : (index += 32) {
             const chunk_a: @Vector(32, u8) = a[index..][0..32].*;
