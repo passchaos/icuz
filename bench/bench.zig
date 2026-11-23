@@ -567,6 +567,42 @@ fn benchFullCase(
     reportBytes(name, rounds * text.len, best);
 }
 
+fn benchCaseUtf16(
+    name: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+    comptime kind: enum { lower, fold },
+) void {
+    const units = std.unicode.utf8ToUtf16LeAlloc(allocator, text) catch unreachable;
+    defer allocator.free(units);
+    var buffer = std.ArrayList(u16).empty;
+    defer buffer.deinit(allocator);
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 4000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            switch (kind) {
+                .lower => icuz.case.utf16.lowerInto(
+                    allocator,
+                    units,
+                    &buffer,
+                ) catch unreachable,
+                .fold => icuz.case.utf16.foldInto(
+                    allocator,
+                    units,
+                    &buffer,
+                ) catch unreachable,
+            }
+            sink +%= buffer.items.len;
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * text.len, best);
+}
+
 fn benchBidi(name: []const u8, text: []const u8, allocator: std.mem.Allocator) void {
     var best: u64 = std.math.maxInt(u64);
     const trials = 5;
@@ -1701,6 +1737,14 @@ pub fn main() !void {
     benchFullCase("full lower German", german_runtime, allocator, .lower);
     benchFullCase("full upper German", german_runtime, allocator, .upper);
     benchFullCase("full lower Greek sigma", greek_case_runtime, allocator, .lower);
+    benchCaseUtf16("lower mixed (utf16)", mixed_runtime, allocator, .lower);
+    benchCaseUtf16(
+        "case fold mixed (utf16)",
+        mixed_runtime,
+        allocator,
+        .fold,
+    );
+    benchCaseUtf16("lower ASCII (utf16)", ascii_runtime, allocator, .lower);
 
     std.debug.print("\nsink={d}\n", .{sink});
 }

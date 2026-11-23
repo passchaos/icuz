@@ -11,6 +11,7 @@ pub const unicode_version = [3]u8{ 17, 0, 0 };
 pub const Error = error{ InvalidUtf8, OutOfMemory };
 
 pub const full = @import("full.zig");
+pub const utf16 = @import("utf16.zig");
 pub const Locale = full.Locale;
 pub const CaseOptions = full.Options;
 pub const fullLowerAlloc = full.fullLowerAlloc;

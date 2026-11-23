@@ -1190,7 +1190,7 @@ inline fn copySourceBytes(dest: []u8, source: []const u8) void {
     }
 }
 
-inline fn simpleLowerFast(codepoint: u21) u21 {
+pub inline fn simpleLowerFast(codepoint: u21) u21 {
     if (codepoint < 0x80) {
         return if (codepoint >= 'A' and codepoint <= 'Z')
             codepoint + ('a' - 'A')
@@ -1200,7 +1200,7 @@ inline fn simpleLowerFast(codepoint: u21) u21 {
     return data.simpleLower(codepoint);
 }
 
-inline fn simpleUpperFast(codepoint: u21) u21 {
+pub inline fn simpleUpperFast(codepoint: u21) u21 {
     if (codepoint < 0x80) {
         return if (codepoint >= 'a' and codepoint <= 'z')
             codepoint - ('a' - 'A')

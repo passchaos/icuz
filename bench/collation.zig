@@ -135,6 +135,48 @@ fn benchCaseInto(
     report(name, rounds * text.len, best);
 }
 
+fn benchCaseUtf16(
+    name: []const u8,
+    text: []const u8,
+    kind: enum { lower, fold },
+    allocator: std.mem.Allocator,
+) void {
+    const units = std.unicode.utf8ToUtf16LeAlloc(allocator, text) catch
+        unreachable;
+    defer allocator.free(units);
+    var buffer = std.ArrayList(u16).empty;
+    defer buffer.deinit(allocator);
+    const rounds: usize = 4000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            switch (kind) {
+                .lower => icuz.case.utf16.lowerInto(
+                    allocator,
+                    units,
+                    &buffer,
+                ) catch unreachable,
+                .fold => icuz.case.utf16.foldInto(
+                    allocator,
+                    units,
+                    &buffer,
+                ) catch unreachable,
+            }
+            sink +%= buffer.items.len;
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * text.len, best);
+}
+
+fn selected(filter: []const u8, section: []const u8, name: []const u8) bool {
+    return filter.len == 0 or
+        std.mem.eql(u8, filter, section) or
+        std.mem.eql(u8, filter, name);
+}
+
 fn benchDecode(name: []const u8, text: []const u8) void {
     const rounds: usize = 2000;
     var out: [512]u21 = undefined;
@@ -270,24 +312,51 @@ pub fn main(init: std.process.Init.Minimal) !void {
         @memcpy(filter_buffer[0..length], argument[0..length]);
         filter = filter_buffer[0..length];
     }
-    if (filter.len == 0 or std.mem.eql(u8, "case", filter)) {
+    if (selected(filter, "case", "lower mixed")) {
         benchCase("lower mixed", mixed_text, .lower, allocator);
+    }
+    if (selected(filter, "case", "fold mixed")) {
         benchCase("fold mixed", mixed_text, .fold, allocator);
+    }
+    if (selected(filter, "case", "lower ASCII")) {
         benchCase("lower ASCII", ascii_text, .lower, allocator);
+    }
+    if (selected(filter, "case", "lower Swedish")) {
         benchCase("lower Swedish", swedish_text, .lower, allocator);
+    }
+    if (selected(filter, "case", "lower mixed (reuse)")) {
         benchCaseInto("lower mixed (reuse)", mixed_text, .lower, allocator);
+    }
+    if (selected(filter, "case", "fold mixed (reuse)")) {
         benchCaseInto("fold mixed (reuse)", mixed_text, .fold, allocator);
+    }
+    if (selected(filter, "case", "lower Swedish (reuse)")) {
         benchCaseInto(
             "lower Swedish (reuse)",
             swedish_text,
             .lower,
             allocator,
         );
+    }
+    if (selected(filter, "case", "lower ASCII (reuse)")) {
         benchCaseInto("lower ASCII (reuse)", ascii_text, .lower, allocator);
     }
-    if (filter.len == 0 or std.mem.eql(u8, "decode", filter)) {
+    if (selected(filter, "case", "lower mixed (utf16)")) {
+        benchCaseUtf16("lower mixed (utf16)", mixed_text, .lower, allocator);
+    }
+    if (selected(filter, "case", "fold mixed (utf16)")) {
+        benchCaseUtf16("fold mixed (utf16)", mixed_text, .fold, allocator);
+    }
+    if (selected(filter, "case", "lower ASCII (utf16)")) {
+        benchCaseUtf16("lower ASCII (utf16)", ascii_text, .lower, allocator);
+    }
+    if (selected(filter, "decode", "decode Chinese")) {
         benchDecode("decode Chinese", chinese_text);
+    }
+    if (selected(filter, "decode", "decode mixed")) {
         benchDecode("decode mixed", mixed_text);
+    }
+    if (selected(filter, "decode", "decode ASCII")) {
         benchDecode("decode ASCII", ascii_text);
     }
     for (workloads) |work| {
