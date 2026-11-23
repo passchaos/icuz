@@ -1099,10 +1099,13 @@ fn formatStandardAlloc(
             code,
         );
     }
+    // Short results fit in a stack buffer, so the caller-owned slice costs
+    // one exact allocation instead of a growable list plus a copy.
+    var stack: [256]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&stack);
     var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
-    try formatStandardInto(
-        allocator,
+    formatStandardInto(
+        fixed.allocator(),
         value,
         null,
         locale_name,
@@ -1110,8 +1113,25 @@ fn formatStandardAlloc(
         fields,
         pattern_override,
         &output,
-    );
-    return output.toOwnedSlice(allocator);
+    ) catch |err| switch (err) {
+        error.OutOfMemory => {
+            var owned = std.ArrayList(u8).empty;
+            errdefer owned.deinit(allocator);
+            try formatStandardInto(
+                allocator,
+                value,
+                null,
+                locale_name,
+                options,
+                fields,
+                pattern_override,
+                &owned,
+            );
+            return owned.toOwnedSlice(allocator);
+        },
+        else => return err,
+    };
+    return allocator.dupe(u8, output.items);
 }
 
 /// Localized symbols needed to build DecimalFormat affixes.
