@@ -78,6 +78,63 @@ fn bench(work: Workload, allocator: std.mem.Allocator) void {
     report(work.name, rounds * work.text.len, best);
 }
 
+fn benchCase(
+    name: []const u8,
+    text: []const u8,
+    kind: enum { lower, fold },
+    allocator: std.mem.Allocator,
+) void {
+    const rounds: usize = 4000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const output = switch (kind) {
+                .lower => icuz.case.lowerAlloc(allocator, text),
+                .fold => icuz.case.foldAlloc(allocator, text),
+            } catch unreachable;
+            sink +%= output.len;
+            allocator.free(output);
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * text.len, best);
+}
+
+fn benchCaseInto(
+    name: []const u8,
+    text: []const u8,
+    kind: enum { lower, fold },
+    allocator: std.mem.Allocator,
+) void {
+    var buffer = std.ArrayList(u8).empty;
+    defer buffer.deinit(allocator);
+    const rounds: usize = 4000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            switch (kind) {
+                .lower => icuz.case.lowerInto(
+                    allocator,
+                    text,
+                    &buffer,
+                ) catch unreachable,
+                .fold => icuz.case.foldInto(
+                    allocator,
+                    text,
+                    &buffer,
+                ) catch unreachable,
+            }
+            sink +%= buffer.items.len;
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * text.len, best);
+}
+
 fn benchDecode(name: []const u8, text: []const u8) void {
     const rounds: usize = 2000;
     var out: [512]u21 = undefined;
@@ -212,6 +269,21 @@ pub fn main(init: std.process.Init.Minimal) !void {
         const length = @min(argument.len, filter_buffer.len);
         @memcpy(filter_buffer[0..length], argument[0..length]);
         filter = filter_buffer[0..length];
+    }
+    if (filter.len == 0 or std.mem.eql(u8, "case", filter)) {
+        benchCase("lower mixed", mixed_text, .lower, allocator);
+        benchCase("fold mixed", mixed_text, .fold, allocator);
+        benchCase("lower ASCII", ascii_text, .lower, allocator);
+        benchCase("lower Swedish", swedish_text, .lower, allocator);
+        benchCaseInto("lower mixed (reuse)", mixed_text, .lower, allocator);
+        benchCaseInto("fold mixed (reuse)", mixed_text, .fold, allocator);
+        benchCaseInto(
+            "lower Swedish (reuse)",
+            swedish_text,
+            .lower,
+            allocator,
+        );
+        benchCaseInto("lower ASCII (reuse)", ascii_text, .lower, allocator);
     }
     if (filter.len == 0 or std.mem.eql(u8, "decode", filter)) {
         benchDecode("decode Chinese", chinese_text);

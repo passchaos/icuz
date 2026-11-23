@@ -354,6 +354,57 @@ pub fn foldStreamingAlloc(
     return mapStreamingInner(allocator, text, .root, .lower, true, .fold);
 }
 
+/// Append the simple lowercase mapping to a caller-owned buffer.
+pub fn simpleLowerInto(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    output: *std.ArrayList(u8),
+) Error!void {
+    return mapStreamingInto(
+        allocator,
+        text,
+        .root,
+        .lower,
+        true,
+        .simple,
+        output,
+    );
+}
+
+/// Append the simple uppercase mapping to a caller-owned buffer.
+pub fn simpleUpperInto(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    output: *std.ArrayList(u8),
+) Error!void {
+    return mapStreamingInto(
+        allocator,
+        text,
+        .root,
+        .upper,
+        true,
+        .simple,
+        output,
+    );
+}
+
+/// Append the full case folding to a caller-owned buffer.
+pub fn foldStreamingInto(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    output: *std.ArrayList(u8),
+) Error!void {
+    return mapStreamingInto(
+        allocator,
+        text,
+        .root,
+        .lower,
+        true,
+        .fold,
+        output,
+    );
+}
+
 fn mapStreamingInner(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -368,7 +419,28 @@ fn mapStreamingInner(
     // copies only write a quad when `cursor + 4 <= text.len`.
     var output = try std.ArrayList(u8).initCapacity(allocator, text.len);
     errdefer output.deinit(allocator);
+    try mapStreamingInto(
+        allocator,
+        text,
+        locale,
+        kind,
+        root,
+        mode,
+        &output,
+    );
+    return output.toOwnedSlice(allocator);
+}
 
+fn mapStreamingInto(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    locale: Locale,
+    comptime kind: full_data.Kind,
+    comptime root: bool,
+    comptime mode: MapMode,
+    output: *std.ArrayList(u8),
+) Error!void {
+    output.clearRetainingCapacity();
     var cursor: usize = 0;
     while (cursor < text.len) {
         const first = text[cursor];
@@ -390,6 +462,33 @@ fn mapStreamingInner(
                     asciiMapVector(chunk, kind);
                 output.items.len += ascii_chunk;
                 cursor += ascii_chunk;
+            }
+            // Mixed prose has ASCII runs shorter than the vector width. Map
+            // the leading ASCII bytes of the failed chunk in one store
+            // instead of walking them one at a time.
+            if (cursor + ascii_chunk <= text.len) {
+                const chunk: @Vector(ascii_chunk, u8) =
+                    text[cursor..][0..ascii_chunk].*;
+                const quads: @Vector(2, u64) = @bitCast(chunk);
+                const mask = 0x8080_8080_8080_8080;
+                const low = quads[0] & mask;
+                const count: usize = if (low != 0)
+                    @ctz(low) / 8
+                else
+                    8 + @ctz(quads[1] & mask) / 8;
+                if (count != 0) {
+                    if (output.unusedCapacitySlice().len < ascii_chunk) {
+                        try output.ensureUnusedCapacity(
+                            allocator,
+                            ascii_chunk,
+                        );
+                    }
+                    output.unusedCapacitySlice()[0..ascii_chunk].* =
+                        asciiMapVector(chunk, kind);
+                    output.items.len += count;
+                    cursor += count;
+                    continue;
+                }
             }
             const spare = output.unusedCapacitySlice();
             const limit = @min(spare.len, text.len - cursor);
@@ -481,12 +580,37 @@ fn mapStreamingInner(
                 }
                 try copyIdentityBytes(
                     allocator,
-                    &output,
+                    output,
                     text,
                     cursor,
                     length,
                 );
                 cursor += length;
+                continue;
+            }
+        }
+
+        // Latin-1 uppercase letters map with a byte offset, so accented
+        // prose can skip the decoder and the encoder entirely.
+        if (root and first == 0xc3 and kind == .lower and
+            (mode == .simple or mode == .fold) and cursor + 2 <= text.len)
+        {
+            const second = text[cursor + 1];
+            if (second & 0xc0 != 0x80) return error.InvalidUtf8;
+            // Sharp s is the only Latin-1 scalar with a multi-scalar fold.
+            if (mode != .fold or second != 0x9f) {
+                // U+00C0..U+00DE minus U+00D7 (multiplication sign).
+                const mapped = if (second >= 0x80 and second <= 0x9e and
+                    second != 0x97)
+                    second + 0x20
+                else
+                    second;
+                try output.ensureUnusedCapacity(allocator, 2);
+                const spare = output.unusedCapacitySlice();
+                spare[0] = 0xc3;
+                spare[1] = mapped;
+                output.items.len += 2;
+                cursor += 2;
                 continue;
             }
         }
@@ -507,7 +631,7 @@ fn mapStreamingInner(
             // The mapping is the identity, so the source bytes are the result.
             try copyIdentityBytes(
                 allocator,
-                &output,
+                output,
                 text,
                 cursor,
                 next - cursor,
@@ -517,14 +641,14 @@ fn mapStreamingInner(
         }
         if (mode == .fold) {
             if (data.fullFold(codepoint)) |components| {
-                try appendMapping(allocator, &output, components);
+                try appendMapping(allocator, output, components);
                 cursor = next;
                 continue;
             }
             // The scalar folds to itself; copy the source bytes.
             try copyIdentityBytes(
                 allocator,
-                &output,
+                output,
                 text,
                 cursor,
                 next - cursor,
@@ -538,7 +662,7 @@ fn mapStreamingInner(
             else
                 lookupStreaming(codepoint, kind, locale, text, cursor, next);
             if (mapping) |components| {
-                try appendMapping(allocator, &output, components);
+                try appendMapping(allocator, output, components);
                 cursor = next;
                 continue;
             }
@@ -548,10 +672,9 @@ fn mapStreamingInner(
             .upper => simpleUpperFast(codepoint),
             .title => simpleTitleFast(codepoint),
         };
-        try appendCodepoint(allocator, &output, mapped);
+        try appendCodepoint(allocator, output, mapped);
         cursor = next;
     }
-    return output.toOwnedSlice(allocator);
 }
 
 fn mapWithEdits(

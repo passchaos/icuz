@@ -129,6 +129,25 @@ pub fn lowerAlloc(
     return mapSimpleAlloc(allocator, text, .lower);
 }
 
+/// Append the simple lowercase mapping to a caller-owned buffer. Hot
+/// callers that map many strings reuse one output list and its capacity.
+pub fn lowerInto(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    output: *std.ArrayList(u8),
+) Error!void {
+    return full.simpleLowerInto(allocator, text, output);
+}
+
+/// Append the simple uppercase mapping to a caller-owned buffer.
+pub fn upperInto(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    output: *std.ArrayList(u8),
+) Error!void {
+    return full.simpleUpperInto(allocator, text, output);
+}
+
 /// Uppercase UTF-8 text using simple one-to-one mappings.
 pub fn upperAlloc(
     allocator: std.mem.Allocator,
@@ -146,6 +165,15 @@ pub fn foldAlloc(
     text: []const u8,
 ) Error![]u8 {
     return full.foldStreamingAlloc(allocator, text);
+}
+
+/// Append the full case folding to a caller-owned buffer.
+pub fn foldInto(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    output: *std.ArrayList(u8),
+) Error!void {
+    return full.foldStreamingInto(allocator, text, output);
 }
 
 fn mapSimpleAlloc(
