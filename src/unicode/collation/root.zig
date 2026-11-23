@@ -526,13 +526,8 @@ pub const Collator = struct {
                 return true;
             }
         }
-        var entry_index = pageStart(codepoint);
-        while (entry_index < @as(usize, entry_count)) : (entry_index += 1) {
-            const entry = entryAt(entry_index);
-            if (entry.first != codepoint) break;
-            if (entry.len > 1) return true;
-        }
-        return false;
+        ensureRootTables();
+        return rootStartsContraction(codepoint);
     }
 
     pub fn sortKeyAlloc(
@@ -730,14 +725,23 @@ pub const Collator = struct {
     /// no contraction, so no rule can span from the prefix into the text
     /// that follows `end`.
     fn safeBoundaryBefore(self: *const Collator, text: []const u8, end: usize) bool {
+        // Root entries span at most three scalars; tailored rules can span
+        // up to eight.
+        const window: usize = if (self.tailoring == null) 3 else 8;
         var cursor = end;
         var checked: usize = 0;
-        while (cursor > 0 and checked < 8) : (checked += 1) {
+        while (cursor > 0 and checked < window) : (checked += 1) {
             var start = cursor - 1;
             while (start > 0 and (text[start] & 0xc0) == 0x80) start -= 1;
             const decoded = scalar.decodeValid(text, start) orelse return false;
             if (decoded.next != cursor) return false;
-            if (!normalization.isNfdInert(decoded.codepoint)) return false;
+            // Only the scalar ending the prefix must be inert: earlier
+            // decompositions are contained before this starter.
+            if (checked == 0 and
+                !normalization.isNfdInert(decoded.codepoint))
+            {
+                return false;
+            }
             if (self.startsContraction(decoded.codepoint)) return false;
             cursor = start;
         }
@@ -2568,10 +2572,18 @@ const DirectEntry = struct {
     variable: bool = false,
 };
 
+const contraction_page_limit = 32;
+
 const RootTables = struct {
     direct: [direct_bmp_limit]DirectEntry = undefined,
     /// True when at least one root entry starts on the 256-scalar page.
     page_has_entries: [0x1100]bool = undefined,
+    /// Page slot for scalars that start a multi-scalar root entry, or 0xFF.
+    contraction_slots: [0x1100]u8 = undefined,
+    contraction_masks: [contraction_page_limit][32]u8 = undefined,
+    /// Set when more pages carry contractions than the mask table holds;
+    /// callers then fall back to the entry scan.
+    contraction_overflow: bool = false,
 };
 
 var root_tables_storage: RootTables = undefined;
@@ -2627,7 +2639,50 @@ fn ensureRootTables() void {
         root_tables_storage.page_has_entries[page] =
             entry_index < entry_count and entryAt(entry_index).first < page_end;
     }
+    @memset(&root_tables_storage.contraction_slots, 0xFF);
+    @memset(&root_tables_storage.contraction_masks, [_]u8{0} ** 32);
+    root_tables_storage.contraction_overflow = false;
+    var next_slot: u8 = 0;
+    var entry_index: usize = 0;
+    while (entry_index < entry_count) : (entry_index += 1) {
+        const entry = entryAt(entry_index);
+        if (entry.len <= 1) continue;
+        const page: usize = @as(usize, entry.first) >> 8;
+        var slot = root_tables_storage.contraction_slots[page];
+        if (slot == 0xFF) {
+            if (next_slot >= contraction_page_limit) {
+                root_tables_storage.contraction_overflow = true;
+                continue;
+            }
+            slot = next_slot;
+            next_slot += 1;
+            root_tables_storage.contraction_slots[page] = slot;
+        }
+        const low: usize = @as(usize, entry.first) & 0xff;
+        root_tables_storage.contraction_masks[slot][low >> 3] |=
+            @as(u8, 1) << @intCast(low & 7);
+    }
     root_tables_state.store(2, .release);
+}
+
+/// True when a multi-scalar root entry starts with `codepoint`. The page
+/// masks answer in two loads for the 21 pages that carry contractions.
+inline fn rootStartsContraction(codepoint: u21) bool {
+    const tables = &root_tables_storage;
+    if (tables.contraction_overflow) {
+        var entry_index = pageStart(codepoint);
+        while (entry_index < entry_count) : (entry_index += 1) {
+            const entry = entryAt(entry_index);
+            if (entry.first != codepoint) break;
+            if (entry.len > 1) return true;
+        }
+        return false;
+    }
+    const slot = tables.contraction_slots[@as(usize, codepoint) >> 8];
+    if (slot == 0xFF) return false;
+    const low: usize = @as(usize, codepoint) & 0xff;
+    return (tables.contraction_masks[slot][low >> 3] &
+        (@as(u8, 1) << @intCast(low & 7))) != 0;
 }
 
 fn latinElementCount() usize {
