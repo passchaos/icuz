@@ -1723,6 +1723,17 @@ fn appendElementsSlow(
         try appendImplicit(allocator, ces, first, reorder);
         return 1;
     }
+    // A unique one-scalar entry cannot be extended by a following mark, so
+    // emoji and other sparse supplementary scalars skip the contraction
+    // machinery entirely.
+    const single_entry = entryAt(first_entry);
+    if (single_entry.len == 1 and
+        (first_entry + 1 >= entry_count or
+            entryAt(first_entry + 1).first != first))
+    {
+        try appendEntry(allocator, ces, single_entry, reorder);
+        return 1;
+    }
 
     if (findContiguousFrom(codepoints, index, first_entry)) |matched| {
         entry = matched.entry;
