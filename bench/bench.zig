@@ -761,6 +761,39 @@ fn benchSet(allocator: std.mem.Allocator, codepoints: []const u21) void {
     reportOps("UnicodeSet closeOver Uppercase", upper_rounds, upper_best);
 }
 
+fn benchCharsetInto(
+    name: []const u8,
+    text: []const u8,
+    from: icuz.charset.Encoding,
+    to: icuz.charset.Encoding,
+    allocator: std.mem.Allocator,
+) void {
+    var output = std.ArrayList(u8).empty;
+    defer output.deinit(allocator);
+    output.ensureTotalCapacity(allocator, text.len * 2 + 32) catch unreachable;
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 2000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            output.clearRetainingCapacity();
+            icuz.charset.convertInto(
+                allocator,
+                text,
+                from,
+                to,
+                &output,
+                .{},
+            ) catch unreachable;
+            sink +%= output.items.len;
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * text.len, best);
+}
+
 fn benchCollation(
     name: []const u8,
     text: []const u8,
@@ -1838,6 +1871,13 @@ pub fn main() !void {
 
     std.debug.print("\n-- charset conversion --\n", .{});
     benchCharset(
+        "UTF-8 -> UTF-16LE ASCII (alloc)",
+        ascii_runtime,
+        .utf8,
+        .utf16_le,
+        allocator,
+    );
+    benchCharsetInto(
         "UTF-8 -> UTF-16LE ASCII",
         ascii_runtime,
         .utf8,

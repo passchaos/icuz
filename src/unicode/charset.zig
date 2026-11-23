@@ -179,13 +179,7 @@ pub fn maxCharSize(encoding: Encoding) u8 {
     if (ibmPageIndex(encoding) != null) return 1;
     return switch (encoding) {
         .utf8, .utf16_le, .utf16_be, .utf32_le, .utf32_be => 4,
-        .ascii, .latin1, .ibm866, .iso_8859_2, .iso_8859_3, .iso_8859_4,
-        .iso_8859_5, .iso_8859_6, .iso_8859_7, .iso_8859_8, .iso_8859_8_i,
-        .iso_8859_10, .iso_8859_13, .iso_8859_14, .iso_8859_15,
-        .iso_8859_16, .koi8_r, .koi8_u, .macintosh, .windows_874,
-        .windows_1250, .windows_1251, .windows_1252, .windows_1253,
-        .windows_1254, .windows_1255, .windows_1256, .windows_1257,
-        .windows_1258, .x_mac_cyrillic, .replacement => 1,
+        .ascii, .latin1, .ibm866, .iso_8859_2, .iso_8859_3, .iso_8859_4, .iso_8859_5, .iso_8859_6, .iso_8859_7, .iso_8859_8, .iso_8859_8_i, .iso_8859_10, .iso_8859_13, .iso_8859_14, .iso_8859_15, .iso_8859_16, .koi8_r, .koi8_u, .macintosh, .windows_874, .windows_1250, .windows_1251, .windows_1252, .windows_1253, .windows_1254, .windows_1255, .windows_1256, .windows_1257, .windows_1258, .x_mac_cyrillic, .replacement => 1,
         .big5, .shift_jis, .euc_kr, .hkscs => 2,
         .euc_tw => 4,
         .iso_2022_cn => 9,
@@ -1002,55 +996,69 @@ fn appendUtf16Replacement(
     }
 }
 
-/// UTF-8 to UTF-16 conversion with one capacity reservation. Valid UTF-8
-/// never needs more than two output bytes per input byte, so the hot loop
-/// appends without capacity checks.
-fn utf8ToUtf16Alloc(
+fn utf8ToUtf16Into(
     allocator: std.mem.Allocator,
     input: []const u8,
     endian: std.builtin.Endian,
     options: Options,
-) Error![]u8 {
-    var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, input.len * 2);
+    output: *std.ArrayList(u8),
+) Error!void {
+    try output.ensureUnusedCapacity(allocator, input.len * 2);
     var index: usize = 0;
     while (index < input.len) {
         if (input[index] < 0x80) {
-            // Widen the whole ASCII run directly into the output buffer.
+            // Find the ASCII run end a vector at a time, then widen it.
             var end = index;
+            while (end + 32 <= input.len) {
+                const chunk: @Vector(32, u8) = input[end..][0..32].*;
+                if (@reduce(.Or, chunk >= @as(@Vector(32, u8), @splat(0x80)))) {
+                    break;
+                }
+                end += 32;
+            }
             while (end < input.len and input[end] < 0x80) end += 1;
             const count = end - index;
             try output.ensureUnusedCapacity(allocator, count * 2);
             const start = output.items.len;
             output.items.len = start + count * 2;
             const destination = output.items[start..];
-            if (endian == .little) {
-                for (input[index..end], 0..) |value, position| {
-                    destination[position * 2] = value;
+            // Widen 16 ASCII bytes per step: a u16 vector stores the value
+            // and its zero high byte in native order, which is exactly the
+            // requested endianness after a byte swap for big-endian output.
+            const lanes = 16;
+            const Wide = @Vector(lanes, u16);
+            var position: usize = 0;
+            while (position + lanes <= count) : (position += lanes) {
+                const bytes: @Vector(lanes, u8) =
+                    input[index + position ..][0..lanes].*;
+                var wide: Wide = @intCast(bytes);
+                if (endian == .big) wide = @byteSwap(wide);
+                destination[position * 2 ..][0 .. lanes * 2].* = @bitCast(wide);
+            }
+            while (position < count) : (position += 1) {
+                if (endian == .little) {
+                    destination[position * 2] = input[index + position];
                     destination[position * 2 + 1] = 0;
-                }
-            } else {
-                for (input[index..end], 0..) |value, position| {
+                } else {
                     destination[position * 2] = 0;
-                    destination[position * 2 + 1] = value;
+                    destination[position * 2 + 1] = input[index + position];
                 }
             }
             index = end;
             continue;
         }
         const length: usize = std.unicode.utf8ByteSequenceLength(input[index]) catch {
-            try appendUtf16Replacement(allocator, &output, endian, options);
+            try appendUtf16Replacement(allocator, output, endian, options);
             index += 1;
             continue;
         };
         if (index + length > input.len) {
-            try appendUtf16Replacement(allocator, &output, endian, options);
+            try appendUtf16Replacement(allocator, output, endian, options);
             index = input.len;
             continue;
         }
         const codepoint = std.unicode.utf8Decode(input[index..][0..length]) catch {
-            try appendUtf16Replacement(allocator, &output, endian, options);
+            try appendUtf16Replacement(allocator, output, endian, options);
             index += 1;
             continue;
         };
@@ -1062,12 +1070,23 @@ fn utf8ToUtf16Alloc(
             ),
             else => try appendUtf16Replacement(
                 allocator,
-                &output,
+                output,
                 endian,
                 options,
             ),
         }
     }
+}
+
+fn utf8ToUtf16Alloc(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    endian: std.builtin.Endian,
+    options: Options,
+) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try utf8ToUtf16Into(allocator, input, endian, options, &output);
     return output.toOwnedSlice(allocator);
 }
 
@@ -1488,6 +1507,33 @@ fn convertAllocStateless(
     return output.toOwnedSlice(allocator);
 }
 
+/// Convert `input` from one encoding to another, appending to `output`.
+pub fn convertInto(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    from: Encoding,
+    to: Encoding,
+    output: *std.ArrayList(u8),
+    options: Options,
+) Error!void {
+    if (asciiCompatible(from) and asciiCompatible(to) and isAscii(input)) {
+        try output.appendSlice(allocator, input);
+        return;
+    }
+    if (from == .utf8 and (to == .utf16_le or to == .utf16_be)) {
+        return utf8ToUtf16Into(
+            allocator,
+            input,
+            if (to == .utf16_le) .little else .big,
+            options,
+            output,
+        );
+    }
+    const converted = try convertAlloc(allocator, input, from, to, options);
+    defer allocator.free(converted);
+    try output.appendSlice(allocator, converted);
+}
+
 pub fn convertAlloc(
     allocator: std.mem.Allocator,
     input: []const u8,
@@ -1589,8 +1635,7 @@ fn asciiCompatible(encoding: Encoding) bool {
     }
     return switch (encoding) {
         .utf8, .ascii, .latin1, .x_user_defined => true,
-        .gbk, .gb18030, .big5, .hkscs, .euc_tw, .euc_jp, .shift_jis,
-        .euc_kr => true,
+        .gbk, .gb18030, .big5, .hkscs, .euc_tw, .euc_jp, .shift_jis, .euc_kr => true,
         else => singleByteIndex(encoding) != null,
     };
 }
@@ -2050,7 +2095,8 @@ test "ISO-2022-KR conversion" {
         u8,
         &[_]u8{
             0x1B, 0x24, 0x29, 0x43, 0x0E,
-            0x47, 0x51, 0x31, 0x39, 0x3E, 0x6E, 0x0F,
+            0x47, 0x51, 0x31, 0x39, 0x3E,
+            0x6E, 0x0F,
         },
         korean,
     );
@@ -2217,7 +2263,8 @@ test "ICU stateful charset conformance fixture" {
                 defer allocator.free(actual);
                 if (encoding == .utf7 or encoding == .bocu1 or
                     encoding == .iso_2022_kr or encoding == .hkscs or
-                    encoding == .euc_tw or encoding == .iso_2022_cn) {
+                    encoding == .euc_tw or encoding == .iso_2022_cn)
+                {
                     if (!std.mem.eql(u8, actual, expected)) {
                         failures += 1;
                         if (failures <= 10) {
