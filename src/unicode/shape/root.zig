@@ -914,7 +914,42 @@ fn handleGeneratedSpaces(
 
 fn compactMarkers(buffer: []u21, lam: bool, tashkeel: bool) usize {
     var write: usize = 0;
-    for (buffer) |codepoint| {
+    var read: usize = 0;
+    // Markers are rare, so most blocks are copied whole: one vector load,
+    // one marker test, and one vector store per eight scalars.
+    const lanes = 8;
+    const V = @Vector(lanes, u32);
+    const slots: []u32 = std.mem.bytesAsSlice(
+        u32,
+        std.mem.sliceAsBytes(buffer),
+    );
+    const lam_marker: V = @splat(LAMALEF_SPACE_SUB);
+    const tashkeel_marker: V = @splat(TASHKEEL_SPACE_SUB);
+    while (read + lanes <= buffer.len) {
+        const block: V = slots[read..][0..lanes].*;
+        var hit = lam and @reduce(.Or, block == lam_marker);
+        if (!hit and tashkeel) {
+            hit = @reduce(.Or, block == tashkeel_marker);
+        }
+        if (!hit) {
+            slots[write..][0..lanes].* = block;
+            write += lanes;
+            read += lanes;
+            continue;
+        }
+        for (buffer[read..][0..lanes]) |codepoint| {
+            if ((lam and codepoint == LAMALEF_SPACE_SUB) or
+                (tashkeel and codepoint == TASHKEEL_SPACE_SUB))
+            {
+                continue;
+            }
+            buffer[write] = codepoint;
+            write += 1;
+        }
+        read += lanes;
+    }
+    while (read < buffer.len) : (read += 1) {
+        const codepoint = buffer[read];
         if ((lam and codepoint == LAMALEF_SPACE_SUB) or
             (tashkeel and codepoint == TASHKEEL_SPACE_SUB))
         {
