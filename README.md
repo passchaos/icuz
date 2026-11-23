@@ -669,9 +669,11 @@ NFD pass over Latin text handles ASCII without a decomposition lookup. Element
 appends inline into the stack buffer, implicit weights are computed inline,
 and ASCII runs widen eight scalars per step while UTF-8 input is decoded.
 Three-byte sequences, which dominate CJK keys, decode in a run without the
-general decoder, the NFD quick check is fused into that decode so normalized
-CJK text skips a second scan, and tailored keys emit their levels while the
-elements are produced instead of rescanning an element buffer once per level.
+general decoder for both short and long inputs, the NFD quick check is fused
+into that decode so normalized CJK text skips a second scan, and tailored keys
+emit their levels while the elements are produced instead of rescanning an
+element buffer once per level; long keys collect each level in a growable
+buffer and root keys reserve their level buffers up front.
 UAX #29 word, sentence, and grapheme segmentation classify ASCII bytes through
 compile-time tables, and ASCII grapheme clusters are returned without decoding;
 the word, sentence, and line-break iterators carry scalars and offsets as
