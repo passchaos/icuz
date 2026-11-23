@@ -1071,6 +1071,14 @@ const latin1_continues_segment = blk: {
     break :blk table;
 };
 
+/// Inline fast path for the segment scans: marks and ASCII dominate segment
+/// bodies, and both are answered without the general mapping lookup.
+inline fn segmentContinues(codepoint: u21, compatibility: bool) bool {
+    if (codepoint < 0x80) return false;
+    if (combining_class.forCodepoint(codepoint) != 0) return true;
+    return continuesSegment(codepoint, compatibility);
+}
+
 /// True when the scalar at `index` begins a new starter segment: the text
 /// ends or the next scalar does not continue the current one. Invalid UTF-8
 /// reports false so the main scan surfaces the error.
@@ -1146,7 +1154,7 @@ fn normalizeSegmentFastAt16(
         if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
         const codepoint = utf16.packedCodepoint(decoded);
         const sequence_len = utf16.packedLength(decoded);
-        if (!first and !continuesSegment(codepoint, compatibility)) break;
+        if (!first and !segmentContinues(codepoint, compatibility)) break;
         first = false;
         index += sequence_len;
         if (codepoint < 0x80) {
@@ -1205,7 +1213,7 @@ fn segmentEnd16(
         const decoded = utf16.decodePacked(units, cursor);
         if (decoded == utf16.packed_invalid) return error.InvalidUtf16;
         const codepoint = utf16.packedCodepoint(decoded);
-        if (!first and !continuesSegment(codepoint, compatibility)) {
+        if (!first and !segmentContinues(codepoint, compatibility)) {
             return cursor;
         }
         first = false;
@@ -1666,7 +1674,7 @@ fn normalizeSegmentFastAt(
         if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
         const codepoint = scalar.packedCodepoint(decoded);
         const sequence_len = scalar.packedLength(decoded);
-        if (!first and !continuesSegment(codepoint, compatibility)) break;
+        if (!first and !segmentContinues(codepoint, compatibility)) break;
         first = false;
         index += sequence_len;
         if (codepoint < 0x80) {
@@ -2086,7 +2094,7 @@ fn segmentEnd(
         if (decoded == scalar.packed_invalid) return text.len;
         const codepoint = scalar.packedCodepoint(decoded);
         const length = scalar.packedLength(decoded);
-        if (!first and !continuesSegment(codepoint, compatibility)) {
+        if (!first and !segmentContinues(codepoint, compatibility)) {
             return cursor;
         }
         first = false;
