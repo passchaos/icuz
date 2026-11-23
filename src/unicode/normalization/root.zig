@@ -266,6 +266,84 @@ fn normalizeFusedInto(
                 continue;
             }
         }
+        // A decomposable Latin-1 starter that neither joins the previous
+        // segment nor is continued by the next one is emitted directly under
+        // the decomposed forms.
+        if (!compose and latin1_mode == .some and previous_input_class == 0 and
+            (text[index] == 0xc2 or text[index] == 0xc3) and
+            index + 1 < text.len and (text[index + 1] & 0xc0) == 0x80)
+        {
+            const codepoint = (@as(u21, text[index] & 0x1f) << 6) |
+                (text[index + 1] & 0x3f);
+            if (!latin1_mask[codepoint - 0x80] and
+                !continuesSegment(codepoint, compatibility) and
+                nextStartsSegment(text, index + 2, compatibility))
+            {
+                if (!changed) {
+                    try output.ensureTotalCapacityPrecise(allocator, text.len);
+                    changed = true;
+                }
+                if (index > stable_start) {
+                    try appendBytes(
+                        allocator,
+                        output,
+                        text[stable_start..index],
+                    );
+                }
+                var storage: [64]u21 = undefined;
+                const count = decomposeInto(
+                    &storage,
+                    codepoint,
+                    compatibility,
+                );
+                try engine.sink.appendCodepoints(storage[0..count]);
+                stable_start = index + 2;
+                index += 2;
+                starter = null;
+                starter_offset = index;
+                previous_input_class = 0;
+                continue;
+            }
+        }
+        // A fullwidth scalar with a single-component decomposition gets the
+        // same treatment under the compatibility forms.
+        if (compatibility and previous_input_class == 0 and
+            text[index] == 0xef and index + 2 < text.len and
+            (text[index + 1] & 0xfc) == 0xbc and
+            (text[index + 2] & 0xc0) == 0x80)
+        {
+            const codepoint = (@as(u21, 0x0f) << 12) |
+                (@as(u21, text[index + 1] & 0x3f) << 6) |
+                (text[index + 2] & 0x3f);
+            if (fullwidth_compatibility_decomposition[codepoint - 0xff00]) |components| {
+                if (components.len == 1 and
+                    !continuesSegment(codepoint, compatibility) and
+                    nextStartsSegment(text, index + 3, compatibility))
+                {
+                    if (!changed) {
+                        try output.ensureTotalCapacityPrecise(
+                            allocator,
+                            text.len,
+                        );
+                        changed = true;
+                    }
+                    if (index > stable_start) {
+                        try appendBytes(
+                            allocator,
+                            output,
+                            text[stable_start..index],
+                        );
+                    }
+                    try engine.sink.appendCodepoints(components);
+                    stable_start = index + 3;
+                    index += 3;
+                    starter = null;
+                    starter_offset = index;
+                    previous_input_class = 0;
+                    continue;
+                }
+            }
+        }
         const start = index;
         if (jamo_run and text[index] == 0xe1 and index + 2 < text.len and
             (text[index + 1] & 0xfc) == 0x84 and
@@ -1411,6 +1489,72 @@ fn normalizeFusedUtf16Into(
             continue;
         }
         const start = index;
+        // A decomposable Latin-1 starter that neither joins the previous
+        // segment nor is continued by the next one is emitted directly under
+        // the decomposed forms.
+        if (!compose and latin1_mode == .some and previous_input_class == 0 and
+            unit >= 0x80 and unit < 0x100)
+        {
+            if (!latin1_mask[unit - 0x80] and
+                !continuesSegment(unit, compatibility) and
+                nextStartsSegment16(units, index + 1, compatibility))
+            {
+                if (!changed) {
+                    try output.ensureUnusedCapacity(allocator, units.len + 16);
+                    changed = true;
+                }
+                if (index > stable_start) {
+                    try output.appendSlice(
+                        allocator,
+                        units[stable_start..index],
+                    );
+                }
+                var storage: [64]u21 = undefined;
+                const count = decomposeInto(
+                    &storage,
+                    @intCast(unit),
+                    compatibility,
+                );
+                try sink.appendCodepoints(storage[0..count]);
+                stable_start = index + 1;
+                index += 1;
+                starter = null;
+                starter_offset = index;
+                previous_input_class = 0;
+                continue;
+            }
+        }
+        // A fullwidth scalar with a single-component decomposition gets the
+        // same treatment under the compatibility forms.
+        if (compatibility and previous_input_class == 0 and unit >= 0xff00) {
+            if (fullwidth_compatibility_decomposition[unit - 0xff00]) |components| {
+                if (components.len == 1 and
+                    !continuesSegment(unit, compatibility) and
+                    nextStartsSegment16(units, index + 1, compatibility))
+                {
+                    if (!changed) {
+                        try output.ensureUnusedCapacity(
+                            allocator,
+                            units.len + 16,
+                        );
+                        changed = true;
+                    }
+                    if (index > stable_start) {
+                        try output.appendSlice(
+                            allocator,
+                            units[stable_start..index],
+                        );
+                    }
+                    try sink.appendCodepoints(components);
+                    stable_start = index + 1;
+                    index += 1;
+                    starter = null;
+                    starter_offset = index;
+                    previous_input_class = 0;
+                    continue;
+                }
+            }
+        }
         if (jamo_run and unit >= 0x1100 and unit <= 0x11ff) {
             // The decomposed forms leave the jamo block untouched, so a run
             // of it is skipped like ASCII.
