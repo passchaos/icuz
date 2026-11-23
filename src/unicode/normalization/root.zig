@@ -96,6 +96,14 @@ const cjk_lead_simple = blk: {
     break :blk true;
 };
 
+/// True for the CJK punctuation and fullwidth blocks that are inert under the
+/// canonical forms and start no composition pair.
+inline fn isInertCjkPunctuation(unit: u21) bool {
+    return (unit >= 0x3000 and unit <= 0x303f and
+        (unit < 0x302a or unit > 0x302f)) or
+        (unit >= 0xff00 and unit <= 0xffef);
+}
+
 /// True when `codepoint` is inert for `form`: unchanged and unable to compose
 /// with a preceding starter.
 fn latin1Inert(form: Form, codepoint: u21) bool {
@@ -1662,21 +1670,10 @@ fn normalizeFusedUtf16Into(
         }
         if (unit >= 0x4e00 and unit <= 0x9fff) {
             var cursor = index + 1;
-            while (cursor < units.len) {
-                const value = units[cursor];
-                if (value >= 0x4e00 and value <= 0x9fff) {
-                    cursor += 1;
-                    continue;
-                }
-                if (!compatibility and
-                    ((value >= 0x3000 and value <= 0x303f and
-                        (value < 0x302a or value > 0x302f)) or
-                        (value >= 0xff00 and value <= 0xffef)))
-                {
-                    cursor += 1;
-                    continue;
-                }
-                break;
+            while (cursor < units.len and
+                units[cursor] >= 0x4e00 and units[cursor] <= 0x9fff)
+            {
+                cursor += 1;
             }
             starter = null;
             starter_offset = start;
@@ -1685,9 +1682,7 @@ fn normalizeFusedUtf16Into(
             continue;
         }
         if (!compatibility) {
-            const inert_punctuation = (unit >= 0x3000 and unit <= 0x303f and
-                (unit < 0x302a or unit > 0x302f)) or
-                (unit >= 0xff00 and unit <= 0xffef);
+            const inert_punctuation = isInertCjkPunctuation(unit);
             if (inert_punctuation) {
                 starter = null;
                 starter_offset = start;
