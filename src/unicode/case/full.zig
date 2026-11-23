@@ -624,8 +624,7 @@ fn mapStreamingInto(
             // Folding only changes scalars that also have a simple case
             // mapping, so the union of the lower and upper filters is exact
             // enough and never skips a folding scalar.
-            .fold => full_data.interesting(codepoint, .lower, root) or
-                full_data.interesting(codepoint, .upper, root),
+            .fold => full_data.foldInteresting(codepoint, root),
             .full, .simple => full_data.interesting(codepoint, kind, root),
         };
         if (!may_map) {

@@ -115,8 +115,7 @@ fn mapInto(
             index += 1;
         }
         if (mode == .fold) {
-            const may_map = full_data.interesting(codepoint, .lower, true) or
-                full_data.interesting(codepoint, .upper, true);
+            const may_map = full_data.foldInteresting(codepoint, true);
             if (may_map) {
                 if (data.fullFold(codepoint)) |components| {
                     for (components) |component| {
