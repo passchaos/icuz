@@ -183,6 +183,25 @@ pub fn shapeArabicAlloc(
     text: []const u8,
     options: Options,
 ) Error![]u8 {
+    // Shaping inputs are short and the pipeline allocates decoded scalars,
+    // a work buffer, and the encoded result; run it against a stack arena and
+    // hand back one exact allocation. Longer inputs retry on the heap.
+    var stack: [8192]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&stack);
+    if (shapeArabicInner(fixed.allocator(), text, options)) |result| {
+        return allocator.dupe(u8, result);
+    } else |err| switch (err) {
+        error.OutOfMemory => {},
+        else => return err,
+    }
+    return shapeArabicInner(allocator, text, options);
+}
+
+fn shapeArabicInner(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    options: Options,
+) Error![]u8 {
     try validateOptions(options);
 
     var source = std.ArrayList(u21).empty;
@@ -192,7 +211,7 @@ pub fn shapeArabicAlloc(
     while (cursor < text.len) {
         const decoded = scalar.decodeValidating(text, cursor) orelse
             return error.InvalidUtf8;
-        try source.append(allocator, decoded.codepoint);
+        source.appendAssumeCapacity(decoded.codepoint);
         cursor = decoded.next;
     }
     if (source.items.len == 0) return allocator.alloc(u8, 0);
@@ -325,12 +344,11 @@ fn encodeUtf8(
 ) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, codepoints.len * 3);
-    var encoded: [4]u8 = undefined;
+    try output.ensureTotalCapacity(allocator, codepoints.len * 4);
     for (codepoints) |codepoint| {
-        const length = std.unicode.utf8Encode(codepoint, &encoded) catch
-            return error.InvalidUtf8;
-        try output.appendSlice(allocator, encoded[0..length]);
+        const spare = output.unusedCapacitySlice();
+        const length = scalar.encodeUtf8(spare[0..4], codepoint);
+        output.items.len += length;
     }
     return output.toOwnedSlice(allocator);
 }

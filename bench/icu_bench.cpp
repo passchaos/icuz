@@ -14,6 +14,7 @@
 #include <unicode/ubidi.h>
 #include <unicode/uidna.h>
 #include <unicode/uspoof.h>
+#include <unicode/ushape.h>
 #include <unicode/udat.h>
 #include <unicode/ulistformatter.h>
 #include <unicode/unorm2.h>
@@ -632,6 +633,31 @@ int main() {
         });
         ucal_close(calendar);
         udat_close(format);
+    }
+
+    std::printf("\n-- shaping --\n");
+    {
+        const std::string texts[] = {
+            "\u0627\u0644\u0633\u0644\u0627\u0645 \u0639\u0644\u064a\u0643\u0645 \u0648\u0631\u062d\u0645\u0629 \u0627\u0644\u0644\u0647 \u0648\u0628\u0631\u0643\u0627\u062a\u0647 ",
+            "\u0644\u0627 \u0625\u0644\u0647 \u0625\u0644\u0627 \u0627\u0644\u0644\u0647 ",
+        };
+        std::vector<std::vector<UChar>> u16s;
+        size_t bytes = 0;
+        for (const auto& text : texts) {
+            u16s.push_back(to_u16(text));
+            bytes += text.size();
+        }
+        std::vector<UChar> dest(512);
+        bench_bytes("Arabic shaping", bytes, 2000, [&] {
+            for (const auto& u16 : u16s) {
+                UErrorCode status = U_ZERO_ERROR;
+                int32_t length = u_shapeArabic(u16.data(),
+                    static_cast<int32_t>(u16.size()), dest.data(),
+                    static_cast<int32_t>(dest.size()), U_SHAPE_LETTERS_SHAPE,
+                    &status);
+                (void)length;
+            }
+        });
     }
 
     std::printf("\n-- spoof --\n");

@@ -1345,6 +1345,36 @@ const spoof_texts = [_][]const u8{
     "fl",
 };
 
+const shape_texts = [_][]const u8{
+    "\u{0627}\u{0644}\u{0633}\u{0644}\u{0627}\u{0645} \u{0639}\u{0644}\u{064a}\u{0643}\u{0645} \u{0648}\u{0631}\u{062d}\u{0645}\u{0629} \u{0627}\u{0644}\u{0644}\u{0647} \u{0648}\u{0628}\u{0631}\u{0643}\u{0627}\u{062a}\u{0647} ",
+    "\u{0644}\u{0627} \u{0625}\u{0644}\u{0647} \u{0625}\u{0644}\u{0627} \u{0627}\u{0644}\u{0644}\u{0647} ",
+};
+
+fn benchShapeArabic(allocator: std.mem.Allocator) void {
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 2000;
+    var bytes: usize = 0;
+    for (shape_texts) |text| bytes += text.len;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            for (shape_texts) |text| {
+                const shaped = icuz.shape.shapeArabicAlloc(
+                    allocator,
+                    text,
+                    .{ .letters = .shape },
+                ) catch unreachable;
+                sink +%= shaped.len;
+                allocator.free(shaped);
+            }
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes("Arabic shaping", rounds * bytes, best);
+}
+
 fn benchSpoofSkeleton(allocator: std.mem.Allocator) void {
     var checker = icuz.spoof.Checker.init();
     var best: u64 = std.math.maxInt(u64);
@@ -1922,6 +1952,9 @@ pub fn main() !void {
     benchLocaleCanonicalize("canonicalize zh-hant-tw", "zh-hant-tw", allocator);
     benchLocaleCanonicalize("canonicalize sh-RS", "sh-RS", allocator);
     benchLocaleCanonicalize("canonicalize sr-Latn-RS", "sr-Latn-RS", allocator);
+
+    std.debug.print("\n-- shaping --\n", .{});
+    benchShapeArabic(allocator);
 
     std.debug.print("\n-- spoof --\n", .{});
     benchSpoofSkeleton(allocator);
