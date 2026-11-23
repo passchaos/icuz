@@ -673,7 +673,12 @@ general decoder for both short and long inputs, the NFD quick check is fused
 into that decode so normalized CJK text skips a second scan, and tailored keys
 emit their levels while the elements are produced instead of rescanning an
 element buffer once per level; long keys collect each level in a growable
-buffer and root keys reserve their level buffers up front.
+buffer and root keys reserve their level buffers up front. Comparisons skip a
+validated common prefix whose last eight scalars are inert and start no
+contraction, compare a bounded region when the strings differ early, and use a
+first-primary check that decides ASCII and sparse-script differences without
+building a key. `compareAssumeValid` and `sortKeyIntoAssumeValid` drop the
+UTF-8 validation pass for callers that already proved their input valid.
 UAX #29 word, sentence, and grapheme segmentation classify ASCII bytes through
 compile-time tables, and ASCII grapheme clusters are returned without decoding;
 the word, sentence, and line-break iterators carry scalars and offsets as

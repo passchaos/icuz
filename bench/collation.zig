@@ -234,6 +234,47 @@ fn selected(filter: []const u8, section: []const u8, name: []const u8) bool {
         std.mem.eql(u8, filter, name);
 }
 
+fn benchValidate(name: []const u8, text: []const u8) void {
+    const rounds: usize = 4000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            sink +%= @intFromBool(std.unicode.utf8ValidateSlice(text));
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * text.len, best);
+}
+
+fn benchValidateOurs(name: []const u8, text: []const u8) void {
+    const rounds: usize = 4000;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            var cursor: usize = 0;
+            var valid = true;
+            while (cursor < text.len) {
+                const decoded = icuz.scalar.decodeValidatingPacked(
+                    text,
+                    cursor,
+                );
+                if (decoded == icuz.scalar.packed_invalid) {
+                    valid = false;
+                    break;
+                }
+                cursor += icuz.scalar.packedLength(decoded);
+            }
+            sink +%= @intFromBool(valid);
+        }
+        const elapsed = now() - start;
+        if (elapsed < best) best = elapsed;
+    }
+    report(name, rounds * text.len, best);
+}
+
 fn benchDecode(name: []const u8, text: []const u8) void {
     const rounds: usize = 2000;
     var out: [512]u21 = undefined;
@@ -457,6 +498,16 @@ pub fn main(init: std.process.Init.Minimal) !void {
     }
     if (selected(filter, "case", "lower ASCII (utf16)")) {
         benchCaseUtf16("lower ASCII (utf16)", ascii_text, .lower, allocator);
+    }
+    if (selected(filter, "validate", "validate Swedish")) {
+        benchValidate("validate Swedish std", swedish_text);
+        benchValidateOurs("validate Swedish ours", swedish_text);
+        benchValidate("validate mixed std", mixed_text);
+        benchValidateOurs("validate mixed ours", mixed_text);
+        benchValidate("validate Chinese std", chinese_long_text);
+        benchValidateOurs("validate Chinese ours", chinese_long_text);
+        benchValidate("validate ASCII std", ascii_text);
+        benchValidateOurs("validate ASCII ours", ascii_text);
     }
     if (selected(filter, "decode", "decode Chinese")) {
         benchDecode("decode Chinese", chinese_text);

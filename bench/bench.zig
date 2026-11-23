@@ -929,7 +929,40 @@ fn benchCollationCompare(
                 b,
                 &key_a,
                 &key_b,
-            ) catch unreachable;
+            ) catch return;
+            sink +%= @intFromEnum(order);
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps(name, rounds, best);
+}
+
+fn benchCollationCompareAssumeValid(
+    name: []const u8,
+    a: []const u8,
+    b: []const u8,
+    options: icuz.collation.Options,
+    allocator: std.mem.Allocator,
+) void {
+    const collator = icuz.collation.Collator.init(options);
+    var key_a = std.ArrayList(u32).empty;
+    defer key_a.deinit(allocator);
+    var key_b = std.ArrayList(u32).empty;
+    defer key_b.deinit(allocator);
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 20_000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const order = collator.compareAssumeValid(
+                allocator,
+                a,
+                b,
+                &key_a,
+                &key_b,
+            ) catch return;
             sink +%= @intFromEnum(order);
         }
         const elapsed: u64 = @intCast(now() - start);
@@ -1304,9 +1337,10 @@ pub fn main() !void {
         u8,
         chinese_collation_text ** 32,
     );
+    // Change the last Han scalar's final byte, keeping valid UTF-8.
     chinese_collation_long_compare_runtime[
-        chinese_collation_long_compare_runtime.len - 3
-    ] = 'u';
+        chinese_collation_long_compare_runtime.len - 1
+    ] = 0xb4;
     const swedish_compare_runtime = try allocator.dupe(u8, swedish_text);
     const german_runtime = try allocator.dupe(u8, german_text);
     const chinese_collation_runtime = try allocator.dupe(u8, chinese_collation_text);
@@ -1562,6 +1596,34 @@ pub fn main() !void {
         chinese_collation_long_runtime,
         chinese_collation_long_compare_runtime,
         .{},
+        allocator,
+    );
+    benchCollationCompareAssumeValid(
+        "UCA compare mixed (assume valid)",
+        mixed_runtime,
+        mixed_compare_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationCompareAssumeValid(
+        "UCA compare mixed early (assume valid)",
+        mixed_runtime,
+        mixed_early_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationCompareAssumeValid(
+        "UCA compare Chinese long (assume valid)",
+        chinese_collation_long_runtime,
+        chinese_collation_long_compare_runtime,
+        .{},
+        allocator,
+    );
+    benchCollationCompareAssumeValid(
+        "UCA compare Swedish (assume valid)",
+        swedish_runtime,
+        swedish_compare_runtime,
+        .{ .locale = "sv" },
         allocator,
     );
     benchCollationCollator(

@@ -633,6 +633,62 @@ pub const Collator = struct {
         return owned.toOwnedSlice(allocator);
     }
 
+    const FirstPrimarySink = struct {
+        elements: [8]CollationElement = undefined,
+        len: usize = 0,
+
+        inline fn append(
+            self: *@This(),
+            _: std.mem.Allocator,
+            element: CollationElement,
+        ) error{OutOfMemory}!void {
+            if (self.len < self.elements.len) {
+                self.elements[self.len] = element;
+                self.len += 1;
+            }
+        }
+    };
+
+    /// First nonzero primary weight of a root-collation string, or null when
+    /// the leading eight scalars are not inert starters or no weight appears
+    /// within them.
+    fn firstRootPrimary(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        text: []const u8,
+    ) ?u32 {
+        if (self.tailoring != null) return null;
+        ensureRootTables();
+        var codepoints: [8]u21 = undefined;
+        var count: usize = 0;
+        var cursor: usize = 0;
+        while (count < codepoints.len and cursor < text.len) {
+            const decoded = scalar.decodeValid(text, cursor) orelse return null;
+            if (!normalization.isNfdInert(decoded.codepoint)) return null;
+            codepoints[count] = decoded.codepoint;
+            count += 1;
+            cursor = decoded.next;
+        }
+        var sink = FirstPrimarySink{};
+        var index: usize = 0;
+        while (index < count) {
+            sink.len = 0;
+            index += appendElements(
+                allocator,
+                &sink,
+                codepoints[0..count],
+                index,
+                null,
+                false,
+                &root_tables_storage,
+            ) catch return null;
+            for (sink.elements[0..sink.len]) |element| {
+                if (element.primary != 0) return element.primary;
+            }
+        }
+        return null;
+    }
+
     /// True when the sort key has no option-dependent level transforms, so a
     /// shared prefix contributes identical weights to both keys.
     fn simpleOrdering(self: *const Collator) bool {
@@ -649,10 +705,22 @@ pub const Collator = struct {
     fn commonBytePrefix(a: []const u8, b: []const u8) usize {
         const limit = @min(a.len, b.len);
         var index: usize = 0;
-        while (index + 8 <= limit) : (index += 8) {
-            const word_a = std.mem.readInt(u64, a[index..][0..8], .little);
-            const word_b = std.mem.readInt(u64, b[index..][0..8], .little);
-            if (word_a != word_b) break;
+        while (index + 64 <= limit) : (index += 64) {
+            const a0: @Vector(32, u8) = a[index..][0..32].*;
+            const b0: @Vector(32, u8) = b[index..][0..32].*;
+            const a1: @Vector(32, u8) = a[index + 32 ..][0..32].*;
+            const b1: @Vector(32, u8) = b[index + 32 ..][0..32].*;
+            const mask0: u32 = @bitCast(a0 != b0);
+            const mask1: u32 = @bitCast(a1 != b1);
+            if (mask0 != 0) return index + @ctz(mask0);
+            if (mask1 != 0) return index + 32 + @ctz(mask1);
+        }
+        while (index + 32 <= limit) : (index += 32) {
+            const chunk_a: @Vector(32, u8) = a[index..][0..32].*;
+            const chunk_b: @Vector(32, u8) = b[index..][0..32].*;
+            const different: @Vector(32, bool) = chunk_a != chunk_b;
+            const mask: u32 = @bitCast(different);
+            if (mask != 0) return index + @ctz(mask);
         }
         while (index < limit and a[index] == b[index]) : (index += 1) {}
         return index;
@@ -682,6 +750,7 @@ pub const Collator = struct {
         self: *const Collator,
         a: []const u8,
         index: usize,
+        comptime validate: bool,
     ) ?usize {
         if (index == 0) return null;
         var boundary = index;
@@ -691,7 +760,11 @@ pub const Collator = struct {
             }
         }
         if (boundary == 0) return null;
-        if (!std.unicode.utf8ValidateSlice(a[0..boundary])) return null;
+        if (validate and
+            !std.unicode.utf8ValidateSlice(a[0..boundary]))
+        {
+            return null;
+        }
         if (!self.safeBoundaryBefore(a, boundary)) return null;
         return boundary;
     }
@@ -699,13 +772,21 @@ pub const Collator = struct {
     /// First byte offset at or after `diff` that ends a region whose weights
     /// are independent of the following text, or null when no such boundary
     /// appears within 64 scalars.
-    fn safeRegionEnd(self: *const Collator, text: []const u8, diff: usize) ?usize {
+    fn safeRegionEnd(
+        self: *const Collator,
+        text: []const u8,
+        diff: usize,
+        comptime validate: bool,
+    ) ?usize {
         var end = diff;
         if (end >= text.len) return end;
         while (end > 0 and (text[end] & 0xc0) == 0x80) end -= 1;
         var count: usize = 0;
         while (count < 64) : (count += 1) {
-            const decoded = scalar.decodeValidating(text, end) orelse return null;
+            const decoded = if (validate)
+                (scalar.decodeValidating(text, end) orelse return null)
+            else
+                (scalar.decodeValid(text, end) orelse return null);
             end = decoded.next;
             if (end >= text.len) return end;
             if (self.safeBoundaryBefore(text, end)) return end;
@@ -728,7 +809,7 @@ pub const Collator = struct {
         }
         if (self.simpleOrdering()) {
             const diff = commonBytePrefix(a, b);
-            if (self.commonPrefixSkip(a, diff)) |start| {
+            if (self.commonPrefixSkip(a, diff, true)) |start| {
                 try self.sortKeyInto(allocator, a[start..], key_a);
                 try self.sortKeyInto(allocator, b[start..], key_b);
                 return std.mem.order(u32, key_a.items, key_b.items);
@@ -742,8 +823,8 @@ pub const Collator = struct {
                 {
                     return error.InvalidUtf8;
                 }
-                if (self.safeRegionEnd(a, diff)) |end_a| {
-                    if (self.safeRegionEnd(b, diff)) |end_b| {
+                if (self.safeRegionEnd(a, diff, true)) |end_a| {
+                    if (self.safeRegionEnd(b, diff, true)) |end_b| {
                         try self.sortKeyInto(allocator, a[0..end_a], key_a);
                         try self.sortKeyInto(allocator, b[0..end_b], key_b);
                         const order = std.mem.order(u32, key_a.items, key_b.items);
@@ -754,6 +835,118 @@ pub const Collator = struct {
         }
         try self.sortKeyInto(allocator, a, key_a);
         try self.sortKeyInto(allocator, b, key_b);
+        return std.mem.order(u32, key_a.items, key_b.items);
+    }
+
+    /// Append a sort key for UTF-8 text already proven valid. Callers that
+    /// validated the input earlier (or generated it themselves) skip the
+    /// per-scalar checks in the decoder.
+    pub fn sortKeyIntoAssumeValid(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        text: []const u8,
+        output: *std.ArrayList(u32),
+    ) error{ InvalidUtf8, OutOfMemory }!void {
+        return sortKeyUtf8AssumeValid(
+            allocator,
+            text,
+            self.options,
+            self.tailoring,
+            self.pages,
+            output,
+        );
+    }
+
+    /// Compare two UTF-8 strings already proven valid. The result matches
+    /// `compare` for valid input; invalid input is not diagnosed.
+    pub fn compareAssumeValid(
+        self: *const Collator,
+        allocator: std.mem.Allocator,
+        a: []const u8,
+        b: []const u8,
+        key_a: *std.ArrayList(u32),
+        key_b: *std.ArrayList(u32),
+    ) error{ InvalidUtf8, OutOfMemory }!std.math.Order {
+        if (std.mem.eql(u8, a, b)) return .eq;
+        if (self.simpleOrdering()) {
+            const diff = commonBytePrefix(a, b);
+            if (diff == 0 and self.tailoring == null and
+                a[0] < 0x80 and b[0] < 0x80 and
+                !ascii_contractions[a[0]] and !ascii_contractions[b[0]])
+            {
+                const primary_a = ascii_elements_table[a[0]].primary;
+                const primary_b = ascii_elements_table[b[0]].primary;
+                if (primary_a != 0 and primary_b != 0 and
+                    primary_a != primary_b)
+                {
+                    return if (primary_a < primary_b) .lt else .gt;
+                }
+            }
+            if (diff <= 32) {
+                if (self.firstRootPrimary(allocator, a)) |primary_a| {
+                    if (self.firstRootPrimary(allocator, b)) |primary_b| {
+                        if (primary_a != primary_b) {
+                            return if (primary_a < primary_b) .lt else .gt;
+                        }
+                    }
+                }
+            }
+            if (self.commonPrefixSkip(a, diff, false)) |start| {
+                // A differing first primary of the suffixes decides the
+                // full order without materializing either key.
+                if (start < a.len and start < b.len) {
+                    if (self.tailoring == null and
+                        a[start] < 0x80 and b[start] < 0x80 and
+                        !ascii_contractions[a[start]] and
+                        !ascii_contractions[b[start]])
+                    {
+                        const primary_a =
+                            ascii_elements_table[a[start]].primary;
+                        const primary_b =
+                            ascii_elements_table[b[start]].primary;
+                        if (primary_a != 0 and primary_b != 0 and
+                            primary_a != primary_b)
+                        {
+                            return if (primary_a < primary_b) .lt else .gt;
+                        }
+                    }
+                    if (self.firstRootPrimary(allocator, a[start..])) |primary_a| {
+                        if (self.firstRootPrimary(allocator, b[start..])) |primary_b| {
+                            if (primary_a != primary_b) {
+                                return if (primary_a < primary_b) .lt else .gt;
+                            }
+                        }
+                    }
+                }
+                try self.sortKeyIntoAssumeValid(allocator, a[start..], key_a);
+                try self.sortKeyIntoAssumeValid(allocator, b[start..], key_b);
+                return std.mem.order(u32, key_a.items, key_b.items);
+            }
+            if (diff <= 32) {
+                if (self.safeRegionEnd(a, diff, false)) |end_a| {
+                    if (self.safeRegionEnd(b, diff, false)) |end_b| {
+                        try self.sortKeyIntoAssumeValid(
+                            allocator,
+                            a[0..end_a],
+                            key_a,
+                        );
+                        try self.sortKeyIntoAssumeValid(
+                            allocator,
+                            b[0..end_b],
+                            key_b,
+                        );
+                        const order = std.mem.order(
+                            u32,
+                            key_a.items,
+                            key_b.items,
+                        );
+                        if (order != .eq) return order;
+                    }
+                }
+            }
+        }
+        try self.sortKeyIntoAssumeValid(allocator, a, key_a);
+        try self.sortKeyIntoAssumeValid(allocator, b, key_b);
         return std.mem.order(u32, key_a.items, key_b.items);
     }
 
@@ -777,6 +970,46 @@ pub const Collator = struct {
 };
 
 fn sortKeyUtf8Resolved(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    options: Options,
+    locale_tailoring: ?tailorings.Tailoring,
+    tailoring_pages: ?*tailorings.PageIndex,
+    output: *std.ArrayList(u32),
+) error{ InvalidUtf8, OutOfMemory }!void {
+    return sortKeyUtf8Decode(
+        false,
+        allocator,
+        text,
+        options,
+        locale_tailoring,
+        tailoring_pages,
+        output,
+    );
+}
+
+/// Sort key for UTF-8 text already proven valid.
+fn sortKeyUtf8AssumeValid(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    options: Options,
+    locale_tailoring: ?tailorings.Tailoring,
+    tailoring_pages: ?*tailorings.PageIndex,
+    output: *std.ArrayList(u32),
+) error{ InvalidUtf8, OutOfMemory }!void {
+    return sortKeyUtf8Decode(
+        true,
+        allocator,
+        text,
+        options,
+        locale_tailoring,
+        tailoring_pages,
+        output,
+    );
+}
+
+fn sortKeyUtf8Decode(
+    comptime assume_valid: bool,
     allocator: std.mem.Allocator,
     text: []const u8,
     options: Options,
@@ -834,13 +1067,18 @@ fn sortKeyUtf8Resolved(
                     const first = text[cursor];
                     const second = text[cursor + 1];
                     const third = text[cursor + 2];
-                    if (((second & third) & 0xc0) != 0x80) {
+                    if (!assume_valid and
+                        ((second & third) & 0xc0) != 0x80)
+                    {
                         return error.InvalidUtf8;
                     }
                     const codepoint = (@as(u21, first & 0x0f) << 12) |
                         (@as(u21, second & 0x3f) << 6) |
                         @as(u21, third & 0x3f);
-                    if (codepoint < 0x800 or (codepoint & 0xf800) == 0xd800) {
+                    if (!assume_valid and
+                        (codepoint < 0x800 or
+                            (codepoint & 0xf800) == 0xd800))
+                    {
                         return error.InvalidUtf8;
                     }
                     stack_codepoints[count] = codepoint;
@@ -850,7 +1088,10 @@ fn sortKeyUtf8Resolved(
                 }
                 continue;
             }
-            const decoded = scalar.decodeValidatingPacked(text, cursor);
+            const decoded = if (assume_valid)
+                scalar.decodeValidPacked(text, cursor)
+            else
+                scalar.decodeValidatingPacked(text, cursor);
             if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
             const codepoint = scalar.packedCodepoint(decoded);
             stack_codepoints[count] = codepoint;
@@ -913,13 +1154,18 @@ fn sortKeyUtf8Resolved(
                 const first = text[cursor];
                 const second = text[cursor + 1];
                 const third = text[cursor + 2];
-                if (((second & third) & 0xc0) != 0x80) {
+                if (!assume_valid and
+                    ((second & third) & 0xc0) != 0x80)
+                {
                     return error.InvalidUtf8;
                 }
                 const codepoint = (@as(u21, first & 0x0f) << 12) |
                     (@as(u21, second & 0x3f) << 6) |
                     @as(u21, third & 0x3f);
-                if (codepoint < 0x800 or (codepoint & 0xf800) == 0xd800) {
+                if (!assume_valid and
+                    (codepoint < 0x800 or
+                        (codepoint & 0xf800) == 0xd800))
+                {
                     return error.InvalidUtf8;
                 }
                 codepoints.appendAssumeCapacity(codepoint);
@@ -928,7 +1174,10 @@ fn sortKeyUtf8Resolved(
             }
             continue;
         }
-        const decoded = scalar.decodeValidatingPacked(text, cursor);
+        const decoded = if (assume_valid)
+            scalar.decodeValidPacked(text, cursor)
+        else
+            scalar.decodeValidatingPacked(text, cursor);
         if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
         const codepoint = scalar.packedCodepoint(decoded);
         codepoints.appendAssumeCapacity(codepoint);
@@ -4947,6 +5196,26 @@ test "compare matches full keys across shared prefixes" {
         try testing.expectEqual(
             expected.invert(),
             try collator.compare(
+                allocator,
+                case.b,
+                case.a,
+                &scratch_a,
+                &scratch_b,
+            ),
+        );
+        try testing.expectEqual(
+            expected,
+            try collator.compareAssumeValid(
+                allocator,
+                case.a,
+                case.b,
+                &scratch_a,
+                &scratch_b,
+            ),
+        );
+        try testing.expectEqual(
+            expected.invert(),
+            try collator.compareAssumeValid(
                 allocator,
                 case.b,
                 case.a,
