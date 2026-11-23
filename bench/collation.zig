@@ -923,6 +923,13 @@ pub fn main(init: std.process.Init.Minimal) !void {
             "\u{4f60}\u{597d}\u{ff0c}\u{4e16}\u{754c}\u{ff01}\u{4e2d}\u{6587}\u{7f16}\u{7801}\u{8f6c}\u{6362}\u{57fa}\u{51c6}\u{6d4b}\u{8bd5}\u{3002}" ** 8,
         );
     }
+    if (selected(filter, "normalize", "NFC Japanese (reuse)")) {
+        benchNormalizeInto(
+            "NFC Japanese (reuse)",
+            "\u{3053}\u{3093}\u{306b}\u{3061}\u{306f}\u{4e16}\u{754c}\u{3002}\u{65e5}\u{672c}\u{8a9e}\u{306e}\u{6587}\u{5b57}\u{30b3}\u{30fc}\u{30c9}\u{5909}\u{63db}\u{3002}" ** 8,
+            allocator,
+        );
+    }
     if (selected(filter, "normalize", "NFC Chinese (reuse)")) {
         benchNormalizeInto(
             "NFC Chinese (reuse)",
