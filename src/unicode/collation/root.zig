@@ -1511,9 +1511,9 @@ inline fn reorderedLatinElement(
             .variable = false,
         };
     }
-    const entry = latin_elements.table[@as(usize, first)];
-    if (entry.count != 1) return null;
-    const element = entry.elements[0];
+    const elements = latinEntryElements(first);
+    if (elements.len != 1) return null;
+    const element = elements[0];
     const primary = reorderPrimary(map, element.primary);
     cached.* = .{
         .tag = tag + 1,
@@ -1821,11 +1821,6 @@ const LatinElement = struct {
     tertiary: u32,
 };
 
-const LatinEntry = struct {
-    count: u8,
-    elements: [4]LatinElement,
-};
-
 /// Latin-1 Supplement and Latin Extended-A/B, which cover the precomposed
 /// letters and combining marks of Latin-script text after NFD.
 pub const latin_limit: usize = 0x370;
@@ -1932,38 +1927,71 @@ fn ensureRootTables() void {
     root_tables_state.store(2, .release);
 }
 
-const latin_elements = blk: {
-    @setEvalBranchQuota(2_000_000);
-    var table: [latin_limit]LatinEntry = undefined;
+fn latinElementCount() usize {
+    @setEvalBranchQuota(20_000_000);
+    var total: usize = 0;
+    for (0..latin_limit) |codepoint| {
+        const sequence = [_]u21{@intCast(codepoint)};
+        if (findEntryExact(&sequence)) |entry| {
+            if (entry.len != 1 or entry.ce_count > 4) continue;
+            total += entry.ce_count;
+        }
+    }
+    return total;
+}
+
+const latin_element_count = latinElementCount();
+
+fn LatinElementsType(comptime count: usize) type {
+    return struct {
+        usable: bool,
+        offsets: [latin_limit]u16,
+        counts: [latin_limit]u8,
+        pool: [count]LatinElement,
+    };
+}
+
+fn buildLatinElements() LatinElementsType(latin_element_count) {
+    @setEvalBranchQuota(20_000_000);
+    var counts: [latin_limit]u8 = [_]u8{0} ** latin_limit;
     var usable = true;
+    var total: usize = 0;
     for (0..latin_limit) |codepoint| {
         const sequence = [_]u21{@intCast(codepoint)};
         if (findEntryExact(&sequence)) |entry| {
             if (entry.len != 1 or entry.ce_count > 4) {
                 usable = false;
-                table[codepoint] = .{ .count = 0, .elements = undefined };
                 continue;
             }
-            var stored = LatinEntry{
-                .count = entry.ce_count,
-                .elements = undefined,
-            };
-            var element_index: usize = 0;
-            while (element_index < entry.ce_count) : (element_index += 1) {
-                const element = ceAt(
-                    @as(usize, entry.ce_offset) + element_index,
-                );
-                stored.elements[element_index] = .{
-                    .primary = element.primary,
-                    .secondary = element.secondary,
-                    .tertiary = element.tertiary,
-                };
-            }
-            table[codepoint] = stored;
+            counts[codepoint] = entry.ce_count;
+            total += entry.ce_count;
         } else {
             usable = false;
-            table[codepoint] = .{ .count = 0, .elements = undefined };
         }
+    }
+    // A compact offset table plus one element pool keeps both hot arrays
+    // inside L1; a per-scalar entry table is nearly three times larger.
+    var offsets: [latin_limit]u16 = [_]u16{0} ** latin_limit;
+    var pool: [latin_element_count]LatinElement = undefined;
+    var cursor: usize = 0;
+    for (0..latin_limit) |codepoint| {
+        const count = counts[codepoint];
+        if (count == 0) continue;
+        offsets[codepoint] = @intCast(cursor);
+        const sequence = [_]u21{@intCast(codepoint)};
+        const entry = findEntryExact(&sequence).?;
+        var element_index: usize = 0;
+        while (element_index < entry.ce_count) : (element_index += 1) {
+            const element = ceAt(
+                @as(usize, entry.ce_offset) + element_index,
+            );
+            pool[cursor + element_index] = .{
+                .primary = element.primary,
+                .secondary = element.secondary,
+                .tertiary = element.tertiary,
+            };
+        }
+        cursor += count;
     }
     // Contractions that start and continue inside the table would make the
     // one-character entries incomplete. The root table only has `L`/`l`
@@ -1979,8 +2007,20 @@ const latin_elements = blk: {
             usable = false;
         }
     }
-    break :blk .{ .usable = usable, .table = table };
-};
+    return .{
+        .usable = usable,
+        .offsets = offsets,
+        .counts = counts,
+        .pool = pool,
+    };
+}
+
+const latin_elements = buildLatinElements();
+
+inline fn latinEntryElements(codepoint: u21) []const LatinElement {
+    const offset: usize = latin_elements.offsets[codepoint];
+    return latin_elements.pool[offset..][0..latin_elements.counts[codepoint]];
+}
 
 const ascii_usable = ascii_layout.usable;
 /// Runtime copy so the hot path can take a pointer into the table instead of
@@ -2322,8 +2362,7 @@ fn appendTailoredLatinSortKey(
                     continue;
                 }
                 if (direct == 0) {
-                    const entry = latin_elements.table[codepoint];
-                    for (entry.elements[0..entry.count]) |element| {
+                    for (latinEntryElements(codepoint)) |element| {
                         try ces.append(allocator, element);
                     }
                     index += 1;
@@ -2349,8 +2388,7 @@ fn appendTailoredLatinSortKey(
                 continue;
             }
         }
-        const entry = latin_elements.table[codepoint];
-        for (entry.elements[0..entry.count]) |element| {
+        for (latinEntryElements(codepoint)) |element| {
             try ces.append(allocator, element);
         }
         index += 1;
@@ -2590,8 +2628,7 @@ fn appendLatinLevels(
     const need_secondary = strength != .primary;
     const need_tertiary = strength != .primary and strength != .secondary;
     for (source) |codepoint| {
-        const entry = latin_elements.table[codepoint];
-        for (entry.elements[0..entry.count]) |element| {
+        for (latinEntryElements(codepoint)) |element| {
             if (element.primary != 0) {
                 if (primary_len == primary.len) return false;
                 primary[primary_len] = element.primary;
@@ -2636,8 +2673,7 @@ fn appendLatinLevel(
     level: Level,
 ) error{OutOfMemory}!void {
     for (codepoints) |codepoint| {
-        const entry = latin_elements.table[codepoint];
-        for (entry.elements[0..entry.count]) |element| {
+        for (latinEntryElements(codepoint)) |element| {
             const weight = switch (level) {
                 .primary => element.primary,
                 .secondary => element.secondary,
