@@ -222,10 +222,21 @@ pub fn sortKeyAlloc(
     text: []const u8,
     options: Options,
 ) error{ InvalidUtf8, OutOfMemory }![]u32 {
+    // Ordinary keys fit a stack buffer, so the returned slice costs one
+    // exact allocation instead of a growable list plus a copy.
+    var stack: [2048]u32 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(std.mem.sliceAsBytes(&stack));
     var key = std.ArrayList(u32).empty;
-    errdefer key.deinit(allocator);
-    try sortKeyInto(allocator, text, options, &key);
-    return key.toOwnedSlice(allocator);
+    sortKeyInto(fixed.allocator(), text, options, &key) catch |err| switch (err) {
+        error.OutOfMemory => {
+            var owned = std.ArrayList(u32).empty;
+            errdefer owned.deinit(allocator);
+            try sortKeyInto(allocator, text, options, &owned);
+            return owned.toOwnedSlice(allocator);
+        },
+        else => return err,
+    };
+    return allocator.dupe(u32, key.items);
 }
 
 /// Append a sort key for UTF-8 text to `output`. Callers that build many
@@ -516,10 +527,21 @@ pub const Collator = struct {
         allocator: std.mem.Allocator,
         text: []const u8,
     ) error{ InvalidUtf8, OutOfMemory }![]u32 {
+        var stack: [2048]u32 = undefined;
+        var fixed = std.heap.FixedBufferAllocator.init(
+            std.mem.sliceAsBytes(&stack),
+        );
         var key = std.ArrayList(u32).empty;
-        errdefer key.deinit(allocator);
-        try self.sortKeyInto(allocator, text, &key);
-        return key.toOwnedSlice(allocator);
+        self.sortKeyInto(fixed.allocator(), text, &key) catch |err| switch (err) {
+            error.OutOfMemory => {
+                var owned = std.ArrayList(u32).empty;
+                errdefer owned.deinit(allocator);
+                try self.sortKeyInto(allocator, text, &owned);
+                return owned.toOwnedSlice(allocator);
+            },
+            else => return err,
+        };
+        return allocator.dupe(u32, key.items);
     }
 
     /// Collation elements for already decoded code points.
