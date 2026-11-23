@@ -817,6 +817,20 @@ pub fn main(init: std.process.Init.Minimal) !void {
             allocator,
         );
     }
+    if (selected(filter, "compare", "compare Chinese long validating")) {
+        const source = "你好世界中国汉字排序拼音" ** 256;
+        const text = allocator.dupe(u8, source) catch unreachable;
+        defer allocator.free(text);
+        const other = allocator.dupe(u8, source) catch unreachable;
+        defer allocator.free(other);
+        other[other.len - 1] = 0xb4;
+        benchCompareValidating(
+            "compare Chinese long validating",
+            text,
+            other,
+            allocator,
+        );
+    }
     if (selected(filter, "compare", "compare long")) {
         var long_other = std.ArrayList(u8).empty;
         defer long_other.deinit(allocator);
