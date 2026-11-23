@@ -270,7 +270,7 @@ int main() {
     {
         UErrorCode status = U_ZERO_ERROR;
         const UNormalizer2* nfc = unorm2_getNFCInstance(&status);
-        for (int index : {0, 1, 12, 8, 9}) {
+        for (int index : {0, 1, 12, 8, 9, 10}) {
             const auto& u16 = texts[index].u16;
             std::vector<UChar> out(u16.size() * 3 + 32);
             std::string label = std::string("NFC ") + texts[index].name;
