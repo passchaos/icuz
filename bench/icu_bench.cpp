@@ -21,6 +21,7 @@
 #include <unicode/unum.h>
 #include <unicode/uregex.h>
 #include <unicode/ureldatefmt.h>
+#include <unicode/usearch.h>
 #include <unicode/ustring.h>
 #include <unicode/ustring.h>
 #include <unicode/utrans.h>
@@ -359,6 +360,42 @@ int main() {
             });
         }
         ubidi_close(bidi);
+    }
+
+    std::printf("\n-- search --\n");
+    {
+        const struct {
+            const char* label;
+            int text;
+            const char16_t* pattern;
+            int pattern_len;
+            const char* locale;
+        } search_cases[] = {
+            {"search word", 0, u"fox", 3, ""},
+            {"search missing", 0, u"wombat", 6, ""},
+            {"search Swedish", 2, u"\u00e4lskar", 6, "sv"},
+            {"search missing Swedish", 2, u"wombat", 6, "sv"},
+        };
+        for (const auto& item : search_cases) {
+            UErrorCode status = U_ZERO_ERROR;
+            UCollator* coll = ucol_open(item.locale, &status);
+            ucol_setStrength(coll, UCOL_PRIMARY);
+            const auto& haystack = texts[item.text].u16;
+            UStringSearch* search = usearch_openFromCollator(
+                item.pattern, item.pattern_len, haystack.data(),
+                static_cast<int32_t>(haystack.size()), coll, nullptr,
+                &status);
+            bench_ops(item.label, 2000, [&] {
+                UErrorCode s = U_ZERO_ERROR;
+                int32_t mstart = 0;
+                int32_t mlimit = 0;
+                const UBool found = usearch_search(search, 0, &mstart,
+                    &mlimit, &s);
+                (void)found;
+            });
+            usearch_close(search);
+            ucol_close(coll);
+        }
     }
 
     std::printf("\n-- charset conversion --\n");

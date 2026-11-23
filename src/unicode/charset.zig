@@ -1698,8 +1698,15 @@ fn asciiCompatible(encoding: Encoding) bool {
 }
 
 fn isAscii(input: []const u8) bool {
-    for (input) |byte| {
-        if (byte >= 0x80) return false;
+    var index: usize = 0;
+    while (index + 32 <= input.len) : (index += 32) {
+        const chunk: @Vector(32, u8) = input[index..][0..32].*;
+        if (@reduce(.Or, chunk >= @as(@Vector(32, u8), @splat(0x80)))) {
+            return false;
+        }
+    }
+    while (index < input.len) : (index += 1) {
+        if (input[index] >= 0x80) return false;
     }
     return true;
 }
