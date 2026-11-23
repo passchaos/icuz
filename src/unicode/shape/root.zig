@@ -207,12 +207,14 @@ fn shapeArabicInner(
     var source = std.ArrayList(u21).empty;
     defer source.deinit(allocator);
     try source.ensureTotalCapacity(allocator, text.len);
+    // The packed decoder validates each sequence and returns in registers, so
+    // the decode loop avoids the store-forwarding stall of the struct result.
     var cursor: usize = 0;
     while (cursor < text.len) {
-        const decoded = scalar.decodeValidating(text, cursor) orelse
-            return error.InvalidUtf8;
-        source.appendAssumeCapacity(decoded.codepoint);
-        cursor = decoded.next;
+        const decoded = scalar.decodeValidatingPacked(text, cursor);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        source.appendAssumeCapacity(scalar.packedCodepoint(decoded));
+        cursor += scalar.packedLength(decoded);
     }
     if (source.items.len == 0) return allocator.alloc(u8, 0);
 

@@ -966,12 +966,14 @@ fn decodeAlloc(
     // One scalar per input byte is the upper bound, so the loop never
     // grows the list.
     try codepoints.ensureTotalCapacity(allocator, text.len);
+    // The packed decoder validates each sequence and returns in registers, so
+    // the decode loop avoids the store-forwarding stall of the struct result.
     var index: usize = 0;
     while (index < text.len) {
-        const decoded = scalar.decodeValidating(text, index) orelse
-            return error.InvalidUtf8;
-        codepoints.appendAssumeCapacity(decoded.codepoint);
-        index = decoded.next;
+        const decoded = scalar.decodeValidatingPacked(text, index);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        codepoints.appendAssumeCapacity(scalar.packedCodepoint(decoded));
+        index += scalar.packedLength(decoded);
     }
     return codepoints;
 }
@@ -1086,7 +1088,6 @@ fn applyPassStreamingAlloc(
     }
     return output;
 }
-
 
 const SimpleCacheEntry = struct {
     codepoint: u21 = 0x110000,
