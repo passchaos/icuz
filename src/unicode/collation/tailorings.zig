@@ -414,6 +414,12 @@ pub const PageIndex = struct {
     /// scalar is a combining mark. The matcher cannot match unless the next
     /// scalar is a mark, so callers can keep plain letters on the root path.
     mark_only: [0x370]bool,
+    /// Two-scalar rules keyed by their scalar pair. `pair_keys` holds
+    /// `(first << 21) | second` and 0 marks an empty slot; `pair_rules` holds
+    /// the absolute rule index, `pair_ambiguous` when a longer rule shares
+    /// the pair, so those pairs use the full matcher.
+    pair_keys: [pair_slot_count]u64,
+    pair_rules: [pair_slot_count]u32,
     cache: [256]std.atomic.Value(u64),
     /// True when no rule starts with an ASCII code point, so ASCII text
     /// sorts exactly like the root collation.
@@ -422,6 +428,46 @@ pub const PageIndex = struct {
 
 const direct_limit: usize = 0x1000;
 const direct_absent: u16 = 0xFFFF;
+
+const pair_slot_count = 512;
+const pair_probe_limit = 8;
+const pair_empty: u32 = 0xFFFFFFFF;
+const pair_ambiguous: u32 = 0xFFFFFFFE;
+
+inline fn pairKey(first: u21, second: u21) u64 {
+    return (@as(u64, first) << 21) | second;
+}
+
+inline fn pairStart(key: u64) usize {
+    const mixed = (@as(u32, @truncate(key)) *% 0x9E3779B1) ^
+        (@as(u32, @truncate(key >> 21)) *% 0x85EBCA6B);
+    return (mixed >> 23) & (pair_slot_count - 1);
+}
+
+/// Rule for the two-scalar sequence `first` + `second`, or null when no
+/// unambiguous two-scalar rule starts with the pair. Callers fall back to
+/// `match` on null.
+pub inline fn pairRule(
+    pages: *const PageIndex,
+    first: u21,
+    second: u21,
+) ?Rule {
+    const key = pairKey(first, second);
+    var probe = pairStart(key);
+    var attempt: usize = 0;
+    while (attempt < pair_probe_limit) : (attempt += 1) {
+        const slot = probe & (pair_slot_count - 1);
+        const stored = pages.pair_keys[slot];
+        if (stored == 0) return null;
+        if (stored == key) {
+            const index = pages.pair_rules[slot];
+            if (index == pair_ambiguous) return null;
+            return ruleAt(index);
+        }
+        probe += 1;
+    }
+    return null;
+}
 
 /// True when `codepoint` may start a tailored rule. Callers use this to skip
 /// the full `match` call for code points the locale does not touch.
@@ -495,6 +541,49 @@ fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
     for (0..pages.mark_only.len) |first| {
         pages.mark_only[first] = pages.single_rules[first] == 1 and
             !single_rule[first] and !nonmark_second[first];
+    }
+    @memset(&pages.pair_keys, 0);
+    @memset(&pages.pair_rules, pair_empty);
+    for (0..end) |index| {
+        const rule = ruleAt(tailoring.rule_start + index);
+        if (rule.sequence_len != 2) continue;
+        const key = pairKey(rule.first, sequenceCodepoint(rule, 1));
+        var probe = pairStart(key);
+        var attempt: usize = 0;
+        while (attempt < pair_probe_limit) : (attempt += 1) {
+            const slot = probe & (pair_slot_count - 1);
+            const stored = pages.pair_keys[slot];
+            if (stored == 0) {
+                pages.pair_keys[slot] = key;
+                pages.pair_rules[slot] = @intCast(tailoring.rule_start + index);
+                break;
+            }
+            if (stored == key) {
+                // Duplicate pairs need the ordered matcher.
+                pages.pair_rules[slot] = pair_ambiguous;
+                break;
+            }
+            probe += 1;
+        }
+    }
+    // A longer rule sharing the pair prefix makes the two-scalar rule
+    // incomplete.
+    for (0..end) |index| {
+        const rule = ruleAt(tailoring.rule_start + index);
+        if (rule.sequence_len <= 2) continue;
+        const key = pairKey(rule.first, sequenceCodepoint(rule, 1));
+        var probe = pairStart(key);
+        var attempt: usize = 0;
+        while (attempt < pair_probe_limit) : (attempt += 1) {
+            const slot = probe & (pair_slot_count - 1);
+            const stored = pages.pair_keys[slot];
+            if (stored == 0) break;
+            if (stored == key) {
+                pages.pair_rules[slot] = pair_ambiguous;
+                break;
+            }
+            probe += 1;
+        }
     }
     pages.ascii_untailored = for (0..128) |codepoint| {
         if (pages.single_rules[codepoint] != 0) break false;
@@ -716,6 +805,61 @@ test "locale default collation types" {
         "stroke",
         find("zh", "stroke").?.collation_type,
     );
+}
+
+test "pair rules agree with the ordered matcher" {
+    const testing = @import("std").testing;
+
+    var checked: usize = 0;
+    var pages: PageIndex = undefined;
+    for (0..locale_count) |locale_index| {
+        const record = localeAt(locale_index);
+        const tailoring = Tailoring{
+            .locale = "",
+            .collation_type = "",
+            .rule_start = record.rule_start,
+            .rule_count = record.rule_count,
+            .case_first = .off,
+            .backwards = false,
+            .reorder = null,
+        };
+        // Page offsets are 16-bit, so very large tailorings keep the plain
+        // binary search and never build a page index.
+        if (tailoring.rule_count > 0xFFFF) continue;
+        buildPageIndex(tailoring, &pages);
+        var index: usize = tailoring.rule_start;
+        const end = tailoring.rule_start + tailoring.rule_count;
+        while (index < end) : (index += 1) {
+            const rule = ruleAt(index);
+            if (rule.sequence_len == 1) continue;
+            const second = sequenceCodepoint(rule, 1);
+            const pair = pairRule(&pages, rule.first, second);
+            if (rule.sequence_len > 2) {
+                // A longer rule sharing the pair prefix must fall back to
+                // the ordered matcher.
+                try testing.expect(pair == null);
+                continue;
+            }
+            const sequence = [2]u21{ rule.first, second };
+            const matched = match(tailoring, &pages, &sequence, 0).?;
+            if (pair) |found| {
+                // The pair table may only answer when the matcher would
+                // return the same two-scalar rule.
+                try testing.expectEqual(@as(usize, 2), matched.length);
+                try testing.expectEqual(
+                    matched.rule.sequence_offset,
+                    found.sequence_offset,
+                );
+                try testing.expectEqual(
+                    matched.rule.ce_offset,
+                    found.ce_offset,
+                );
+                try testing.expectEqual(matched.rule.ce_count, found.ce_count);
+                checked += 1;
+            }
+        }
+    }
+    try testing.expect(checked > 0);
 }
 
 test "tailoring rules are sorted by first code point" {

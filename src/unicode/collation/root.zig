@@ -2556,6 +2556,27 @@ fn appendTailoredLatinSortKey(
                 skip_match = page_index.mark_only[codepoint] and
                     (index + 1 >= source.len or source[index + 1] < 0x300 or
                         combining_class.forCodepoint(source[index + 1]) == 0);
+                // Two-scalar rules are the common tailored contraction; a
+                // direct pair lookup skips the ordered matcher.
+                if (!skip_match and index + 1 < source.len) {
+                    if (tailorings.pairRule(
+                        page_index,
+                        codepoint,
+                        source[index + 1],
+                    )) |rule| {
+                        var element_index: usize = 0;
+                        while (element_index < rule.ce_count) : (element_index += 1) {
+                            const element = tailorings.elementAt(rule, element_index);
+                            try ces.append(allocator, .{
+                                .primary = element.primary,
+                                .secondary = element.secondary,
+                                .tertiary = element.tertiary,
+                            });
+                        }
+                        index += 2;
+                        continue;
+                    }
+                }
             }
         }
         if (!skip_match and tailorings.couldMatch(pages, codepoint)) {
