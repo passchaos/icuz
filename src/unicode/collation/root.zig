@@ -1554,9 +1554,35 @@ inline fn appendElements(
     tables: ?*const RootTables,
 ) error{OutOfMemory}!usize {
     const first = codepoints[index];
-    // Root ASCII entries are precomputed; keep that hot path inline and let
-    // the contraction, mark, and implicit cases pay a call.
-    if (!shifted and first < 128 and ascii_usable and
+    // With root tables available, one table read classifies the scalar:
+    // direct entries emit their element, implicit scalars get implicit
+    // weights, and complex entries (contractions and expansions) fall
+    // through. ASCII folds into the same table, so mixed text pays one
+    // dispatch instead of separate ASCII, Latin, and script tests.
+    if (tables) |root| {
+        if (first < direct_bmp_limit) {
+            const entry = &root.direct[first];
+            switch (entry.kind) {
+                .direct => {
+                    try ces.append(allocator, .{
+                        .primary = entry.primary,
+                        .secondary = entry.secondary,
+                        .tertiary = entry.tertiary,
+                        .variable = entry.variable,
+                    });
+                    return 1;
+                },
+                .implicit => {
+                    try appendImplicit(allocator, ces, first, reorder);
+                    return 1;
+                },
+                .complex => {},
+            }
+        } else if (!root.page_has_entries[first >> 8]) {
+            try appendImplicit(allocator, ces, first, reorder);
+            return 1;
+        }
+    } else if (!shifted and first < 128 and ascii_usable and
         !ascii_contractions[@as(usize, first)])
     {
         const ascii_entry = asciiEntryFor(first, reorder) orelse
@@ -1578,41 +1604,12 @@ inline fn appendElements(
             });
         }
         return 1;
-    }
-    if (!shifted and first >= 128 and first < latin_limit) {
+    } else if (!shifted and first >= 128 and first < latin_limit) {
         if (reorder) |map| {
             if (reorderedLatinElement(first, map)) |element| {
                 try ces.append(allocator, element);
                 return 1;
             }
-        }
-    }
-    // Non-Latin scripts dominate mixed text. Resolve the direct and implicit
-    // cases here so they do not pay the contraction-path call; only complex
-    // entries reach the out-of-line routine.
-    if (tables) |root| {
-        if (first < direct_bmp_limit) {
-            const entry = &root.direct[first];
-            switch (entry.kind) {
-                .direct => {
-                    try ces.append(allocator, .{
-                        .primary = entry.primary,
-                        .secondary = entry.secondary,
-                        .tertiary = entry.tertiary,
-                        .variable = entry.variable,
-                    });
-                    return 1;
-                },
-                .implicit => {
-                    try appendImplicit(allocator, ces, first, reorder);
-                    return 1;
-                },
-                .complex => {},
-            }
-        }
-        if (!root.page_has_entries[first >> 8]) {
-            try appendImplicit(allocator, ces, first, reorder);
-            return 1;
         }
     }
     return appendElementsSlow(
