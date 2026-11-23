@@ -223,20 +223,25 @@ pub fn sortKeyAlloc(
     options: Options,
 ) error{ InvalidUtf8, OutOfMemory }![]u32 {
     // Ordinary keys fit a stack buffer, so the returned slice costs one
-    // exact allocation instead of a growable list plus a copy.
+    // exact allocation instead of a growable list plus a copy. Inputs whose
+    // decoded length alone would exceed the buffer skip the doomed attempt.
     var stack: [2048]u32 = undefined;
-    var fixed = std.heap.FixedBufferAllocator.init(std.mem.sliceAsBytes(&stack));
-    var key = std.ArrayList(u32).empty;
-    sortKeyInto(fixed.allocator(), text, options, &key) catch |err| switch (err) {
-        error.OutOfMemory => {
-            var owned = std.ArrayList(u32).empty;
-            errdefer owned.deinit(allocator);
-            try sortKeyInto(allocator, text, options, &owned);
-            return owned.toOwnedSlice(allocator);
-        },
-        else => return err,
-    };
-    return allocator.dupe(u32, key.items);
+    if (text.len <= stack.len / 4 - 2) {
+        var fixed = std.heap.FixedBufferAllocator.init(
+            std.mem.sliceAsBytes(&stack),
+        );
+        var key = std.ArrayList(u32).empty;
+        if (sortKeyInto(fixed.allocator(), text, options, &key)) |_| {
+            return allocator.dupe(u32, key.items);
+        } else |err| switch (err) {
+            error.OutOfMemory => {},
+            else => return err,
+        }
+    }
+    var owned = std.ArrayList(u32).empty;
+    errdefer owned.deinit(allocator);
+    try sortKeyInto(allocator, text, options, &owned);
+    return owned.toOwnedSlice(allocator);
 }
 
 /// Append a sort key for UTF-8 text to `output`. Callers that build many
@@ -528,20 +533,22 @@ pub const Collator = struct {
         text: []const u8,
     ) error{ InvalidUtf8, OutOfMemory }![]u32 {
         var stack: [2048]u32 = undefined;
-        var fixed = std.heap.FixedBufferAllocator.init(
-            std.mem.sliceAsBytes(&stack),
-        );
-        var key = std.ArrayList(u32).empty;
-        self.sortKeyInto(fixed.allocator(), text, &key) catch |err| switch (err) {
-            error.OutOfMemory => {
-                var owned = std.ArrayList(u32).empty;
-                errdefer owned.deinit(allocator);
-                try self.sortKeyInto(allocator, text, &owned);
-                return owned.toOwnedSlice(allocator);
-            },
-            else => return err,
-        };
-        return allocator.dupe(u32, key.items);
+        if (text.len <= stack.len / 4 - 2) {
+            var fixed = std.heap.FixedBufferAllocator.init(
+                std.mem.sliceAsBytes(&stack),
+            );
+            var key = std.ArrayList(u32).empty;
+            if (self.sortKeyInto(fixed.allocator(), text, &key)) |_| {
+                return allocator.dupe(u32, key.items);
+            } else |err| switch (err) {
+                error.OutOfMemory => {},
+                else => return err,
+            }
+        }
+        var owned = std.ArrayList(u32).empty;
+        errdefer owned.deinit(allocator);
+        try self.sortKeyInto(allocator, text, &owned);
+        return owned.toOwnedSlice(allocator);
     }
 
     /// Collation elements for already decoded code points.
@@ -599,10 +606,23 @@ pub const Collator = struct {
         allocator: std.mem.Allocator,
         units: []const u16,
     ) error{ InvalidUtf16, OutOfMemory }![]u32 {
-        var key = std.ArrayList(u32).empty;
-        errdefer key.deinit(allocator);
-        try self.sortKeyUtf16Into(allocator, units, &key);
-        return key.toOwnedSlice(allocator);
+        var stack: [2048]u32 = undefined;
+        if (units.len <= stack.len / 4 - 2) {
+            var fixed = std.heap.FixedBufferAllocator.init(
+                std.mem.sliceAsBytes(&stack),
+            );
+            var key = std.ArrayList(u32).empty;
+            if (self.sortKeyUtf16Into(fixed.allocator(), units, &key)) |_| {
+                return allocator.dupe(u32, key.items);
+            } else |err| switch (err) {
+                error.OutOfMemory => {},
+                else => return err,
+            }
+        }
+        var owned = std.ArrayList(u32).empty;
+        errdefer owned.deinit(allocator);
+        try self.sortKeyUtf16Into(allocator, units, &owned);
+        return owned.toOwnedSlice(allocator);
     }
 
     /// Compare two UTF-8 strings using caller-owned scratch lists.
@@ -917,10 +937,23 @@ pub fn sortKeyUtf16Alloc(
     units: []const u16,
     options: Options,
 ) error{ InvalidUtf16, OutOfMemory }![]u32 {
-    var key = std.ArrayList(u32).empty;
-    errdefer key.deinit(allocator);
-    try sortKeyUtf16Into(allocator, units, options, &key);
-    return key.toOwnedSlice(allocator);
+    var stack: [2048]u32 = undefined;
+    if (units.len <= stack.len / 4 - 2) {
+        var fixed = std.heap.FixedBufferAllocator.init(
+            std.mem.sliceAsBytes(&stack),
+        );
+        var key = std.ArrayList(u32).empty;
+        if (sortKeyUtf16Into(fixed.allocator(), units, options, &key)) |_| {
+            return allocator.dupe(u32, key.items);
+        } else |err| switch (err) {
+            error.OutOfMemory => {},
+            else => return err,
+        }
+    }
+    var owned = std.ArrayList(u32).empty;
+    errdefer owned.deinit(allocator);
+    try sortKeyUtf16Into(allocator, units, options, &owned);
+    return owned.toOwnedSlice(allocator);
 }
 
 /// Append a sort key for a code-point slice to `output`.
@@ -1078,7 +1111,9 @@ fn sortKeyCodepointsResolved(
     output: *std.ArrayList(u32),
 ) error{OutOfMemory}!void {
     output.clearRetainingCapacity();
-    try output.ensureTotalCapacityPrecise(allocator, codepoints.len * 4);
+    // Implicit text emits four weights per scalar; reserving that up front
+    // keeps the stack-buffer path from growing into an allocation.
+    try output.ensureTotalCapacityPrecise(allocator, codepoints.len * 4 + 8);
 
     const reorder = if (locale_tailoring) |tailoring| tailoring.reorder else null;
     const shifted = options.variable_weighting == .shifted;
