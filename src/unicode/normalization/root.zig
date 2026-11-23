@@ -194,6 +194,20 @@ inline fn scanAsciiLatin1Run(
     var last_offset: usize = start;
     while (true) {
         const ascii_start = end;
+        // Prose runs are short, so find the first non-ASCII byte eight bytes
+        // at a time instead of walking byte by byte. Single-byte runs (a
+        // space between jamo or CJK scalars) stay on the scalar loop.
+        if (end + 1 < text.len and text[end + 1] < 0x80) {
+            while (end + 8 <= text.len) {
+                const word = std.mem.readInt(u64, text[end..][0..8], .little);
+                const high = word & 0x8080_8080_8080_8080;
+                if (high != 0) {
+                    end += @ctz(high) / 8;
+                    break;
+                }
+                end += 8;
+            }
+        }
         while (end < text.len and text[end] < 0x80) end += 1;
         if (end > ascii_start) {
             last_codepoint = text[end - 1];

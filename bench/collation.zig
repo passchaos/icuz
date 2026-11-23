@@ -771,6 +771,18 @@ pub fn main(init: std.process.Init.Minimal) !void {
     if (selected(filter, "break", "line break ASCII")) {
         benchLines("line break ASCII", ascii_text);
     }
+    if (selected(filter, "break", "line break emoji zwj")) {
+        benchLines("line break emoji zwj", "\u{1f469}\u{200d}\u{1f4bb}" ** 8);
+    }
+    if (selected(filter, "break", "line break hebrew")) {
+        benchLines("line break hebrew", "\u{05e9}\u{05dc}\u{05d5}\u{05dd} " ** 8);
+    }
+    if (selected(filter, "break", "line break arabic")) {
+        benchLines("line break arabic", "\u{0645}\u{0631}\u{062d}\u{0628}\u{0627} " ** 8);
+    }
+    if (selected(filter, "break", "line break devanagari")) {
+        benchLines("line break devanagari", "\u{0915}\u{094d}\u{0937}\u{093f} " ** 8);
+    }
     if (selected(filter, "normalize", "NFC mixed (reuse)")) {
         benchNormalizeInto("NFC mixed (reuse)", mixed_text, allocator);
     }
