@@ -1447,23 +1447,26 @@ fn normalizeSegmentFastAt(
         length;
     // Size the reservation by the encoded length, not four bytes per scalar:
     // an over-request on a small edit forces a grow here and then a shrink
-    // copy in toOwnedSlice.
-    var needed: usize = 0;
-    for (storage[0..final_len]) |codepoint| {
-        needed += if (codepoint < 0x80)
-            1
-        else if (codepoint < 0x800)
-            2
-        else if (codepoint < 0x10000)
-            3
-        else
-            4;
-    }
-    if (output.unusedCapacitySlice().len < needed) {
-        try output.ensureTotalCapacityPrecise(
-            allocator,
-            output.items.len + needed,
-        );
+    // copy in toOwnedSlice. When four bytes per scalar already fit, the exact
+    // count cannot change the reservation, so skip the extra pass.
+    if (output.unusedCapacitySlice().len < final_len * 4) {
+        var needed: usize = 0;
+        for (storage[0..final_len]) |codepoint| {
+            needed += if (codepoint < 0x80)
+                1
+            else if (codepoint < 0x800)
+                2
+            else if (codepoint < 0x10000)
+                3
+            else
+                4;
+        }
+        if (output.unusedCapacitySlice().len < needed) {
+            try output.ensureTotalCapacityPrecise(
+                allocator,
+                output.items.len + needed,
+            );
+        }
     }
     const dest = output.unusedCapacitySlice();
     var written: usize = 0;
