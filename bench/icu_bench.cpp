@@ -293,6 +293,17 @@ int main() {
                 });
                 uset_close(complement);
             }
+            USet* lowercase = uset_openPattern(u"[:Lowercase:]", -1, &status);
+            if (U_SUCCESS(status)) {
+                bench_ops("UnicodeSet difference", 400, [&] {
+                    USet* work = uset_clone(alphabetic);
+                    uset_removeAll(work, lowercase);
+                    volatile int32_t count = uset_size(work);
+                    (void)count;
+                    uset_close(work);
+                });
+                uset_close(lowercase);
+            }
             bench_ops("UnicodeSet closeOver Alphabetic", 400, [&] {
                 uset_closeOver(alphabetic, USET_CASE_INSENSITIVE);
             });
