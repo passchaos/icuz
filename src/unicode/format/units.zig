@@ -170,10 +170,33 @@ pub fn formatAlloc(
     }
     if (pattern.len == 0 and !bare) return error.InvalidPattern;
 
-    const formatted = try number.formatAlloc(allocator, value, locale, .{});
-    if (bare) return formatted;
-    defer allocator.free(formatted);
-    return misc.replacePlaceholderAlloc(allocator, pattern, formatted);
+    // The number is embedded in the unit pattern, so formatting it into a
+    // stack buffer avoids the intermediate allocation `formatAlloc` returns.
+    var stack: [256]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&stack);
+    var number_buffer = std.ArrayList(u8).empty;
+    if (number.formatDecimalInto(
+        fixed.allocator(),
+        value,
+        locale,
+        &number_buffer,
+    )) |_| {
+        if (bare) return allocator.dupe(u8, number_buffer.items);
+        return misc.replacePlaceholderAlloc(
+            allocator,
+            pattern,
+            number_buffer.items,
+        );
+    } else |err| switch (err) {
+        error.OutOfMemory => {},
+        else => return err,
+    }
+    var owned = std.ArrayList(u8).empty;
+    errdefer owned.deinit(allocator);
+    try number.formatDecimalInto(allocator, value, locale, &owned);
+    if (bare) return owned.toOwnedSlice(allocator);
+    defer owned.deinit(allocator);
+    return misc.replacePlaceholderAlloc(allocator, pattern, owned.items);
 }
 
 /// Apply a unit pattern to an already formatted number.

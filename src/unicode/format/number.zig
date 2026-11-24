@@ -700,6 +700,27 @@ pub fn formatAlloc(
     };
 }
 
+/// Append a default decimal format of `value` to `output`. Callers that
+/// embed the number in a larger pattern avoid the intermediate allocation
+/// that `formatAlloc` returns.
+pub fn formatDecimalInto(
+    allocator: std.mem.Allocator,
+    value: f64,
+    locale_name: []const u8,
+    output: *std.ArrayList(u8),
+) Error!void {
+    return formatStandardInto(
+        allocator,
+        value,
+        null,
+        locale_name,
+        &Options{},
+        null,
+        null,
+        output,
+    );
+}
+
 /// Format a decimal, percent, or currency value and report the byte range of
 /// every numeric field. Scientific and compact styles format normally but
 /// leave `fields` empty.
