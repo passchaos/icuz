@@ -1150,28 +1150,24 @@ pub const Set = struct {
             self.ranges.items.len + other.ranges.items.len,
         );
 
+        const self_ranges = self.ranges.items;
+        const other_ranges = other.ranges.items;
         var left: usize = 0;
         var right: usize = 0;
-        while (left < self.ranges.items.len and
-            right < other.ranges.items.len)
-        {
-            const first = @max(
-                self.ranges.items[left].first,
-                other.ranges.items[right].first,
-            );
-            const last = @min(
-                self.ranges.items[left].last,
-                other.ranges.items[right].last,
-            );
+        while (left < self_ranges.len and right < other_ranges.len) {
+            const self_first: u32 = self_ranges[left].first;
+            const self_last: u32 = self_ranges[left].last;
+            const other_first: u32 = other_ranges[right].first;
+            const other_last: u32 = other_ranges[right].last;
+            const first = @max(self_first, other_first);
+            const last = @min(self_last, other_last);
             if (first <= last) {
                 result.appendAssumeCapacity(.{
-                    .first = first,
-                    .last = last,
+                    .first = @intCast(first),
+                    .last = @intCast(last),
                 });
             }
-            if (self.ranges.items[left].last <
-                other.ranges.items[right].last)
-            {
+            if (self_last < other_last) {
                 left += 1;
             } else {
                 right += 1;
@@ -1207,36 +1203,44 @@ pub const Set = struct {
         );
 
         // Merge join: walk both sorted lists and emit the parts of each
-        // self range not covered by the current other range.
+        // self range not covered by the current other range. The endpoints
+        // are widened to u32 so the inner loop's +/- arithmetic does not
+        // re-mask a 21-bit value on every step.
+        const self_ranges = self.ranges.items;
+        const other_ranges = other.ranges.items;
         var left: usize = 0;
         var right: usize = 0;
-        while (left < self.ranges.items.len) : (left += 1) {
-            var current = self.ranges.items[left];
-            while (right < other.ranges.items.len and
-                other.ranges.items[right].last < current.first)
-            {
+        while (left < self_ranges.len) : (left += 1) {
+            var current_first: u32 = self_ranges[left].first;
+            const current_last: u32 = self_ranges[left].last;
+            while (right < other_ranges.len) {
+                const cut_last: u32 = other_ranges[right].last;
+                if (cut_last >= current_first) break;
                 right += 1;
             }
             var removed = false;
-            while (right < other.ranges.items.len and
-                other.ranges.items[right].first <= current.last)
-            {
-                const cut = other.ranges.items[right];
-                if (cut.first > current.first) {
+            while (right < other_ranges.len) {
+                const cut_first: u32 = other_ranges[right].first;
+                if (cut_first > current_last) break;
+                const cut_last: u32 = other_ranges[right].last;
+                if (cut_first > current_first) {
                     result.appendAssumeCapacity(.{
-                        .first = current.first,
-                        .last = cut.first - 1,
+                        .first = @intCast(current_first),
+                        .last = @intCast(cut_first - 1),
                     });
                 }
-                if (cut.last >= current.last) {
+                if (cut_last >= current_last) {
                     removed = true;
                     break;
                 }
-                current.first = cut.last + 1;
+                current_first = cut_last + 1;
                 right += 1;
             }
-            if (!removed and current.first <= current.last) {
-                result.appendAssumeCapacity(current);
+            if (!removed and current_first <= current_last) {
+                result.appendAssumeCapacity(.{
+                    .first = @intCast(current_first),
+                    .last = @intCast(current_last),
+                });
             }
         }
 
