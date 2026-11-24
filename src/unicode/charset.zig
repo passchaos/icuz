@@ -26,6 +26,8 @@ const hkscs = @import("charset/hkscs.zig");
 const euctw = @import("charset/euctw.zig");
 const iso2022cn = @import("charset/iso2022cn.zig");
 
+const native_endian = @import("builtin").target.cpu.arch.endian();
+
 pub const DecodeResult = types.DecodeResult;
 pub const EncodeResult = types.EncodeResult;
 
@@ -1010,6 +1012,59 @@ fn utf8ToUtf16Into(
     };
 }
 
+/// Lane masks for deinterleaving a 48-byte block of sixteen three-byte
+/// sequences into its lead and continuation byte vectors.
+fn threeByteLane(comptime offset: usize) @Vector(16, i32) {
+    var mask: [16]i32 = undefined;
+    for (&mask, 0..) |*lane, index| lane.* = @intCast(index * 3 + offset);
+    return mask;
+}
+
+/// Decode sixteen consecutive three-byte BMP sequences at `index`. Returns
+/// null when the block holds anything else, so the scalar path can take over.
+inline fn decodeThreeByteBlock(
+    input: []const u8,
+    index: usize,
+) ?@Vector(16, u16) {
+    const Lane = @Vector(16, u8);
+    const chunk: @Vector(48, u8) = input[index..][0..48].*;
+    const lead = @shuffle(u8, chunk, undefined, threeByteLane(0));
+    const second = @shuffle(u8, chunk, undefined, threeByteLane(1));
+    const third = @shuffle(u8, chunk, undefined, threeByteLane(2));
+    if (!@reduce(.And, (lead >= @as(Lane, @splat(0xe0))) &
+        (lead <= @as(Lane, @splat(0xef)))))
+    {
+        return null;
+    }
+    if (!@reduce(.And, (second >= @as(Lane, @splat(0x80))) &
+        (second <= @as(Lane, @splat(0xbf)))))
+    {
+        return null;
+    }
+    if (!@reduce(.And, (third >= @as(Lane, @splat(0x80))) &
+        (third <= @as(Lane, @splat(0xbf)))))
+    {
+        return null;
+    }
+    const Wide = @Vector(16, u16);
+    const lead_wide: Wide = @intCast(lead & @as(Lane, @splat(0x0f)));
+    const second_wide: Wide = @intCast(second & @as(Lane, @splat(0x3f)));
+    const third_wide: Wide = @intCast(third & @as(Lane, @splat(0x3f)));
+    // Multiplying by powers of two keeps the shift counts out of vector
+    // operands, whose element type would be Log2Int(u16).
+    const value: Wide = (lead_wide * @as(Wide, @splat(1 << 12))) |
+        (second_wide * @as(Wide, @splat(1 << 6))) |
+        third_wide;
+    // Overlong forms and U+D800..U+DFFF must not reach the output.
+    if (@reduce(.Or, value < @as(Wide, @splat(0x800)))) return null;
+    if (@reduce(.Or, (value >= @as(Wide, @splat(0xd800))) &
+        (value <= @as(Wide, @splat(0xdfff)))))
+    {
+        return null;
+    }
+    return value;
+}
+
 fn utf8ToUtf16IntoEndian(
     comptime endian: std.builtin.Endian,
     allocator: std.mem.Allocator,
@@ -1067,6 +1122,20 @@ fn utf8ToUtf16IntoEndian(
             index + 3 <= input.len)
         {
             var consumed = false;
+            // Sixteen sequences per step when a whole block is plain BMP
+            // three-byte data.
+            while (index + 48 <= input.len) {
+                const wide = decodeThreeByteBlock(input, index) orelse break;
+                const start = output.items.len;
+                output.items.len = start + 32;
+                const stored = if (endian == native_endian)
+                    wide
+                else
+                    @byteSwap(wide);
+                output.items[start..][0..32].* = @bitCast(stored);
+                index += 48;
+                consumed = true;
+            }
             while (index + 3 <= input.len and
                 input[index] >= 0xe0 and input[index] < 0xf0)
             {
@@ -1907,6 +1976,53 @@ test "UTF encodings and malformed input" {
     const substituted = try encodeAlloc(allocator, "\u{4E16}", .ascii, .{});
     defer allocator.free(substituted);
     try testing.expectEqualStrings("?", substituted);
+}
+
+test "UTF-8 three-byte runs convert with and without malformed input" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    // More than one 48-byte vector block of BMP three-byte sequences, plus
+    // an ASCII tail so the scalar paths still run.
+    const text = "\u{4F60}" ** 20 ++ "A\u{00E9}";
+    inline for ([_]Encoding{ .utf16_le, .utf16_be }) |encoding| {
+        const encoded = try encodeAlloc(allocator, text, encoding, .{});
+        defer allocator.free(encoded);
+        const decoded = try decodeAlloc(allocator, encoded, encoding, .{});
+        defer allocator.free(decoded);
+        try testing.expectEqualStrings(text, decoded);
+    }
+
+    // A full vector block whose last sequence is malformed must fall back to
+    // the scalar decoder for the whole run.
+    const malformed = [_]struct { tail: [3]u8, expected: []const u8 }{
+        // Overlong U+0000.
+        .{ .tail = .{ 0xE0, 0x80, 0x80 }, .expected = "\u{FFFD}\u{FFFD}\u{FFFD}" },
+        // UTF-16 surrogate U+D800.
+        .{ .tail = .{ 0xED, 0xA0, 0x80 }, .expected = "\u{FFFD}\u{FFFD}\u{FFFD}" },
+        // Broken continuation byte.
+        .{ .tail = .{ 0xE4, 0x41, 0x42 }, .expected = "\u{FFFD}AB" },
+    };
+    for (malformed) |case| {
+        var input: [48]u8 = undefined;
+        for (0..15) |index| {
+            input[index * 3] = 0xE4;
+            input[index * 3 + 1] = 0xBD;
+            input[index * 3 + 2] = 0xA0;
+        }
+        @memcpy(input[45..], &case.tail);
+        const decoded = try decodeAlloc(allocator, &input, .utf8, .{});
+        defer allocator.free(decoded);
+        var expected: [15 * 3 + 16]u8 = undefined;
+        var expected_len: usize = 0;
+        for (0..15) |_| {
+            @memcpy(expected[expected_len..][0..3], "\u{4F60}");
+            expected_len += 3;
+        }
+        @memcpy(expected[expected_len..][0..case.expected.len], case.expected);
+        expected_len += case.expected.len;
+        try testing.expectEqualStrings(expected[0..expected_len], decoded);
+    }
 }
 
 test "multi-byte conversion" {
