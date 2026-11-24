@@ -10,6 +10,37 @@ const units = @import("units.zig");
 const plural_ranges = @import("plural_ranges.zig");
 const properties = @import("../properties.zig");
 
+/// Append a short byte slice with inline stores. `ArrayList.appendSlice`
+/// routes every runtime length through memcpy, and the one- to four-byte
+/// pieces of a formatted number (sign, digits, separators) cost more in the
+/// call than in the copy.
+inline fn appendShort(
+    allocator: std.mem.Allocator,
+    list: *std.ArrayList(u8),
+    bytes: []const u8,
+) Error!void {
+    if (list.unusedCapacitySlice().len < bytes.len) {
+        try list.ensureUnusedCapacity(allocator, bytes.len);
+    }
+    const dest = list.unusedCapacitySlice();
+    const length = bytes.len;
+    if (length <= 4) {
+        if (length != 0) {
+            dest[0] = bytes[0];
+            if (length > 1) {
+                dest[1] = bytes[1];
+                if (length > 2) {
+                    dest[2] = bytes[2];
+                    if (length > 3) dest[3] = bytes[3];
+                }
+            }
+        }
+    } else {
+        @memcpy(dest[0..length], bytes);
+    }
+    list.items.len += length;
+}
+
 pub const cldr_version = "48";
 
 pub const Style = enum { decimal, percent, currency, scientific, compact };
@@ -384,7 +415,7 @@ fn appendSpacedInfix(
     if (infix.len > 0 and !std.ascii.isWhitespace(infix[0])) {
         try output.append(allocator, ' ');
     }
-    try output.appendSlice(allocator, infix);
+    try appendShort(allocator, output, infix);
     if (infix.len > 0 and !std.ascii.isWhitespace(infix[infix.len - 1])) {
         try output.append(allocator, ' ');
     }
@@ -623,15 +654,15 @@ pub fn formatRangeAlloc(
 
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
-    if (collapsed) try output.appendSlice(allocator, outer_prefix);
-    try output.appendSlice(allocator, left);
+    if (collapsed) try appendShort(allocator, &output, outer_prefix);
+    try appendShort(allocator, &output, left);
     if (repeat_modifier) {
         try appendSpacedInfix(allocator, &output, range.infix);
     } else {
-        try output.appendSlice(allocator, range.infix);
+        try appendShort(allocator, &output, range.infix);
     }
-    try output.appendSlice(allocator, right);
-    if (collapsed) try output.appendSlice(allocator, outer_suffix);
+    try appendShort(allocator, &output, right);
+    if (collapsed) try appendShort(allocator, &output, outer_suffix);
     return output.toOwnedSlice(allocator);
 }
 
@@ -836,7 +867,7 @@ fn formatStandardInto(
                 code,
             );
             defer allocator.free(text);
-            try output.appendSlice(allocator, text);
+            try appendShort(allocator, output, text);
             return;
         }
         currency_display_text = currencyDisplayText(
@@ -878,7 +909,7 @@ fn formatStandardInto(
 
             false,
         );
-        try output.appendSlice(allocator, locale.nan);
+        try appendShort(allocator, output, locale.nan);
         try appendAffix(
             allocator,
             output,
@@ -916,7 +947,7 @@ fn formatStandardInto(
         } else {
             if (negative) {
                 const start = output.items.len;
-                try output.appendSlice(allocator, locale.minus);
+                try appendShort(allocator, output, locale.minus);
                 try recordField(
                     allocator,
                     fields,
@@ -940,7 +971,7 @@ fn formatStandardInto(
                 false,
             );
         }
-        try output.appendSlice(allocator, locale.infinity);
+        try appendShort(allocator, output, locale.infinity);
         try appendAffix(
             allocator,
             output,
@@ -1741,12 +1772,12 @@ fn formatScientificInto(
     var locale_storage: data.Locale = undefined;
     const locale = resolveLocale(locale_name, options, &locale_storage);
     if (std.math.isNan(value)) {
-        try output.appendSlice(allocator, locale.nan);
+        try appendShort(allocator, output, locale.nan);
         return;
     }
     if (std.math.isInf(value)) {
-        if (value < 0) try output.appendSlice(allocator, locale.minus);
-        try output.appendSlice(allocator, locale.infinity);
+        if (value < 0) try appendShort(allocator, output, locale.minus);
+        try appendShort(allocator, output, locale.infinity);
         return;
     }
 
@@ -1769,7 +1800,7 @@ fn formatScientificInto(
             options,
         );
         defer allocator.free(fallback);
-        try output.appendSlice(allocator, fallback);
+        try appendShort(allocator, output, fallback);
         return;
     }
     var mantissa = if (value == 0) 0.0 else value / power;
@@ -1810,12 +1841,12 @@ fn formatScientificInto(
         null,
         output,
     );
-    try output.appendSlice(allocator, locale.exponential);
+    try appendShort(allocator, output, locale.exponential);
     if (exponent < 0) {
-        try output.appendSlice(allocator, locale.minus);
+        try appendShort(allocator, output, locale.minus);
         exponent = -exponent;
     } else if (options.exponent_sign) {
-        try output.appendSlice(allocator, locale.plus);
+        try appendShort(allocator, output, locale.plus);
     }
     var buffer: [12]u8 = undefined;
     const digit_length = formatUnsigned(&buffer, @intCast(exponent));
@@ -1828,7 +1859,7 @@ fn formatScientificInto(
         while (padding > 0) : (padding -= 1) {
             try output.append(allocator, '0');
         }
-        try output.appendSlice(allocator, digits);
+        try appendShort(allocator, output, digits);
     } else {
         while (padding > 0) : (padding -= 1) {
             try appendCodepoint(allocator, output, locale.digits[0]);
@@ -2021,7 +2052,7 @@ fn formatCompactInto(
             @abs(value),
         );
         defer allocator.free(wrapped);
-        try output.appendSlice(allocator, wrapped);
+        try appendShort(allocator, output, wrapped);
         return;
     }
     const magnitude = @abs(value);
@@ -2033,7 +2064,7 @@ fn formatCompactInto(
             options,
         );
         defer allocator.free(fallback);
-        try output.appendSlice(allocator, fallback);
+        try appendShort(allocator, output, fallback);
         return;
     }
     var locale_storage: data.Locale = undefined;
@@ -2058,7 +2089,7 @@ fn formatCompactInto(
             options,
         );
         defer allocator.free(fallback);
-        try output.appendSlice(allocator, fallback);
+        try appendShort(allocator, output, fallback);
         return;
     };
     const entry = table[chosen_index];
@@ -2076,7 +2107,7 @@ fn formatCompactInto(
         if (entry.exact_one.len != 0 and
             magnitude == @as(f64, @floatFromInt(compact_magnitudes[chosen_index])))
         {
-            try output.appendSlice(allocator, entry.exact_one);
+            try appendShort(allocator, output, entry.exact_one);
             return;
         }
         const fallback = try compactFallback(
@@ -2086,7 +2117,7 @@ fn formatCompactInto(
             options,
         );
         defer allocator.free(fallback);
-        try output.appendSlice(allocator, fallback);
+        try appendShort(allocator, output, fallback);
         return;
     };
 
@@ -2095,7 +2126,7 @@ fn formatCompactInto(
     while (digits < format_info.int_digits) : (digits += 1) divisor /= 10;
     const scaled = value / @as(f64, @floatFromInt(divisor));
     if (scaled == 1 and entry.exact_one.len != 0) {
-        try output.appendSlice(allocator, entry.exact_one);
+        try appendShort(allocator, output, entry.exact_one);
         return;
     }
 
@@ -2125,7 +2156,7 @@ fn formatCompactInto(
     if (pattern.len == 0) pattern = entry.patterns[@intFromEnum(plural.Category.other)];
     const info = parseCompactFormat(pattern) orelse {
         if (pattern.len != 0) {
-            try output.appendSlice(allocator, pattern);
+            try appendShort(allocator, output, pattern);
             return;
         }
         const fallback = try compactFallback(
@@ -2135,7 +2166,7 @@ fn formatCompactInto(
             options,
         );
         defer allocator.free(fallback);
-        try output.appendSlice(allocator, fallback);
+        try appendShort(allocator, output, fallback);
         return;
     };
     if (info.end == pattern.len) {
@@ -2147,11 +2178,11 @@ fn formatCompactInto(
             options,
         );
         defer allocator.free(fallback);
-        try output.appendSlice(allocator, fallback);
+        try appendShort(allocator, output, fallback);
         return;
     }
 
-    try output.appendSlice(allocator, pattern[0..info.start]);
+    try appendShort(allocator, output, pattern[0..info.start]);
     try formatStandardInto(
         allocator,
         scaled,
@@ -2167,7 +2198,7 @@ fn formatCompactInto(
         null,
         output,
     );
-    try output.appendSlice(allocator, pattern[info.end..]);
+    try appendShort(allocator, output, pattern[info.end..]);
 }
 
 /// ICU compact skeletons keep at most two significant digits of the
@@ -2282,12 +2313,12 @@ fn wrapCurrencyAlloc(
         );
     } else {
         if (negative) {
-            try output.appendSlice(allocator, locale.minus);
+            try appendShort(allocator, &output, locale.minus);
         } else if (options.sign != .auto and options.sign != .accounting and
             (options.sign != .except_zero or
                 !std.mem.eql(u8, number_text, "0")))
         {
-            try output.appendSlice(allocator, locale.plus);
+            try appendShort(allocator, &output, locale.plus);
         }
         try appendAffix(
             allocator,
@@ -2304,7 +2335,7 @@ fn wrapCurrencyAlloc(
             true,
         );
     }
-    try output.appendSlice(allocator, number_text);
+    try appendShort(allocator, &output, number_text);
     if (negative_pattern) {
         try appendAffix(
             allocator,
@@ -2390,7 +2421,7 @@ fn appendCodepoint(
     var buffer: [4]u8 = undefined;
     const length = std.unicode.utf8Encode(codepoint, &buffer) catch
         return error.InvalidPattern;
-    try output.appendSlice(allocator, buffer[0..length]);
+    try appendShort(allocator, output, buffer[0..length]);
 }
 
 fn currencyDigits(code: []const u8) u8 {
@@ -2565,7 +2596,7 @@ fn formatCurrencyNameInto(
         if (options.accounting) {
             try output.append(allocator, '(');
         } else {
-            try output.appendSlice(allocator, locale.minus);
+            try appendShort(allocator, output, locale.minus);
         }
     }
     var index: usize = 0;
@@ -2594,7 +2625,7 @@ fn formatCurrencyNameInto(
                     continue;
                 },
                 '1' => {
-                    try output.appendSlice(allocator, name);
+                    try appendShort(allocator, output, name);
                     index += 3;
                     continue;
                 },
@@ -2624,12 +2655,12 @@ fn replaceTwoPlaceholdersAlloc(
         {
             switch (pattern[index + 1]) {
                 '0' => {
-                    try output.appendSlice(allocator, first);
+                    try appendShort(allocator, &output, first);
                     index += 3;
                     continue;
                 },
                 '1' => {
-                    try output.appendSlice(allocator, second);
+                    try appendShort(allocator, &output, second);
                     index += 3;
                     continue;
                 },
@@ -2705,12 +2736,12 @@ fn formatPartsInto(
     } else {
         if (negative) {
             const start = output.items.len;
-            try output.appendSlice(allocator, locale.minus);
+            try appendShort(allocator, output, locale.minus);
             try recordField(allocator, fields, .sign, start, output.items.len);
         }
         if (show_plus) {
             const start = output.items.len;
-            try output.appendSlice(allocator, locale.plus);
+            try appendShort(allocator, output, locale.plus);
             try recordField(allocator, fields, .sign, start, output.items.len);
         }
         try appendAffix(
@@ -2743,7 +2774,7 @@ fn formatPartsInto(
 
     if (fraction_len > 0) {
         const decimal_start = output.items.len;
-        try output.appendSlice(allocator, locale.decimal);
+        try appendShort(allocator, output, locale.decimal);
         try recordField(
             allocator,
             fields,
@@ -2753,7 +2784,7 @@ fn formatPartsInto(
         );
         const fraction_start = output.items.len;
         if (plain_digits) {
-            try output.appendSlice(allocator, fraction_digits[0..fraction_len]);
+            try appendShort(allocator, output, fraction_digits[0..fraction_len]);
         } else {
             for (fraction_digits[0..fraction_len]) |byte| {
                 try appendDigit(allocator, output, byte - '0', locale);
@@ -3220,7 +3251,7 @@ fn appendGroupedDigits(
     if (!enabled or primary == 0 or length <= primary) {
         const start = output.items.len;
         if (plain_digits) {
-            try output.appendSlice(allocator, digits);
+            try appendShort(allocator, output, digits);
         } else {
             for (digits) |byte| {
                 try appendDigit(allocator, output, byte - '0', locale);
@@ -3250,7 +3281,7 @@ fn appendGroupedDigits(
         // Extremely long digit strings fall back to one group.
         const start = output.items.len;
         if (plain_digits) {
-            try output.appendSlice(allocator, digits);
+            try appendShort(allocator, output, digits);
         } else {
             for (digits) |byte| {
                 try appendDigit(allocator, output, byte - '0', locale);
@@ -3266,7 +3297,7 @@ fn appendGroupedDigits(
         group_index -= 1;
         if (index > 0) {
             const separator_start = output.items.len;
-            try output.appendSlice(allocator, locale.group);
+            try appendShort(allocator, output, locale.group);
             try recordField(
                 allocator,
                 fields,
@@ -3278,7 +3309,7 @@ fn appendGroupedDigits(
         const group_start = output.items.len;
         const end = index + sizes[group_index];
         if (plain_digits) {
-            try output.appendSlice(allocator, digits[index..end]);
+            try appendShort(allocator, output, digits[index..end]);
         } else {
             for (digits[index..end]) |byte| {
                 try appendDigit(allocator, output, byte - '0', locale);
@@ -3314,7 +3345,7 @@ fn appendDigit(
     var buffer: [4]u8 = undefined;
     const length = std.unicode.utf8Encode(codepoint, &buffer) catch
         unreachable;
-    try output.appendSlice(allocator, buffer[0..length]);
+    try appendShort(allocator, output, buffer[0..length]);
 }
 
 fn needsCurrencySpaceAfterNumber(text: []const u8) bool {
@@ -3375,10 +3406,10 @@ fn appendAffix(
                 needsCurrencySpaceAfterNumber(output.items) and
                 needsCurrencySpaceBeforeSymbol(currency_display))
             {
-                try output.appendSlice(allocator, "\u{00a0}");
+                try appendShort(allocator, output, "\u{00a0}");
             }
             const start = output.items.len;
-            try output.appendSlice(allocator, currency_display);
+            try appendShort(allocator, output, currency_display);
             try recordField(
                 allocator,
                 fields,
@@ -3397,7 +3428,7 @@ fn appendAffix(
                 !affixHasContentAfter(affix, next_index) and
                 needsCurrencySpaceBeforeSymbol(currency_display))
             {
-                try output.appendSlice(allocator, "\u{00a0}");
+                try appendShort(allocator, output, "\u{00a0}");
             }
             index = next_index - 1;
             continue;
@@ -3405,12 +3436,12 @@ fn appendAffix(
         // ICU substitutes the localized symbols for pattern characters in
         // affixes; the localized minus sign carries RTL bidi marks.
         if (!in_quote and byte == '-') {
-            try output.appendSlice(allocator, locale.minus);
+            try appendShort(allocator, output, locale.minus);
             continue;
         }
         if (!in_quote and byte == '%') {
             const start = output.items.len;
-            try output.appendSlice(allocator, percent_symbol);
+            try appendShort(allocator, output, percent_symbol);
             try recordField(
                 allocator,
                 fields,
