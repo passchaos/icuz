@@ -263,3 +263,284 @@ pub fn utf32ToUtf8Alloc(
     try utf32ToUtf8Into(allocator, input, endian, options, &output);
     return output.toOwnedSlice(allocator);
 }
+
+/// UTF-16 to UTF-32. Every non-surrogate unit maps one-to-one, so sixteen
+/// widen per step; surrogate pairs and malformed units use the scalar path.
+pub fn utf16ToUtf32Into(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    in_endian: std.builtin.Endian,
+    out_endian: std.builtin.Endian,
+    options: Options,
+    output: *std.ArrayList(u8),
+) Error!void {
+    return switch (in_endian) {
+        .little => switch (out_endian) {
+            .little => utf16ToUtf32IntoEndian(.little, .little, allocator, input, options, output),
+            .big => utf16ToUtf32IntoEndian(.little, .big, allocator, input, options, output),
+        },
+        .big => switch (out_endian) {
+            .little => utf16ToUtf32IntoEndian(.big, .little, allocator, input, options, output),
+            .big => utf16ToUtf32IntoEndian(.big, .big, allocator, input, options, output),
+        },
+    };
+}
+
+fn utf16ToUtf32IntoEndian(
+    comptime in_endian: std.builtin.Endian,
+    comptime out_endian: std.builtin.Endian,
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    options: Options,
+    output: *std.ArrayList(u8),
+) Error!void {
+    // A unit becomes at most one four-byte scalar.
+    try output.ensureUnusedCapacity(allocator, input.len * 2 + 8);
+    const spare = output.unusedCapacitySlice();
+    var written: usize = 0;
+    const replacement_value = utf32Replacement(options);
+    const encoded_replacement = if (out_endian == native_endian)
+        replacement_value
+    else
+        @byteSwap(replacement_value);
+    const replacement = std.mem.toBytes(encoded_replacement);
+    var index: usize = 0;
+    while (index + 2 <= input.len) {
+        // Any run without surrogates widens one-to-one.
+        if (index + 32 <= input.len) {
+            var units: @Vector(16, u16) = @bitCast(input[index..][0..32].*);
+            if (in_endian != native_endian) units = @byteSwap(units);
+            const Wide = @Vector(16, u16);
+            const surrogates = (units >= @as(Wide, @splat(0xD800))) &
+                (units <= @as(Wide, @splat(0xDFFF)));
+            if (!@reduce(.Or, surrogates)) {
+                var wide: @Vector(16, u32) = @intCast(units);
+                if (out_endian != native_endian) wide = @byteSwap(wide);
+                spare[written..][0..64].* = @bitCast(wide);
+                written += 64;
+                index += 32;
+                continue;
+            }
+        }
+        const unit = std.mem.readInt(u16, input[index..][0..2], in_endian);
+        index += 2;
+        var codepoint: u21 = 0;
+        var status: enum { ok, malformed, incomplete } = .ok;
+        if (unit >= 0xD800 and unit <= 0xDBFF) {
+            if (index + 2 > input.len) {
+                status = .incomplete;
+            } else {
+                const low = std.mem.readInt(u16, input[index..][0..2], in_endian);
+                if (low < 0xDC00 or low > 0xDFFF) {
+                    status = .malformed;
+                } else {
+                    index += 2;
+                    codepoint = 0x10000 +
+                        (@as(u21, unit - 0xD800) << 10) + (low - 0xDC00);
+                }
+            }
+        } else if (unit >= 0xDC00 and unit <= 0xDFFF) {
+            status = .malformed;
+        } else {
+            codepoint = unit;
+        }
+        switch (status) {
+            .ok => written = writeUtf32Scalar(out_endian, spare, written, codepoint),
+            .malformed => if (utf8_vec.writeError(
+                options,
+                spare,
+                &written,
+                &replacement,
+            )) {
+                output.items.len += written;
+                return error.InvalidSequence;
+            },
+            .incomplete => {
+                if (utf8_vec.writeError(
+                    options,
+                    spare,
+                    &written,
+                    &replacement,
+                )) {
+                    output.items.len += written;
+                    return error.InvalidSequence;
+                }
+                index = input.len;
+                break;
+            },
+        }
+    }
+    if (index < input.len) {
+        if (utf8_vec.writeError(options, spare, &written, &replacement)) {
+            output.items.len += written;
+            return error.InvalidSequence;
+        }
+    }
+    output.items.len += written;
+}
+
+pub fn utf16ToUtf32Alloc(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    in_endian: std.builtin.Endian,
+    out_endian: std.builtin.Endian,
+    options: Options,
+) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try utf16ToUtf32Into(
+        allocator,
+        input,
+        in_endian,
+        out_endian,
+        options,
+        &output,
+    );
+    return output.toOwnedSlice(allocator);
+}
+
+/// UTF-32 to UTF-16. BMP scalars narrow sixteen per step; supplementary
+/// scalars become surrogate pairs on the scalar path.
+pub fn utf32ToUtf16Into(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    in_endian: std.builtin.Endian,
+    out_endian: std.builtin.Endian,
+    options: Options,
+    output: *std.ArrayList(u8),
+) Error!void {
+    return switch (in_endian) {
+        .little => switch (out_endian) {
+            .little => utf32ToUtf16IntoEndian(.little, .little, allocator, input, options, output),
+            .big => utf32ToUtf16IntoEndian(.little, .big, allocator, input, options, output),
+        },
+        .big => switch (out_endian) {
+            .little => utf32ToUtf16IntoEndian(.big, .little, allocator, input, options, output),
+            .big => utf32ToUtf16IntoEndian(.big, .big, allocator, input, options, output),
+        },
+    };
+}
+
+/// Encode one replacement scalar as UTF-16 bytes for `endian`.
+fn utf16ReplacementBytes(
+    comptime endian: std.builtin.Endian,
+    options: Options,
+) struct { bytes: [4]u8, len: usize } {
+    var bytes: [4]u8 = undefined;
+    for ([_]u21{ options.replacement, '?', 0x1A }) |candidate| {
+        if (candidate <= 0xFFFF and
+            (candidate < 0xD800 or candidate > 0xDFFF))
+        {
+            const value: u16 = @intCast(candidate);
+            bytes[0..2].* = std.mem.toBytes(
+                if (endian == native_endian) value else @byteSwap(value),
+            );
+            return .{ .bytes = bytes, .len = 2 };
+        }
+        if (candidate <= 0x10FFFF) {
+            const value = candidate - 0x10000;
+            const high: u16 = @intCast(0xD800 + (value >> 10));
+            const low: u16 = @intCast(0xDC00 + (value & 0x3FF));
+            bytes[0..2].* = std.mem.toBytes(
+                if (endian == native_endian) high else @byteSwap(high),
+            );
+            bytes[2..4].* = std.mem.toBytes(
+                if (endian == native_endian) low else @byteSwap(low),
+            );
+            return .{ .bytes = bytes, .len = 4 };
+        }
+    }
+    return .{ .bytes = bytes, .len = 0 };
+}
+
+fn utf32ToUtf16IntoEndian(
+    comptime in_endian: std.builtin.Endian,
+    comptime out_endian: std.builtin.Endian,
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    options: Options,
+    output: *std.ArrayList(u8),
+) Error!void {
+    // A four-byte scalar becomes at most a four-byte surrogate pair.
+    try output.ensureUnusedCapacity(allocator, input.len + 8);
+    const spare = output.unusedCapacitySlice();
+    var written: usize = 0;
+    const replacement = utf16ReplacementBytes(out_endian, options);
+    const replacement_len: usize = if (options.on_error == .replace)
+        replacement.len
+    else
+        0;
+    var index: usize = 0;
+    while (index + 4 <= input.len) {
+        if (index + 64 <= input.len) {
+            var units: @Vector(16, u32) = @bitCast(input[index..][0..64].*);
+            if (in_endian != native_endian) units = @byteSwap(units);
+            const Wide = @Vector(16, u32);
+            const bmp = (units <= @as(Wide, @splat(0xFFFF))) &
+                ((units < @as(Wide, @splat(0xD800))) |
+                    (units > @as(Wide, @splat(0xDFFF))));
+            if (@reduce(.And, bmp)) {
+                var narrow: @Vector(16, u16) = @intCast(units);
+                if (out_endian != native_endian) narrow = @byteSwap(narrow);
+                spare[written..][0..32].* = @bitCast(narrow);
+                written += 32;
+                index += 64;
+                continue;
+            }
+        }
+        const value = std.mem.readInt(u32, input[index..][0..4], in_endian);
+        index += 4;
+        if (value > 0x10FFFF or (value >= 0xD800 and value <= 0xDFFF)) {
+            if (utf8_vec.writeError(options, spare, &written, replacement.bytes[0..replacement_len])) {
+                output.items.len += written;
+                return error.InvalidSequence;
+            }
+            continue;
+        }
+        if (value <= 0xFFFF) {
+            const unit: u16 = @intCast(value);
+            spare[written..][0..2].* = std.mem.toBytes(
+                if (out_endian == native_endian) unit else @byteSwap(unit),
+            );
+            written += 2;
+            continue;
+        }
+        const pair = value - 0x10000;
+        const high: u16 = @intCast(0xD800 + (pair >> 10));
+        const low: u16 = @intCast(0xDC00 + (pair & 0x3FF));
+        spare[written..][0..2].* = std.mem.toBytes(
+            if (out_endian == native_endian) high else @byteSwap(high),
+        );
+        spare[written + 2 ..][0..2].* = std.mem.toBytes(
+            if (out_endian == native_endian) low else @byteSwap(low),
+        );
+        written += 4;
+    }
+    if (index < input.len) {
+        if (utf8_vec.writeError(options, spare, &written, replacement.bytes[0..replacement_len])) {
+            output.items.len += written;
+            return error.InvalidSequence;
+        }
+    }
+    output.items.len += written;
+}
+
+pub fn utf32ToUtf16Alloc(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    in_endian: std.builtin.Endian,
+    out_endian: std.builtin.Endian,
+    options: Options,
+) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try utf32ToUtf16Into(
+        allocator,
+        input,
+        in_endian,
+        out_endian,
+        options,
+        &output,
+    );
+    return output.toOwnedSlice(allocator);
+}

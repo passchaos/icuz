@@ -119,6 +119,10 @@ pub inline fn storeThreeByteScalars(
 
 /// Write one valid scalar as UTF-8 at `written` and return the new length.
 pub inline fn writeScalar(spare: []u8, written: usize, codepoint: u21) usize {
+    if (codepoint < 0x80) {
+        spare[written] = @intCast(codepoint);
+        return written + 1;
+    }
     if (codepoint < 0x800) {
         spare[written] = @intCast(0xC0 | (codepoint >> 6));
         spare[written + 1] = @intCast(0x80 | (codepoint & 0x3F));

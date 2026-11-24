@@ -158,6 +158,11 @@ int main() {
         for (int i = 0; i < 8; i++) s += "\u039f\u0394\u039f\u03a3 \u03a3\u039f\u03a6\u039f\u03a3 \u0391\u0398\u0397\u039d\u0391 ";
         return s;
     }();
+    const std::string accents_text = [] {
+        std::string s;
+        for (int i = 0; i < 8; i++) s += "café naïve Straße Ångström Böttger Überlingen ÄÖÜ äöü ";
+        return s;
+    }();
 
     struct Text {
         const char* name;
@@ -180,6 +185,7 @@ int main() {
         {"chinese_long", chinese_long_text, {}},
         {"greek_case", greek_case_text, {}},
         {"chinese_collation_long", chinese_collation_long_text, {}},
+        {"accents", accents_text, {}},
     };
     for (auto& text : texts) text.u16 = to_u16(text.utf8);
 
@@ -517,6 +523,101 @@ int main() {
                 (void)length;
             });
         }
+    }
+
+    {
+        const struct { const char* label; int text; } u16_u32_cases[] = {
+            {"UTF-16LE -> UTF-32LE ASCII", 0},
+            {"UTF-16LE -> UTF-32LE Chinese", 12},
+        };
+        for (const auto& item : u16_u32_cases) {
+            const auto& u16 = texts[item.text].u16;
+            std::vector<UChar32> out(u16.size() + 32);
+            bench_bytes(item.label, texts[item.text].utf8.size(), 4000, [&] {
+                UErrorCode status = U_ZERO_ERROR;
+                int32_t length = 0;
+                u_strToUTF32(out.data(), static_cast<int32_t>(out.size()),
+                    &length, u16.data(), static_cast<int32_t>(u16.size()),
+                    &status);
+                (void)length;
+            });
+        }
+        const struct { const char* label; int text; } u32_u16_cases[] = {
+            {"UTF-32LE -> UTF-16LE ASCII", 0},
+            {"UTF-32LE -> UTF-16LE Chinese", 12},
+        };
+        for (const auto& item : u32_u16_cases) {
+            const auto& utf8 = texts[item.text].utf8;
+            std::vector<char> u32(utf8.size() * 4 + 32);
+            UErrorCode status = U_ZERO_ERROR;
+            const int32_t u32_length = ucnv_convert("UTF-32LE", "UTF-8",
+                u32.data(), static_cast<int32_t>(u32.size()), utf8.data(),
+                static_cast<int32_t>(utf8.size()), &status);
+            std::vector<UChar> out(utf8.size() + 32);
+            bench_bytes(item.label, utf8.size(), 4000, [&] {
+                UErrorCode s2 = U_ZERO_ERROR;
+                int32_t length = 0;
+                u_strFromUTF32(out.data(), static_cast<int32_t>(out.size()),
+                    &length, reinterpret_cast<const UChar32*>(u32.data()),
+                    u32_length / 4, &s2);
+                (void)length;
+            });
+        }
+    }
+    {
+        const struct {
+            const char* label;
+            int text;
+            const char* converter;
+            bool to_converter;
+        } sb_cases[] = {
+            {"windows-1252 -> UTF-8 accents", 15, "windows-1252", false},
+            {"UTF-8 -> windows-1252 accents", 15, "windows-1252", true},
+        };
+        for (const auto& item : sb_cases) {
+            const auto& utf8 = texts[item.text].utf8;
+            std::vector<char> narrow(utf8.size() + 32);
+            UErrorCode status = U_ZERO_ERROR;
+            const int32_t narrow_length = ucnv_convert(item.converter,
+                "UTF-8", narrow.data(), static_cast<int32_t>(narrow.size()),
+                utf8.data(), static_cast<int32_t>(utf8.size()), &status);
+            std::vector<char> out(utf8.size() * 3 + 32);
+            bench_bytes(item.label, utf8.size(), 4000, [&] {
+                UErrorCode s2 = U_ZERO_ERROR;
+                if (item.to_converter) {
+                    ucnv_convert(item.converter, "UTF-8", out.data(),
+                        static_cast<int32_t>(out.size()), utf8.data(),
+                        static_cast<int32_t>(utf8.size()), &s2);
+                } else {
+                    ucnv_convert("UTF-8", item.converter, out.data(),
+                        static_cast<int32_t>(out.size()), narrow.data(),
+                        narrow_length, &s2);
+                }
+            });
+        }
+    }
+    {
+        const auto& utf8 = texts[12].utf8;
+        const auto& u16 = texts[12].u16;
+        std::vector<char> gbk(utf8.size() + 32);
+        UErrorCode status = U_ZERO_ERROR;
+        const int32_t gbk_length = ucnv_convert("GBK", "UTF-8", gbk.data(),
+            static_cast<int32_t>(gbk.size()), utf8.data(),
+            static_cast<int32_t>(utf8.size()), &status);
+        std::vector<char> out(utf8.size() * 3 + 32);
+        bench_bytes("GBK -> UTF-16LE Chinese", utf8.size(), 4000, [&] {
+            UErrorCode s2 = U_ZERO_ERROR;
+            ucnv_convert("UTF-16LE", "GBK", out.data(),
+                static_cast<int32_t>(out.size()), gbk.data(), gbk_length,
+                &s2);
+        });
+        bench_bytes("UTF-16LE -> GBK Chinese", utf8.size(), 4000, [&] {
+            UErrorCode s2 = U_ZERO_ERROR;
+            ucnv_convert("GBK", "UTF-16LE", out.data(),
+                static_cast<int32_t>(out.size()),
+                reinterpret_cast<const char*>(u16.data()),
+                static_cast<int32_t>(u16.size() * 2), &s2);
+        });
     }
 
     std::printf("\n-- transliteration --\n");

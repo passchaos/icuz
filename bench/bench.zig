@@ -108,6 +108,7 @@ const ascii_text =
     "How vexingly quick daft zebras jump! 0123456789 hello_world@example.com https://example.com/path?q=1\n";
 
 const chinese_text = "你好，世界！中文编码转换基准测试。" ** 8;
+const accents_text = "café naïve Straße Ångström Böttger Überlingen ÄÖÜ äöü " ** 8;
 const japanese_text = "こんにちは世界。日本語の文字コード変換。" ** 8;
 const korean_text = "안녕하세요 세계. 한국어 인코딩 변환." ** 8;
 const swedish_text = "Ångström älskar blåbär och öar. ÅÄÖ åäö " ** 8;
@@ -832,13 +833,14 @@ fn benchCharsetInto(
     reportBytes(name, rounds * text.len, best);
 }
 
-/// Convert a UTF-8 text from `from` back to UTF-8 into a reused buffer. The
-/// rate is reported per UTF-8 byte so it is comparable with the other
-/// conversion rows.
-fn benchConvertFrom(
+/// Convert a UTF-8 text from `from` to `to` into a reused buffer. The rate is
+/// reported per UTF-8 byte so it is comparable with the other conversion
+/// rows.
+fn benchConvertBetween(
     name: []const u8,
     text: []const u8,
     from: icuz.charset.Encoding,
+    to: icuz.charset.Encoding,
     allocator: std.mem.Allocator,
 ) void {
     const units = icuz.charset.convertAlloc(
@@ -863,7 +865,7 @@ fn benchConvertFrom(
                 allocator,
                 units,
                 from,
-                .utf8,
+                to,
                 &output,
                 .{},
             ) catch unreachable;
@@ -1615,6 +1617,7 @@ pub fn main() !void {
     const ascii_runtime = try allocator.dupe(u8, ascii_text);
     const mixed_runtime = try allocator.dupe(u8, mixed_text);
     const chinese_runtime = try allocator.dupe(u8, chinese_text);
+    const accents_runtime = try allocator.dupe(u8, accents_text);
     const japanese_runtime = try allocator.dupe(u8, japanese_text);
     const korean_runtime = try allocator.dupe(u8, korean_text);
     const gbk_runtime = try icuz.charset.encodeAlloc(
@@ -1972,8 +1975,8 @@ pub fn main() !void {
         .utf16_le,
         allocator,
     );
-    benchConvertFrom("UTF-16LE -> UTF-8 ASCII", ascii_runtime, .utf16_le, allocator);
-    benchConvertFrom("UTF-16LE -> UTF-8 Chinese", chinese_runtime, .utf16_le, allocator);
+    benchConvertBetween("UTF-16LE -> UTF-8 ASCII", ascii_runtime, .utf16_le, .utf8, allocator);
+    benchConvertBetween("UTF-16LE -> UTF-8 Chinese", chinese_runtime, .utf16_le, .utf8, allocator);
     benchCharsetInto(
         "UTF-8 -> UTF-32LE ASCII",
         ascii_runtime,
@@ -1988,8 +1991,64 @@ pub fn main() !void {
         .utf32_le,
         allocator,
     );
-    benchConvertFrom("UTF-32LE -> UTF-8 ASCII", ascii_runtime, .utf32_le, allocator);
-    benchConvertFrom("UTF-32LE -> UTF-8 Chinese", chinese_runtime, .utf32_le, allocator);
+    benchConvertBetween("UTF-32LE -> UTF-8 ASCII", ascii_runtime, .utf32_le, .utf8, allocator);
+    benchConvertBetween("UTF-32LE -> UTF-8 Chinese", chinese_runtime, .utf32_le, .utf8, allocator);
+    benchConvertBetween(
+        "UTF-16LE -> UTF-32LE ASCII",
+        ascii_runtime,
+        .utf16_le,
+        .utf32_le,
+        allocator,
+    );
+    benchConvertBetween(
+        "UTF-16LE -> UTF-32LE Chinese",
+        chinese_runtime,
+        .utf16_le,
+        .utf32_le,
+        allocator,
+    );
+    benchConvertBetween(
+        "UTF-32LE -> UTF-16LE ASCII",
+        ascii_runtime,
+        .utf32_le,
+        .utf16_le,
+        allocator,
+    );
+    benchConvertBetween(
+        "UTF-32LE -> UTF-16LE Chinese",
+        chinese_runtime,
+        .utf32_le,
+        .utf16_le,
+        allocator,
+    );
+    benchConvertBetween(
+        "windows-1252 -> UTF-8 accents",
+        accents_runtime,
+        .windows_1252,
+        .utf8,
+        allocator,
+    );
+    benchConvertBetween(
+        "UTF-8 -> windows-1252 accents",
+        accents_runtime,
+        .utf8,
+        .windows_1252,
+        allocator,
+    );
+    benchConvertBetween(
+        "GBK -> UTF-16LE Chinese",
+        chinese_runtime,
+        .gbk,
+        .utf16_le,
+        allocator,
+    );
+    benchConvertBetween(
+        "UTF-16LE -> GBK Chinese",
+        chinese_runtime,
+        .utf16_le,
+        .gbk,
+        allocator,
+    );
     benchCharset(
         "UTF-8 -> windows-1252 ASCII",
         ascii_runtime,

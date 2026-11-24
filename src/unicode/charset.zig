@@ -27,6 +27,8 @@ const euctw = @import("charset/euctw.zig");
 const iso2022cn = @import("charset/iso2022cn.zig");
 const utf8_vec = @import("charset/utf8.zig");
 const utf32 = @import("charset/utf32.zig");
+const single_byte = @import("charset/single_byte.zig");
+const dbcs_utf16 = @import("charset/dbcs_utf16.zig");
 
 const native_endian = @import("builtin").target.cpu.arch.endian();
 
@@ -1413,7 +1415,7 @@ fn convertUtf8ToDbcsFast(
                 break :blk false;
             }
             var buffer: [4]u8 = undefined;
-            const length = encode(codepoint, &buffer) orelse
+            const length = @call(.always_inline, encode, .{ codepoint, &buffer }) orelse
                 break :blk false;
             switch (length) {
                 1 => spare[written] = buffer[0],
@@ -1463,7 +1465,7 @@ fn convertDbcsToUtf8Fast(
     var index: usize = 0;
     var written: usize = 0;
     while (index < input.len) {
-        switch (decode(input, &index)) {
+        switch (@call(.always_inline, decode, .{ input, &index })) {
             .end => break,
             .codepoint => |codepoint| {
                 if (codepoint < 0x80) {
@@ -1667,11 +1669,11 @@ fn convertAllocStateless(
     const encode = comptime encoderFor(to);
     var index: usize = 0;
     while (index < input.len) {
-        switch (decode(input, &index)) {
+        switch (@call(.always_inline, decode, .{ input, &index })) {
             .end => break,
             .codepoint => |codepoint| {
                 var buffer: [16]u8 = undefined;
-                switch (encode(codepoint, &buffer)) {
+                switch (@call(.always_inline, encode, .{ codepoint, &buffer })) {
                     .written => |length| {
                         output.appendSliceAssumeCapacity(buffer[0..length]);
                     },
@@ -1740,6 +1742,34 @@ pub fn convertInto(
         try output.appendSlice(allocator, input);
         return;
     }
+    if (to == .utf16_le or to == .utf16_be) {
+        if (try dbcsToUtf16IntoFast(
+            allocator,
+            input,
+            from,
+            if (to == .utf16_le) .little else .big,
+            output,
+        )) return;
+    }
+    if (from == .utf16_le or from == .utf16_be) {
+        if (try utf16ToDbcsIntoFast(
+            allocator,
+            input,
+            to,
+            if (from == .utf16_le) .little else .big,
+            output,
+        )) return;
+    }
+    if (to == .utf8) {
+        if (singleByteKind(from)) |kind| {
+            return single_byte.decodeInto(allocator, input, kind, options, output);
+        }
+    }
+    if (from == .utf8) {
+        if (singleByteEncodeKind(to)) |kind| {
+            return single_byte.encodeInto(allocator, input, kind, options, output);
+        }
+    }
     if (from == .utf8 and (to == .utf16_le or to == .utf16_be)) {
         return utf8ToUtf16Into(
             allocator,
@@ -1754,6 +1784,30 @@ pub fn convertInto(
             allocator,
             input,
             if (from == .utf16_le) .little else .big,
+            options,
+            output,
+        );
+    }
+    if ((from == .utf16_le or from == .utf16_be) and
+        (to == .utf32_le or to == .utf32_be))
+    {
+        return utf32.utf16ToUtf32Into(
+            allocator,
+            input,
+            if (from == .utf16_le) .little else .big,
+            if (to == .utf32_le) .little else .big,
+            options,
+            output,
+        );
+    }
+    if ((from == .utf32_le or from == .utf32_be) and
+        (to == .utf16_le or to == .utf16_be))
+    {
+        return utf32.utf32ToUtf16Into(
+            allocator,
+            input,
+            if (from == .utf32_le) .little else .big,
+            if (to == .utf16_le) .little else .big,
             options,
             output,
         );
@@ -1791,6 +1845,44 @@ pub fn convertAlloc(
     if (asciiCompatible(from) and asciiCompatible(to) and isAscii(input)) {
         return allocator.dupe(u8, input);
     }
+    if (to == .utf16_le or to == .utf16_be) {
+        var fast = std.ArrayList(u8).empty;
+        errdefer fast.deinit(allocator);
+        if (try dbcsToUtf16IntoFast(
+            allocator,
+            input,
+            from,
+            if (to == .utf16_le) .little else .big,
+            &fast,
+        )) {
+            return fast.toOwnedSlice(allocator);
+        }
+        fast.deinit(allocator);
+    }
+    if (from == .utf16_le or from == .utf16_be) {
+        var fast = std.ArrayList(u8).empty;
+        errdefer fast.deinit(allocator);
+        if (try utf16ToDbcsIntoFast(
+            allocator,
+            input,
+            to,
+            if (from == .utf16_le) .little else .big,
+            &fast,
+        )) {
+            return fast.toOwnedSlice(allocator);
+        }
+        fast.deinit(allocator);
+    }
+    if (to == .utf8) {
+        if (singleByteKind(from)) |kind| {
+            return single_byte.decodeAlloc(allocator, input, kind, options);
+        }
+    }
+    if (from == .utf8) {
+        if (singleByteEncodeKind(to)) |kind| {
+            return single_byte.encodeAlloc(allocator, input, kind, options);
+        }
+    }
     if (from == .utf8 and (to == .utf16_le or to == .utf16_be)) {
         return utf8ToUtf16Alloc(
             allocator,
@@ -1804,6 +1896,28 @@ pub fn convertAlloc(
             allocator,
             input,
             if (from == .utf16_le) .little else .big,
+            options,
+        );
+    }
+    if ((from == .utf16_le or from == .utf16_be) and
+        (to == .utf32_le or to == .utf32_be))
+    {
+        return utf32.utf16ToUtf32Alloc(
+            allocator,
+            input,
+            if (from == .utf16_le) .little else .big,
+            if (to == .utf32_le) .little else .big,
+            options,
+        );
+    }
+    if ((from == .utf32_le or from == .utf32_be) and
+        (to == .utf16_le or to == .utf16_be))
+    {
+        return utf32.utf32ToUtf16Alloc(
+            allocator,
+            input,
+            if (from == .utf32_le) .little else .big,
+            if (to == .utf16_le) .little else .big,
             options,
         );
     }
@@ -1908,6 +2022,98 @@ fn asciiCompatible(encoding: Encoding) bool {
         .utf8, .ascii, .latin1, .x_user_defined => true,
         .gbk, .gb18030, .big5, .hkscs, .euc_tw, .euc_jp, .shift_jis, .euc_kr => true,
         else => singleByteIndex(encoding) != null,
+    };
+}
+
+/// Resolve a single-byte source to its direct decoder, if one exists.
+fn singleByteKind(encoding: Encoding) ?single_byte.Kind {
+    return switch (encoding) {
+        .ascii => .ascii_identity,
+        .latin1 => .latin1_identity,
+        .x_user_defined => .user_defined,
+        else => if (ibmPageIndex(encoding)) |page|
+            .{ .ibm_page = page }
+        else if (singleByteIndex(encoding)) |table_index|
+            .{ .table = table_index }
+        else
+            null,
+    };
+}
+
+/// Resolve a single-byte target. IBM pages keep the generic reverse scan.
+fn singleByteEncodeKind(encoding: Encoding) ?single_byte.Kind {
+    return switch (encoding) {
+        .ascii => .ascii_identity,
+        .latin1 => .latin1_identity,
+        .x_user_defined => .user_defined,
+        else => if (singleByteIndex(encoding)) |table_index|
+            .{ .table = table_index }
+        else
+            null,
+    };
+}
+
+/// Direct DBCS to UTF-16 for valid input; false means the generic converter
+/// must apply the error mode.
+fn dbcsToUtf16IntoFast(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    from: Encoding,
+    endian: std.builtin.Endian,
+    output: *std.ArrayList(u8),
+) error{OutOfMemory}!bool {
+    return switch (endian) {
+        .little => dbcsToUtf16IntoFastEndian(.little, allocator, input, from, output),
+        .big => dbcsToUtf16IntoFastEndian(.big, allocator, input, from, output),
+    };
+}
+
+fn dbcsToUtf16IntoFastEndian(
+    comptime endian: std.builtin.Endian,
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    from: Encoding,
+    output: *std.ArrayList(u8),
+) error{OutOfMemory}!bool {
+    return switch (from) {
+        .gbk => dbcs_utf16.dbcsToUtf16Into(cjk.gbkNext, endian, allocator, input, output),
+        .gb18030 => dbcs_utf16.dbcsToUtf16Into(cjk.gb18030Next, endian, allocator, input, output),
+        .big5 => dbcs_utf16.dbcsToUtf16Into(cjk.big5Next, endian, allocator, input, output),
+        .euc_jp => dbcs_utf16.dbcsToUtf16Into(cjk.eucJpNext, endian, allocator, input, output),
+        .shift_jis => dbcs_utf16.dbcsToUtf16Into(cjk.shiftJisNext, endian, allocator, input, output),
+        .euc_kr => dbcs_utf16.dbcsToUtf16Into(cjk.eucKrNext, endian, allocator, input, output),
+        else => false,
+    };
+}
+
+fn utf16ToDbcsIntoFast(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    to: Encoding,
+    endian: std.builtin.Endian,
+    output: *std.ArrayList(u8),
+) error{OutOfMemory}!bool {
+    return switch (endian) {
+        .little => utf16ToDbcsIntoFastEndian(.little, allocator, input, to, output),
+        .big => utf16ToDbcsIntoFastEndian(.big, allocator, input, to, output),
+    };
+}
+
+fn utf16ToDbcsIntoFastEndian(
+    comptime endian: std.builtin.Endian,
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    to: Encoding,
+    output: *std.ArrayList(u8),
+) error{OutOfMemory}!bool {
+    return switch (to) {
+        .gbk => dbcs_utf16.utf16ToDbcsInto(cjk.gbkEncodeFast, endian, allocator, input, output),
+        .gb18030 => dbcs_utf16.utf16ToDbcsInto(cjk.gbkEncodeFast, endian, allocator, input, output),
+        .big5 => dbcs_utf16.utf16ToDbcsInto(cjk.big5EncodeFast, endian, allocator, input, output),
+        .euc_jp => dbcs_utf16.utf16ToDbcsInto(cjk.eucJpEncodeFast, endian, allocator, input, output),
+        .shift_jis => dbcs_utf16.utf16ToDbcsInto(cjk.shiftJisEncodeFast, endian, allocator, input, output),
+        .euc_kr => dbcs_utf16.utf16ToDbcsInto(cjk.eucKrEncodeFast, endian, allocator, input, output),
+        else => false,
     };
 }
 
@@ -2359,6 +2565,220 @@ test "UTF-8 and UTF-32 conversion" {
     );
     defer allocator.free(be);
     try testing.expectEqualStrings("\u{FFFD}", be);
+}
+
+test "UTF-16 and UTF-32 conversion" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const text = "abcdefghijklmnopqrstuvwxyz0123456789" ** 2 ++
+        "A\u{00E9}\u{4E16}\u{1F600}" ** 4 ++ "\u{4F60}" ** 20;
+    inline for ([_]Encoding{ .utf16_le, .utf16_be }) |utf16_encoding| {
+        inline for ([_]Encoding{ .utf32_le, .utf32_be }) |utf32_encoding| {
+            const utf16_bytes = try encodeAlloc(allocator, text, utf16_encoding, .{});
+            defer allocator.free(utf16_bytes);
+            const utf32_bytes = try convertAlloc(
+                allocator,
+                utf16_bytes,
+                utf16_encoding,
+                utf32_encoding,
+                .{},
+            );
+            defer allocator.free(utf32_bytes);
+            const back = try convertAlloc(
+                allocator,
+                utf32_bytes,
+                utf32_encoding,
+                utf16_encoding,
+                .{},
+            );
+            defer allocator.free(back);
+            try testing.expectEqualSlices(u8, utf16_bytes, back);
+
+            const utf8_bytes = try convertAlloc(
+                allocator,
+                utf32_bytes,
+                utf32_encoding,
+                .utf8,
+                .{},
+            );
+            defer allocator.free(utf8_bytes);
+            try testing.expectEqualStrings(text, utf8_bytes);
+
+            var output = std.ArrayList(u8).empty;
+            defer output.deinit(allocator);
+            try output.appendSlice(allocator, "prefix:");
+            try convertInto(
+                allocator,
+                utf16_bytes,
+                utf16_encoding,
+                utf32_encoding,
+                &output,
+                .{},
+            );
+            try testing.expectEqualSlices(u8, utf32_bytes, output.items[7..]);
+        }
+    }
+
+    // A lone surrogate becomes the target's replacement scalar.
+    const lone = try convertAlloc(
+        allocator,
+        &.{ 0x00, 0xD8 },
+        .utf16_le,
+        .utf32_le,
+        .{},
+    );
+    defer allocator.free(lone);
+    try testing.expectEqual(@as(usize, 4), lone.len);
+    try testing.expectEqual(
+        @as(u32, 0xFFFD),
+        std.mem.readInt(u32, lone[0..4], .little),
+    );
+    try testing.expectError(
+        error.InvalidSequence,
+        convertAlloc(allocator, &.{ 0x00, 0xD8 }, .utf16_le, .utf32_le, .{ .on_error = .strict }),
+    );
+
+    // An invalid UTF-32 scalar becomes U+FFFD in UTF-16.
+    const bad = try convertAlloc(
+        allocator,
+        &.{ 0x00, 0x00, 0x11, 0x00 },
+        .utf32_le,
+        .utf16_le,
+        .{},
+    );
+    defer allocator.free(bad);
+    try testing.expectEqualSlices(u8, &.{ 0xFD, 0xFF }, bad);
+
+    // Supplementary scalars round-trip through a surrogate pair.
+    const emoji = "\u{1F600}";
+    const emoji32 = try encodeAlloc(allocator, emoji, .utf32_le, .{});
+    defer allocator.free(emoji32);
+    const emoji16 = try convertAlloc(allocator, emoji32, .utf32_le, .utf16_le, .{});
+    defer allocator.free(emoji16);
+    const emoji_utf8 = try convertAlloc(allocator, emoji16, .utf16_le, .utf8, .{});
+    defer allocator.free(emoji_utf8);
+    try testing.expectEqualStrings(emoji, emoji_utf8);
+}
+
+test "direct single-byte conversion" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    // Latin-1 is an identity mapping in both directions.
+    const latin1 = try convertAlloc(allocator, "A\u{00E9}\u{00FF}", .utf8, .latin1, .{});
+    defer allocator.free(latin1);
+    try testing.expectEqualSlices(u8, &.{ 0x41, 0xE9, 0xFF }, latin1);
+    const latin1_back = try convertAlloc(allocator, latin1, .latin1, .utf8, .{});
+    defer allocator.free(latin1_back);
+    try testing.expectEqualStrings("A\u{00E9}\u{00FF}", latin1_back);
+
+    // x-user-defined maps 0x80..0xFF to U+F780..U+F7FF.
+    const user = try convertAlloc(
+        allocator,
+        &.{ 0x41, 0x80, 0xFF },
+        .x_user_defined,
+        .utf8,
+        .{},
+    );
+    defer allocator.free(user);
+    try testing.expectEqualStrings("A\u{F780}\u{F7FF}", user);
+    const user_back = try convertAlloc(allocator, user, .utf8, .x_user_defined, .{});
+    defer allocator.free(user_back);
+    try testing.expectEqualSlices(u8, &.{ 0x41, 0x80, 0xFF }, user_back);
+
+    // ASCII rejects high bytes on decode and non-ASCII scalars on encode.
+    const ascii_replaced = try convertAlloc(
+        allocator,
+        &.{ 0x41, 0xE9, 0x42 },
+        .ascii,
+        .utf8,
+        .{},
+    );
+    defer allocator.free(ascii_replaced);
+    try testing.expectEqualStrings("A\u{FFFD}B", ascii_replaced);
+    try testing.expectError(
+        error.InvalidSequence,
+        convertAlloc(allocator, &.{0xE9}, .ascii, .utf8, .{ .on_error = .strict }),
+    );
+    const unmappable = try convertAlloc(allocator, "A\u{4E16}B", .utf8, .ascii, .{});
+    defer allocator.free(unmappable);
+    try testing.expectEqualStrings("A?B", unmappable);
+    try testing.expectError(
+        error.UnmappableCharacter,
+        convertAlloc(allocator, "\u{4E16}", .utf8, .ascii, .{ .on_error = .strict }),
+    );
+
+    // IBM pages decode through their full 256-byte table.
+    const ibm = try convertAlloc(allocator, &.{ 0x80, 0x81 }, .ibm866, .utf8, .{});
+    defer allocator.free(ibm);
+    try testing.expectEqualStrings("\u{0410}\u{0411}", ibm);
+
+    // convertInto appends to the caller's buffer.
+    var output = std.ArrayList(u8).empty;
+    defer output.deinit(allocator);
+    try output.appendSlice(allocator, "p:");
+    try convertInto(allocator, &.{0xE9}, .windows_1252, .utf8, &output, .{});
+    try testing.expectEqualStrings("p:\u{00E9}", output.items);
+}
+
+test "DBCS and UTF-16 conversion" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const cases = [_]struct { encoding: Encoding, text: []const u8 }{
+        .{ .encoding = .gbk, .text = "\u{4F60}\u{597D}\u{FF0C}\u{4E16}\u{754C}\u{FF01}\u{4E2D}\u{6587}\u{7F16}\u{7801}\u{8F6C}\u{6362}\u{57FA}\u{51C6}\u{6D4B}\u{8BD5}\u{3002}" ** 4 },
+        .{ .encoding = .big5, .text = "\u{4F60}\u{597D}\u{FF0C}\u{4E16}\u{754C}\u{FF01}\u{4E2D}\u{6587}\u{7DE8}\u{78BC}\u{8F49}\u{63DB}\u{57FA}\u{6E96}\u{6E2C}\u{8A66}\u{3002}" ** 4 },
+        .{ .encoding = .shift_jis, .text = "\u{3053}\u{3093}\u{306B}\u{3061}\u{306F}\u{4E16}\u{754C}\u{3002}\u{65E5}\u{672C}\u{8A9E}\u{306E}\u{6587}\u{5B57}\u{30B3}\u{30FC}\u{30C9}\u{5909}\u{63DB}\u{3002}" ** 4 },
+        .{ .encoding = .euc_kr, .text = "\u{C548}\u{B155}\u{D558}\u{C138}\u{C694} \u{C138}\u{ACC4}. \u{D55C}\u{AD6D}\u{C5B4} \u{C778}\u{CF54}\u{B529} \u{BCC0}\u{D658}." ** 4 },
+        .{ .encoding = .euc_jp, .text = "\u{3053}\u{3093}\u{306B}\u{3061}\u{306F}\u{4E16}\u{754C}\u{3002}\u{65E5}\u{672C}\u{8A9E}\u{306E}\u{6587}\u{5B57}\u{30B3}\u{30FC}\u{30C9}\u{5909}\u{63DB}\u{3002}" ** 4 },
+    };
+    for (cases) |case| {
+        inline for ([_]Encoding{ .utf16_le, .utf16_be }) |utf16_encoding| {
+            const dbcs = try encodeAlloc(allocator, case.text, case.encoding, .{});
+            defer allocator.free(dbcs);
+            const utf16 = try convertAlloc(
+                allocator,
+                dbcs,
+                case.encoding,
+                utf16_encoding,
+                .{},
+            );
+            defer allocator.free(utf16);
+            const back = try convertAlloc(
+                allocator,
+                utf16,
+                utf16_encoding,
+                case.encoding,
+                .{},
+            );
+            defer allocator.free(back);
+            try testing.expectEqualSlices(u8, dbcs, back);
+            const utf8 = try convertAlloc(
+                allocator,
+                utf16,
+                utf16_encoding,
+                .utf8,
+                .{},
+            );
+            defer allocator.free(utf8);
+            try testing.expectEqualStrings(case.text, utf8);
+        }
+    }
+
+    // Malformed DBCS input still takes the generic error path.
+    const bad = try convertAlloc(allocator, &.{ 0xFF, 0x41 }, .gbk, .utf16_le, .{});
+    defer allocator.free(bad);
+    try testing.expectEqualSlices(u8, &.{ 0xFD, 0xFF, 0x41, 0x00 }, bad);
+    try testing.expectError(
+        error.InvalidSequence,
+        convertAlloc(allocator, &.{0xFF}, .gbk, .utf16_le, .{ .on_error = .strict }),
+    );
+
+    // Unmappable scalars in the target DBCS use the replacement path.
+    const unmappable = try convertAlloc(allocator, "A\u{1F600}B", .utf8, .gbk, .{});
+    defer allocator.free(unmappable);
+    try testing.expectEqualStrings("A?B", unmappable);
 }
 
 test "multi-byte conversion" {

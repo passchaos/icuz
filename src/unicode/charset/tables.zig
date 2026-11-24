@@ -60,34 +60,67 @@ pub const iso2022jp_katakana_reverse = findSection(15);
 pub const jis0212_reverse = findSection(16);
 pub const shift_jis_reverse = findSection(17);
 
-pub fn singleByteForward(table_index: usize, byte: u8) ?u21 {
+/// A resolved forward table covering 0x80..0xFF.
+pub const SingleByteForwardTable = struct {
+    offset: usize,
+
+    pub fn get(self: SingleByteForwardTable, byte: u8) ?u21 {
+        const value = readU16(self.offset + (@as(usize, byte) - 0x80) * 2);
+        return if (value == 0) null else value;
+    }
+};
+
+pub fn singleByteForwardView(table_index: usize) ?SingleByteForwardTable {
     const base = single_byte_forward.offset;
     const table_count = readU16(base);
     const entries = readU16(base + 2);
-    if (table_index >= table_count or entries != 128 or byte < 0x80) return null;
-    const value = readU16(base + 4 + (table_index * entries + byte - 0x80) * 2);
-    return if (value == 0) null else value;
+    if (table_index >= table_count or entries != 128) return null;
+    return .{ .offset = base + 4 + table_index * entries * 2 };
 }
 
-pub fn singleByteReverse(table_index: usize, codepoint: u21) ?u8 {
+pub fn singleByteForward(table_index: usize, byte: u8) ?u21 {
+    if (byte < 0x80) return null;
+    const view = singleByteForwardView(table_index) orelse return null;
+    return view.get(byte);
+}
+
+/// A resolved reverse table. Resolving once keeps the per-scalar lookup a
+/// plain binary search instead of re-walking every earlier table's count.
+pub const SingleByteTable = struct {
+    records: usize,
+    count: usize,
+
+    pub fn reverse(self: SingleByteTable, codepoint: u21) ?u8 {
+        var low: usize = 0;
+        var high: usize = self.count;
+        while (low < high) {
+            const mid = low + (high - low) / 2;
+            const value = readU16(self.records + mid * 3);
+            if (value == codepoint) return blob[self.records + mid * 3 + 2];
+            if (value < codepoint) low = mid + 1 else high = mid;
+        }
+        return null;
+    }
+};
+
+pub fn singleByteTableView(table_index: usize) ?SingleByteTable {
     const base = single_byte_reverse.offset;
     const table_count = readU16(base);
     if (table_index >= table_count) return null;
-    const count = readU16(base + 2 + table_index * 2);
     var records = base + 2 + table_count * 2;
     var index: usize = 0;
     while (index < table_index) : (index += 1) {
         records += @as(usize, readU16(base + 2 + index * 2)) * 3;
     }
-    var low: usize = 0;
-    var high: usize = count;
-    while (low < high) {
-        const mid = low + (high - low) / 2;
-        const value = readU16(records + mid * 3);
-        if (value == codepoint) return blob[records + mid * 3 + 2];
-        if (value < codepoint) low = mid + 1 else high = mid;
-    }
-    return null;
+    return .{
+        .records = records,
+        .count = readU16(base + 2 + table_index * 2),
+    };
+}
+
+pub fn singleByteReverse(table_index: usize, codepoint: u21) ?u8 {
+    const view = singleByteTableView(table_index) orelse return null;
+    return view.reverse(codepoint);
 }
 
 /// Look up a pointer in a forward index. Zero marks an unmapped pointer.
