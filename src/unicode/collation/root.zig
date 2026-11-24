@@ -3515,6 +3515,7 @@ fn appendImplicitSortKey(
     }
     // The caller already proved the input is NFD.
     const tables = &root_tables_storage;
+    var all_han = true;
     var scan: usize = 0;
     while (scan < codepoints.len) {
         const codepoint = codepoints[scan];
@@ -3541,6 +3542,7 @@ fn appendImplicitSortKey(
             scan += run;
             continue;
         }
+        all_han = false;
         if (codepoint >= 0x300 and
             combining_class.forCodepoint(codepoint) != 0)
         {
@@ -3563,32 +3565,43 @@ fn appendImplicitSortKey(
     var length = output.items.len;
     const items = output.items.ptr;
     var index: usize = 0;
-    while (index < count) {
-        const first = codepoints[index];
-        if (first >= 0x4e00 and first <= 0x9fff) {
-            // Runs of unified ideographs take the constant-stride formula,
-            // which the compiler can widen; `implicitWeights`' other
-            // branches stay out of the loop body.
-            var run: usize = 1;
-            while (index + run < count) : (run += 1) {
-                const codepoint = codepoints[index + run];
-                if (codepoint < 0x4e00 or codepoint > 0x9fff) break;
-            }
-            var cursor = index;
-            while (cursor < index + run) : (cursor += 1) {
-                const codepoint: u32 = codepoints[cursor];
-                items[length] = (0xFB40 + (codepoint >> 15)) << 12;
-                items[length + 1] = ((codepoint & 0x7fff) | 0x8000) << 12;
-                length += 2;
-            }
-            index += run;
-            continue;
+    if (all_han) {
+        // The pre-scan already classified every scalar, so the widenable
+        // constant-stride loop runs without range tests or run bookkeeping.
+        while (index < count) : (index += 1) {
+            const codepoint: u32 = codepoints[index];
+            items[length] = (0xFB40 + (codepoint >> 15)) << 12;
+            items[length + 1] = ((codepoint & 0x7fff) | 0x8000) << 12;
+            length += 2;
         }
-        const weights = implicitWeights(first);
-        items[length] = weights.first;
-        items[length + 1] = weights.second;
-        length += 2;
-        index += 1;
+    } else {
+        while (index < count) {
+            const first = codepoints[index];
+            if (first >= 0x4e00 and first <= 0x9fff) {
+                // Runs of unified ideographs take the constant-stride formula,
+                // which the compiler can widen; `implicitWeights`' other
+                // branches stay out of the loop body.
+                var run: usize = 1;
+                while (index + run < count) : (run += 1) {
+                    const codepoint = codepoints[index + run];
+                    if (codepoint < 0x4e00 or codepoint > 0x9fff) break;
+                }
+                var cursor = index;
+                while (cursor < index + run) : (cursor += 1) {
+                    const codepoint: u32 = codepoints[cursor];
+                    items[length] = (0xFB40 + (codepoint >> 15)) << 12;
+                    items[length + 1] = ((codepoint & 0x7fff) | 0x8000) << 12;
+                    length += 2;
+                }
+                index += run;
+                continue;
+            }
+            const weights = implicitWeights(first);
+            items[length] = weights.first;
+            items[length + 1] = weights.second;
+            length += 2;
+            index += 1;
+        }
     }
     items[length] = 0;
     length += 1;
