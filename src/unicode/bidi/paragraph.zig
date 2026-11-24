@@ -458,6 +458,7 @@ pub fn resolve(
 
     var count: usize = 0;
     var cursor: usize = 0;
+    var all_ascii = true;
     while (cursor < text.len) {
         const start = cursor;
         const first = text[cursor];
@@ -472,6 +473,7 @@ pub fn resolve(
             cursor += 1;
             continue;
         }
+        all_ascii = false;
         // Validation is fused into the decode, so the scan does not pay a
         // separate UTF-8 pass.
         const decoded = scalar_value.decodeValidatingPacked(text, cursor);
@@ -485,6 +487,39 @@ pub fn resolve(
         };
         classes[count] = property_data.class(codepoint);
         count += 1;
+    }
+
+    // ASCII has no strong RTL scalar, so an LTR paragraph resolves every
+    // scalar to the paragraph level; only boundary neutrals keep the removed
+    // marker. Skipping the rule engine keeps ASCII paragraphs allocation-bound.
+    if (all_ascii and base_direction != .rtl) {
+        var index: usize = 0;
+        const bn: @Vector(32, u8) = @splat(@intFromEnum(Class.bn));
+        const removed: @Vector(32, u8) = @splat(resolver.removed_level);
+        const zero: @Vector(32, u8) = @splat(0);
+        while (index + 32 <= count) : (index += 32) {
+            const class_bytes = std.mem.sliceAsBytes(
+                classes[index..][0..32],
+            );
+            const chunk: @Vector(32, u8) = class_bytes[0..32].*;
+            levels[index..][0..32].* = @bitCast(
+                @select(u8, chunk == bn, removed, zero),
+            );
+        }
+        while (index < count) : (index += 1) {
+            levels[index] = if (classes[index] == .bn)
+                resolver.removed_level
+            else
+                0;
+        }
+        return .{
+            .allocator = allocator,
+            .base_level = 0,
+            .scalars = scalars[0..count],
+            .classes = classes[0..count],
+            .levels = levels[0..count],
+            .block = block,
+        };
     }
 
     var scratch = resolver.Scratch.init(allocator);
@@ -524,6 +559,53 @@ pub fn direction(text: []const u8) error{InvalidUtf8}!BaseDirection {
         }
     }
     return .ltr;
+}
+
+test "ASCII paragraphs resolve to the rule-engine levels" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const inputs = [_][]const u8{
+        "",
+        "abc",
+        "1 2 3",
+        "a\tb\nc\r\nd",
+        "\x00a\x01b\x7fc",
+        "Hello, world! 0123456789 https://example.com/?q=1\n",
+        "\x1f\x1e\x1d",
+    };
+    for (inputs) |text| {
+        inline for ([_]BaseDirection{ .ltr, .auto }) |mode| {
+            var paragraph = try resolve(allocator, text, mode);
+            defer paragraph.deinit();
+
+            // The fast path must match the rule engine on the same classes.
+            var scalars: [128]resolver.Scalar = undefined;
+            var classes: [128]Class = undefined;
+            var levels: [128]u8 = undefined;
+            for (text, 0..) |byte, index| {
+                scalars[index] = .{
+                    .codepoint = byte,
+                    .byte_start = index,
+                    .byte_len = 1,
+                };
+                classes[index] = property_data.class(byte);
+            }
+            var scratch = resolver.Scratch.init(allocator);
+            defer scratch.deinit();
+            const base = try scratch.resolve(
+                scalars[0..text.len],
+                classes[0..text.len],
+                levels[0..text.len],
+                mode,
+            );
+            try testing.expectEqual(base, paragraph.base_level);
+            try testing.expectEqualSlices(
+                u8,
+                levels[0..text.len],
+                paragraph.levels,
+            );
+        }
+    }
 }
 
 test "first-strong paragraph direction ignores isolated content" {
