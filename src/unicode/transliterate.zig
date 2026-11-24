@@ -713,7 +713,10 @@ const literal_cache_len = 64;
 const LiteralCacheEntry = struct {
     range_start: usize = 0,
     first: u21 = 0,
-    index: usize = 0,
+    index: u32 = 0,
+    /// End of the entries that share `first`; equal to `index` when no entry
+    /// starts with it.
+    group_end: u32 = 0,
     valid: bool = false,
 };
 
@@ -896,6 +899,7 @@ fn findMatchInRange(
     }
 
     var low: usize = undefined;
+    var group_end: usize = undefined;
     // Short literal tables need at most four probes, which is cheaper than
     // the thread-local cache probe.
     if (literals_end > literals_start + 32) {
@@ -907,6 +911,7 @@ fn findMatchInRange(
             cache_slot.first == first)
         {
             low = cache_slot.index;
+            group_end = cache_slot.group_end;
         } else {
             low = literals_start;
             var high = literals_end;
@@ -918,10 +923,17 @@ fn findMatchInRange(
                     high = middle;
                 }
             }
+            group_end = low;
+            while (group_end < literals_end and
+                entryFirstCodepoint(group_end) == first)
+            {
+                group_end += 1;
+            }
             cache_slot.* = .{
                 .range_start = range.start,
                 .first = first,
-                .index = low,
+                .index = @intCast(low),
+                .group_end = @intCast(group_end),
                 .valid = true,
             };
         }
@@ -936,6 +948,12 @@ fn findMatchInRange(
                 high = middle;
             }
         }
+        group_end = low;
+        while (group_end < literals_end and
+            entryFirstCodepoint(group_end) == first)
+        {
+            group_end += 1;
+        }
     }
     // Candidate entries are rejected with single field loads: a group of
     // rules that share a first code point (base letter plus its digraphs)
@@ -943,8 +961,7 @@ fn findMatchInRange(
     // record for each one dominated the pass. Only the matching entry is
     // decoded in full.
     var entry_index = low;
-    while (entry_index < literals_end) : (entry_index += 1) {
-        if (entryFirstCodepoint(entry_index) != first) break;
+    while (entry_index < group_end) : (entry_index += 1) {
         const base = entry_offset + entry_index * 34;
         const length = @as(usize, data[base + 4]);
         if (length > codepoints.len - index) continue;
