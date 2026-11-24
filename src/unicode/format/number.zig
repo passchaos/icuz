@@ -2393,8 +2393,8 @@ fn currencyDisplayText(
 ) []const u8 {
     if (display == .code) return code;
     if (display == .hidden) return "";
-    if (currencyEntry(locale, code)) |entry| {
-        if (entry.symbol.len != 0) return entry.symbol;
+    if (currencies.findSymbol(locale.id, code)) |symbol| {
+        if (symbol.len != 0) return symbol;
         // The locale resolves the currency but defines no standard symbol,
         // so ICU falls back to the ISO code instead of borrowing another
         // locale's symbol.

@@ -64,7 +64,41 @@ pub fn codeAtPublic(index: usize) []const u8 {
     return codeAt(index);
 }
 
+const code_cache_len = 16;
+
+const CodeCacheEntry = struct {
+    code: [4]u8 = [_]u8{0} ** 4,
+    len: u8 = 0,
+    index: u16 = 0,
+    found: bool = false,
+};
+
+/// Formatting one currency repeatedly should not repeat the binary search
+/// over the ISO code list.
+threadlocal var code_cache: [code_cache_len]CodeCacheEntry =
+    [_]CodeCacheEntry{.{}} ** code_cache_len;
+
 fn codeIndex(code: []const u8) ?usize {
+    if (code.len <= 4) {
+        var hash: usize = code.len;
+        for (code) |byte| hash = hash *% 31 +% byte;
+        const slot = &code_cache[hash & (code_cache_len - 1)];
+        if (slot.len == code.len and
+            std.mem.eql(u8, slot.code[0..slot.len], code))
+        {
+            return if (slot.found) slot.index else null;
+        }
+        const result = codeIndexUncached(code);
+        slot.len = @intCast(code.len);
+        @memcpy(slot.code[0..code.len], code);
+        slot.found = result != null;
+        if (result) |index| slot.index = @intCast(index);
+        return result;
+    }
+    return codeIndexUncached(code);
+}
+
+fn codeIndexUncached(code: []const u8) ?usize {
     var low: usize = 0;
     var high: usize = currency_count;
     while (low < high) {
@@ -181,31 +215,50 @@ const LookupCacheEntry = struct {
 threadlocal var lookup_cache: [lookup_cache_len]LookupCacheEntry =
     [_]LookupCacheEntry{.{}} ** lookup_cache_len;
 
+/// Cached lookup slot for `locale_name` and `code`, populated on a miss.
+/// Null when the key is too long for the cache.
+fn cachedSlot(
+    locale_name: []const u8,
+    code: []const u8,
+) ?*const LookupCacheEntry {
+    if (locale_name.len > 16 or code.len > 8) return null;
+    var hash: usize = locale_name.len * 31 + code.len;
+    for (locale_name) |byte| hash = hash *% 31 +% byte;
+    for (code) |byte| hash = hash *% 31 +% byte;
+    const slot = &lookup_cache[hash & (lookup_cache_len - 1)];
+    if (slot.locale_len == locale_name.len and
+        slot.code_len == code.len and
+        std.mem.eql(u8, slot.locale[0..slot.locale_len], locale_name) and
+        std.mem.eql(u8, slot.code[0..slot.code_len], code))
+    {
+        return slot;
+    }
+    const result = lookup(locale_name, code);
+    slot.locale_len = @intCast(locale_name.len);
+    @memcpy(slot.locale[0..locale_name.len], locale_name);
+    slot.code_len = @intCast(code.len);
+    @memcpy(slot.code[0..code.len], code);
+    slot.found = result != null;
+    if (result) |entry| slot.entry = entry;
+    return slot;
+}
+
 /// Localized symbol and display names for a currency, or null when the
 /// locale has no data for it.
 pub fn find(locale_name: []const u8, code: []const u8) ?Entry {
-    if (locale_name.len <= 16 and code.len <= 8) {
-        var hash: usize = locale_name.len * 31 + code.len;
-        for (locale_name) |byte| hash = hash *% 31 +% byte;
-        for (code) |byte| hash = hash *% 31 +% byte;
-        const slot = &lookup_cache[hash & (lookup_cache_len - 1)];
-        if (slot.locale_len == locale_name.len and
-            slot.code_len == code.len and
-            std.mem.eql(u8, slot.locale[0..slot.locale_len], locale_name) and
-            std.mem.eql(u8, slot.code[0..slot.code_len], code))
-        {
-            return if (slot.found) slot.entry else null;
-        }
-        const result = lookup(locale_name, code);
-        slot.locale_len = @intCast(locale_name.len);
-        @memcpy(slot.locale[0..locale_name.len], locale_name);
-        slot.code_len = @intCast(code.len);
-        @memcpy(slot.code[0..code.len], code);
-        slot.found = result != null;
-        if (result) |entry| slot.entry = entry;
-        return result;
+    if (cachedSlot(locale_name, code)) |slot| {
+        return if (slot.found) slot.entry else null;
     }
     return lookup(locale_name, code);
+}
+
+/// Localized currency symbol only. Callers that just need the symbol skip
+/// copying the 112-byte `Entry` that `find` returns by value.
+pub fn findSymbol(locale_name: []const u8, code: []const u8) ?[]const u8 {
+    if (cachedSlot(locale_name, code)) |slot| {
+        return if (slot.found) slot.entry.symbol else null;
+    }
+    return if (lookup(locale_name, code)) |entry| entry.symbol else null;
 }
 
 /// CLDR currency code for an ISO 3166 region, such as "USD" for "US".
