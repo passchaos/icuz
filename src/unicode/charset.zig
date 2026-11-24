@@ -25,6 +25,8 @@ const iso2022kr = @import("charset/iso2022kr.zig");
 const hkscs = @import("charset/hkscs.zig");
 const euctw = @import("charset/euctw.zig");
 const iso2022cn = @import("charset/iso2022cn.zig");
+const utf8_vec = @import("charset/utf8.zig");
+const utf32 = @import("charset/utf32.zig");
 
 const native_endian = @import("builtin").target.cpu.arch.endian();
 
@@ -205,26 +207,11 @@ pub fn minCharSize(encoding: Encoding) u8 {
     };
 }
 
-pub const ErrorMode = enum {
-    /// Return `error.InvalidSequence` or `error.UnmappableCharacter`.
-    strict,
-    /// Substitute the replacement code point (U+FFFD by default).
-    replace,
-    /// Drop invalid input and continue.
-    ignore,
-};
+pub const ErrorMode = types.ErrorMode;
 
-pub const Options = struct {
-    on_error: ErrorMode = .replace,
-    replacement: u21 = 0xFFFD,
-};
+pub const Options = types.Options;
 
-pub const Error = error{
-    OutOfMemory,
-    InvalidSequence,
-    UnmappableCharacter,
-    InvalidCodepoint,
-};
+pub const Error = types.Error;
 
 const Alias = struct {
     name: []const u8,
@@ -1012,59 +999,6 @@ fn utf8ToUtf16Into(
     };
 }
 
-/// Lane masks for deinterleaving a 48-byte block of sixteen three-byte
-/// sequences into its lead and continuation byte vectors.
-fn threeByteLane(comptime offset: usize) @Vector(16, i32) {
-    var mask: [16]i32 = undefined;
-    for (&mask, 0..) |*lane, index| lane.* = @intCast(index * 3 + offset);
-    return mask;
-}
-
-/// Decode sixteen consecutive three-byte BMP sequences at `index`. Returns
-/// null when the block holds anything else, so the scalar path can take over.
-inline fn decodeThreeByteBlock(
-    input: []const u8,
-    index: usize,
-) ?@Vector(16, u16) {
-    const Lane = @Vector(16, u8);
-    const chunk: @Vector(48, u8) = input[index..][0..48].*;
-    const lead = @shuffle(u8, chunk, undefined, threeByteLane(0));
-    const second = @shuffle(u8, chunk, undefined, threeByteLane(1));
-    const third = @shuffle(u8, chunk, undefined, threeByteLane(2));
-    if (!@reduce(.And, (lead >= @as(Lane, @splat(0xe0))) &
-        (lead <= @as(Lane, @splat(0xef)))))
-    {
-        return null;
-    }
-    if (!@reduce(.And, (second >= @as(Lane, @splat(0x80))) &
-        (second <= @as(Lane, @splat(0xbf)))))
-    {
-        return null;
-    }
-    if (!@reduce(.And, (third >= @as(Lane, @splat(0x80))) &
-        (third <= @as(Lane, @splat(0xbf)))))
-    {
-        return null;
-    }
-    const Wide = @Vector(16, u16);
-    const lead_wide: Wide = @intCast(lead & @as(Lane, @splat(0x0f)));
-    const second_wide: Wide = @intCast(second & @as(Lane, @splat(0x3f)));
-    const third_wide: Wide = @intCast(third & @as(Lane, @splat(0x3f)));
-    // Multiplying by powers of two keeps the shift counts out of vector
-    // operands, whose element type would be Log2Int(u16).
-    const value: Wide = (lead_wide * @as(Wide, @splat(1 << 12))) |
-        (second_wide * @as(Wide, @splat(1 << 6))) |
-        third_wide;
-    // Overlong forms and U+D800..U+DFFF must not reach the output.
-    if (@reduce(.Or, value < @as(Wide, @splat(0x800)))) return null;
-    if (@reduce(.Or, (value >= @as(Wide, @splat(0xd800))) &
-        (value <= @as(Wide, @splat(0xdfff)))))
-    {
-        return null;
-    }
-    return value;
-}
-
 fn utf8ToUtf16IntoEndian(
     comptime endian: std.builtin.Endian,
     allocator: std.mem.Allocator,
@@ -1125,7 +1059,7 @@ fn utf8ToUtf16IntoEndian(
             // Sixteen sequences per step when a whole block is plain BMP
             // three-byte data.
             while (index + 48 <= input.len) {
-                const wide = decodeThreeByteBlock(input, index) orelse break;
+                const wide = utf8_vec.decodeThreeByteBlock(input, index) orelse break;
                 const start = output.items.len;
                 output.items.len = start + 32;
                 const stored = if (endian == native_endian)
@@ -1216,66 +1150,6 @@ fn utf8ToUtf16Alloc(
     return output.toOwnedSlice(allocator);
 }
 
-/// Write one valid scalar as UTF-8 at `written` and return the new length.
-inline fn writeUtf8Scalar(spare: []u8, written: usize, codepoint: u21) usize {
-    if (codepoint < 0x800) {
-        spare[written] = @intCast(0xC0 | (codepoint >> 6));
-        spare[written + 1] = @intCast(0x80 | (codepoint & 0x3F));
-        return written + 2;
-    }
-    if (codepoint < 0x10000) {
-        spare[written] = @intCast(0xE0 | (codepoint >> 12));
-        spare[written + 1] = @intCast(0x80 | ((codepoint >> 6) & 0x3F));
-        spare[written + 2] = @intCast(0x80 | (codepoint & 0x3F));
-        return written + 3;
-    }
-    spare[written] = @intCast(0xF0 | (codepoint >> 18));
-    spare[written + 1] = @intCast(0x80 | ((codepoint >> 12) & 0x3F));
-    spare[written + 2] = @intCast(0x80 | ((codepoint >> 6) & 0x3F));
-    spare[written + 3] = @intCast(0x80 | (codepoint & 0x3F));
-    return written + 4;
-}
-
-/// Interleave masks for packing sixteen BMP scalars into their UTF-8 bytes.
-/// Negative lanes select from the second operand, as `@shuffle` defines.
-fn utf8PairLanes() @Vector(32, i32) {
-    var mask: [32]i32 = undefined;
-    for (0..16) |index| {
-        mask[index * 2] = @intCast(index);
-        mask[index * 2 + 1] = -@as(i32, @intCast(index)) - 1;
-    }
-    return mask;
-}
-
-fn utf8TripleLanes() @Vector(48, i32) {
-    var mask: [48]i32 = undefined;
-    for (0..16) |index| {
-        mask[index * 3] = @intCast(index * 2);
-        mask[index * 3 + 1] = @intCast(index * 2 + 1);
-        mask[index * 3 + 2] = -@as(i32, @intCast(index)) - 1;
-    }
-    return mask;
-}
-
-/// Apply the configured error mode for one malformed or incomplete unit.
-/// Returns true when the caller must fail with `error.InvalidSequence`.
-inline fn writeUtf16Error(
-    options: Options,
-    spare: []u8,
-    written: *usize,
-    replacement: []const u8,
-) bool {
-    switch (options.on_error) {
-        .strict => return true,
-        .ignore => {},
-        .replace => {
-            @memcpy(spare[written.*..][0..replacement.len], replacement);
-            written.* += replacement.len;
-        },
-    }
-    return false;
-}
-
 /// UTF-16 to UTF-8. ASCII units narrow sixteen at a time and BMP units encode
 /// straight into the reserved output region, so neither the generic decoder
 /// dispatch nor an intermediate allocation is involved.
@@ -1347,43 +1221,16 @@ fn utf16ToUtf8IntoEndian(
         // at a time when none is a surrogate.
         if (unit >= 0x800 and (unit < 0xD800 or unit > 0xDFFF)) {
             var consumed = false;
-            const Wide = @Vector(16, u16);
-            const Shift = @Vector(16, u4);
             while (index + 32 <= input.len) {
-                var units: Wide = @bitCast(input[index..][0..32].*);
+                var units: @Vector(16, u16) = @bitCast(input[index..][0..32].*);
                 if (endian != native_endian) units = @byteSwap(units);
-                if (!@reduce(.And, units >= @as(Wide, @splat(0x800)))) break;
-                if (!@reduce(.And, (units < @as(Wide, @splat(0xD800))) |
-                    (units > @as(Wide, @splat(0xDFFF)))))
-                {
-                    break;
-                }
-                const first: @Vector(16, u8) = @intCast(
-                    (units >> @as(Shift, @splat(12))) |
-                        @as(Wide, @splat(0xE0)),
+                if (!utf8_vec.bmpThreeByteLanes(u16, units)) break;
+                written = utf8_vec.storeThreeByteScalars(
+                    u16,
+                    spare,
+                    written,
+                    units,
                 );
-                const second: @Vector(16, u8) = @intCast(
-                    ((units >> @as(Shift, @splat(6))) &
-                        @as(Wide, @splat(0x3F))) | @as(Wide, @splat(0x80)),
-                );
-                const third: @Vector(16, u8) = @intCast(
-                    (units & @as(Wide, @splat(0x3F))) |
-                        @as(Wide, @splat(0x80)),
-                );
-                const pairs: @Vector(32, u8) = @shuffle(
-                    u8,
-                    first,
-                    second,
-                    utf8PairLanes(),
-                );
-                const triples: @Vector(48, u8) = @shuffle(
-                    u8,
-                    pairs,
-                    third,
-                    utf8TripleLanes(),
-                );
-                spare[written..][0..48].* = @bitCast(triples);
-                written += 48;
                 index += 32;
                 consumed = true;
             }
@@ -1411,8 +1258,8 @@ fn utf16ToUtf8IntoEndian(
             codepoint = unit;
         }
         switch (status) {
-            .ok => written = writeUtf8Scalar(spare, written, codepoint),
-            .malformed => if (writeUtf16Error(
+            .ok => written = utf8_vec.writeScalar(spare, written, codepoint),
+            .malformed => if (utf8_vec.writeError(
                 options,
                 spare,
                 &written,
@@ -1422,7 +1269,7 @@ fn utf16ToUtf8IntoEndian(
                 return error.InvalidSequence;
             },
             .incomplete => {
-                if (writeUtf16Error(
+                if (utf8_vec.writeError(
                     options,
                     spare,
                     &written,
@@ -1438,7 +1285,7 @@ fn utf16ToUtf8IntoEndian(
     }
     if (index < input.len) {
         // An odd trailing byte cannot form a unit.
-        if (writeUtf16Error(
+        if (utf8_vec.writeError(
             options,
             spare,
             &written,
@@ -1911,6 +1758,24 @@ pub fn convertInto(
             output,
         );
     }
+    if (from == .utf8 and (to == .utf32_le or to == .utf32_be)) {
+        return utf32.utf8ToUtf32Into(
+            allocator,
+            input,
+            if (to == .utf32_le) .little else .big,
+            options,
+            output,
+        );
+    }
+    if ((from == .utf32_le or from == .utf32_be) and to == .utf8) {
+        return utf32.utf32ToUtf8Into(
+            allocator,
+            input,
+            if (from == .utf32_le) .little else .big,
+            options,
+            output,
+        );
+    }
     const converted = try convertAlloc(allocator, input, from, to, options);
     defer allocator.free(converted);
     try output.appendSlice(allocator, converted);
@@ -1939,6 +1804,22 @@ pub fn convertAlloc(
             allocator,
             input,
             if (from == .utf16_le) .little else .big,
+            options,
+        );
+    }
+    if (from == .utf8 and (to == .utf32_le or to == .utf32_be)) {
+        return utf32.utf8ToUtf32Alloc(
+            allocator,
+            input,
+            if (to == .utf32_le) .little else .big,
+            options,
+        );
+    }
+    if ((from == .utf32_le or from == .utf32_be) and to == .utf8) {
+        return utf32.utf32ToUtf8Alloc(
+            allocator,
+            input,
+            if (from == .utf32_le) .little else .big,
             options,
         );
     }
@@ -2363,6 +2244,119 @@ test "UTF-16 to UTF-8 conversion" {
 
     // Big-endian malformed input follows the same rules.
     const be = try convertAlloc(allocator, &.{ 0xD8, 0x00 }, .utf16_be, .utf8, .{});
+    defer allocator.free(be);
+    try testing.expectEqualStrings("\u{FFFD}", be);
+}
+
+test "UTF-8 and UTF-32 conversion" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const text = "abcdefghijklmnopqrstuvwxyz0123456789" ** 2 ++
+        "A\u{00E9}\u{4E16}\u{1F600}" ** 4 ++ "\u{4F60}" ** 20;
+    inline for ([_]Encoding{ .utf32_le, .utf32_be }) |encoding| {
+        const encoded = try encodeAlloc(allocator, text, encoding, .{});
+        defer allocator.free(encoded);
+        const decoded = try decodeAlloc(allocator, encoded, encoding, .{});
+        defer allocator.free(decoded);
+        try testing.expectEqualStrings(text, decoded);
+
+        var output = std.ArrayList(u8).empty;
+        defer output.deinit(allocator);
+        try output.appendSlice(allocator, "prefix:");
+        try convertInto(allocator, encoded, encoding, .utf8, &output, .{});
+        try testing.expectEqualStrings("prefix:" ++ text, output.items);
+    }
+
+    // Malformed UTF-8 becomes U+FFFD in the target scalar width.
+    const malformed_utf8 = [_]struct { input: []const u8, count: usize }{
+        .{ .input = &.{ 0xE0, 0x80, 0x80 }, .count = 3 },
+        .{ .input = &.{ 0xED, 0xA0, 0x80 }, .count = 3 },
+        .{ .input = &.{ 0xF0, 0x9F }, .count = 1 },
+    };
+    for (malformed_utf8) |case| {
+        const converted = try convertAlloc(
+            allocator,
+            case.input,
+            .utf8,
+            .utf32_le,
+            .{},
+        );
+        defer allocator.free(converted);
+        try testing.expectEqual(case.count * 4, converted.len);
+        for (0..case.count) |index| {
+            try testing.expectEqual(
+                @as(u32, 0xFFFD),
+                std.mem.readInt(u32, converted[index * 4 ..][0..4], .little),
+            );
+        }
+        try testing.expectError(
+            error.InvalidSequence,
+            convertAlloc(allocator, case.input, .utf8, .utf32_le, .{ .on_error = .strict }),
+        );
+    }
+
+    const malformed_utf32 = [_]struct {
+        input: []const u8,
+        replaced: []const u8,
+        ignored: []const u8,
+    }{
+        // UTF-16 surrogate.
+        .{
+            .input = &.{ 0x00, 0xD8, 0x00, 0x00 },
+            .replaced = "\u{FFFD}",
+            .ignored = "",
+        },
+        // Above U+10FFFF.
+        .{
+            .input = &.{ 0x00, 0x00, 0x11, 0x00 },
+            .replaced = "\u{FFFD}",
+            .ignored = "",
+        },
+        // Partial unit at the end.
+        .{
+            .input = &.{ 0x41, 0x00, 0x00, 0x00, 0x42 },
+            .replaced = "A\u{FFFD}",
+            .ignored = "A",
+        },
+    };
+    for (malformed_utf32) |case| {
+        const replaced = try convertAlloc(allocator, case.input, .utf32_le, .utf8, .{});
+        defer allocator.free(replaced);
+        try testing.expectEqualStrings(case.replaced, replaced);
+        const ignored = try convertAlloc(
+            allocator,
+            case.input,
+            .utf32_le,
+            .utf8,
+            .{ .on_error = .ignore },
+        );
+        defer allocator.free(ignored);
+        try testing.expectEqualStrings(case.ignored, ignored);
+        try testing.expectError(
+            error.InvalidSequence,
+            convertAlloc(allocator, case.input, .utf32_le, .utf8, .{ .on_error = .strict }),
+        );
+    }
+
+    const custom = try convertAlloc(
+        allocator,
+        &.{ 0x00, 0xD8, 0x00, 0x00 },
+        .utf32_le,
+        .utf8,
+        .{ .replacement = 'X' },
+    );
+    defer allocator.free(custom);
+    try testing.expectEqualStrings("X", custom);
+
+    // Big-endian malformed input follows the same rules.
+    const be = try convertAlloc(
+        allocator,
+        &.{ 0x00, 0x00, 0xD8, 0x00 },
+        .utf32_be,
+        .utf8,
+        .{},
+    );
     defer allocator.free(be);
     try testing.expectEqualStrings("\u{FFFD}", be);
 }

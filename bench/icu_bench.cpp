@@ -467,6 +467,39 @@ int main() {
     }
 
     {
+        const struct { const char* label; int text; bool to_u32; } u32_cases[] = {
+            {"UTF-8 -> UTF-32LE ASCII", 0, true},
+            {"UTF-8 -> UTF-32LE Chinese", 12, true},
+            {"UTF-32LE -> UTF-8 ASCII", 0, false},
+            {"UTF-32LE -> UTF-8 Chinese", 12, false},
+        };
+        for (const auto& item : u32_cases) {
+            const auto& utf8 = texts[item.text].utf8;
+            std::vector<char> u32(utf8.size() * 4 + 32);
+            int32_t u32_length = 0;
+            {
+                UErrorCode status = U_ZERO_ERROR;
+                u32_length = ucnv_convert("UTF-32LE", "UTF-8", u32.data(),
+                    static_cast<int32_t>(u32.size()), utf8.data(),
+                    static_cast<int32_t>(utf8.size()), &status);
+            }
+            std::vector<char> out(utf8.size() * 4 + 32);
+            bench_bytes(item.label, utf8.size(), 4000, [&] {
+                UErrorCode status = U_ZERO_ERROR;
+                if (item.to_u32) {
+                    ucnv_convert("UTF-32LE", "UTF-8", out.data(),
+                        static_cast<int32_t>(out.size()), utf8.data(),
+                        static_cast<int32_t>(utf8.size()), &status);
+                } else {
+                    ucnv_convert("UTF-8", "UTF-32LE", out.data(),
+                        static_cast<int32_t>(out.size()), u32.data(),
+                        u32_length, &status);
+                }
+            });
+        }
+    }
+
+    {
         const struct { const char* label; int text; } u16_to_u8_cases[] = {
             {"UTF-16LE -> UTF-8 ASCII", 0},
             {"UTF-16LE -> UTF-8 Chinese", 12},

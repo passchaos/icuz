@@ -18,3 +18,24 @@ pub const EncodeResult = union(enum) {
     /// The code point cannot be represented in the target encoding.
     unmappable,
 };
+
+pub const ErrorMode = enum {
+    /// Return `error.InvalidSequence` or `error.UnmappableCharacter`.
+    strict,
+    /// Substitute the replacement code point (U+FFFD by default).
+    replace,
+    /// Drop invalid input and continue.
+    ignore,
+};
+
+pub const Options = struct {
+    on_error: ErrorMode = .replace,
+    replacement: u21 = 0xFFFD,
+};
+
+pub const Error = error{
+    OutOfMemory,
+    InvalidSequence,
+    UnmappableCharacter,
+    InvalidCodepoint,
+};

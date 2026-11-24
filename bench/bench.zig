@@ -832,18 +832,20 @@ fn benchCharsetInto(
     reportBytes(name, rounds * text.len, best);
 }
 
-/// UTF-16LE to UTF-8 into a reused buffer. The rate is reported per input
-/// UTF-8 byte so it is comparable with the other conversion rows.
-fn benchUtf16ToUtf8(
+/// Convert a UTF-8 text from `from` back to UTF-8 into a reused buffer. The
+/// rate is reported per UTF-8 byte so it is comparable with the other
+/// conversion rows.
+fn benchConvertFrom(
     name: []const u8,
     text: []const u8,
+    from: icuz.charset.Encoding,
     allocator: std.mem.Allocator,
 ) void {
     const units = icuz.charset.convertAlloc(
         allocator,
         text,
         .utf8,
-        .utf16_le,
+        from,
         .{},
     ) catch unreachable;
     defer allocator.free(units);
@@ -860,7 +862,7 @@ fn benchUtf16ToUtf8(
             icuz.charset.convertInto(
                 allocator,
                 units,
-                .utf16_le,
+                from,
                 .utf8,
                 &output,
                 .{},
@@ -1970,8 +1972,24 @@ pub fn main() !void {
         .utf16_le,
         allocator,
     );
-    benchUtf16ToUtf8("UTF-16LE -> UTF-8 ASCII", ascii_runtime, allocator);
-    benchUtf16ToUtf8("UTF-16LE -> UTF-8 Chinese", chinese_runtime, allocator);
+    benchConvertFrom("UTF-16LE -> UTF-8 ASCII", ascii_runtime, .utf16_le, allocator);
+    benchConvertFrom("UTF-16LE -> UTF-8 Chinese", chinese_runtime, .utf16_le, allocator);
+    benchCharsetInto(
+        "UTF-8 -> UTF-32LE ASCII",
+        ascii_runtime,
+        .utf8,
+        .utf32_le,
+        allocator,
+    );
+    benchCharsetInto(
+        "UTF-8 -> UTF-32LE Chinese",
+        chinese_runtime,
+        .utf8,
+        .utf32_le,
+        allocator,
+    );
+    benchConvertFrom("UTF-32LE -> UTF-8 ASCII", ascii_runtime, .utf32_le, allocator);
+    benchConvertFrom("UTF-32LE -> UTF-8 Chinese", chinese_runtime, .utf32_le, allocator);
     benchCharset(
         "UTF-8 -> windows-1252 ASCII",
         ascii_runtime,
