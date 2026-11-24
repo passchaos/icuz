@@ -2146,6 +2146,13 @@ pub fn main() !void {
         allocator,
     );
     benchConvertBetween(
+        "IBM866 -> UTF-8 Russian",
+        russian_runtime,
+        .ibm866,
+        .utf8,
+        allocator,
+    );
+    benchConvertBetween(
         "GBK -> UTF-16LE Chinese",
         chinese_runtime,
         .gbk,

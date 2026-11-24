@@ -166,6 +166,11 @@ int main() {
         for (int i = 0; i < 8; i++) s += "café naïve Straße Ångström Böttger Überlingen ÄÖÜ äöü ";
         return s;
     }();
+    const std::string russian_text = [] {
+        std::string s;
+        for (int i = 0; i < 8; i++) s += "Москва Санкт-Петербург Россия ";
+        return s;
+    }();
 
     struct Text {
         const char* name;
@@ -189,6 +194,7 @@ int main() {
         {"greek_case", greek_case_text, {}},
         {"chinese_collation_long", chinese_collation_long_text, {}},
         {"accents", accents_text, {}},
+        {"russian", russian_text, {}},
     };
     for (auto& text : texts) text.u16 = to_u16(text.utf8);
 
@@ -572,6 +578,21 @@ int main() {
                 }
             });
         }
+    }
+
+    {
+        const auto& utf8 = texts[16].utf8;
+        std::vector<char> encoded(utf8.size() * 2 + 32);
+        UErrorCode status = U_ZERO_ERROR;
+        const int32_t length = ucnv_convert("ibm866", "UTF-8",
+            encoded.data(), static_cast<int32_t>(encoded.size()), utf8.data(),
+            static_cast<int32_t>(utf8.size()), &status);
+        std::vector<char> out(utf8.size() * 3 + 32);
+        bench_bytes("IBM866 -> UTF-8 Russian", utf8.size(), 4000, [&] {
+            UErrorCode s2 = U_ZERO_ERROR;
+            ucnv_convert("UTF-8", "ibm866", out.data(),
+                static_cast<int32_t>(out.size()), encoded.data(), length, &s2);
+        });
     }
 
     {
