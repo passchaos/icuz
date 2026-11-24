@@ -748,11 +748,12 @@ inline fn latinFastCodepoint(codepoint: u21) bool {
 }
 
 fn isAscii(text: []const u8) bool {
-    const high_bits: u64 = 0x8080_8080_8080_8080;
     var index: usize = 0;
-    while (index + 8 <= text.len) : (index += 8) {
-        const word = std.mem.readInt(u64, text[index..][0..8], .little);
-        if (word & high_bits != 0) return false;
+    while (index + 32 <= text.len) : (index += 32) {
+        const chunk: @Vector(32, u8) = text[index..][0..32].*;
+        if (@reduce(.Or, chunk >= @as(@Vector(32, u8), @splat(0x80)))) {
+            return false;
+        }
     }
     while (index < text.len) : (index += 1) {
         if (text[index] >= 0x80) return false;
@@ -885,7 +886,7 @@ test "Latin primary fast path matches the general search on random text" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
     const alphabet = [_]u21{
-        'a', 'b', 'c', 'o', 'w', ' ', 'A', 'B',
+        'a',  'b',  'c',  'o',  'w',  ' ',  'A', 'B',
         0xe5, 0xe4, 0xf6, 0xe9, 0xfc, 0xdf, '-', '.',
     };
     var state: u32 = 0x9e3779b9;
