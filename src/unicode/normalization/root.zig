@@ -1527,6 +1527,25 @@ fn normalizeSegmentFallback16(
     try sink.appendCodepoints(normalized.items);
 }
 
+/// One past the last UTF-16 unit of the run starting at `start` whose units
+/// are all below `limit`. ASCII and Latin-1 prose dominate UTF-16 input, so
+/// the scan tests sixteen units per step instead of one.
+inline fn unitRunEnd16(
+    units: []const u16,
+    start: usize,
+    comptime limit: u16,
+) usize {
+    var end = start;
+    const bound: @Vector(16, u16) = @splat(limit);
+    while (end + 16 <= units.len) {
+        const chunk: @Vector(16, u16) = units[end..][0..16].*;
+        if (@reduce(.Or, chunk >= bound)) break;
+        end += 16;
+    }
+    while (end < units.len and units[end] < limit) end += 1;
+    return end;
+}
+
 /// Fused UTF-16 normalizer: the scan mirrors the UTF-8 path but decodes and
 /// emits UTF-16 units directly, avoiding a codepoint intermediate.
 ///
@@ -1560,7 +1579,7 @@ fn normalizeFusedUtf16Into(
             if (latin1_mode == .none) {
                 while (end < units.len and units[end] < 0x80) end += 1;
             } else if (latin1_mode == .all) {
-                while (end < units.len and units[end] < 0x100) end += 1;
+                end = unitRunEnd16(units, end, 0x100);
             } else {
                 while (end < units.len) {
                     const value = units[end];
@@ -1900,7 +1919,7 @@ pub fn isNormalizedUtf16(
             if (latin1_mode == .none) {
                 while (end < units.len and units[end] < 0x80) end += 1;
             } else if (latin1_mode == .all) {
-                while (end < units.len and units[end] < 0x100) end += 1;
+                end = unitRunEnd16(units, end, 0x100);
             } else {
                 while (end < units.len) {
                     const value = units[end];
