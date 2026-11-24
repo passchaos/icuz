@@ -866,6 +866,8 @@ int main() {
         {"line break chinese", UBRK_LINE, 4, "en"},
         {"line break e_marks", UBRK_LINE, 8, "en"},
         {"line break jamo", UBRK_LINE, 9, "en"},
+        {"sentence ASCII", UBRK_SENTENCE, 0, "en"},
+        {"sentence mixed", UBRK_SENTENCE, 1, "en"},
     };
     for (const auto& item : break_cases) {
         UErrorCode status = U_ZERO_ERROR;
