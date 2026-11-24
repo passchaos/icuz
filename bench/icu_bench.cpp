@@ -193,6 +193,72 @@ int main() {
 
     std::printf("ICU %s microbenchmarks\n", U_ICU_VERSION);
 
+    std::printf("\n-- scalar properties --\n");
+    {
+        std::vector<UChar32> codepoints(1 << 20);
+        uint32_t state = 0x12345678;
+        for (auto& codepoint : codepoints) {
+            state = state * 1664525u + 1013904223u;
+            uint32_t value = state >> 8;
+            if (value >= 0xD800 && value <= 0xDFFF) value += 0x800;
+            codepoint = static_cast<UChar32>(value & 0x10FFFF);
+        }
+        const int rounds = 16 * (1 << 20);
+        const size_t mask = (1 << 20) - 1;
+        size_t next = 0;
+        bench_ops("General_Category", rounds, [&] {
+            volatile int value = u_charType(codepoints[next++ & mask]);
+            (void)value;
+        });
+        next = 0;
+        bench_ops("Alphabetic", rounds, [&] {
+            volatile UBool value =
+                u_hasBinaryProperty(codepoints[next++ & mask], UCHAR_ALPHABETIC);
+            (void)value;
+        });
+        next = 0;
+        bench_ops("Uppercase", rounds, [&] {
+            volatile UBool value =
+                u_hasBinaryProperty(codepoints[next++ & mask], UCHAR_UPPERCASE);
+            (void)value;
+        });
+        next = 0;
+        bench_ops("Lowercase", rounds, [&] {
+            volatile UBool value =
+                u_hasBinaryProperty(codepoints[next++ & mask], UCHAR_LOWERCASE);
+            (void)value;
+        });
+        next = 0;
+        bench_ops("Math", rounds, [&] {
+            volatile UBool value =
+                u_hasBinaryProperty(codepoints[next++ & mask], UCHAR_MATH);
+            (void)value;
+        });
+        next = 0;
+        bench_ops("Canonical_Combining_Class", rounds, [&] {
+            volatile uint8_t value = u_getCombiningClass(codepoints[next++ & mask]);
+            (void)value;
+        });
+        next = 0;
+        bench_ops("Script", rounds, [&] {
+            UErrorCode status = U_ZERO_ERROR;
+            volatile int32_t value =
+                uscript_getScript(codepoints[next++ & mask], &status);
+            (void)value;
+        });
+        next = 0;
+        bench_ops("Bidi_Class", rounds, [&] {
+            volatile int32_t value = u_charDirection(codepoints[next++ & mask]);
+            (void)value;
+        });
+        next = 0;
+        bench_ops("Line_Break", rounds, [&] {
+            volatile int32_t value = u_getIntPropertyValue(
+                codepoints[next++ & mask], UCHAR_LINE_BREAK);
+            (void)value;
+        });
+    }
+
     std::printf("\n-- collation --\n");
     const struct { const char* label; const char* locale; int text; } coll_cases[] = {
         {"UCA sort key ASCII", "en", 0},
