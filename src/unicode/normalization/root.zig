@@ -1103,7 +1103,10 @@ pub fn normalizeCodepointsInto(
                 (parts[0] < 0x80 or
                     combining_class.forCodepoint(parts[0]) == 0) and
                 (index + 1 == codepoints.len or
-                    !continuesSegment(codepoints[index + 1], engine.compatibility)))
+                    !continuesDecomposedSegment(
+                        codepoints[index + 1],
+                        engine.compatibility,
+                    )))
             {
                 try engine.settle();
                 try engine.sink.appendCodepoints(parts[0..count]);
@@ -1336,6 +1339,26 @@ fn continuesSegment(codepoint: u21, compatibility: bool) bool {
         return latin1_continues_segment[@intFromBool(compatibility)][codepoint - 0x80];
     }
     return continuesSegmentLookup(codepoint, compatibility);
+}
+
+/// Decomposing-form variant of `continuesSegment`: only combining classes
+/// can reorder there, so composition seconds and Hangul V/T start their own
+/// segment. The page-level composition-second bitmap is too coarse for this
+/// question, since it covers all of U+03xx where Greek letters sit next to
+/// the combining marks, so the first component of the decomposition decides.
+fn continuesDecomposedSegment(codepoint: u21, compatibility: bool) bool {
+    if (codepoint < 0x80) return false;
+    if (combining_class.forCodepoint(codepoint) != 0) return true;
+    if (data.isSimplePage(codepoint, compatibility)) return false;
+    const mapping = if (compatibility and codepoint >= 0xff00 and
+        codepoint < 0x10000)
+        fullwidth_compatibility_decomposition[codepoint - 0xff00]
+    else if (compatibility)
+        decomposition.compatibilityForCodepoint(codepoint)
+    else
+        decomposition.forCodepoint(codepoint);
+    const components = mapping orelse return false;
+    return combining_class.forCodepoint(components[0]) != 0;
 }
 
 /// General `continuesSegment` rule; also builds the Latin-1 table.
@@ -3711,6 +3734,17 @@ test "UTF-16 normalization agrees with the codepoint path on mixed scripts" {
         0x0e33,  0x1f600, 0x1f469, 0x200d,  0x212b,
         0xfb01,  0x1e9b,  0x2122,  0x00a8,  0x0385,
         0x1d160, 0x0344,  0x0f73,  0x2f800, 0x0340,
+        // Precomposed Greek letters sit next to the combining marks in the
+        // U+03xx page, so they exercise the decomposing-form segment
+        // predicate and its interaction with plain Greek letters.
+        0x0386,  0x0388,  0x0389,  0x038a,  0x038c,
+        0x038e,  0x038f,  0x0390,  0x03aa,  0x03ab,
+        0x03ac,  0x03ad,  0x03ae,  0x03af,  0x03b0,
+        0x03b1,  0x03b4,  0x03bd,  0x03c3,  0x03ca,
+        0x03cb,  0x03cc,  0x03cd,  0x03ce,  0x0342,
+        0x0313,  0x0314,  0x1f00,  0x1f71,  0x1fbd,
+        0x1ffe,  0x1fb3,  0x1fbc,  0x037a,  0x037e,
+        0x0384,  0x1fbe,  0x2126,  0x00b4,
     };
     var random = std.Random.DefaultPrng.init(0x1c0ffee);
     const forms = [_]Form{ .nfc, .nfd, .nfkc, .nfkd };
@@ -3770,6 +3804,56 @@ test "UTF-16 normalization agrees with the codepoint path on mixed scripts" {
                 !changed_expected,
                 try isNormalizedUtf16(units.items, form),
             );
+        }
+    }
+}
+
+test "codepoint decomposition fast path handles Greek sequences" {
+    const allocator = std.testing.allocator;
+    // A precomposed Greek letter followed by a plain Greek letter: the plain
+    // letter is a starter even though its page holds combining marks, so the
+    // decomposition is emitted without the segment engine.
+    const inputs = [_][]const u21{
+        &.{ 0x0386, 0x03b4, 0x03b1 },
+        &.{ 0x03ac, 0x03b4 },
+        &.{ 0x03ae, 0x03bd, 0x03b1 },
+        &.{ 0x03ce, 0x03c3 },
+        &.{ 0x0386, 0x0301 },
+        &.{ 0x03ac, 0x0345 },
+        &.{ 0x03ac, 0x03b4, 0x0301 },
+    };
+    const forms = [_]Form{ .nfd, .nfkd };
+    for (forms) |form| {
+        for (inputs) |input| {
+            var ours = std.ArrayList(u21).empty;
+            defer ours.deinit(allocator);
+            try normalizeCodepointsInto(allocator, input, form, &ours);
+
+            var units = std.ArrayList(u16).empty;
+            defer units.deinit(allocator);
+            for (input) |codepoint| {
+                try appendUtf16Scalar(&units, allocator, codepoint);
+            }
+            const expected = try normalizeUtf16Alloc(allocator, units.items, form);
+            defer if (expected) |owned| allocator.free(owned);
+            const reference = expected orelse units.items;
+            var want = std.ArrayList(u21).empty;
+            defer want.deinit(allocator);
+            var index: usize = 0;
+            while (index < reference.len) {
+                const unit = reference[index];
+                if (unit >= 0xd800 and unit <= 0xdbff) {
+                    const value = 0x10000 +
+                        (@as(u21, unit - 0xd800) << 10) +
+                        (reference[index + 1] - 0xdc00);
+                    try want.append(allocator, value);
+                    index += 2;
+                } else {
+                    try want.append(allocator, unit);
+                    index += 1;
+                }
+            }
+            try std.testing.expectEqualSlices(u21, want.items, ours.items);
         }
     }
 }
