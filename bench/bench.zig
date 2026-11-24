@@ -877,6 +877,39 @@ fn benchConvertBetween(
     reportBytes(name, rounds * text.len, best);
 }
 
+/// Charset detection on text encoded in `encoding`. The rate is reported per
+/// UTF-8 byte so it is comparable with the other detection rows.
+fn benchDetect(
+    name: []const u8,
+    text: []const u8,
+    encoding: icuz.charset.Encoding,
+    allocator: std.mem.Allocator,
+) void {
+    const bytes = icuz.charset.convertAlloc(
+        allocator,
+        text,
+        .utf8,
+        encoding,
+        .{},
+    ) catch unreachable;
+    defer allocator.free(bytes);
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 4000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            if (icuz.charset_detection.detect(bytes, .{})) |match| {
+                sink +%= match.confidence;
+                sink +%= match.name.len;
+            }
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * text.len, best);
+}
+
 fn benchCollation(
     name: []const u8,
     text: []const u8,
@@ -2207,6 +2240,10 @@ pub fn main() !void {
     benchRelative(allocator);
     benchUnits(allocator);
     benchDate(allocator);
+
+    std.debug.print("\n-- charset detection --\n", .{});
+    benchDetect("detect UTF-8 English", ascii_runtime, .utf8, allocator);
+    benchDetect("detect GBK Chinese", chinese_runtime, .gbk, allocator);
 
     std.debug.print("\n-- bidi --\n", .{});
     benchBidi("bidi ASCII", ascii_runtime, allocator);

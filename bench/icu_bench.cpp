@@ -11,6 +11,7 @@
 #include <unicode/ucal.h>
 #include <unicode/ucnv.h>
 #include <unicode/ucol.h>
+#include <unicode/ucsdet.h>
 #include <unicode/ubidi.h>
 #include <unicode/uidna.h>
 #include <unicode/uspoof.h>
@@ -618,6 +619,37 @@ int main() {
                 reinterpret_cast<const char*>(u16.data()),
                 static_cast<int32_t>(u16.size() * 2), &s2);
         });
+    }
+
+    std::printf("\n-- charset detection --\n");
+    {
+        const struct {
+            const char* label;
+            int text;
+            const char* converter;
+        } detect_cases[] = {
+            {"detect UTF-8 English", 0, "UTF-8"},
+            {"detect GBK Chinese", 12, "GBK"},
+        };
+        for (const auto& item : detect_cases) {
+            const auto& utf8 = texts[item.text].utf8;
+            std::vector<char> encoded(utf8.size() * 3 + 32);
+            UErrorCode status = U_ZERO_ERROR;
+            const int32_t length = ucnv_convert(item.converter, "UTF-8",
+                encoded.data(), static_cast<int32_t>(encoded.size()),
+                utf8.data(), static_cast<int32_t>(utf8.size()), &status);
+            UCharsetDetector* det = ucsdet_open(&status);
+            bench_bytes(item.label, utf8.size(), 4000, [&] {
+                UErrorCode s2 = U_ZERO_ERROR;
+                ucsdet_setText(det, encoded.data(), length, &s2);
+                const UCharsetMatch* match = ucsdet_detect(det, &s2);
+                if (match) {
+                    volatile int confidence = ucsdet_getConfidence(match, &s2);
+                    (void)confidence;
+                }
+            });
+            ucsdet_close(det);
+        }
     }
 
     std::printf("\n-- transliteration --\n");
