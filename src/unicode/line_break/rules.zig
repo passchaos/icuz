@@ -625,13 +625,23 @@ pub inline fn isWordClass(class: BreakClass) bool {
         class == .numeric;
 }
 
+/// History entries for ASCII word bytes, materialized at compile time. The
+/// run scanners build up to three of these per word, and the class and
+/// property lookups cost more than one struct load.
+const ascii_history: [128]HistoryEntry = blk: {
+    var table: [128]HistoryEntry = undefined;
+    for (0..128) |byte| {
+        table[byte] = .{
+            .codepoint = @intCast(byte),
+            .properties = property_data.lookup(@intCast(byte)),
+            .class = asciiWordClass(@intCast(byte)) orelse .unknown,
+        };
+    }
+    break :blk table;
+};
+
 fn asciiHistoryEntry(byte: u8) HistoryEntry {
-    const class = asciiWordClass(byte) orelse unreachable;
-    return .{
-        .codepoint = byte,
-        .properties = property_data.lookup(byte),
-        .class = class,
-    };
+    return ascii_history[byte];
 }
 
 const FastDecision = struct {
