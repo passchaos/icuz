@@ -324,6 +324,39 @@ fn setContains(set_index: u32, codepoint: u21) bool {
     return false;
 }
 
+/// `setContains` for scans over prose: consecutive scalars usually fall in
+/// the same set range, so the last hit is tested before the search. The
+/// cached index is invalid when it is not below the range count.
+fn setContainsCached(set_index: u32, codepoint: u21, cached: *u32) bool {
+    if (set_index == 0) return false;
+    const record = set_offset + @as(usize, set_index) * 8;
+    const offset = readU32(record);
+    const count = readU32(record + 4);
+    if (cached.* < count) {
+        const base = range_offset + (@as(usize, offset) + cached.*) * 8;
+        if (codepoint >= readU32(base) and codepoint <= readU32(base + 4)) {
+            return true;
+        }
+    }
+    var low: usize = 0;
+    var high: usize = count;
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+        const base = range_offset + (@as(usize, offset) + middle) * 8;
+        const start = readU32(base);
+        const end = readU32(base + 4);
+        if (codepoint < start) {
+            high = middle;
+        } else if (codepoint > end) {
+            low = middle + 1;
+        } else {
+            cached.* = @intCast(middle);
+            return true;
+        }
+    }
+    return false;
+}
+
 /// True when every codepoint of `set_index` is also in `other_index`.
 fn setSubset(set_index: u32, other_index: u32) bool {
     if (set_index == 0) return true;
@@ -973,6 +1006,27 @@ fn findMatchInRange(
         break;
     }
     return best;
+}
+
+pub fn debugGroup(name: []const u8, first_cp: u21) void {
+    const index = findTransformByName(name) orelse return;
+    const record = transformAt(index);
+    const pass_count = @max(record.pass_count, 1);
+    for (0..pass_count) |pass| {
+        const range = transformPassRange(index, @intCast(pass));
+        var entry_index = range.literals_start;
+        while (entry_index < range.literals_end) : (entry_index += 1) {
+            if (entryFirstCodepoint(entry_index) != first_cp) continue;
+            const entry = entryAt(entry_index);
+            std.debug.print("  entry {} src_len={} flags={} prio={} ctx=({},{}) target_len={}\n", .{
+                entry_index - range.start, entry.source_len,    entry.flags,      entry.priority,
+                entry.before_context,      entry.after_context, entry.target_len,
+            });
+            std.debug.print("    src:", .{});
+            for (0..entry.source_len) |i| std.debug.print(" U+{X}", .{sourceCodepoint(entry, i)});
+            std.debug.print("\n", .{});
+        }
+    }
 }
 
 fn decodeAlloc(
@@ -2000,13 +2054,22 @@ fn filteredTableCoreAlloc(
         scratch[1].deinit(allocator);
     }
     const reuse = reusableFilteredRuns(record, setup);
+    var filter_range: u32 = std.math.maxInt(u32);
     var index: usize = 0;
     while (index < codepoints.items.len) {
-        const contained = setContains(record.filter_set, codepoints.items[index]);
+        const contained = setContainsCached(
+            record.filter_set,
+            codepoints.items[index],
+            &filter_range,
+        );
         const start = index;
         index += 1;
         while (index < codepoints.items.len and
-            setContains(record.filter_set, codepoints.items[index]) == contained)
+            setContainsCached(
+                record.filter_set,
+                codepoints.items[index],
+                &filter_range,
+            ) == contained)
         {
             index += 1;
         }
