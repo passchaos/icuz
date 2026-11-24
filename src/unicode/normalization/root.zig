@@ -856,6 +856,22 @@ const CodepointSink = struct {
     ) error{OutOfMemory}!void {
         try self.list.append(self.allocator, codepoint);
     }
+
+    /// Append a pending starter and its two decomposition components with a
+    /// single capacity check; this is the decomposing-form fast path's shape.
+    fn appendThree(
+        self: *CodepointSink,
+        first: u21,
+        second: u21,
+        third: u21,
+    ) error{OutOfMemory}!void {
+        try self.list.ensureUnusedCapacity(self.allocator, 3);
+        const dest = self.list.unusedCapacitySlice();
+        dest[0] = first;
+        dest[1] = second;
+        dest[2] = third;
+        self.list.items.len += 3;
+    }
 };
 
 /// Append bytes without routing one- to four-byte spans through memcpy.
@@ -1049,6 +1065,27 @@ fn SegmentEngine(comptime Sink: type) type {
         fn flush(self: *Self) error{OutOfMemory}!void {
             try self.settle();
         }
+
+        /// Emit a two-component decomposition, merging a pending starter into
+        /// the same append when the segment buffer is empty.
+        fn emitTwoPart(
+            self: *Self,
+            parts: [2]u21,
+        ) error{OutOfMemory}!void {
+            if (self.segment.items.len == 0) {
+                if (self.pending) |pending| {
+                    self.pending = null;
+                    try self.sink.appendThree(
+                        pending,
+                        parts[0],
+                        parts[1],
+                    );
+                    return;
+                }
+            }
+            try self.settle();
+            try self.sink.appendCodepoints(&parts);
+        }
     };
 }
 
@@ -1108,8 +1145,7 @@ pub fn normalizeCodepointsInto(
                         engine.compatibility,
                     )))
             {
-                try engine.settle();
-                try engine.sink.appendCodepoints(parts[0..count]);
+                try engine.emitTwoPart(parts[0..2].*);
                 index += 1;
                 continue;
             }
@@ -1349,7 +1385,14 @@ fn continuesSegment(codepoint: u21, compatibility: bool) bool {
 fn continuesDecomposedSegment(codepoint: u21, compatibility: bool) bool {
     if (codepoint < 0x80) return false;
     if (combining_class.forCodepoint(codepoint) != 0) return true;
-    if (data.isSimplePage(codepoint, compatibility)) return false;
+    // A scalar that is inert for the form has no decomposition and no
+    // combining class, so it begins its own segment. The bitmap also answers
+    // this for plain letters on mixed pages such as U+03xx without opening
+    // the decomposition tables.
+    if (inert.isInert(
+        codepoint,
+        if (compatibility) .nfkd else .nfd,
+    )) return false;
     const mapping = if (compatibility and codepoint >= 0xff00 and
         codepoint < 0x10000)
         fullwidth_compatibility_decomposition[codepoint - 0xff00]
