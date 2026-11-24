@@ -12,6 +12,7 @@
 #include <unicode/ucnv.h>
 #include <unicode/uchar.h>
 #include <unicode/ucol.h>
+#include <unicode/upluralrules.h>
 #include <unicode/ucsdet.h>
 #include <unicode/ubidi.h>
 #include <unicode/uidna.h>
@@ -758,6 +759,35 @@ int main() {
             (void)codepoint;
             next++;
         });
+    }
+
+    std::printf("\n-- plural rules --\n");
+    {
+        const struct {
+            const char* label;
+            const char* locale;
+            bool ordinal;
+        } cases[] = {
+            {"plural en", "en", false},
+            {"plural ru", "ru", false},
+            {"ordinal en", "en", true},
+        };
+        const double values[] = { 0, 1, 2, 3, 5, 11, 21, 100, 101, 1000001 };
+        for (const auto& item : cases) {
+            UErrorCode status = U_ZERO_ERROR;
+            UPluralRules* rules = item.ordinal
+                ? uplrules_openForType(item.locale, UPLURAL_TYPE_ORDINAL, &status)
+                : uplrules_open(item.locale, &status);
+            if (U_FAILURE(status)) continue;
+            UChar keyword[32];
+            int next = 0;
+            bench_ops(item.label, 50000 * 10, [&] {
+                status = U_ZERO_ERROR;
+                uplrules_select(rules, values[next % 10], keyword, 32, &status);
+                next++;
+            });
+            uplrules_close(rules);
+        }
     }
 
     std::printf("\n-- transliteration --\n");

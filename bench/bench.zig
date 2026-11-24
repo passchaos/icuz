@@ -944,6 +944,28 @@ fn benchFindByName(name: []const u8, queries: []const []const u8) void {
     reportOps(name, rounds * queries.len, best);
 }
 
+fn benchPlural(name: []const u8, locale: []const u8, comptime ordinal: bool) void {
+    var best: u64 = std.math.maxInt(u64);
+    const values = [_]i64{ 0, 1, 2, 3, 5, 11, 21, 100, 101, 1_000_001 };
+    const trials = 5;
+    const rounds = 50_000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            for (values) |value| {
+                const result = if (ordinal)
+                    icuz.plural.ordinalCategoryForInteger(locale, value)
+                else
+                    icuz.plural.categoryForInteger(locale, value);
+                sink +%= @intFromEnum(result);
+            }
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps(name, rounds * values.len, best);
+}
+
 fn benchCollation(
     name: []const u8,
     text: []const u8,
@@ -2296,6 +2318,11 @@ pub fn main() !void {
         "CJK COMPATIBILITY IDEOGRAPH-2F800",
         "DESERET CAPITAL LETTER LONG I",
     });
+
+    std.debug.print("\n-- plural rules --\n", .{});
+    benchPlural("plural en", "en", false);
+    benchPlural("plural ru", "ru", false);
+    benchPlural("ordinal en", "en", true);
 
     std.debug.print("\n-- bidi --\n", .{});
     benchBidi("bidi ASCII", ascii_runtime, allocator);
