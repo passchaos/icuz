@@ -293,6 +293,9 @@ int main() {
                 });
                 uset_close(complement);
             }
+            bench_ops("UnicodeSet closeOver Alphabetic", 400, [&] {
+                uset_closeOver(alphabetic, USET_CASE_INSENSITIVE);
+            });
             uset_close(alphabetic);
         }
         USet* small = uset_openPattern(u"[a]", -1, &status);
