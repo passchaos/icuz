@@ -134,13 +134,13 @@ pub const Iterator = struct {
                     }
                     self.state.consumeAsciiSpaceRun(end - self.cursor);
                     self.cursor = end;
+                    const needs_rules = self.state.spaceRunNeedsRules();
                     // `space → JL` is LB31 soft unless the run follows
                     // opening punctuation or a quotation. Consume the L jamo
                     // and return the boundary without the general rule
                     // engine; the next call resumes at its V jamo.
-                    if (end + 3 <= self.text.len and
-                        self.text[end] == 0xe1 and
-                        !self.state.spaceRunNeedsRules())
+                    if (!needs_rules and end + 3 <= self.text.len and
+                        self.text[end] == 0xe1)
                     {
                         const decoded = scalar.decodeValidPacked(
                             self.text,
@@ -162,6 +162,17 @@ pub const Iterator = struct {
                             self.simple_ascii = false;
                             return .{ .byte_offset = end, .kind = .soft };
                         }
+                    }
+                    // LB18 ends the line after a space run. Emit that
+                    // boundary here so the ASCII word it precedes is consumed
+                    // by the run scanner instead of the rule engine.
+                    if (!needs_rules and end < self.text.len and
+                        self.text[end] < 0x80 and
+                        rules.isAsciiWordByte(self.text[end]))
+                    {
+                        self.simple_ascii = true;
+                        self.suppress_break_at_cursor = true;
+                        return .{ .byte_offset = end, .kind = .soft };
                     }
                     continue;
                 }
