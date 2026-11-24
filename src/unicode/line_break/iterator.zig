@@ -91,6 +91,32 @@ inline fn decodeThree(text: []const u8, offset: usize) u21 {
         @as(u21, text[offset + 2] & 0x3f);
 }
 
+/// True when the scalar at `offset` is one whose LB18 break after spaces
+/// needs no rule evaluation: word classes, ideographs, emoji, and Hangul.
+/// Joining and prohibited classes (WJ, GL, IS, CL/CP/EX/SY, hard breaks)
+/// fall back to the rule engine.
+fn spaceRunSoftFollower(text: []const u8, offset: usize) bool {
+    if (text[offset] < 0x80) return rules.isAsciiWordByte(text[offset]);
+    const decoded = scalar.decodeValidPacked(text, offset);
+    if (decoded == scalar.packed_invalid) return false;
+    return switch (properties(scalar.packedCodepoint(decoded)).class) {
+        .alphabetic,
+        .hebrew_letter,
+        .numeric,
+        .ideographic,
+        .emoji_base,
+        .emoji_modifier,
+        .hangul_l_jamo,
+        .hangul_v_jamo,
+        .hangul_t_jamo,
+        .hangul_lv_syllable,
+        .hangul_lvt_syllable,
+        .regional_indicator,
+        => true,
+        else => false,
+    };
+}
+
 pub const Iterator = struct {
     text: []const u8,
     cursor: usize = 0,
@@ -164,13 +190,12 @@ pub const Iterator = struct {
                         }
                     }
                     // LB18 ends the line after a space run. Emit that
-                    // boundary here so the ASCII word it precedes is consumed
-                    // by the run scanner instead of the rule engine.
+                    // boundary here so the word it precedes is consumed by a
+                    // run scanner instead of the rule engine.
                     if (!needs_rules and end < self.text.len and
-                        self.text[end] < 0x80 and
-                        rules.isAsciiWordByte(self.text[end]))
+                        spaceRunSoftFollower(self.text, end))
                     {
-                        self.simple_ascii = true;
+                        self.simple_ascii = self.text[end] < 0x80;
                         self.suppress_break_at_cursor = true;
                         return .{ .byte_offset = end, .kind = .soft };
                     }
