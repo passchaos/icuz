@@ -524,7 +524,23 @@ const ibm_aliases = blk: {
 
 const aliases = base_aliases ++ ibm_aliases;
 
+/// The IBM page encodings are contiguous in `Encoding`, so the definition
+/// index is the enum offset. The compile-time check keeps that true if the
+/// enum is reordered, falling back to the scan.
+const ibm_pages_contiguous = blk: {
+    for (ibm_page_defs, 0..) |def, index| {
+        if (@intFromEnum(def.encoding) !=
+            @intFromEnum(Encoding.ibm_437) + index) break :blk false;
+    }
+    break :blk true;
+};
+
 fn ibmPageIndex(encoding: Encoding) ?usize {
+    if (comptime ibm_pages_contiguous) {
+        const index =
+            @intFromEnum(encoding) -% @intFromEnum(Encoding.ibm_437);
+        return if (index < ibm_page_defs.len) index else null;
+    }
     for (ibm_page_defs, 0..) |def, index| {
         if (def.encoding == encoding) return index;
     }
