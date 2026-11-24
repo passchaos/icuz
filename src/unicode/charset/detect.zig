@@ -116,55 +116,55 @@ fn runRecognizers(
     count += add(matches, count, recognizeSbcs(input, .{
         .name = "ISO-8859-5",
         .language = "ru",
-        .ngrams = &tables.ngrams_8859_5_ru,
+        .table = &ngram_table_8859_5_ru,
         .map = &tables.charMap_8859_5,
     }));
     count += add(matches, count, recognizeSbcs(input, .{
         .name = "ISO-8859-6",
         .language = "ar",
-        .ngrams = &tables.ngrams_8859_6_ar,
+        .table = &ngram_table_8859_6_ar,
         .map = &tables.charMap_8859_6,
     }));
     count += add(matches, count, recognizeSbcs(input, .{
         .name = if (input.c1_bytes) "windows-1253" else "ISO-8859-7",
         .language = "el",
-        .ngrams = &tables.ngrams_8859_7_el,
+        .table = &ngram_table_8859_7_el,
         .map = &tables.charMap_8859_7,
     }));
     count += add(matches, count, recognizeSbcs(input, .{
         .name = if (input.c1_bytes) "windows-1255" else "ISO-8859-8-I",
         .language = "he",
-        .ngrams = &tables.ngrams_8859_8_I_he,
+        .table = &ngram_table_8859_8_I_he,
         .map = &tables.charMap_8859_8,
     }));
     count += add(matches, count, recognizeSbcs(input, .{
         .name = if (input.c1_bytes) "windows-1255" else "ISO-8859-8",
         .language = "he",
-        .ngrams = &tables.ngrams_8859_8_he,
+        .table = &ngram_table_8859_8_he,
         .map = &tables.charMap_8859_8,
     }));
     count += add(matches, count, recognizeSbcs(input, .{
         .name = "windows-1251",
         .language = "ru",
-        .ngrams = &tables.ngrams_windows_1251,
+        .table = &ngram_table_windows_1251,
         .map = &tables.charMap_windows_1251,
     }));
     count += add(matches, count, recognizeSbcs(input, .{
         .name = "windows-1256",
         .language = "ar",
-        .ngrams = &tables.ngrams_windows_1256,
+        .table = &ngram_table_windows_1256,
         .map = &tables.charMap_windows_1256,
     }));
     count += add(matches, count, recognizeSbcs(input, .{
         .name = "KOI8-R",
         .language = "ru",
-        .ngrams = &tables.ngrams_KOI8_R,
+        .table = &ngram_table_KOI8_R,
         .map = &tables.charMap_KOI8_R,
     }));
     count += add(matches, count, recognizeSbcs(input, .{
         .name = if (input.c1_bytes) "windows-1254" else "ISO-8859-9",
         .language = "tr",
-        .ngrams = &tables.ngrams_8859_9_tr,
+        .table = &ngram_table_8859_9_tr,
         .map = &tables.charMap_8859_9,
     }));
     count += add(matches, count, recognizeSjis(input));
@@ -358,15 +358,31 @@ fn readUtf32(bytes: []const u8, index: usize, big_endian: bool) i32 {
     ));
 }
 
+const ngram_table_8859_5_ru = buildNgramTable(&tables.ngrams_8859_5_ru);
+const ngram_table_8859_6_ar = buildNgramTable(&tables.ngrams_8859_6_ar);
+const ngram_table_8859_7_el = buildNgramTable(&tables.ngrams_8859_7_el);
+const ngram_table_8859_8_I_he = buildNgramTable(&tables.ngrams_8859_8_I_he);
+const ngram_table_8859_8_he = buildNgramTable(&tables.ngrams_8859_8_he);
+const ngram_table_windows_1251 = buildNgramTable(&tables.ngrams_windows_1251);
+const ngram_table_windows_1256 = buildNgramTable(&tables.ngrams_windows_1256);
+const ngram_table_KOI8_R = buildNgramTable(&tables.ngrams_KOI8_R);
+const ngram_table_8859_9_tr = buildNgramTable(&tables.ngrams_8859_9_tr);
+const ngram_table_IBM424_he_ltr = buildNgramTable(&tables.ngrams_IBM424_he_ltr);
+const ngram_table_IBM424_he_rtl = buildNgramTable(&tables.ngrams_IBM424_he_rtl);
+const ngram_table_IBM420_ar_ltr = buildNgramTable(&tables.ngrams_IBM420_ar_ltr);
+const ngram_table_IBM420_ar_rtl = buildNgramTable(&tables.ngrams_IBM420_ar_rtl);
+const language_tables_8859_1 = buildLanguageTables(&tables.ngrams_8859_1);
+const language_tables_8859_2 = buildLanguageTables(&tables.ngrams_8859_2);
+
 const SbcsSpec = struct {
     name: []const u8,
     language: []const u8,
-    ngrams: []const i32,
+    table: *const NgramTable,
     map: *const [256]u8,
 };
 
 fn recognizeSbcs(input: *const Input, spec: SbcsSpec) ?Match {
-    const confidence = matchSbcs(input, spec.ngrams, spec.map);
+    const confidence = matchSbcs(input, spec.table, spec.map);
     if (confidence <= 0) return null;
     return .{
         .name = spec.name,
@@ -379,10 +395,10 @@ fn recognize8859_1(input: *const Input) ?Match {
     const name = if (input.c1_bytes) "windows-1252" else "ISO-8859-1";
     var best: i32 = -1;
     var language: []const u8 = "";
-    for (tables.ngrams_8859_1) |entry| {
+    for (tables.ngrams_8859_1, 0..) |entry, index| {
         const confidence = matchSbcs(
             input,
-            entry.ngrams,
+            &language_tables_8859_1[index],
             &tables.charMap_8859_1,
         );
         if (confidence > best) {
@@ -398,10 +414,10 @@ fn recognize8859_2(input: *const Input) ?Match {
     const name = if (input.c1_bytes) "windows-1250" else "ISO-8859-2";
     var best: i32 = -1;
     var language: []const u8 = "";
-    for (tables.ngrams_8859_2) |entry| {
+    for (tables.ngrams_8859_2, 0..) |entry, index| {
         const confidence = matchSbcs(
             input,
-            entry.ngrams,
+            &language_tables_8859_2[index],
             &tables.charMap_8859_2,
         );
         if (confidence > best) {
@@ -415,7 +431,7 @@ fn recognize8859_2(input: *const Input) ?Match {
 
 fn matchSbcs(
     input: *const Input,
-    ngrams: []const i32,
+    table: *const NgramTable,
     byte_map: *const [256]u8,
 ) i32 {
     var ngram: u32 = 0;
@@ -428,13 +444,13 @@ fn matchSbcs(
         if (!(mapped == 0x20 and ignore_space)) {
             ngram = ((ngram << 8) + mapped) & 0xffffff;
             ngram_count += 1;
-            if (searchNgram(ngrams, ngram)) hit_count += 1;
+            if (containsNgram(table, ngram)) hit_count += 1;
         }
         ignore_space = mapped == 0x20;
     }
     ngram = ((ngram << 8) + 0x20) & 0xffffff;
     ngram_count += 1;
-    if (searchNgram(ngrams, ngram)) hit_count += 1;
+    if (containsNgram(table, ngram)) hit_count += 1;
     if (ngram_count == 0) return 0;
     const percent = @as(f64, @floatFromInt(hit_count)) /
         @as(f64, @floatFromInt(ngram_count));
@@ -442,27 +458,52 @@ fn matchSbcs(
     return @intFromFloat(percent * 300.0);
 }
 
-fn searchNgram(ngrams: []const i32, value: u32) bool {
-    var low: usize = 0;
-    var high = ngrams.len;
-    while (low < high) {
-        const middle = low + (high - low) / 2;
-        const entry = ngrams[middle];
-        if (entry < value) {
-            low = middle + 1;
-        } else if (entry > value) {
-            high = middle;
-        } else {
-            return true;
-        }
+/// A sorted ngram table plus a direct-mapped open-addressing hash built at
+/// comptime. Each table holds about 64 three-byte values, and the searched
+/// value changes with every byte of every encoding scan, so the six
+/// dependent loads of a binary search cost far more than one hash probe.
+const NgramTable = struct {
+    slots: [256]u32,
+};
+
+fn buildNgramTable(comptime values: []const i32) NgramTable {
+    @setEvalBranchQuota(1_000_000);
+    var slots = [_]u32{0} ** 256;
+    for (values) |value| {
+        var slot: usize = @intCast(hashNgram(@intCast(value)));
+        while (slots[slot] != 0) : (slot = (slot + 1) & 255) {}
+        // Zero marks an empty slot; values are below 2^24.
+        slots[slot] = @intCast(value + 1);
     }
-    return false;
+    return .{ .slots = slots };
+}
+
+fn buildLanguageTables(comptime entries: anytype) [entries.len]NgramTable {
+    var result: [entries.len]NgramTable = undefined;
+    for (entries, 0..) |entry, index| {
+        result[index] = buildNgramTable(entry.ngrams);
+    }
+    return result;
+}
+
+inline fn hashNgram(value: u32) u32 {
+    return (value *% 0x9E37_79B1) >> 24;
+}
+
+inline fn containsNgram(table: *const NgramTable, value: u32) bool {
+    var slot: usize = @intCast(hashNgram(value));
+    while (true) {
+        const entry = table.slots[slot];
+        if (entry == 0) return false;
+        if (entry == value + 1) return true;
+        slot = (slot + 1) & 255;
+    }
 }
 
 fn recognizeIbm424(input: *const Input, rtl: bool) ?Match {
     const confidence = matchSbcs(
         input,
-        if (rtl) &tables.ngrams_IBM424_he_rtl else &tables.ngrams_IBM424_he_ltr,
+        if (rtl) &ngram_table_IBM424_he_rtl else &ngram_table_IBM424_he_ltr,
         &tables.charMap_IBM424_he,
     );
     if (confidence <= 0) return null;
@@ -476,7 +517,7 @@ fn recognizeIbm424(input: *const Input, rtl: bool) ?Match {
 fn recognizeIbm420(input: *const Input, rtl: bool) ?Match {
     const confidence = matchSbcsIbm420(
         input,
-        if (rtl) &tables.ngrams_IBM420_ar_rtl else &tables.ngrams_IBM420_ar_ltr,
+        if (rtl) &ngram_table_IBM420_ar_rtl else &ngram_table_IBM420_ar_ltr,
     );
     if (confidence <= 0) return null;
     return .{
@@ -486,7 +527,7 @@ fn recognizeIbm420(input: *const Input, rtl: bool) ?Match {
     };
 }
 
-fn matchSbcsIbm420(input: *const Input, ngrams: []const i32) i32 {
+fn matchSbcsIbm420(input: *const Input, table: *const NgramTable) i32 {
     const char_map = &tables.charMap_IBM420_ar;
     var ngram: u32 = 0;
     var ngram_count: i32 = 0;
@@ -501,7 +542,7 @@ fn matchSbcsIbm420(input: *const Input, ngrams: []const i32) i32 {
             if (!(mapped == 0x20 and ignore_space)) {
                 ngram = ((ngram << 8) + mapped) & 0xffffff;
                 ngram_count += 1;
-                if (searchNgram(ngrams, ngram)) hit_count += 1;
+                if (containsNgram(table, ngram)) hit_count += 1;
             }
             ignore_space = mapped == 0x20;
         }
@@ -512,7 +553,7 @@ fn matchSbcsIbm420(input: *const Input, ngrams: []const i32) i32 {
                 if (!(alef_mapped == 0x20 and ignore_space)) {
                     ngram = ((ngram << 8) + alef_mapped) & 0xffffff;
                     ngram_count += 1;
-                    if (searchNgram(ngrams, ngram)) hit_count += 1;
+                    if (containsNgram(table, ngram)) hit_count += 1;
                 }
                 ignore_space = alef_mapped == 0x20;
             }
@@ -520,7 +561,7 @@ fn matchSbcsIbm420(input: *const Input, ngrams: []const i32) i32 {
     }
     ngram = ((ngram << 8) + 0x20) & 0xffffff;
     ngram_count += 1;
-    if (searchNgram(ngrams, ngram)) hit_count += 1;
+    if (containsNgram(table, ngram)) hit_count += 1;
     if (ngram_count == 0) return 0;
     const percent = @as(f64, @floatFromInt(hit_count)) /
         @as(f64, @floatFromInt(ngram_count));
