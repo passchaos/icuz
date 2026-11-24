@@ -12,6 +12,7 @@
 const std = @import("std");
 const properties = @import("../properties.zig");
 const script = @import("../script/root.zig");
+const scalar = @import("../scalar/root.zig");
 
 const data = @embedFile("dictionaries.bin");
 
@@ -252,10 +253,12 @@ fn decode(text: []const u8, offset: usize) ?struct {
     next: usize,
 } {
     if (offset >= text.len) return null;
-    const length = std.unicode.utf8ByteSequenceLength(text[offset]) catch return null;
-    if (offset + length > text.len) return null;
-    const codepoint = std.unicode.utf8Decode(text[offset..][0..length]) catch return null;
-    return .{ .codepoint = codepoint, .next = offset + length };
+    const decoded = scalar.decodeValidatingPacked(text, offset);
+    if (decoded == scalar.packed_invalid) return null;
+    return .{
+        .codepoint = scalar.packedCodepoint(decoded),
+        .next = offset + scalar.packedLength(decoded),
+    };
 }
 
 fn isMark(codepoint: u21) bool {
