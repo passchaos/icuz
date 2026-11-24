@@ -655,13 +655,17 @@ pub const Runner = struct {
             error.OutOfMemory => return error.OutOfMemory,
             else => return null,
         };
-        self.beginOperation();
-        self.exhausted = false;
         const match = found orelse {
+            self.beginOperation();
             self.had_match = false;
             self.exhausted = true;
             return false;
         };
+        // `recordBackendMatch` overwrites every capture slot and both end
+        // flags. The remaining `beginOperation` work resets VM-only counters,
+        // progress slots, and backtrack lists, which every VM entry clears
+        // itself, so a successful backend find skips that reset.
+        self.exhausted = false;
         self.recordBackendMatch(match);
         return true;
     }
