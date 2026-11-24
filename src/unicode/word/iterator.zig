@@ -31,6 +31,24 @@ const isNumericMid = rules.isNumericMid;
 const isExtendNumLetLeft = rules.isExtendNumLetLeft;
 const isExtendNumLetRight = rules.isExtendNumLetRight;
 
+/// Anchor classes that share the WB5/WB8-WB10 no-break relation: letters and
+/// numbers (0), Katakana (1), and ExtendNumLet (2). Every other class maps
+/// to 3, which `anchor_accepts` rejects.
+const anchor_groups = blk: {
+    var table = [_]u2{3} ** @typeInfo(Class).@"enum".fields.len;
+    table[@intFromEnum(Class.a_letter)] = 0;
+    table[@intFromEnum(Class.hebrew_letter)] = 0;
+    table[@intFromEnum(Class.numeric)] = 0;
+    table[@intFromEnum(Class.katakana)] = 1;
+    table[@intFromEnum(Class.extend_num_let)] = 2;
+    break :blk table;
+};
+
+/// Next-group bitmasks: letters/numbers accept letters/numbers and
+/// ExtendNumLet; Katakana accepts Katakana and ExtendNumLet; ExtendNumLet
+/// accepts letters/numbers and Katakana.
+const anchor_accepts = [4]u3{ 0b101, 0b110, 0b011, 0b000 };
+
 pub const Iterator = struct {
     text: []const u8,
     cursor: usize = 0,
@@ -84,6 +102,30 @@ pub const Iterator = struct {
                 current_next = end + scalar.packedLength(current_packed);
             }
             const current_properties = properties(current_codepoint);
+            // WB5, WB8-WB10, WB13, and WB13a/WB13b prohibit every anchor
+            // pair except Katakana × letter/number and ExtendNumLet ×
+            // ExtendNumLet, so word runs skip the rule engine. General_
+            // Category letters in dictionary scripts keep the `other` class
+            // and are excluded: their UAX #29 boundaries are unchanged.
+            if (previous_properties.word_anchor and
+                current_properties.word_anchor and
+                previous_properties.class != .other and
+                current_properties.class != .other)
+            {
+                const previous_group =
+                    anchor_groups[@intFromEnum(previous_properties.class)];
+                const current_group =
+                    anchor_groups[@intFromEnum(current_properties.class)];
+                if ((anchor_accepts[previous_group] >> current_group) & 1 != 0) {
+                    is_word = true;
+                    regional_indicator_count = 0;
+                    previous_codepoint = current_codepoint;
+                    previous_start = end;
+                    previous_properties = current_properties;
+                    end = current_next;
+                    continue;
+                }
+            }
             if (breaksAt(
                 self.text,
                 end,
