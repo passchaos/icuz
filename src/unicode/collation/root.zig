@@ -3082,6 +3082,9 @@ const RootTables = struct {
     /// Set when more pages carry contractions than the mask table holds;
     /// callers then fall back to the entry scan.
     contraction_overflow: bool = false,
+    /// True when no root entry starts on a unified-ideograph page, so the
+    /// Han fast paths need no page lookup.
+    han_pages_clean: bool = false,
 };
 
 var root_tables_storage: RootTables = undefined;
@@ -3160,6 +3163,12 @@ fn ensureRootTables() void {
         root_tables_storage.contraction_masks[slot][low >> 3] |=
             @as(u8, 1) << @intCast(low & 7);
     }
+    root_tables_storage.han_pages_clean = blk: {
+        for (0x4e..0xa0) |page| {
+            if (root_tables_storage.page_has_entries[page]) break :blk false;
+        }
+        break :blk true;
+    };
     root_tables_state.store(2, .release);
 }
 
@@ -3506,15 +3515,30 @@ fn appendImplicitSortKey(
     }
     // The caller already proved the input is NFD.
     const tables = &root_tables_storage;
-    for (codepoints, 0..) |codepoint, index| {
-        // Unified ideographs are starters, so the combining-class lookup and
-        // its table load drop out for the dominant implicit script.
+    var scan: usize = 0;
+    while (scan < codepoints.len) {
+        const codepoint = codepoints[scan];
+        // Unified ideographs are starters and, when no entry starts on a
+        // Han page, need neither the combining-class lookup nor the
+        // contraction scan; skip whole runs of them.
         if (codepoint >= 0x4e00 and codepoint <= 0x9fff) {
-            if (tables.page_has_entries[codepoint >> 8] and
-                findContiguous(codepoints, index) != null)
-            {
-                return false;
+            var run: usize = 1;
+            while (scan + run < codepoints.len) : (run += 1) {
+                const next = codepoints[scan + run];
+                if (next < 0x4e00 or next > 0x9fff) break;
             }
+            if (!tables.han_pages_clean) {
+                var cursor = scan;
+                while (cursor < scan + run) : (cursor += 1) {
+                    const han = codepoints[cursor];
+                    if (tables.page_has_entries[han >> 8] and
+                        findContiguous(codepoints, cursor) != null)
+                    {
+                        return false;
+                    }
+                }
+            }
+            scan += run;
             continue;
         }
         if (codepoint >= 0x300 and
@@ -3525,10 +3549,11 @@ fn appendImplicitSortKey(
         // Entries only exist on flagged pages, so the page table settles
         // the contraction question without the dependent entry scan.
         if (tables.page_has_entries[codepoint >> 8] and
-            findContiguous(codepoints, index) != null)
+            findContiguous(codepoints, scan) != null)
         {
             return false;
         }
+        scan += 1;
     }
 
     const count = codepoints.len;
