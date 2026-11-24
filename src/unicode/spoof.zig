@@ -6,6 +6,7 @@
 //! skeletons match. `identifierAllowed` checks the Identifier_Status set.
 
 const std = @import("std");
+const scalar = @import("scalar/root.zig");
 const normalization = @import("normalization/root.zig");
 const case = @import("case/root.zig");
 const properties = @import("properties.zig");
@@ -129,14 +130,10 @@ pub fn identifierAllowed(text: []const u8) Error!bool {
     if (text.len == 0) return false;
     var cursor: usize = 0;
     while (cursor < text.len) {
-        const length = std.unicode.utf8ByteSequenceLength(text[cursor]) catch
-            return error.InvalidUtf8;
-        if (cursor + length > text.len) return error.InvalidUtf8;
-        const codepoint = std.unicode.utf8Decode(
-            text[cursor..][0..length],
-        ) catch return error.InvalidUtf8;
-        if (!isAllowedIdentifier(codepoint)) return false;
-        cursor += length;
+        const decoded = scalar.decodeValidatingPacked(text, cursor);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        if (!isAllowedIdentifier(scalar.packedCodepoint(decoded))) return false;
+        cursor += scalar.packedLength(decoded);
     }
     return true;
 }
@@ -192,14 +189,11 @@ fn decodeCodepoint(
     text: []const u8,
     cursor: *usize,
 ) Error!u21 {
-    const length = std.unicode.utf8ByteSequenceLength(text[cursor.*]) catch
-        return error.InvalidUtf8;
-    if (cursor.* + length > text.len) return error.InvalidUtf8;
-    const codepoint = std.unicode.utf8Decode(
-        text[cursor.*..][0..length],
-    ) catch return error.InvalidUtf8;
-    cursor.* += length;
-    return codepoint;
+    if (cursor.* >= text.len) return error.InvalidUtf8;
+    const decoded = scalar.decodeValidatingPacked(text, cursor.*);
+    if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+    cursor.* += scalar.packedLength(decoded);
+    return scalar.packedCodepoint(decoded);
 }
 
 /// Characters accepted by a spoof checker's restriction-level and
