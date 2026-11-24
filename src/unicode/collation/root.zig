@@ -134,6 +134,61 @@ fn ElementBuffer(comptime T: type) type {
             try self.ensureTotalCapacity(self.stack.len * 2);
             try self.heap.?.append(self.allocator, element);
         }
+
+        inline fn count(self: *const Self) usize {
+            return if (self.heap) |list| list.items.len else self.len;
+        }
+
+        inline fn setCount(self: *Self, value: usize) void {
+            if (self.heap) |*list| {
+                list.items.len = value;
+            } else {
+                self.len = value;
+            }
+        }
+
+        inline fn writePointer(self: *Self) [*]T {
+            return if (self.heap) |*list| list.items.ptr else self.stack.ptr;
+        }
+
+        /// Reserve room for `run` more elements before a `writeCachedRun`.
+        inline fn ensureRunCapacity(
+            self: *Self,
+            run: usize,
+        ) error{OutOfMemory}!void {
+            try self.ensureTotalCapacity(self.count() + run);
+        }
+
+        /// Append a run of cached `.single_full` rules. The caller has
+        /// verified every code point hits that kind and reserved room, so
+        /// the write loop needs no checks. Only the collation-element
+        /// buffer consumes these runs; level buffers write through their
+        /// own sink.
+        inline fn writeCachedRun(
+            self: *Self,
+            source: []const u21,
+            start: usize,
+            run: usize,
+        ) void {
+            var len = self.count();
+            const destination = self.writePointer();
+            var index = start;
+            while (index < start + run) : (index += 1) {
+                const cached = tailorings.cachedElement(source[index]);
+                if (T == CollationElement) {
+                    destination[len] = .{
+                        .primary = cached.primary,
+                        .secondary = cached.secondary,
+                        .tertiary = cached.tertiary,
+                        .variable = cached.variable,
+                    };
+                } else {
+                    destination[len] = cached.primary;
+                }
+                len += 1;
+            }
+            self.setCount(len);
+        }
     };
 }
 
@@ -145,6 +200,9 @@ const LevelBuffer = ElementBuffer(u32);
 /// element buffer. The strength is comptime so unused levels drop out.
 fn LevelSink(comptime strength: Strength) type {
     return struct {
+        const need_secondary = strength != .primary;
+        const need_tertiary = strength != .primary and strength != .secondary;
+
         primary: *LevelBuffer,
         secondary: *LevelBuffer,
         tertiary: *LevelBuffer,
@@ -154,10 +212,10 @@ fn LevelSink(comptime strength: Strength) type {
             capacity: usize,
         ) error{OutOfMemory}!void {
             try self.primary.ensureTotalCapacity(capacity);
-            if (strength != .primary) {
+            if (need_secondary) {
                 try self.secondary.ensureTotalCapacity(capacity);
             }
-            if (strength != .primary and strength != .secondary) {
+            if (need_tertiary) {
                 try self.tertiary.ensureTotalCapacity(capacity);
             }
         }
@@ -170,14 +228,67 @@ fn LevelSink(comptime strength: Strength) type {
             if (element.primary != 0) {
                 try self.primary.append(allocator, element.primary);
             }
-            if (strength != .primary and element.secondary != 0) {
+            if (need_secondary and element.secondary != 0) {
                 try self.secondary.append(allocator, element.secondary);
             }
-            if (strength != .primary and strength != .secondary and
-                element.tertiary != 0)
-            {
+            if (need_tertiary and element.tertiary != 0) {
                 try self.tertiary.append(allocator, element.tertiary);
             }
+        }
+
+        /// Reserve room for `run` more weights on every emitted level.
+        inline fn ensureRunCapacity(
+            self: *@This(),
+            run: usize,
+        ) error{OutOfMemory}!void {
+            try self.primary.ensureRunCapacity(run);
+            if (need_secondary) try self.secondary.ensureRunCapacity(run);
+            if (need_tertiary) try self.tertiary.ensureRunCapacity(run);
+        }
+
+        /// Emit a run of cached `.single_full` rules without per-weight
+        /// checks; every level advances once per code point.
+        inline fn writeCachedRun(
+            self: *@This(),
+            source: []const u21,
+            start: usize,
+            run: usize,
+        ) void {
+            var primary_len = self.primary.count();
+            var secondary_len: usize = if (need_secondary)
+                self.secondary.count()
+            else
+                0;
+            var tertiary_len: usize = if (need_tertiary)
+                self.tertiary.count()
+            else
+                0;
+            const primary = self.primary.writePointer();
+            const secondary = if (need_secondary)
+                self.secondary.writePointer()
+            else
+                undefined;
+            const tertiary = if (need_tertiary)
+                self.tertiary.writePointer()
+            else
+                undefined;
+            var index = start;
+            while (index < start + run) : (index += 1) {
+                const cached = tailorings.cachedElement(source[index]);
+                primary[primary_len] = cached.primary;
+                primary_len += 1;
+                if (need_secondary) {
+                    secondary[secondary_len] = cached.secondary;
+                    secondary_len += 1;
+                }
+                if (need_tertiary) {
+                    tertiary[tertiary_len] = cached.tertiary;
+                    tertiary_len += 1;
+                }
+            }
+            self.primary.setCount(primary_len);
+            if (need_secondary) self.secondary.setCount(secondary_len);
+            if (need_tertiary) self.tertiary.setCount(tertiary_len);
         }
     };
 }
@@ -1852,13 +1963,36 @@ fn buildElements(
             }
         }
         if (locale_tailoring) |tailoring| {
+            if (!options.numeric) {
+                // Runs of cached single-element rules dominate CJK prose
+                // under the pinyin, stroke, and zhuyin tailorings. Probe a
+                // chunk, reserve room once, then emit the whole run without
+                // per-weight checks.
+                const probe_end = @min(index + 64, source.len);
+                var run: usize = 0;
+                while (index + run < probe_end) : (run += 1) {
+                    const codepoint = source[index + run];
+                    const cached = tailorings.cachedElement(codepoint);
+                    if (cached.tag != tag_base + codepoint + 1 or
+                        cached.kind != .single_full)
+                    {
+                        break;
+                    }
+                }
+                if (run != 0) {
+                    try ces.ensureRunCapacity(run);
+                    ces.writeCachedRun(source, index, run);
+                    index += run;
+                    continue;
+                }
+            }
             const first = source[index];
             const tag = tag_base + first + 1;
             const cached = tailorings.cachedElement(first);
             if (cached.tag == tag) {
                 // `.single` dominates tailored prose; two compares beat the
                 // indirect jump of a four-way switch.
-                if (cached.kind == .single) {
+                if (cached.kind == .single or cached.kind == .single_full) {
                     try ces.append(allocator, .{
                         .primary = cached.primary,
                         .secondary = cached.secondary,
@@ -1896,7 +2030,12 @@ fn buildElements(
                             .primary = element.primary,
                             .secondary = element.secondary,
                             .tertiary = element.tertiary,
-                            .kind = .single,
+                            .kind = if (element.primary != 0 and
+                                element.secondary != 0 and
+                                element.tertiary != 0)
+                                .single_full
+                            else
+                                .single,
                             .variable = element.variable,
                         };
                         try ces.append(allocator, .{
@@ -4065,6 +4204,52 @@ fn FusedLevelSink(comptime strength: Strength) type {
                     self.tertiary_len += 1;
                 }
             }
+        }
+
+        /// Reserve room for `run` more weights; a fixed sink that cannot
+        /// hold them flags the overflow that rebuilds it as a growable one.
+        inline fn ensureRunCapacity(
+            self: *Self,
+            run: usize,
+        ) error{OutOfMemory}!void {
+            if (self.overflow) return;
+            if (self.primary_len + run > self.primary.len or
+                (need_secondary and self.secondary_len + run > self.secondary.len) or
+                (need_tertiary and self.tertiary_len + run > self.tertiary.len))
+            {
+                self.overflow = true;
+            }
+        }
+
+        /// Emit a run of cached `.single_full` rules without per-weight
+        /// checks; every level advances once per code point.
+        inline fn writeCachedRun(
+            self: *Self,
+            source: []const u21,
+            start: usize,
+            run: usize,
+        ) void {
+            if (self.overflow) return;
+            var primary_len = self.primary_len;
+            var secondary_len = self.secondary_len;
+            var tertiary_len = self.tertiary_len;
+            var index = start;
+            while (index < start + run) : (index += 1) {
+                const cached = tailorings.cachedElement(source[index]);
+                self.primary[primary_len] = cached.primary;
+                primary_len += 1;
+                if (need_secondary) {
+                    self.secondary[secondary_len] = cached.secondary;
+                    secondary_len += 1;
+                }
+                if (need_tertiary) {
+                    self.tertiary[tertiary_len] = cached.tertiary;
+                    tertiary_len += 1;
+                }
+            }
+            self.primary_len = primary_len;
+            self.secondary_len = secondary_len;
+            self.tertiary_len = tertiary_len;
         }
 
         fn emit(

@@ -240,8 +240,11 @@ pub const CachedElement = struct {
         absent = 1,
         /// A single-code-point rule with exactly one collation element.
         single = 2,
+        /// Like `single`, with non-zero primary, secondary, and tertiary
+        /// weights. Runs of these emit without per-weight checks.
+        single_full = 3,
         /// Any other rule; callers fall back to `match`.
-        complex = 3,
+        complex = 4,
     };
 };
 
