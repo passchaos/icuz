@@ -3858,10 +3858,20 @@ fn normalizeNfdLatinInto(
     var segment_len: usize = 0;
     var pending: ?u21 = null;
 
-    for (codepoints, 0..) |codepoint, codepoint_index| {
+    var index: usize = 0;
+    while (index < codepoints.len) {
+        const codepoint = codepoints[index];
         // ASCII is a starter with no decomposition; skip the decomposition
-        // lookup for the common prose case.
+        // lookup and copy whole prose runs at once. Writing the run
+        // immediately is equivalent to leaving its last scalar pending: a
+        // starter always precedes the marks that follow it.
         if (codepoint < 0x80) {
+            var run: usize = 1;
+            while (index + run < codepoints.len and
+                codepoints[index + run] < 0x80)
+            {
+                run += 1;
+            }
             if (segment_len > 0) {
                 if (segment_len > 2 or segment[0] >= 0x80) {
                     normalization.canonicalOrder(segment[0..segment_len]);
@@ -3878,8 +3888,12 @@ fn normalizeNfdLatinInto(
                 if (length == buffer.len) return null;
                 buffer[length] = previous;
                 length += 1;
+                pending = null;
             }
-            pending = codepoint;
+            if (length + run > buffer.len) return null;
+            @memcpy(buffer[length..][0..run], codepoints[index..][0..run]);
+            length += run;
+            index += run;
             continue;
         }
         if (codepoint >= latin_limit) return null;
@@ -3889,9 +3903,9 @@ fn normalizeNfdLatinInto(
         // whole decomposition can be copied out without the segment
         // machinery; accented prose takes this path for every letter.
         if (entry.len != 0 and entry.len <= 2 and segment_len == 0 and
-            (codepoint_index + 1 == codepoints.len or
-                codepoints[codepoint_index + 1] < 0x300 or
-                combining_class.forCodepoint(codepoints[codepoint_index + 1]) == 0))
+            (index + 1 == codepoints.len or
+                codepoints[index + 1] < 0x300 or
+                combining_class.forCodepoint(codepoints[index + 1]) == 0))
         {
             if (pending) |previous| {
                 if (length == buffer.len) return null;
@@ -3902,6 +3916,7 @@ fn normalizeNfdLatinInto(
             if (length + entry.len > buffer.len) return null;
             @memcpy(buffer[length..][0..entry.len], entry.parts[0..entry.len]);
             length += entry.len;
+            index += 1;
             continue;
         }
         var single: [1]u21 = undefined;
@@ -3945,6 +3960,7 @@ fn normalizeNfdLatinInto(
                 segment_len += 1;
             }
         }
+        index += 1;
     }
     if (segment_len > 0) {
         if (segment_len > 2 or segment[0] >= 0x80) {
