@@ -1217,15 +1217,31 @@ fn resolveWeak(types: []Class, sos: Class, eos: Class) void {
     var previous_strong = sos;
     var saw_et = false;
     var saw_weak = false;
-    for (types, 0..) |*value, index| {
-        var current = value.*;
+    var index: usize = 0;
+    while (index < types.len) : (index += 1) {
+        var current = types[index];
+        // Runs of strong letters only update the two state variables. Arabic
+        // letters also resolve to R, which one memset covers.
+        if (current == .l or current == .r or current == .al) {
+            var end = index + 1;
+            while (end < types.len and types[end] == current) end += 1;
+            if (current == .al) {
+                @memset(types[index..end], .r);
+                previous = .r;
+            } else {
+                previous = current;
+            }
+            previous_strong = current;
+            index = end - 1;
+            continue;
+        }
         const flags = weak_flags[@intFromEnum(current)];
         if (flags & WeakFlags.nsm != 0) {
             current = switch (previous) {
                 .lri, .rli, .fsi, .pdi => .on,
                 else => previous,
             };
-            value.* = current;
+            types[index] = current;
         } else {
             if (flags & WeakFlags.isolate_formatting != 0) {
                 previous = .on;
@@ -1233,12 +1249,12 @@ fn resolveWeak(types: []Class, sos: Class, eos: Class) void {
             }
             if (flags & WeakFlags.en != 0 and previous_strong == .al) {
                 current = .an;
-                value.* = current;
+                types[index] = current;
             } else if (flags & WeakFlags.strong_initial != 0) {
                 previous_strong = current;
                 if (flags & WeakFlags.al != 0) {
                     current = .r;
-                    value.* = current;
+                    types[index] = current;
                 }
             } else if (flags & WeakFlags.es_or_cs != 0 and
                 index + 1 < types.len)
@@ -1247,10 +1263,10 @@ fn resolveWeak(types: []Class, sos: Class, eos: Class) void {
                 if (next == .en and previous_strong == .al) next = .an;
                 if (previous == .en and next == .en) {
                     current = .en;
-                    value.* = current;
+                    types[index] = current;
                 } else if (current == .cs and previous == .an and next == .an) {
                     current = .an;
-                    value.* = current;
+                    types[index] = current;
                 }
             }
             previous = current;
