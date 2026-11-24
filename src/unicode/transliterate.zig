@@ -726,13 +726,41 @@ const LiteralCacheEntry = struct {
 threadlocal var literal_cache: [literal_cache_len]LiteralCacheEntry =
     [_]LiteralCacheEntry{.{}} ** literal_cache_len;
 
-fn findMatchInRange(
+/// Compact match result. The streaming pass only reads the target and the
+/// dynamic lengths, so the full record is decoded on demand instead of for
+/// every match.
+const Match = struct {
+    index: u32,
+    source_len: u16,
+    target_len: u16,
+    repeat_start: u16,
+    repeat_len: u16,
+};
+
+inline fn entryFlagsAt(index: usize) u8 {
+    return data[entry_offset + index * 34 + 19];
+}
+
+inline fn entryTargetOffsetAt(index: usize) u32 {
+    return readU32(entry_offset + index * 34 + 5);
+}
+
+inline fn entryPriorityAt(index: usize) u16 {
+    return readU16(entry_offset + index * 34 + 20);
+}
+
+inline fn targetCodepointAt(offset: u32, index: usize) u21 {
+    return @intCast(readU32(targets_offset +
+        (@as(usize, offset) + index) * 4));
+}
+
+fn findMatch(
     range: EntryRange,
     codepoints: []const u21,
     index: usize,
     before: []const u21,
     filter_set: u32,
-) ?Entry {
+) ?Match {
     const first = codepoints[index];
     // ICU's :: [set] ; filter restricts which input characters may start a
     // match; everything else passes through unchanged.
@@ -747,12 +775,12 @@ fn findMatchInRange(
     {
         return null;
     }
-    var best: ?Entry = null;
+    var best: ?Match = null;
 
     var lead = range.start;
     while (lead < literals_start) : (lead += 1) {
         const entry = entryAt(lead);
-        var candidate: ?Entry = null;
+        var candidate: ?Match = null;
         if (entry.flags & 128 != 0) {
             // Repeated negated class in the middle of a source sequence.
             const prefix_len = @as(usize, entry.source_len);
@@ -800,11 +828,13 @@ fn findMatchInRange(
             )) {
                 continue;
             }
-            var matched = entry;
-            matched.source_len = @intCast(prefix_len + consumed + suffix_len);
-            matched.repeat_start = @intCast(prefix_len);
-            matched.repeat_len = @intCast(consumed);
-            candidate = matched;
+            candidate = .{
+                .index = @intCast(lead),
+                .source_len = @intCast(prefix_len + consumed + suffix_len),
+                .target_len = entry.target_len,
+                .repeat_start = @intCast(prefix_len),
+                .repeat_len = @intCast(consumed),
+            };
         } else if (entry.flags & 1 != 0) {
             // Empty-source insertion rule: contexts see the current output
             // prefix and the remaining input.
@@ -819,7 +849,13 @@ fn findMatchInRange(
             )) {
                 continue;
             }
-            candidate = entry;
+            candidate = .{
+                .index = @intCast(lead),
+                .source_len = entry.source_len,
+                .target_len = entry.target_len,
+                .repeat_start = 0,
+                .repeat_len = 0,
+            };
         } else if (entry.flags & 8 != 0) {
             // A collapse entry matches one unit (base plus trailing marks)
             // and consumes any immediately following units, emitting only
@@ -858,10 +894,13 @@ fn findMatchInRange(
             )) {
                 continue;
             }
-            var matched = entry;
-            matched.source_len = @intCast(consumed);
-            matched.target_len = @intCast(unit_length);
-            candidate = matched;
+            candidate = .{
+                .index = @intCast(lead),
+                .source_len = @intCast(consumed),
+                .target_len = @intCast(unit_length),
+                .repeat_start = 0,
+                .repeat_len = 0,
+            };
         } else if (entry.flags & 4 != 0) {
             // A repeated class source consumes the longest run in the set.
             var consumed: usize = 0;
@@ -887,12 +926,18 @@ fn findMatchInRange(
             )) {
                 continue;
             }
-            var matched = entry;
-            matched.source_len = @intCast(consumed);
-            candidate = matched;
+            candidate = .{
+                .index = @intCast(lead),
+                .source_len = @intCast(consumed),
+                .target_len = entry.target_len,
+                .repeat_start = 0,
+                .repeat_len = 0,
+            };
         }
         if (candidate) |value| {
-            if (best == null or value.priority < best.?.priority) {
+            if (best == null or
+                entryPriorityAt(value.index) < entryPriorityAt(best.?.index))
+            {
                 best = value;
             }
         }
@@ -997,32 +1042,70 @@ fn findMatchInRange(
         )) {
             continue;
         }
-        const entry = entryAt(entry_index);
-        if (best == null or entry.priority < best.?.priority) best = entry;
+        if (best == null or
+            readU16(base + 20) < entryPriorityAt(best.?.index))
+        {
+            best = .{
+                .index = @intCast(entry_index),
+                .source_len = @intCast(length),
+                .target_len = data[base + 9],
+                .repeat_start = 0,
+                .repeat_len = 0,
+            };
+        }
         break;
     }
 
     entry_index = literals_end;
     while (entry_index < range.end) : (entry_index += 1) {
-        const entry = entryAt(entry_index);
-        if (entry.flags & 64 == 0) continue;
+        const base = entry_offset + entry_index * 34;
+        if (data[base + 19] & 64 == 0) continue;
         // Negated source class: the first codepoint must be outside the set.
-        if (setContains(entry.source_offset, first)) continue;
-        if (!contextMatches(entry.before_context, before, before.len, false)) {
+        if (setContains(readU32(base), first)) continue;
+        if (!contextMatches(readU32(base + 10), before, before.len, false)) {
             continue;
         }
         if (!contextMatches(
-            entry.after_context,
+            readU32(base + 14),
             codepoints,
             index + 1,
             true,
         )) {
             continue;
         }
-        if (best == null or entry.priority < best.?.priority) best = entry;
+        if (best == null or
+            readU16(base + 20) < entryPriorityAt(best.?.index))
+        {
+            best = .{
+                .index = @intCast(entry_index),
+                .source_len = data[base + 4],
+                .target_len = data[base + 9],
+                .repeat_start = 0,
+                .repeat_len = 0,
+            };
+        }
         break;
     }
     return best;
+}
+
+/// Full entry for the in-place and simple pass paths, which need flags,
+/// kind, and the static record fields.
+fn findMatchInRange(
+    range: EntryRange,
+    codepoints: []const u21,
+    index: usize,
+    before: []const u21,
+    filter_set: u32,
+) ?Entry {
+    const matched = findMatch(range, codepoints, index, before, filter_set) orelse
+        return null;
+    var entry = entryAt(matched.index);
+    entry.source_len = @intCast(matched.source_len);
+    entry.target_len = @intCast(matched.target_len);
+    entry.repeat_start = matched.repeat_start;
+    entry.repeat_len = matched.repeat_len;
+    return entry;
 }
 
 fn decodeAlloc(
@@ -1200,18 +1283,21 @@ fn applyPassStreamingInto(
     while (index < codepoints.len) {
         steps += 1;
         if (steps > max_steps) break;
-        if (findMatchInRange(range, codepoints, index, output.items, filter_set)) |entry| {
-            if (entry.flags & 128 != 0) {
+        if (findMatch(range, codepoints, index, output.items, filter_set)) |matched| {
+            const entry_index: usize = matched.index;
+            const flags = entryFlagsAt(entry_index);
+            if (flags & 128 != 0) {
                 // Repeated negated class: the sentinel is replaced by the
                 // matched input run.
-                for (0..@as(usize, entry.target_len)) |offset| {
-                    const codepoint = targetCodepoint(entry, offset);
+                const target_offset = entryTargetOffsetAt(entry_index);
+                for (0..@as(usize, matched.target_len)) |offset| {
+                    const codepoint = targetCodepointAt(target_offset, offset);
                     if (codepoint == 0x110000) {
-                        for (0..@as(usize, entry.repeat_len)) |run_index| {
+                        for (0..@as(usize, matched.repeat_len)) |run_index| {
                             try output.append(
                                 allocator,
                                 codepoints[
-                                    index + entry.repeat_start + run_index
+                                    index + matched.repeat_start + run_index
                                 ],
                             );
                         }
@@ -1219,19 +1305,20 @@ fn applyPassStreamingInto(
                         try output.append(allocator, codepoint);
                     }
                 }
-            } else if (entry.flags & 8 != 0) {
-                for (0..@as(usize, entry.target_len)) |offset| {
+            } else if (flags & 8 != 0) {
+                for (0..@as(usize, matched.target_len)) |offset| {
                     try output.append(allocator, codepoints[index + offset]);
                 }
             } else {
-                for (0..@as(usize, entry.target_len)) |offset| {
+                const target_offset = entryTargetOffsetAt(entry_index);
+                for (0..@as(usize, matched.target_len)) |offset| {
                     try output.append(
                         allocator,
-                        targetCodepoint(entry, offset),
+                        targetCodepointAt(target_offset, offset),
                     );
                 }
             }
-            index += entry.source_len;
+            index += matched.source_len;
         } else {
             try output.append(allocator, codepoints[index]);
             index += 1;
