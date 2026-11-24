@@ -720,8 +720,28 @@ const LiteralCacheEntry = struct {
     /// Entry index when the group is a single one-scalar rule with no
     /// context, so the match needs no source or context test.
     direct: u32 = std.math.maxInt(u32),
+    /// True when every rule in the group depends on at most the first two
+    /// scalars and has no context, so pair results can be cached.
+    pair_safe: bool = false,
     valid: bool = false,
 };
+
+const pair_cache_len = 128;
+
+const PairCacheEntry = struct {
+    range_start: usize = 0,
+    first: u21 = 0,
+    second: u21 = 0,
+    index: u32 = 0,
+    matched: bool = false,
+    valid: bool = false,
+};
+
+/// Resolved matches for context-free one- and two-scalar groups, keyed by
+/// the two scalars that decide them. Greek vowels and Katakana digraphs
+/// repeat the same pairs constantly.
+threadlocal var pair_cache: [pair_cache_len]PairCacheEntry =
+    [_]PairCacheEntry{.{}} ** pair_cache_len;
 
 /// Lower-bound results for repeated first code points. Prose reuses the same
 /// letters, so a hit replaces the binary search over the sorted literal
@@ -949,6 +969,7 @@ fn findMatch(
     var low: usize = undefined;
     var group_end: usize = undefined;
     var direct: u32 = std.math.maxInt(u32);
+    var pair_safe = false;
     // Short literal tables need at most four probes, which is cheaper than
     // the thread-local cache probe.
     if (literals_end > literals_start + 32) {
@@ -962,6 +983,7 @@ fn findMatch(
             low = cache_slot.index;
             group_end = cache_slot.group_end;
             direct = cache_slot.direct;
+            pair_safe = cache_slot.pair_safe;
         } else {
             low = literals_start;
             var high = literals_end;
@@ -979,14 +1001,27 @@ fn findMatch(
             {
                 group_end += 1;
             }
-            if (!range.has_lead and !range.has_negated and
-                group_end == low + 1)
-            {
-                const base = entry_offset + low * 34;
-                if (data[base + 4] == 1 and
-                    readU32(base + 10) == 0 and readU32(base + 14) == 0)
-                {
-                    direct = @intCast(low);
+            if (!range.has_lead and !range.has_negated) {
+                if (group_end == low + 1) {
+                    const base = entry_offset + low * 34;
+                    if (data[base + 4] == 1 and
+                        readU32(base + 10) == 0 and
+                        readU32(base + 14) == 0)
+                    {
+                        direct = @intCast(low);
+                    }
+                }
+                pair_safe = true;
+                var entry_index = low;
+                while (entry_index < group_end) : (entry_index += 1) {
+                    const base = entry_offset + entry_index * 34;
+                    if (data[base + 4] > 2 or data[base + 19] != 0 or
+                        readU32(base + 10) != 0 or
+                        readU32(base + 14) != 0)
+                    {
+                        pair_safe = false;
+                        break;
+                    }
                 }
             }
             cache_slot.* = .{
@@ -995,6 +1030,7 @@ fn findMatch(
                 .index = @intCast(low),
                 .group_end = @intCast(group_end),
                 .direct = direct,
+                .pair_safe = pair_safe,
                 .valid = true,
             };
         }
@@ -1027,6 +1063,32 @@ fn findMatch(
             .repeat_start = 0,
             .repeat_len = 0,
         };
+    }
+    // Context-free groups resolve from the first two scalars alone, so a
+    // repeated pair reuses the scan's outcome.
+    var pair_slot: ?*PairCacheEntry = null;
+    var pair_second: u21 = 0;
+    if (pair_safe and index + 1 < codepoints.len) {
+        pair_second = codepoints[index + 1];
+        const slot = &pair_cache[
+            (((@as(u32, first) *% 0x9E3779B1) ^
+                (@as(u32, pair_second) *% 0x85EBCA6B)) >> 25) &
+                (pair_cache_len - 1)
+        ];
+        if (slot.valid and slot.range_start == range.start and
+            slot.first == first and slot.second == pair_second)
+        {
+            if (!slot.matched) return null;
+            const base = entry_offset + @as(usize, slot.index) * 34;
+            return .{
+                .index = slot.index,
+                .source_len = data[base + 4],
+                .target_len = data[base + 9],
+                .repeat_start = 0,
+                .repeat_len = 0,
+            };
+        }
+        pair_slot = slot;
     }
     // Candidate entries are rejected with single field loads: a group of
     // rules that share a first code point (base letter plus its digraphs)
@@ -1113,6 +1175,16 @@ fn findMatch(
             };
         }
         break;
+    }
+    if (pair_slot) |slot| {
+        slot.* = .{
+            .range_start = range.start,
+            .first = first,
+            .second = pair_second,
+            .index = if (best) |value| value.index else 0,
+            .matched = best != null,
+            .valid = true,
+        };
     }
     return best;
 }
