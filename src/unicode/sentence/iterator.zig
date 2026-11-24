@@ -179,6 +179,20 @@ const Decoded = struct {
 };
 
 fn decode(text: []const u8, offset: usize) ?Decoded {
+    // Two-byte sequences dominate the non-ASCII scalars of sentence text
+    // (accented Latin, Hebrew, Arabic, Greek, Cyrillic); skip the general
+    // length ladder for them. The iterator's contract guarantees valid UTF-8.
+    if (offset + 2 <= text.len) {
+        const first = text[offset];
+        if (first >= 0xc2 and first <= 0xdf) {
+            return .{
+                .codepoint = (@as(u21, first & 0x1f) << 6) |
+                    (text[offset + 1] & 0x3f),
+                .start = offset,
+                .next = offset + 2,
+            };
+        }
+    }
     const decoded = scalar.decodeValid(text, offset) orelse return null;
     return .{
         .codepoint = decoded.codepoint,
