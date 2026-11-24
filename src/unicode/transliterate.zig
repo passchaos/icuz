@@ -904,32 +904,50 @@ fn findMatchInRange(
             }
         }
     }
+    // Candidate entries are rejected with single field loads: a group of
+    // rules that share a first code point (base letter plus its digraphs)
+    // scans several entries per input scalar, and materializing the whole
+    // record for each one dominated the pass. Only the matching entry is
+    // decoded in full.
     var entry_index = low;
     while (entry_index < literals_end) : (entry_index += 1) {
-        const entry = entryAt(entry_index);
-        if (sourceCodepoint(entry, 0) != first) break;
-        const length = @as(usize, entry.source_len);
+        if (entryFirstCodepoint(entry_index) != first) break;
+        const base = entry_offset + entry_index * 34;
+        const length = @as(usize, data[base + 4]);
         if (length > codepoints.len - index) continue;
-        var matched = true;
-        var offset: usize = 1;
-        while (offset < length) : (offset += 1) {
-            if (sourceCodepoint(entry, offset) != codepoints[index + offset]) {
-                matched = false;
-                break;
+        if (length > 1) {
+            const source_offset = readU32(base);
+            var matched = true;
+            var offset: usize = 1;
+            while (offset < length) : (offset += 1) {
+                const component = readU32(
+                    sources_offset +
+                        (@as(usize, source_offset) + offset) * 4,
+                );
+                if (component != codepoints[index + offset]) {
+                    matched = false;
+                    break;
+                }
             }
+            if (!matched) continue;
         }
-        if (!matched) continue;
-        if (!contextMatches(entry.before_context, before, before.len, false)) {
+        if (!contextMatches(
+            readU32(base + 10),
+            before,
+            before.len,
+            false,
+        )) {
             continue;
         }
         if (!contextMatches(
-            entry.after_context,
+            readU32(base + 14),
             codepoints,
             index + length,
             true,
         )) {
             continue;
         }
+        const entry = entryAt(entry_index);
         if (best == null or entry.priority < best.?.priority) best = entry;
         break;
     }
@@ -1061,6 +1079,27 @@ fn applyPassStreamingAlloc(
 ) Error!std.ArrayList(u21) {
     var output = std.ArrayList(u21).empty;
     errdefer output.deinit(allocator);
+    try applyPassStreamingInto(
+        allocator,
+        codepoints,
+        range,
+        filter_set,
+        &output,
+    );
+    return output;
+}
+
+/// Streaming pass that appends into a caller-owned buffer. Filtered
+/// transforms run the same passes over many short runs, so the buffer is
+/// reused instead of allocating once per run.
+fn applyPassStreamingInto(
+    allocator: std.mem.Allocator,
+    codepoints: []const u21,
+    range: EntryRange,
+    filter_set: u32,
+    output: *std.ArrayList(u21),
+) Error!void {
+    output.clearRetainingCapacity();
     try output.ensureTotalCapacity(
         allocator,
         codepoints.len + codepoints.len / 2 + 16,
@@ -1108,7 +1147,6 @@ fn applyPassStreamingAlloc(
             index += 1;
         }
     }
-    return output;
 }
 
 const SimpleCacheEntry = struct {
@@ -1182,8 +1220,9 @@ fn applyPassAlloc(
     range: EntryRange,
     filter_set: u32,
     streamable: bool,
+    simple: bool,
 ) Error!std.ArrayList(u21) {
-    if (codepoints.len >= 8 and isSimpleRange(range)) {
+    if (codepoints.len >= 8 and simple) {
         return applySimplePassAlloc(allocator, codepoints, range, filter_set);
     }
     if (codepoints.len >= 8 and streamable) {
@@ -1680,6 +1719,7 @@ fn casedListAlloc(
 const PassSetup = struct {
     range: EntryRange,
     streamable: bool,
+    simple: bool,
 };
 
 /// Run every pass of a transform over `codepoints`, returning the final
@@ -1722,6 +1762,7 @@ fn passSetup(transform_index: usize, pass_count: usize) ?[]const PassSetup {
         cached_setup_storage[pass] = .{
             .range = range,
             .streamable = range.end > range.start and canStreamPass(range),
+            .simple = range.end > range.start and isSimpleRange(range),
         };
     }
     cached_setup_transform = transform_index;
@@ -1793,12 +1834,17 @@ fn runPassesRangeAlloc(
             value[pass].streamable
         else
             canStreamPass(range);
+        const simple = if (setup) |value|
+            value[pass].simple
+        else
+            isSimpleRange(range);
         const next = try applyPassAlloc(
             allocator,
             current,
             range,
             if (pass == first_pass) filter_set else 0,
             streamable,
+            simple,
         );
         if (pass_output) |*value| value.deinit(allocator);
         pass_output = next;
@@ -1892,6 +1938,26 @@ fn filteredRunCodepointsAlloc(
     );
 }
 
+/// True when every rule pass can stream into a reused buffer and no
+/// per-pass normalization or case operation runs between them. Filtered
+/// transforms such as Greek-Latin-BGN split prose into short runs, and
+/// allocating a normalization buffer plus one buffer per pass for every run
+/// dominated those transforms.
+fn reusableFilteredRuns(
+    record: TransformRecord,
+    setup: ?[]const PassSetup,
+) bool {
+    if (record.final_case != 0 or record.post_normalization != 0) return false;
+    const passes = setup orelse return false;
+    for (passes, 0..) |pass, pass_index| {
+        const operation = passOperation(record, @intCast(pass_index));
+        if (operation.normalization != 0 or operation.case != 0) return false;
+        if (pass.range.end == pass.range.start) continue;
+        if (!pass.streamable or pass.simple) return false;
+    }
+    return true;
+}
+
 /// Reverse transforms use an input-side global filter. ICU splits the input
 /// into maximal filtered runs and runs the whole compound (including its
 /// normalization steps) on each run, so unfiltered characters such as Arabic
@@ -1919,6 +1985,7 @@ fn filteredTableCoreAlloc(
             setup_storage[pass] = .{
                 .range = range,
                 .streamable = range.end > range.start and canStreamPass(range),
+                .simple = range.end > range.start and isSimpleRange(range),
             };
         }
         setup = setup_storage[0..pass_count];
@@ -1926,6 +1993,13 @@ fn filteredTableCoreAlloc(
 
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
+    // Code-point buffers reused across filtered runs.
+    var scratch: [2]std.ArrayList(u21) = .{ .empty, .empty };
+    defer {
+        scratch[0].deinit(allocator);
+        scratch[1].deinit(allocator);
+    }
+    const reuse = reusableFilteredRuns(record, setup);
     var index: usize = 0;
     while (index < codepoints.items.len) {
         const contained = setContains(record.filter_set, codepoints.items[index]);
@@ -1938,6 +2012,37 @@ fn filteredTableCoreAlloc(
         }
         if (!contained) {
             for (codepoints.items[start..index]) |codepoint| {
+                try appendCodepoint(allocator, &output, codepoint);
+            }
+            continue;
+        }
+        if (reuse) {
+            var current: []const u21 = codepoints.items[start..index];
+            var buffer_index: usize = 0;
+            if (record.pre_normalization != 0) {
+                scratch[0].clearRetainingCapacity();
+                try normalization.normalizeCodepointsInto(
+                    allocator,
+                    current,
+                    normalizationFormFromId(record.pre_normalization),
+                    &scratch[0],
+                );
+                current = scratch[0].items;
+                buffer_index = 1;
+            }
+            for (setup.?) |pass| {
+                if (pass.range.end == pass.range.start) continue;
+                try applyPassStreamingInto(
+                    allocator,
+                    current,
+                    pass.range,
+                    0,
+                    &scratch[buffer_index],
+                );
+                current = scratch[buffer_index].items;
+                buffer_index ^= 1;
+            }
+            for (current) |codepoint| {
                 try appendCodepoint(allocator, &output, codepoint);
             }
             continue;
