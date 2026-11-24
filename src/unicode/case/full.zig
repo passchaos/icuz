@@ -289,39 +289,32 @@ fn titleAsciiAlloc(
     return output;
 }
 
-/// True when every scalar is a letter or a word-separating space, so the
-/// UAX #29 words are exactly the maximal letter runs.
-fn simpleWordText(codepoints: []const u21) bool {
-    for (codepoints) |codepoint| {
-        const class = word_rules.properties(codepoint).class;
-        if (class != .a_letter and class != .hebrew_letter and
-            class != .wseg_space)
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-/// Titlecase letter runs separated by spaces, with the same casing lookups
-/// as the general path but without word segmentation.
+/// Titlecase text made of letters and word-separating spaces, whose UAX #29
+/// words are exactly the maximal letter runs. Returns null as soon as another
+/// shape appears so the caller can rerun the general path; the partial output
+/// is discarded.
 fn titleSimpleAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
     codepoints: []const u21,
     options: Options,
-) Error![]u8 {
+) Error!?[]u8 {
     var output = try std.ArrayList(u8).initCapacity(allocator, text.len);
     errdefer output.deinit(allocator);
 
     var in_word = false;
     var first_cased: ?usize = null;
     for (codepoints, 0..) |codepoint, index| {
-        if (word_rules.properties(codepoint).class == .wseg_space) {
+        const class = word_rules.properties(codepoint).class;
+        if (class == .wseg_space) {
             in_word = false;
             first_cased = null;
             try appendCodepoint(allocator, &output, codepoint);
             continue;
+        }
+        if (class != .a_letter and class != .hebrew_letter) {
+            output.deinit(allocator);
+            return null;
         }
         if (!in_word) {
             in_word = true;
@@ -364,7 +357,7 @@ fn titleSimpleAlloc(
             }
         }
     }
-    return output.toOwnedSlice(allocator);
+    return try output.toOwnedSlice(allocator);
 }
 
 fn titleAlloc(
@@ -384,13 +377,15 @@ fn titleAlloc(
     // Latin-script titles are letters and spaces, whose UAX #29 words are
     // exactly the letter runs. Skip the segment iterator and its per-scalar
     // rule evaluation for that shape.
-    if (edits == null and simpleWordText(decoded.codepoints.items)) {
-        return titleSimpleAlloc(
+    if (edits == null) {
+        if (try titleSimpleAlloc(
             allocator,
             text,
             decoded.codepoints.items,
             options,
-        );
+        )) |titled| {
+            return titled;
+        }
     }
 
     var output = try std.ArrayList(u8).initCapacity(allocator, text.len);
