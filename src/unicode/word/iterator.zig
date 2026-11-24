@@ -70,9 +70,19 @@ pub const Iterator = struct {
                 previous_properties = properties(self.text[end - 1]);
                 continue;
             }
-            const current_packed = scalar.decodeValidPacked(self.text, end);
-            const current_codepoint = scalar.packedCodepoint(current_packed);
-            const current_next = end + scalar.packedLength(current_packed);
+            var current_codepoint: u21 = undefined;
+            var current_next: usize = undefined;
+            if (end + 2 <= self.text.len and self.text[end] >= 0xc2 and
+                self.text[end] <= 0xdf)
+            {
+                current_codepoint = (@as(u21, self.text[end] & 0x1f) << 6) |
+                    (self.text[end + 1] & 0x3f);
+                current_next = end + 2;
+            } else {
+                const current_packed = scalar.decodeValidPacked(self.text, end);
+                current_codepoint = scalar.packedCodepoint(current_packed);
+                current_next = end + scalar.packedLength(current_packed);
+            }
             const current_properties = properties(current_codepoint);
             if (breaksAt(
                 self.text,
@@ -387,7 +397,19 @@ fn nextSignificant(text: []const u8, offset: usize) ?Decoded {
 
 fn decode(text: []const u8, offset: usize) ?Decoded {
     // The iterator's contract is valid UTF-8 (`segments` validates up front),
-    // so the fast non-validating decoder is used.
+    // so the fast non-validating decoder is used. Two-byte scalars cannot be
+    // overlong and skip the general length ladder.
+    if (offset + 2 <= text.len) {
+        const first = text[offset];
+        if (first >= 0xc2 and first <= 0xdf) {
+            return .{
+                .codepoint = (@as(u21, first & 0x1f) << 6) |
+                    (text[offset + 1] & 0x3f),
+                .start = offset,
+                .next = offset + 2,
+            };
+        }
+    }
     const decoded = scalar.decodeValid(text, offset) orelse return null;
     return .{ .codepoint = decoded.codepoint, .start = offset, .next = decoded.next };
 }
