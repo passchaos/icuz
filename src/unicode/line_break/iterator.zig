@@ -83,6 +83,14 @@ fn scanIdeographicRunEnd(text: []const u8, start: usize) usize {
     return cursor;
 }
 
+/// Decode a three-byte sequence at `offset`. Callers have already checked
+/// the lead byte range and that three bytes are readable.
+inline fn decodeThree(text: []const u8, offset: usize) u21 {
+    return (@as(u21, text[offset] & 0x0f) << 12) |
+        (@as(u21, text[offset + 1] & 0x3f) << 6) |
+        @as(u21, text[offset + 2] & 0x3f);
+}
+
 pub const Iterator = struct {
     text: []const u8,
     cursor: usize = 0,
@@ -164,18 +172,18 @@ pub const Iterator = struct {
                 // engine.
                 if (self.text[self.cursor] >= 0xe4 and
                     self.text[self.cursor] <= 0xe9 and
+                    self.cursor + 3 <= self.text.len and
                     self.cursor >= self.id_run_end and
                     self.cursor != 0 and
                     !self.suppress_break_at_cursor)
                 {
                     const start = self.cursor;
-                    const decoded = scalar.decodeValidPacked(self.text, start);
-                    const codepoint = scalar.packedCodepoint(decoded);
+                    // The lead range guarantees a three-byte sequence.
+                    const codepoint = decodeThree(self.text, start);
                     if (isIdeographicCodepoint(codepoint) and
                         breakBeforeIdeograph(&self.state))
                     {
-                        const next_index =
-                            start + scalar.packedLength(decoded);
+                        const next_index = start + 3;
                         self.id_run_end =
                             scanIdeographicRunEnd(self.text, next_index);
                         const effective = rules.effectiveSignificant(
@@ -196,7 +204,7 @@ pub const Iterator = struct {
                 // evaluation.
                 if (self.cursor < self.id_run_end) {
                     const start = self.cursor;
-                    const decoded = scalar.decodeValidPacked(self.text, start);
+                    // The run scanner only advances over three-byte leads.
                     // Every scalar in the run is ideographic, so the raw
                     // class, LB9 base, numeric flags, and regional-indicator
                     // count already hold the values `consume` would set for
@@ -204,12 +212,12 @@ pub const Iterator = struct {
                     self.state.previous_previous = self.state.previous;
                     self.state.previous = self.state.last;
                     self.state.last = .{
-                        .codepoint = scalar.packedCodepoint(decoded),
+                        .codepoint = decodeThree(self.text, start),
                         .properties = cjk_ideograph_properties,
                         .class = .ideographic,
                     };
                     self.state.count += 1;
-                    self.cursor = start + scalar.packedLength(decoded);
+                    self.cursor = start + 3;
                     return .{
                         .byte_offset = start,
                         .kind = .soft,
@@ -318,10 +326,13 @@ pub const Iterator = struct {
             if (!(self.state.count == 0 or self.suppress_break_at_cursor)) {
                 return false;
             }
-            if (self.text[self.cursor] != 0xe1) return false;
-            const decoded = scalar.decodeValidPacked(self.text, cursor);
-            const codepoint = scalar.packedCodepoint(decoded);
-            const next_index = cursor + scalar.packedLength(decoded);
+            if (self.text[self.cursor] != 0xe1 or
+                cursor + 3 > self.text.len)
+            {
+                return false;
+            }
+            const codepoint = decodeThree(self.text, cursor);
+            const next_index = cursor + 3;
             const raw = if (codepoint >= 0x1100 and codepoint <= 0x11ff)
                 property_data.lookupHangul(codepoint)
             else
@@ -338,9 +349,18 @@ pub const Iterator = struct {
             last_class = raw.class;
         }
         while (cursor < self.text.len and self.text[cursor] >= 0x80) {
-            const decoded = scalar.decodeValidPacked(self.text, cursor);
-            const codepoint = scalar.packedCodepoint(decoded);
-            const next_index = cursor + scalar.packedLength(decoded);
+            var codepoint: u21 = undefined;
+            var next_index: usize = undefined;
+            // Jamo are three-byte scalars with a 0xE1 lead; other scripts
+            // take the general decoder.
+            if (self.text[cursor] == 0xe1 and cursor + 3 <= self.text.len) {
+                codepoint = decodeThree(self.text, cursor);
+                next_index = cursor + 3;
+            } else {
+                const decoded = scalar.decodeValidPacked(self.text, cursor);
+                codepoint = scalar.packedCodepoint(decoded);
+                next_index = cursor + scalar.packedLength(decoded);
+            }
             const raw = if (codepoint >= 0x1100 and codepoint <= 0x11ff)
                 property_data.lookupHangul(codepoint)
             else
