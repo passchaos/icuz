@@ -38,6 +38,22 @@ pub fn formatAlloc(
     const locale_data = misc.findLocale(data.locales, locale) orelse
         misc.findLocale(data.locales, "en").?;
     const part = locale_data.patterns[@intFromEnum(options.style)];
+    // The iterative composition allocates one string per item. Ordinary
+    // lists fit a stack arena, so the caller-owned result costs one exact
+    // allocation instead.
+    var stack: [512]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&stack);
+    if (formatParts(fixed.allocator(), part, items)) |result| {
+        return allocator.dupe(u8, result);
+    } else |_| {}
+    return formatParts(allocator, part, items);
+}
+
+fn formatParts(
+    allocator: std.mem.Allocator,
+    part: data.Part,
+    items: []const []const u8,
+) Error![]u8 {
     if (items.len == 2) {
         return formatPartAlloc(allocator, part.two, items[0], items[1]);
     }
