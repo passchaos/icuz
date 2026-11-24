@@ -61,19 +61,33 @@ pub fn formatAlloc(
     }
 
     const magnitude = @abs(value);
-    const formatted = try number.formatAlloc(
-        allocator,
-        magnitude,
-        locale,
-        .{},
-    );
-    defer allocator.free(formatted);
-
     const category = misc.pluralCategory(locale, magnitude);
     const patterns = if (value >= 0) field.future else field.past;
     var pattern = patterns[@intFromEnum(category)];
     if (pattern.len == 0) pattern = patterns[@intFromEnum(plural.Category.other)];
-    return misc.replacePlaceholderAlloc(allocator, pattern, formatted);
+
+    // The number is embedded in the relative pattern, so formatting it into a
+    // stack buffer avoids the intermediate allocation `formatAlloc` returns.
+    var stack: [256]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&stack);
+    var number_buffer = std.ArrayList(u8).empty;
+    if (number.formatDecimalInto(
+        fixed.allocator(),
+        magnitude,
+        locale,
+        &number_buffer,
+    )) |_| {
+        return misc.replacePlaceholderAlloc(
+            allocator,
+            pattern,
+            number_buffer.items,
+        );
+    } else |_| {}
+    var owned = std.ArrayList(u8).empty;
+    errdefer owned.deinit(allocator);
+    try number.formatDecimalInto(allocator, magnitude, locale, &owned);
+    defer owned.deinit(allocator);
+    return misc.replacePlaceholderAlloc(allocator, pattern, owned.items);
 }
 
 fn isSmallInteger(value: f64) bool {
@@ -184,7 +198,6 @@ test "relative time covers additional locales" {
         try testing.expectEqualStrings(case.expected, result);
     }
 }
-
 
 test "relative time styles" {
     const testing = @import("std").testing;
