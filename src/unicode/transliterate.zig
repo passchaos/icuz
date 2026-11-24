@@ -1069,6 +1069,46 @@ inline fn storeEncoded(list: *std.ArrayList(u8), bytes: []const u8) void {
     list.items.len += length;
 }
 
+/// Append UTF-8 for a code-point run with one capacity reservation. Filtered
+/// transliteration emits each run's scalars one at a time, and the per-scalar
+/// encode and capacity checks dominated short runs.
+fn appendCodepointsUtf8(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    codepoints: []const u21,
+) Error!void {
+    if (codepoints.len == 0) return;
+    try output.ensureUnusedCapacity(allocator, codepoints.len * 4);
+    const dest = output.unusedCapacitySlice();
+    var written: usize = 0;
+    for (codepoints) |codepoint| {
+        if (codepoint < 0x80) {
+            dest[written] = @intCast(codepoint);
+            written += 1;
+        } else if (codepoint < 0x800) {
+            dest[written] = @intCast(0xc0 | (codepoint >> 6));
+            dest[written + 1] = @intCast(0x80 | (codepoint & 0x3f));
+            written += 2;
+        } else if (codepoint < 0x10000) {
+            if (codepoint >= 0xd800 and codepoint <= 0xdfff) {
+                return error.InvalidUtf8;
+            }
+            dest[written] = @intCast(0xe0 | (codepoint >> 12));
+            dest[written + 1] = @intCast(0x80 | ((codepoint >> 6) & 0x3f));
+            dest[written + 2] = @intCast(0x80 | (codepoint & 0x3f));
+            written += 3;
+        } else {
+            if (codepoint > 0x10ffff) return error.InvalidUtf8;
+            dest[written] = @intCast(0xf0 | (codepoint >> 18));
+            dest[written + 1] = @intCast(0x80 | ((codepoint >> 12) & 0x3f));
+            dest[written + 2] = @intCast(0x80 | ((codepoint >> 6) & 0x3f));
+            dest[written + 3] = @intCast(0x80 | (codepoint & 0x3f));
+            written += 4;
+        }
+    }
+    output.items.len += written;
+}
+
 fn appendCodepoint(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
@@ -2074,9 +2114,11 @@ fn filteredTableCoreAlloc(
             index += 1;
         }
         if (!contained) {
-            for (codepoints.items[start..index]) |codepoint| {
-                try appendCodepoint(allocator, &output, codepoint);
-            }
+            try appendCodepointsUtf8(
+                allocator,
+                &output,
+                codepoints.items[start..index],
+            );
             continue;
         }
         if (reuse) {
@@ -2105,9 +2147,7 @@ fn filteredTableCoreAlloc(
                 current = scratch[buffer_index].items;
                 buffer_index ^= 1;
             }
-            for (current) |codepoint| {
-                try appendCodepoint(allocator, &output, codepoint);
-            }
+            try appendCodepointsUtf8(allocator, &output, current);
             continue;
         }
         {
@@ -2129,9 +2169,7 @@ fn filteredTableCoreAlloc(
                 defer allocator.free(converted);
                 try output.appendSlice(allocator, converted);
             } else {
-                for (run.items) |codepoint| {
-                    try appendCodepoint(allocator, &output, codepoint);
-                }
+                try appendCodepointsUtf8(allocator, &output, run.items);
             }
         }
     }
