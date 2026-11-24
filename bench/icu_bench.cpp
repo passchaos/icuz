@@ -466,6 +466,26 @@ int main() {
         });
     }
 
+    {
+        const struct { const char* label; int text; } u16_to_u8_cases[] = {
+            {"UTF-16LE -> UTF-8 ASCII", 0},
+            {"UTF-16LE -> UTF-8 Chinese", 12},
+        };
+        for (const auto& item : u16_to_u8_cases) {
+            const auto& utf8 = texts[item.text].utf8;
+            const auto& u16 = texts[item.text].u16;
+            std::vector<char> out(utf8.size() * 3 + 32);
+            bench_bytes(item.label, utf8.size(), 4000, [&] {
+                UErrorCode status = U_ZERO_ERROR;
+                int32_t length = 0;
+                u_strToUTF8(out.data(), static_cast<int32_t>(out.size()),
+                    &length, u16.data(), static_cast<int32_t>(u16.size()),
+                    &status);
+                (void)length;
+            });
+        }
+    }
+
     std::printf("\n-- transliteration --\n");
     {
         auto repeat8 = [](const std::string& unit) {

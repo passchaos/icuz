@@ -1216,6 +1216,253 @@ fn utf8ToUtf16Alloc(
     return output.toOwnedSlice(allocator);
 }
 
+/// Write one valid scalar as UTF-8 at `written` and return the new length.
+inline fn writeUtf8Scalar(spare: []u8, written: usize, codepoint: u21) usize {
+    if (codepoint < 0x800) {
+        spare[written] = @intCast(0xC0 | (codepoint >> 6));
+        spare[written + 1] = @intCast(0x80 | (codepoint & 0x3F));
+        return written + 2;
+    }
+    if (codepoint < 0x10000) {
+        spare[written] = @intCast(0xE0 | (codepoint >> 12));
+        spare[written + 1] = @intCast(0x80 | ((codepoint >> 6) & 0x3F));
+        spare[written + 2] = @intCast(0x80 | (codepoint & 0x3F));
+        return written + 3;
+    }
+    spare[written] = @intCast(0xF0 | (codepoint >> 18));
+    spare[written + 1] = @intCast(0x80 | ((codepoint >> 12) & 0x3F));
+    spare[written + 2] = @intCast(0x80 | ((codepoint >> 6) & 0x3F));
+    spare[written + 3] = @intCast(0x80 | (codepoint & 0x3F));
+    return written + 4;
+}
+
+/// Interleave masks for packing sixteen BMP scalars into their UTF-8 bytes.
+/// Negative lanes select from the second operand, as `@shuffle` defines.
+fn utf8PairLanes() @Vector(32, i32) {
+    var mask: [32]i32 = undefined;
+    for (0..16) |index| {
+        mask[index * 2] = @intCast(index);
+        mask[index * 2 + 1] = -@as(i32, @intCast(index)) - 1;
+    }
+    return mask;
+}
+
+fn utf8TripleLanes() @Vector(48, i32) {
+    var mask: [48]i32 = undefined;
+    for (0..16) |index| {
+        mask[index * 3] = @intCast(index * 2);
+        mask[index * 3 + 1] = @intCast(index * 2 + 1);
+        mask[index * 3 + 2] = -@as(i32, @intCast(index)) - 1;
+    }
+    return mask;
+}
+
+/// Apply the configured error mode for one malformed or incomplete unit.
+/// Returns true when the caller must fail with `error.InvalidSequence`.
+inline fn writeUtf16Error(
+    options: Options,
+    spare: []u8,
+    written: *usize,
+    replacement: []const u8,
+) bool {
+    switch (options.on_error) {
+        .strict => return true,
+        .ignore => {},
+        .replace => {
+            @memcpy(spare[written.*..][0..replacement.len], replacement);
+            written.* += replacement.len;
+        },
+    }
+    return false;
+}
+
+/// UTF-16 to UTF-8. ASCII units narrow sixteen at a time and BMP units encode
+/// straight into the reserved output region, so neither the generic decoder
+/// dispatch nor an intermediate allocation is involved.
+fn utf16ToUtf8Into(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    endian: std.builtin.Endian,
+    options: Options,
+    output: *std.ArrayList(u8),
+) Error!void {
+    return switch (endian) {
+        .little => utf16ToUtf8IntoEndian(.little, allocator, input, options, output),
+        .big => utf16ToUtf8IntoEndian(.big, allocator, input, options, output),
+    };
+}
+
+fn utf16ToUtf8IntoEndian(
+    comptime endian: std.builtin.Endian,
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    options: Options,
+    output: *std.ArrayList(u8),
+) Error!void {
+    // A unit becomes at most three bytes and a surrogate pair four. The
+    // largest overrun is an odd trailing byte that turns into a four-byte
+    // replacement, which the constant slack covers.
+    try output.ensureUnusedCapacity(allocator, input.len * 3 / 2 + 8);
+    const spare = output.unusedCapacitySlice();
+    var written: usize = 0;
+    var replacement: [4]u8 = undefined;
+    var replacement_len: usize = 0;
+    if (options.on_error == .replace) {
+        for ([_]u21{ options.replacement, '?', 0x1A }) |candidate| {
+            if (std.unicode.utf8Encode(candidate, replacement[0..4])) |length| {
+                replacement_len = length;
+                break;
+            } else |_| {}
+        }
+    }
+    var index: usize = 0;
+    while (index + 2 <= input.len) {
+        const unit = std.mem.readInt(u16, input[index..][0..2], endian);
+        if (unit < 0x80) {
+            // Narrow a run of ASCII units. A u16 vector holds one unit per
+            // lane, so the narrowing store is one contiguous byte vector.
+            var end = index;
+            while (end + 32 <= input.len) {
+                var units: @Vector(16, u16) = @bitCast(input[end..][0..32].*);
+                if (endian != native_endian) units = @byteSwap(units);
+                if (!@reduce(.And, units < @as(@Vector(16, u16), @splat(0x80)))) {
+                    break;
+                }
+                const bytes: @Vector(16, u8) = @intCast(units);
+                spare[written..][0..16].* = @bitCast(bytes);
+                written += 16;
+                end += 32;
+            }
+            while (end + 2 <= input.len) {
+                const next = std.mem.readInt(u16, input[end..][0..2], endian);
+                if (next >= 0x80) break;
+                spare[written] = @intCast(next);
+                written += 1;
+                end += 2;
+            }
+            index = end;
+            continue;
+        }
+        // BMP units at or above U+0800 encode to three bytes; pack sixteen
+        // at a time when none is a surrogate.
+        if (unit >= 0x800 and (unit < 0xD800 or unit > 0xDFFF)) {
+            var consumed = false;
+            const Wide = @Vector(16, u16);
+            const Shift = @Vector(16, u4);
+            while (index + 32 <= input.len) {
+                var units: Wide = @bitCast(input[index..][0..32].*);
+                if (endian != native_endian) units = @byteSwap(units);
+                if (!@reduce(.And, units >= @as(Wide, @splat(0x800)))) break;
+                if (!@reduce(.And, (units < @as(Wide, @splat(0xD800))) |
+                    (units > @as(Wide, @splat(0xDFFF)))))
+                {
+                    break;
+                }
+                const first: @Vector(16, u8) = @intCast(
+                    (units >> @as(Shift, @splat(12))) |
+                        @as(Wide, @splat(0xE0)),
+                );
+                const second: @Vector(16, u8) = @intCast(
+                    ((units >> @as(Shift, @splat(6))) &
+                        @as(Wide, @splat(0x3F))) | @as(Wide, @splat(0x80)),
+                );
+                const third: @Vector(16, u8) = @intCast(
+                    (units & @as(Wide, @splat(0x3F))) |
+                        @as(Wide, @splat(0x80)),
+                );
+                const pairs: @Vector(32, u8) = @shuffle(
+                    u8,
+                    first,
+                    second,
+                    utf8PairLanes(),
+                );
+                const triples: @Vector(48, u8) = @shuffle(
+                    u8,
+                    pairs,
+                    third,
+                    utf8TripleLanes(),
+                );
+                spare[written..][0..48].* = @bitCast(triples);
+                written += 48;
+                index += 32;
+                consumed = true;
+            }
+            if (consumed) continue;
+        }
+        index += 2;
+        var codepoint: u21 = 0;
+        var status: enum { ok, malformed, incomplete } = .ok;
+        if (unit >= 0xD800 and unit <= 0xDBFF) {
+            if (index + 2 > input.len) {
+                status = .incomplete;
+            } else {
+                const low = std.mem.readInt(u16, input[index..][0..2], endian);
+                if (low < 0xDC00 or low > 0xDFFF) {
+                    status = .malformed;
+                } else {
+                    index += 2;
+                    codepoint = 0x10000 +
+                        (@as(u21, unit - 0xD800) << 10) + (low - 0xDC00);
+                }
+            }
+        } else if (unit >= 0xDC00 and unit <= 0xDFFF) {
+            status = .malformed;
+        } else {
+            codepoint = unit;
+        }
+        switch (status) {
+            .ok => written = writeUtf8Scalar(spare, written, codepoint),
+            .malformed => if (writeUtf16Error(
+                options,
+                spare,
+                &written,
+                replacement[0..replacement_len],
+            )) {
+                output.items.len += written;
+                return error.InvalidSequence;
+            },
+            .incomplete => {
+                if (writeUtf16Error(
+                    options,
+                    spare,
+                    &written,
+                    replacement[0..replacement_len],
+                )) {
+                    output.items.len += written;
+                    return error.InvalidSequence;
+                }
+                index = input.len;
+                break;
+            },
+        }
+    }
+    if (index < input.len) {
+        // An odd trailing byte cannot form a unit.
+        if (writeUtf16Error(
+            options,
+            spare,
+            &written,
+            replacement[0..replacement_len],
+        )) {
+            output.items.len += written;
+            return error.InvalidSequence;
+        }
+    }
+    output.items.len += written;
+}
+
+fn utf16ToUtf8Alloc(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    endian: std.builtin.Endian,
+    options: Options,
+) Error![]u8 {
+    var output = std.ArrayList(u8).empty;
+    errdefer output.deinit(allocator);
+    try utf16ToUtf8Into(allocator, input, endian, options, &output);
+    return output.toOwnedSlice(allocator);
+}
+
 /// Convert `input` from one encoding to another without an intermediate
 /// allocation.
 /// Direct decoder/encoder pairs for stateless encodings. Comptime dispatch
@@ -1655,6 +1902,15 @@ pub fn convertInto(
             output,
         );
     }
+    if ((from == .utf16_le or from == .utf16_be) and to == .utf8) {
+        return utf16ToUtf8Into(
+            allocator,
+            input,
+            if (from == .utf16_le) .little else .big,
+            options,
+            output,
+        );
+    }
     const converted = try convertAlloc(allocator, input, from, to, options);
     defer allocator.free(converted);
     try output.appendSlice(allocator, converted);
@@ -1675,6 +1931,14 @@ pub fn convertAlloc(
             allocator,
             input,
             if (to == .utf16_le) .little else .big,
+            options,
+        );
+    }
+    if ((from == .utf16_le or from == .utf16_be) and to == .utf8) {
+        return utf16ToUtf8Alloc(
+            allocator,
+            input,
+            if (from == .utf16_le) .little else .big,
             options,
         );
     }
@@ -2023,6 +2287,84 @@ test "UTF-8 three-byte runs convert with and without malformed input" {
         expected_len += case.expected.len;
         try testing.expectEqualStrings(expected[0..expected_len], decoded);
     }
+}
+
+test "UTF-16 to UTF-8 conversion" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+
+    const text = "abcdefghijklmnopqrstuvwxyz0123456789" ** 2 ++
+        "A\u{00E9}\u{4E16}\u{1F600}" ** 4 ++ "\u{4F60}" ** 20;
+    inline for ([_]Encoding{ .utf16_le, .utf16_be }) |encoding| {
+        const encoded = try encodeAlloc(allocator, text, encoding, .{});
+        defer allocator.free(encoded);
+        const decoded = try decodeAlloc(allocator, encoded, encoding, .{});
+        defer allocator.free(decoded);
+        try testing.expectEqualStrings(text, decoded);
+
+        // convertInto appends to the caller's existing contents.
+        var output = std.ArrayList(u8).empty;
+        defer output.deinit(allocator);
+        try output.appendSlice(allocator, "prefix:");
+        try convertInto(allocator, encoded, encoding, .utf8, &output, .{});
+        try testing.expectEqualStrings("prefix:" ++ text, output.items);
+    }
+
+    const malformed = [_]struct {
+        input: []const u8,
+        replaced: []const u8,
+        ignored: []const u8,
+    }{
+        // Lone low surrogate.
+        .{ .input = &.{ 0x00, 0xDC }, .replaced = "\u{FFFD}", .ignored = "" },
+        // High surrogate without its pair; the next unit still decodes.
+        .{
+            .input = &.{ 0x00, 0xD8, 0x41, 0x00 },
+            .replaced = "\u{FFFD}A",
+            .ignored = "A",
+        },
+        // High surrogate at the end of the input.
+        .{ .input = &.{ 0x00, 0xD8 }, .replaced = "\u{FFFD}", .ignored = "" },
+        // Odd trailing byte.
+        .{
+            .input = &.{ 0x41, 0x00, 0x00 },
+            .replaced = "A\u{FFFD}",
+            .ignored = "A",
+        },
+    };
+    for (malformed) |case| {
+        const replaced = try convertAlloc(allocator, case.input, .utf16_le, .utf8, .{});
+        defer allocator.free(replaced);
+        try testing.expectEqualStrings(case.replaced, replaced);
+        const ignored = try convertAlloc(
+            allocator,
+            case.input,
+            .utf16_le,
+            .utf8,
+            .{ .on_error = .ignore },
+        );
+        defer allocator.free(ignored);
+        try testing.expectEqualStrings(case.ignored, ignored);
+        try testing.expectError(
+            error.InvalidSequence,
+            convertAlloc(allocator, case.input, .utf16_le, .utf8, .{ .on_error = .strict }),
+        );
+    }
+
+    const custom = try convertAlloc(
+        allocator,
+        &.{ 0x00, 0xDC },
+        .utf16_le,
+        .utf8,
+        .{ .replacement = 'X' },
+    );
+    defer allocator.free(custom);
+    try testing.expectEqualStrings("X", custom);
+
+    // Big-endian malformed input follows the same rules.
+    const be = try convertAlloc(allocator, &.{ 0xD8, 0x00 }, .utf16_be, .utf8, .{});
+    defer allocator.free(be);
+    try testing.expectEqualStrings("\u{FFFD}", be);
 }
 
 test "multi-byte conversion" {

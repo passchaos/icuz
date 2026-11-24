@@ -832,6 +832,47 @@ fn benchCharsetInto(
     reportBytes(name, rounds * text.len, best);
 }
 
+/// UTF-16LE to UTF-8 into a reused buffer. The rate is reported per input
+/// UTF-8 byte so it is comparable with the other conversion rows.
+fn benchUtf16ToUtf8(
+    name: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    const units = icuz.charset.convertAlloc(
+        allocator,
+        text,
+        .utf8,
+        .utf16_le,
+        .{},
+    ) catch unreachable;
+    defer allocator.free(units);
+    var output = std.ArrayList(u8).empty;
+    defer output.deinit(allocator);
+    output.ensureTotalCapacity(allocator, text.len * 3 + 32) catch unreachable;
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 2000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            output.clearRetainingCapacity();
+            icuz.charset.convertInto(
+                allocator,
+                units,
+                .utf16_le,
+                .utf8,
+                &output,
+                .{},
+            ) catch unreachable;
+            sink +%= output.items.len;
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * text.len, best);
+}
+
 fn benchCollation(
     name: []const u8,
     text: []const u8,
@@ -1929,6 +1970,8 @@ pub fn main() !void {
         .utf16_le,
         allocator,
     );
+    benchUtf16ToUtf8("UTF-16LE -> UTF-8 ASCII", ascii_runtime, allocator);
+    benchUtf16ToUtf8("UTF-16LE -> UTF-8 Chinese", chinese_runtime, allocator);
     benchCharset(
         "UTF-8 -> windows-1252 ASCII",
         ascii_runtime,
