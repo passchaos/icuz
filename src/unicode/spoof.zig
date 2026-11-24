@@ -64,6 +64,25 @@ fn readU32(offset: usize) u32 {
 /// Longest prototype sequence in the pinned confusables data.
 pub const max_mapping_length = 18;
 
+/// The confusable table is sorted by code point and holds thousands of
+/// records, so a lookup costs a dozen dependent loads. Skeleton inputs repeat
+/// the same scalars across calls, so a direct-mapped thread-local cache in
+/// front of the search answers the common case in one load.
+const MappingCacheEntry = struct {
+    /// Code point + 1; zero marks an empty slot.
+    key: u32 = 0,
+    offset: u32 = 0,
+    /// Prototype length; zero marks a cached miss.
+    length: u8 = 0,
+};
+
+threadlocal var mapping_cache: [256]MappingCacheEntry =
+    [_]MappingCacheEntry{.{}} ** 256;
+
+inline fn mappingSlot(codepoint: u21) usize {
+    return (@as(u32, codepoint) *% 0x9E37_79B1) >> 24;
+}
+
 /// Prototype sequence for a code point, or null when it maps to itself.
 /// The values are read into `buffer` because the embedded blob has byte
 /// alignment.
@@ -71,6 +90,16 @@ pub fn mappingInto(
     codepoint: u21,
     buffer: *[max_mapping_length]u32,
 ) ?[]const u32 {
+    const slot = &mapping_cache[mappingSlot(codepoint)];
+    const key = @as(u32, codepoint) + 1;
+    if (slot.key == key) {
+        if (slot.length == 0) return null;
+        const start = pool_offset + @as(usize, slot.offset) * 4;
+        for (0..slot.length) |index| {
+            buffer[index] = readU32(start + index * 4);
+        }
+        return buffer[0..slot.length];
+    }
     var low: usize = 0;
     var high: usize = record_count;
     while (low < high) {
@@ -85,6 +114,7 @@ pub fn mappingInto(
             const offset = readU32(base + 4);
             const length = blob[base + 8];
             std.debug.assert(length <= max_mapping_length);
+            slot.* = .{ .key = key, .offset = offset, .length = length };
             const start = pool_offset + @as(usize, offset) * 4;
             for (0..length) |index| {
                 buffer[index] = readU32(start + index * 4);
@@ -92,6 +122,7 @@ pub fn mappingInto(
             return buffer[0..length];
         }
     }
+    slot.* = .{ .key = key };
     return null;
 }
 
