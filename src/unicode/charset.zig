@@ -1412,28 +1412,13 @@ fn convertUtf8ToDbcsFast(
             } else {
                 break :blk false;
             }
-            var buffer: [4]u8 = undefined;
-            const length = @call(.always_inline, encode, .{ codepoint, &buffer }) orelse
-                break :blk false;
-            switch (length) {
-                1 => spare[written] = buffer[0],
-                2 => {
-                    spare[written] = buffer[0];
-                    spare[written + 1] = buffer[1];
-                },
-                3 => {
-                    spare[written] = buffer[0];
-                    spare[written + 1] = buffer[1];
-                    spare[written + 2] = buffer[2];
-                },
-                4 => {
-                    spare[written] = buffer[0];
-                    spare[written + 1] = buffer[1];
-                    spare[written + 2] = buffer[2];
-                    spare[written + 3] = buffer[3];
-                },
-                else => break :blk false,
-            }
+            // The reserved slack always leaves four writable bytes here, so
+            // the encoder stores straight into the output and the length
+            // switch and its byte copies disappear.
+            const length = @call(.always_inline, encode, .{
+                codepoint,
+                spare[written..][0..4],
+            }) orelse break :blk false;
             written += length;
         }
         output.items.len = written;
