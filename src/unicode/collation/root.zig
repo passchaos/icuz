@@ -3505,13 +3505,20 @@ fn appendImplicitSortKey(
         return false;
     }
     // The caller already proved the input is NFD.
+    const tables = &root_tables_storage;
     for (codepoints, 0..) |codepoint, index| {
         if (codepoint >= 0x300 and
             combining_class.forCodepoint(codepoint) != 0)
         {
             return false;
         }
-        if (findContiguous(codepoints, index) != null) return false;
+        // Entries only exist on flagged pages, so the page table settles
+        // the contraction question without the dependent entry scan.
+        if (tables.page_has_entries[codepoint >> 8] and
+            findContiguous(codepoints, index) != null)
+        {
+            return false;
+        }
     }
 
     const count = codepoints.len;
