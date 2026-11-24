@@ -22,6 +22,7 @@ const Class = rules.Class;
 const BoundaryState = rules.BoundaryState;
 const classForCodepoint = rules.classForCodepoint;
 const isParagraphSeparator = rules.isParagraphSeparator;
+const isLetter = rules.isLetter;
 
 pub const Iterator = struct {
     text: []const u8,
@@ -45,6 +46,56 @@ pub const Iterator = struct {
             // directly and keep the decoded-struct path for other scripts.
             if (self.text[end] < 0x80) {
                 const current_class = classForCodepoint(self.text[end]);
+                if (!isParagraphSeparator(state.previous_actual)) {
+                    // SB4 has been ruled out, so no letter or space can
+                    // start a boundary. Consume whole ASCII runs instead of
+                    // re-running the rule chain for every byte.
+                    if (state.terminator == null and isLetter(current_class)) {
+                        // A terminator-free state makes every letter
+                        // boundary-free: SB6/SB7 need a terminator and
+                        // SB8-SB11 return early without one.
+                        var last = current_class;
+                        var previous = state.last_significant;
+                        end += 1;
+                        while (end < self.text.len and self.text[end] < 0x80) {
+                            const next_class = classForCodepoint(
+                                self.text[end],
+                            );
+                            if (!isLetter(next_class)) break;
+                            previous = last;
+                            last = next_class;
+                            end += 1;
+                        }
+                        state.previous_actual = last;
+                        state.previous_significant = previous;
+                        state.last_significant = last;
+                        continue;
+                    }
+                    if (current_class == .space) {
+                        // SB10 never breaks before a space, and a space run
+                        // only sets `saw_space` when a terminator is pending.
+                        // Every space still shifts the significant classes,
+                        // exactly like a single `consume` call.
+                        var spaces: usize = 1;
+                        end += 1;
+                        while (end < self.text.len and
+                            self.text[end] == ' ') : (end += 1)
+                        {
+                            spaces += 1;
+                        }
+                        state.previous_actual = .space;
+                        if (state.terminator) |*terminator| {
+                            terminator.saw_space = true;
+                        }
+                        if (spaces > 1) {
+                            state.previous_significant = .space;
+                        } else {
+                            state.previous_significant = state.last_significant;
+                        }
+                        state.last_significant = .space;
+                        continue;
+                    }
+                }
                 if (self.breaksAt(end, current_class, &state)) break;
                 state.consume(current_class);
                 end += 1;
@@ -52,6 +103,17 @@ pub const Iterator = struct {
             }
             const current = decode(self.text, end) orelse unreachable;
             const current_class = classForCodepoint(current.codepoint);
+            // Without a pending terminator only SB3-SB5 can fire, and a
+            // letter triggers none of them, so the rule chain is skipped for
+            // the non-ASCII letters of scripts without sentence punctuation.
+            if (state.terminator == null and
+                !isParagraphSeparator(state.previous_actual) and
+                isLetter(current_class))
+            {
+                state.consume(current_class);
+                end = current.next;
+                continue;
+            }
             if (self.breaksAt(end, current_class, &state)) break;
             state.consume(current_class);
             end = current.next;

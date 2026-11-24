@@ -76,6 +76,13 @@ pub fn isSentenceTerminator(class: Class) bool {
     return class == .a_term or class == .s_term;
 }
 
+/// The three letter classes. No rule treats a letter as a boundary, so an
+/// ASCII letter run can be consumed in one step once the surrounding state
+/// is known to be break-free.
+pub inline fn isLetter(class: Class) bool {
+    return class == .lower or class == .upper or class == .other_letter;
+}
+
 const ascii_classes = blk: {
     @setEvalBranchQuota(10_000);
     var table: [128]Class = undefined;
