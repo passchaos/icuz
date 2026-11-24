@@ -3111,7 +3111,33 @@ pub inline fn composePair(starter: u21, combining: u21) ?u21 {
         return if (composed == 0) null else composed;
     }
     return composeHangul(starter, combining) orelse
-        data.composePair(starter, combining);
+        composePairCached(starter, combining);
+}
+
+const compose_cache_len = 64;
+const ComposeCacheEntry = struct {
+    key: u64 = 0,
+    value: u32 = 0,
+};
+
+/// Direct-mapped cache for composition pairs outside the Latin-1 fast table.
+/// The generated table is searched by binary search over a starter page, and
+/// repeated text (accents, transliterated names, normalization fixtures)
+/// asks for the same few pairs. Key 0 cannot collide with a cached miss
+/// because the pair (0, 0) is never a composition.
+threadlocal var compose_cache: [compose_cache_len]ComposeCacheEntry =
+    [_]ComposeCacheEntry{.{}} ** compose_cache_len;
+
+fn composePairCached(starter: u21, combining: u21) ?u21 {
+    const key = (@as(u64, starter) << 21) | @as(u64, combining);
+    const slot = (key *% 0x9E37_79B9_7F4A_7C15) >> 58;
+    const entry = &compose_cache[slot];
+    if (entry.key == key) {
+        return if (entry.value == 0) null else @intCast(entry.value);
+    }
+    const result = data.composePair(starter, combining);
+    entry.* = .{ .key = key, .value = if (result) |value| value else 0 };
+    return result;
 }
 
 const hangul_s_base: u21 = 0xac00;
