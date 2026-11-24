@@ -3507,6 +3507,16 @@ fn appendImplicitSortKey(
     // The caller already proved the input is NFD.
     const tables = &root_tables_storage;
     for (codepoints, 0..) |codepoint, index| {
+        // Unified ideographs are starters, so the combining-class lookup and
+        // its table load drop out for the dominant implicit script.
+        if (codepoint >= 0x4e00 and codepoint <= 0x9fff) {
+            if (tables.page_has_entries[codepoint >> 8] and
+                findContiguous(codepoints, index) != null)
+            {
+                return false;
+            }
+            continue;
+        }
         if (codepoint >= 0x300 and
             combining_class.forCodepoint(codepoint) != 0)
         {
@@ -3523,18 +3533,57 @@ fn appendImplicitSortKey(
 
     const count = codepoints.len;
     try output.ensureTotalCapacity(allocator, count * 4 + 8);
-    for (codepoints) |codepoint| {
-        const weights = implicitWeights(codepoint);
-        output.appendAssumeCapacity(weights.first);
-        output.appendAssumeCapacity(weights.second);
+    // Write through a local cursor: the list header cannot alias the code
+    // point slice, but the compiler cannot prove that for field stores.
+    var length = output.items.len;
+    const items = output.items.ptr;
+    var index: usize = 0;
+    while (index < count) {
+        const first = codepoints[index];
+        if (first >= 0x4e00 and first <= 0x9fff) {
+            // Runs of unified ideographs take the constant-stride formula,
+            // which the compiler can widen; `implicitWeights`' other
+            // branches stay out of the loop body.
+            var run: usize = 1;
+            while (index + run < count) : (run += 1) {
+                const codepoint = codepoints[index + run];
+                if (codepoint < 0x4e00 or codepoint > 0x9fff) break;
+            }
+            var cursor = index;
+            while (cursor < index + run) : (cursor += 1) {
+                const codepoint: u32 = codepoints[cursor];
+                items[length] = (0xFB40 + (codepoint >> 15)) << 12;
+                items[length + 1] = ((codepoint & 0x7fff) | 0x8000) << 12;
+                length += 2;
+            }
+            index += run;
+            continue;
+        }
+        const weights = implicitWeights(first);
+        items[length] = weights.first;
+        items[length + 1] = weights.second;
+        length += 2;
+        index += 1;
     }
-    output.appendAssumeCapacity(0);
-    if (strength == .primary) return true;
-    for (0..count) |_| output.appendAssumeCapacity(0x20000);
-    output.appendAssumeCapacity(0);
-    if (strength == .secondary) return true;
-    for (0..count) |_| output.appendAssumeCapacity(0x02000);
-    output.appendAssumeCapacity(0);
+    items[length] = 0;
+    length += 1;
+    if (strength != .primary) {
+        for (0..count) |_| {
+            items[length] = 0x20000;
+            length += 1;
+        }
+        items[length] = 0;
+        length += 1;
+    }
+    if (strength == .tertiary) {
+        for (0..count) |_| {
+            items[length] = 0x02000;
+            length += 1;
+        }
+        items[length] = 0;
+        length += 1;
+    }
+    output.items.len = length;
     return true;
 }
 
