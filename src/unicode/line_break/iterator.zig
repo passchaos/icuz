@@ -268,6 +268,8 @@ pub const Iterator = struct {
                 // scripts skip the run scanner's call entirely.
                 if (self.text[self.cursor] == 0xe1 and
                     self.consumeHangulRun()) continue;
+                if (self.text[self.cursor] == 0xe2 and
+                    self.consumeEmojiJoiner()) continue;
                 if (self.text[self.cursor] < 0xf0 and
                     !rules.isHangulBlock(self.state.last.class) and
                     self.consumeUnicodeWordRun()) continue;
@@ -418,6 +420,41 @@ pub const Iterator = struct {
         self.state.consumeWordRun(last_class, significant_count, &tail);
         self.cursor = cursor;
         self.simple_ascii = false;
+        return true;
+    }
+
+    /// Consume a zero-width joiner that follows an emoji base or modifier,
+    /// plus the scalar it joins. LB9 folds the joiner into that base and
+    /// LB8a forbids a break after it, so neither boundary needs the rule
+    /// engine.
+    fn consumeEmojiJoiner(self: *Iterator) bool {
+        const start = self.cursor;
+        if (start + 3 > self.text.len or
+            self.text[start + 1] != 0x80 or
+            self.text[start + 2] != 0x8d)
+        {
+            return false;
+        }
+        const base = self.state.last.class;
+        if (base != .emoji_base and base != .emoji_modifier) return false;
+        self.state.consume(.zero_width_joiner, null);
+        self.cursor = start + 3;
+        self.simple_ascii = false;
+        if (self.cursor >= self.text.len) return true;
+        const decoded = scalar.decodeValidPacked(self.text, self.cursor);
+        if (decoded == scalar.packed_invalid) return true;
+        const next_index = self.cursor + scalar.packedLength(decoded);
+        const codepoint = scalar.packedCodepoint(decoded);
+        const raw = properties(codepoint);
+        const effective = rules.effectiveSignificant(
+            codepoint,
+            self.cursor,
+            next_index,
+            raw,
+            self.state.lb9_base,
+        );
+        self.state.consume(raw.class, effective);
+        self.cursor = next_index;
         return true;
     }
 
