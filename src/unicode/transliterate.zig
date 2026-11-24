@@ -1025,27 +1025,6 @@ fn findMatchInRange(
     return best;
 }
 
-pub fn debugGroup(name: []const u8, first_cp: u21) void {
-    const index = findTransformByName(name) orelse return;
-    const record = transformAt(index);
-    const pass_count = @max(record.pass_count, 1);
-    for (0..pass_count) |pass| {
-        const range = transformPassRange(index, @intCast(pass));
-        var entry_index = range.literals_start;
-        while (entry_index < range.literals_end) : (entry_index += 1) {
-            if (entryFirstCodepoint(entry_index) != first_cp) continue;
-            const entry = entryAt(entry_index);
-            std.debug.print("  entry {} src_len={} flags={} prio={} ctx=({},{}) target_len={}\n", .{
-                entry_index - range.start, entry.source_len,    entry.flags,      entry.priority,
-                entry.before_context,      entry.after_context, entry.target_len,
-            });
-            std.debug.print("    src:", .{});
-            for (0..entry.source_len) |i| std.debug.print(" U+{X}", .{sourceCodepoint(entry, i)});
-            std.debug.print("\n", .{});
-        }
-    }
-}
-
 fn decodeAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
