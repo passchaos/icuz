@@ -324,18 +324,19 @@ fn asciiBreaksAt(text: []const u8, offset: usize) ?bool {
     // WB5.
     if (isAhLetter(previous) and isAhLetter(current)) return false;
 
-    const next = if (offset + 1 < text.len) next: {
-        if (text[offset + 1] >= 0x80) {
-            if (isLetterMid(current) or isNumericMid(current)) return null;
-            break :next Class.other;
-        }
+    // Only WB6/WB12 read the scalar after `current`, and only WB7/WB11 the
+    // one before `previous`. Load each neighbour when its rules can apply,
+    // and defer to the general path when that neighbour is not ASCII.
+    const next = if (isLetterMid(current) or isNumericMid(current)) next: {
+        if (offset + 1 >= text.len) break :next Class.other;
+        if (text[offset + 1] >= 0x80) return null;
         break :next asciiClass(text[offset + 1]);
     } else Class.other;
-    const previous_previous = if (offset >= 2) previous: {
-        if (text[offset - 2] >= 0x80) {
-            if (isLetterMid(previous) or isNumericMid(previous)) return null;
-            break :previous Class.other;
-        }
+    const previous_previous = if (isLetterMid(previous) or
+        isNumericMid(previous))
+    previous: {
+        if (offset < 2) break :previous Class.other;
+        if (text[offset - 2] >= 0x80) return null;
         break :previous asciiClass(text[offset - 2]);
     } else Class.other;
 
