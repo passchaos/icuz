@@ -474,6 +474,26 @@ pub fn resolve(
             continue;
         }
         all_ascii = false;
+        // Two-byte sequences dominate Hebrew, Arabic, Greek, and Cyrillic
+        // paragraphs; decode and validate them without the general length
+        // ladder. C2..DF cannot encode an overlong or surrogate scalar.
+        if (first >= 0xc2 and first <= 0xdf and cursor + 2 <= text.len) {
+            const second = text[cursor + 1];
+            if (second & 0xc0 == 0x80) {
+                const codepoint = (@as(u21, first & 0x1f) << 6) |
+                    (second & 0x3f);
+                scalars[count] = .{
+                    .codepoint = codepoint,
+                    .byte_start = cursor,
+                    .byte_len = 2,
+                };
+                classes[count] = property_data.class(codepoint);
+                count += 1;
+                cursor += 2;
+                continue;
+            }
+            return error.InvalidUtf8;
+        }
         // Validation is fused into the decode, so the scan does not pay a
         // separate UTF-8 pass.
         const decoded = scalar_value.decodeValidatingPacked(text, cursor);
