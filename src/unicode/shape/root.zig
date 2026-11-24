@@ -668,10 +668,10 @@ fn shapeUnicode(
     var next_link: u16 = 0;
 
     while (i != iend) {
-        const current = dest[@intCast(i)];
-        if ((curr_link & 0xff00) > 0 or
-            (getLink(current) & IRRELEVANT) != 0)
-        {
+        // `curr_link` is always the link of the scalar at `i`: it is seeded
+        // from it, refreshed from the same position each step, and the
+        // Lam-Alef rewrite updates both together.
+        if ((curr_link & 0xff00) > 0 or (curr_link & IRRELEVANT) != 0) {
             nw = i + step;
             while (nx < 0) {
                 if (nw == iend) {
