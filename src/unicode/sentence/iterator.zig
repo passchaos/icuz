@@ -101,8 +101,8 @@ pub const Iterator = struct {
                 end += 1;
                 continue;
             }
-            const current = decode(self.text, end) orelse unreachable;
-            const current_class = classForCodepoint(current.codepoint);
+            const value = decode(self.text, end) orelse unreachable;
+            const current_class = classForCodepoint(scalar.packedCodepoint(value));
             // Without a pending terminator only SB3-SB5 can fire, and a
             // letter triggers none of them, so the rule chain is skipped for
             // the non-ASCII letters of scripts without sentence punctuation.
@@ -111,12 +111,12 @@ pub const Iterator = struct {
                 isLetter(current_class))
             {
                 state.consume(current_class);
-                end = current.next;
+                end += scalar.packedLength(value);
                 continue;
             }
             if (self.breaksAt(end, current_class, &state)) break;
             state.consume(current_class);
-            end = current.next;
+            end += scalar.packedLength(value);
         }
         self.cursor = end;
         return .{ .byte_start = start, .byte_len = end - start };
@@ -140,21 +140,21 @@ pub const Iterator = struct {
         if (offset <= self.lower_scan_end) return self.lower_scan_result;
 
         var cursor = offset;
-        while (decode(self.text, cursor)) |decoded| {
-            const class = classForCodepoint(decoded.codepoint);
+        while (decode(self.text, cursor)) |value| {
+            const class = classForCodepoint(scalar.packedCodepoint(value));
             if (class == .lower) {
-                self.lower_scan_end = decoded.start;
+                self.lower_scan_end = cursor;
                 self.lower_scan_result = true;
                 return true;
             }
             if (class == .other_letter or class == .upper or
                 isParagraphSeparator(class))
             {
-                self.lower_scan_end = decoded.start;
+                self.lower_scan_end = cursor;
                 self.lower_scan_result = false;
                 return false;
             }
-            cursor = decoded.next;
+            cursor += scalar.packedLength(value);
         }
         self.lower_scan_end = self.text.len;
         self.lower_scan_result = false;
@@ -172,33 +172,24 @@ pub fn assumeValid(text: []const u8) Iterator {
     return .{ .text = text };
 }
 
-const Decoded = struct {
-    codepoint: u21,
-    start: usize,
-    next: usize,
-};
-
-fn decode(text: []const u8, offset: usize) ?Decoded {
+/// Packed decode for the iterator's hot loops. The packed form keeps the
+/// codepoint and length in one register, so the loop avoids spilling a
+/// three-field struct. The iterator's contract guarantees valid UTF-8.
+fn decode(text: []const u8, offset: usize) ?u32 {
     // Two-byte sequences dominate the non-ASCII scalars of sentence text
     // (accented Latin, Hebrew, Arabic, Greek, Cyrillic); skip the general
-    // length ladder for them. The iterator's contract guarantees valid UTF-8.
+    // length ladder for them.
     if (offset + 2 <= text.len) {
         const first = text[offset];
         if (first >= 0xc2 and first <= 0xdf) {
-            return .{
-                .codepoint = (@as(u21, first & 0x1f) << 6) |
-                    (text[offset + 1] & 0x3f),
-                .start = offset,
-                .next = offset + 2,
-            };
+            const codepoint = (@as(u32, first & 0x1f) << 6) |
+                (text[offset + 1] & 0x3f);
+            return ((codepoint + 1) << 3) | 1;
         }
     }
-    const decoded = scalar.decodeValid(text, offset) orelse return null;
-    return .{
-        .codepoint = decoded.codepoint,
-        .start = offset,
-        .next = decoded.next,
-    };
+    const value = scalar.decodeValidPacked(text, offset);
+    if (value == scalar.packed_invalid) return null;
+    return value;
 }
 
 test "Unicode 17 sentence-boundary conformance" {
