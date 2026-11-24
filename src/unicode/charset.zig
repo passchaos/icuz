@@ -1397,11 +1397,9 @@ fn convertUtf8ToDbcsFast(
                 if (index + 3 > input.len) break :blk false;
                 const second = input[index + 1];
                 const third = input[index + 2];
-                if (second < 0x80 or second > 0xBF or
-                    third < 0x80 or third > 0xBF)
-                {
-                    break :blk false;
-                }
+                // One OR covers both continuation checks: the pair is valid
+                // only when both bytes have the 10xxxxxx shape.
+                if (((second | third) & 0xC0) != 0x80) break :blk false;
                 codepoint = (@as(u21, first & 0x0F) << 12) |
                     (@as(u21, second & 0x3F) << 6) |
                     (third & 0x3F);
