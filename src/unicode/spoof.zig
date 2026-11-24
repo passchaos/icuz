@@ -662,44 +662,133 @@ fn decodeUtf8(
     }
 }
 
+/// Codepoint scratch that stays on the caller's stack until it overflows.
+const CodepointBuffer = struct {
+    stack: []u21,
+    len: usize = 0,
+    heap: ?std.ArrayList(u21) = null,
+    allocator: std.mem.Allocator,
+
+    fn append(self: *CodepointBuffer, codepoint: u21) Error!void {
+        if (self.heap) |*list| {
+            try list.append(self.allocator, codepoint);
+            return;
+        }
+        if (self.len < self.stack.len) {
+            self.stack[self.len] = codepoint;
+            self.len += 1;
+            return;
+        }
+        var list = std.ArrayList(u21).empty;
+        try list.ensureTotalCapacity(self.allocator, self.stack.len * 2);
+        try list.appendSlice(self.allocator, self.stack[0..self.len]);
+        try list.append(self.allocator, codepoint);
+        self.heap = list;
+        self.len = 0;
+    }
+
+    fn items(self: *CodepointBuffer) []const u21 {
+        return if (self.heap) |list| list.items else self.stack[0..self.len];
+    }
+
+    fn deinit(self: *CodepointBuffer) void {
+        if (self.heap) |*list| list.deinit(self.allocator);
+    }
+};
+
+/// Decode UTF-8 into a stack-backed buffer.
+fn decodeUtf8Into(text: []const u8, output: *CodepointBuffer) Error!void {
+    var cursor: usize = 0;
+    while (cursor < text.len) {
+        const length = std.unicode.utf8ByteSequenceLength(text[cursor]) catch
+            return error.InvalidUtf8;
+        if (cursor + length > text.len) return error.InvalidUtf8;
+        const codepoint = std.unicode.utf8Decode(
+            text[cursor..][0..length],
+        ) catch return error.InvalidUtf8;
+        try output.append(codepoint);
+        cursor += length;
+    }
+}
+
+/// NFD `codepoints`, preferring the caller's stack buffer and falling back
+/// to the allocating API only when the buffer overflows.
+fn normalizeSkeleton(
+    allocator: std.mem.Allocator,
+    codepoints: []const u21,
+    buffer: []u21,
+    owned: *?[]u21,
+) Error![]const u21 {
+    switch (normalization.normalizeCodepointsTryInto(
+        buffer,
+        codepoints,
+        .nfd,
+    )) {
+        .unchanged => return codepoints,
+        .written => |items| return items,
+        .overflow => {
+            owned.* = try normalization.normalizeCodepointsAlloc(
+                allocator,
+                codepoints,
+                .nfd,
+            );
+            return owned.* orelse codepoints;
+        },
+    }
+}
+
 /// Append the skeleton of UTF-8 `text` to `output` as code points.
 pub fn skeletonCodepointsInto(
     allocator: std.mem.Allocator,
     text: []const u8,
     output: *std.ArrayList(u21),
 ) Error!void {
-    var decoded = std.ArrayList(u21).empty;
-    defer decoded.deinit(allocator);
-    try decodeUtf8(allocator, text, &decoded);
+    // Skeleton inputs are short; decoding and both normalization stages run
+    // on the stack so the common case allocates nothing before `output`.
+    var decoded_stack: [128]u21 = undefined;
+    var decoded = CodepointBuffer{
+        .stack = &decoded_stack,
+        .allocator = allocator,
+    };
+    defer decoded.deinit();
+    try decodeUtf8Into(text, &decoded);
 
-    const decomposed = try normalization.normalizeCodepointsAlloc(
+    var nfd_stack: [256]u21 = undefined;
+    var nfd_owned: ?[]u21 = null;
+    defer if (nfd_owned) |owned| allocator.free(owned);
+    const source = try normalizeSkeleton(
         allocator,
-        decoded.items,
-        .nfd,
+        decoded.items(),
+        &nfd_stack,
+        &nfd_owned,
     );
-    defer if (decomposed) |owned| allocator.free(owned);
-    const source = decomposed orelse decoded.items;
 
-    var mapped = std.ArrayList(u21).empty;
-    defer mapped.deinit(allocator);
-    try mapped.ensureTotalCapacity(allocator, source.len);
+    var mapped_stack: [256]u21 = undefined;
+    var mapped = CodepointBuffer{
+        .stack = &mapped_stack,
+        .allocator = allocator,
+    };
+    defer mapped.deinit();
     var mapping_buffer: [max_mapping_length]u32 = undefined;
     for (source) |codepoint| {
         if (mappingInto(codepoint, &mapping_buffer)) |target| {
-            for (target) |value| try mapped.append(allocator, @intCast(value));
+            for (target) |value| try mapped.append(@intCast(value));
         } else {
-            try mapped.append(allocator, codepoint);
+            try mapped.append(codepoint);
         }
     }
 
-    const normalized = try normalization.normalizeCodepointsAlloc(
+    var final_stack: [256]u21 = undefined;
+    var final_owned: ?[]u21 = null;
+    defer if (final_owned) |owned| allocator.free(owned);
+    const normalized = try normalizeSkeleton(
         allocator,
-        mapped.items,
-        .nfd,
+        mapped.items(),
+        &final_stack,
+        &final_owned,
     );
-    defer if (normalized) |owned| allocator.free(owned);
     // Default-ignorable characters cannot affect a visual comparison.
-    for (normalized orelse mapped.items) |codepoint| {
+    for (normalized) |codepoint| {
         if (properties.isDefaultIgnorableCodePoint(codepoint)) continue;
         try output.append(allocator, codepoint);
     }
