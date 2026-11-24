@@ -1144,6 +1144,9 @@ fn formatPatternWithLocaleFields(
 ) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
+    // A formatted date is short; reserving once keeps the field appends from
+    // growing the list step by step.
+    output.ensureTotalCapacity(allocator, 64) catch {};
 
     var index: usize = 0;
     while (index < pattern.len) {
@@ -1754,6 +1757,31 @@ fn appendHour12(
     );
 }
 
+/// Append a one- to four-byte sequence with inline stores; the list slice
+/// helpers call memcpy for every runtime length.
+inline fn appendShort(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    bytes: []const u8,
+) Error!void {
+    if (output.unusedCapacitySlice().len < bytes.len) {
+        try output.ensureUnusedCapacity(allocator, bytes.len);
+    }
+    const dest = output.unusedCapacitySlice();
+    const length = bytes.len;
+    if (length != 0) {
+        dest[0] = bytes[0];
+        if (length > 1) {
+            dest[1] = bytes[1];
+            if (length > 2) {
+                dest[2] = bytes[2];
+                if (length > 3) dest[3] = bytes[3];
+            }
+        }
+    }
+    output.items.len += length;
+}
+
 fn appendPaddedNumber(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
@@ -1761,15 +1789,24 @@ fn appendPaddedNumber(
     min_digits: usize,
     locale: *const data.Locale,
 ) Error!void {
-    var buffer: [32]u8 = undefined;
-    const text = std.fmt.bufPrint(&buffer, "{d}", .{value}) catch
-        return error.OutOfMemory;
-    var padding = if (text.len < min_digits) min_digits - text.len else 0;
+    // Small decimal conversion; the generic formatter's setup costs more
+    // than the digit loop for the field widths date patterns use.
+    var digits: [20]u8 = undefined;
+    var count: usize = 0;
+    var remaining = value;
+    while (true) {
+        digits[count] = '0' + @as(u8, @intCast(remaining % 10));
+        count += 1;
+        remaining /= 10;
+        if (remaining == 0) break;
+    }
+    var padding = if (count < min_digits) min_digits - count else 0;
     while (padding > 0) : (padding -= 1) {
         try appendDigit(allocator, output, 0, locale);
     }
-    for (text) |byte| {
-        try appendDigit(allocator, output, byte - '0', locale);
+    while (count > 0) {
+        count -= 1;
+        try appendDigit(allocator, output, digits[count] - '0', locale);
     }
 }
 
@@ -1780,10 +1817,14 @@ fn appendDigit(
     locale: *const data.Locale,
 ) Error!void {
     const codepoint = locale.digits[@as(usize, digit)];
+    if (codepoint < 0x80) {
+        try appendShort(allocator, output, &[_]u8{@intCast(codepoint)});
+        return;
+    }
     var buffer: [4]u8 = undefined;
     const length = std.unicode.utf8Encode(codepoint, &buffer) catch
         unreachable;
-    try output.appendSlice(allocator, buffer[0..length]);
+    try appendShort(allocator, output, buffer[0..length]);
 }
 
 fn appendOffset(
@@ -1857,6 +1898,9 @@ pub fn substituteDateTimePattern(
 ) Error![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
+    // A formatted date is short; reserving once keeps the field appends from
+    // growing the list step by step.
+    output.ensureTotalCapacity(allocator, 64) catch {};
 
     var index: usize = 0;
     while (index < pattern.len) {
