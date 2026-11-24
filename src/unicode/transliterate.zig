@@ -717,6 +717,9 @@ const LiteralCacheEntry = struct {
     /// End of the entries that share `first`; equal to `index` when no entry
     /// starts with it.
     group_end: u32 = 0,
+    /// Entry index when the group is a single one-scalar rule with no
+    /// context, so the match needs no source or context test.
+    direct: u32 = std.math.maxInt(u32),
     valid: bool = false,
 };
 
@@ -945,6 +948,7 @@ fn findMatch(
 
     var low: usize = undefined;
     var group_end: usize = undefined;
+    var direct: u32 = std.math.maxInt(u32);
     // Short literal tables need at most four probes, which is cheaper than
     // the thread-local cache probe.
     if (literals_end > literals_start + 32) {
@@ -957,6 +961,7 @@ fn findMatch(
         {
             low = cache_slot.index;
             group_end = cache_slot.group_end;
+            direct = cache_slot.direct;
         } else {
             low = literals_start;
             var high = literals_end;
@@ -974,11 +979,22 @@ fn findMatch(
             {
                 group_end += 1;
             }
+            if (!range.has_lead and !range.has_negated and
+                group_end == low + 1)
+            {
+                const base = entry_offset + low * 34;
+                if (data[base + 4] == 1 and
+                    readU32(base + 10) == 0 and readU32(base + 14) == 0)
+                {
+                    direct = @intCast(low);
+                }
+            }
             cache_slot.* = .{
                 .range_start = range.start,
                 .first = first,
                 .index = @intCast(low),
                 .group_end = @intCast(group_end),
+                .direct = direct,
                 .valid = true,
             };
         }
@@ -999,6 +1015,18 @@ fn findMatch(
         {
             group_end += 1;
         }
+    }
+    // A single one-scalar rule with no context matches unconditionally, so
+    // the scan and its context tests collapse to one target-length load.
+    if (direct != std.math.maxInt(u32)) {
+        const base = entry_offset + @as(usize, direct) * 34;
+        return .{
+            .index = direct,
+            .source_len = 1,
+            .target_len = data[base + 9],
+            .repeat_start = 0,
+            .repeat_len = 0,
+        };
     }
     // Candidate entries are rejected with single field loads: a group of
     // rules that share a first code point (base letter plus its digraphs)
