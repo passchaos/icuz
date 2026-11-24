@@ -12,6 +12,7 @@ const properties = @import("../properties/general_category.zig");
 const combining_class = @import("../canonical/combining_class.zig");
 const scalar = @import("../scalar/root.zig");
 const word = @import("../word/iterator.zig");
+const word_rules = @import("../word/rules.zig");
 const edits_mod = @import("edits.zig");
 
 pub const Edits = edits_mod.Edits;
@@ -288,6 +289,84 @@ fn titleAsciiAlloc(
     return output;
 }
 
+/// True when every scalar is a letter or a word-separating space, so the
+/// UAX #29 words are exactly the maximal letter runs.
+fn simpleWordText(codepoints: []const u21) bool {
+    for (codepoints) |codepoint| {
+        const class = word_rules.properties(codepoint).class;
+        if (class != .a_letter and class != .hebrew_letter and
+            class != .wseg_space)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Titlecase letter runs separated by spaces, with the same casing lookups
+/// as the general path but without word segmentation.
+fn titleSimpleAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    codepoints: []const u21,
+    options: Options,
+) Error![]u8 {
+    var output = try std.ArrayList(u8).initCapacity(allocator, text.len);
+    errdefer output.deinit(allocator);
+
+    var in_word = false;
+    var first_cased: ?usize = null;
+    for (codepoints, 0..) |codepoint, index| {
+        if (word_rules.properties(codepoint).class == .wseg_space) {
+            in_word = false;
+            first_cased = null;
+            try appendCodepoint(allocator, &output, codepoint);
+            continue;
+        }
+        if (!in_word) {
+            in_word = true;
+            first_cased = null;
+        }
+        if (first_cased == null and properties.isCased(codepoint)) {
+            first_cased = index;
+        }
+        if (first_cased != null and index == first_cased.?) {
+            if (lookup(
+                codepoint,
+                .title,
+                options.locale,
+                codepoints,
+                index,
+            )) |mapping| {
+                try appendMapping(allocator, &output, mapping);
+            } else {
+                try appendCodepoint(
+                    allocator,
+                    &output,
+                    simpleTitleFast(codepoint),
+                );
+            }
+        } else {
+            if (lookup(
+                codepoint,
+                .lower,
+                options.locale,
+                codepoints,
+                index,
+            )) |mapping| {
+                try appendMapping(allocator, &output, mapping);
+            } else {
+                try appendCodepoint(
+                    allocator,
+                    &output,
+                    simpleLowerFast(codepoint),
+                );
+            }
+        }
+    }
+    return output.toOwnedSlice(allocator);
+}
+
 fn titleAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -301,6 +380,18 @@ fn titleAlloc(
 
     var decoded = try decodeAlloc(allocator, text, true);
     defer decoded.deinit(allocator);
+
+    // Latin-script titles are letters and spaces, whose UAX #29 words are
+    // exactly the letter runs. Skip the segment iterator and its per-scalar
+    // rule evaluation for that shape.
+    if (edits == null and simpleWordText(decoded.codepoints.items)) {
+        return titleSimpleAlloc(
+            allocator,
+            text,
+            decoded.codepoints.items,
+            options,
+        );
+    }
 
     var output = try std.ArrayList(u8).initCapacity(allocator, text.len);
     errdefer output.deinit(allocator);
