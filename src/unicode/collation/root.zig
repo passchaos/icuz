@@ -3785,21 +3785,22 @@ fn appendLatinCesLevels(
     var tertiary_len: usize = 0;
     const need_secondary = strength != .primary;
     const need_tertiary = strength != .primary and strength != .secondary;
+    // Store every weight and advance the length conditionally: zero weights
+    // are overwritten by the next element, so the branch on the data (which
+    // is unpredictable across accented and plain letters) becomes a setcc.
     for (elements) |element| {
-        if (element.primary != 0) {
-            if (primary_len == primary.len) return false;
-            primary[primary_len] = element.primary;
-            primary_len += 1;
-        }
-        if (need_secondary and element.secondary != 0) {
+        if (primary_len == primary.len) return false;
+        primary[primary_len] = element.primary;
+        primary_len += @intFromBool(element.primary != 0);
+        if (need_secondary) {
             if (secondary_len == secondary.len) return false;
             secondary[secondary_len] = element.secondary;
-            secondary_len += 1;
+            secondary_len += @intFromBool(element.secondary != 0);
         }
-        if (need_tertiary and element.tertiary != 0) {
+        if (need_tertiary) {
             if (tertiary_len == tertiary.len) return false;
             tertiary[tertiary_len] = element.tertiary;
-            tertiary_len += 1;
+            tertiary_len += @intFromBool(element.tertiary != 0);
         }
     }
     const separator = strength == .quaternary or strength == .identical;
