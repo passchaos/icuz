@@ -10,6 +10,7 @@
 #include <unicode/ubrk.h>
 #include <unicode/ucal.h>
 #include <unicode/ucnv.h>
+#include <unicode/uchar.h>
 #include <unicode/ucol.h>
 #include <unicode/ucsdet.h>
 #include <unicode/ubidi.h>
@@ -650,6 +651,47 @@ int main() {
             });
             ucsdet_close(det);
         }
+    }
+
+    std::printf("\n-- character names --\n");
+    {
+        const UChar32 codepoints[] = {
+            0x41,    0xE9,    0x20AC,  0x3A9,   0x4E16,  0x3042,  0xAC00,  0x1F600,
+            0x30,    0x1D160, 0x2F800, 0x10400, 0x9FFF,  0x0E33,  0x0F73,  0x0344,
+        };
+        const int count = static_cast<int>(sizeof(codepoints) / sizeof(codepoints[0]));
+        char buffer[256];
+        int next = 0;
+        bench_ops("char name", 20000 * count, [&] {
+            UErrorCode status = U_ZERO_ERROR;
+            const int32_t length = u_charName(codepoints[next % count],
+                U_UNICODE_CHAR_NAME, buffer, sizeof(buffer), &status);
+            (void)length;
+            next++;
+        });
+    }
+    {
+        const char* queries[] = {
+            "LATIN CAPITAL LETTER A",
+            "LATIN SMALL LETTER E WITH ACUTE",
+            "EURO SIGN",
+            "GREEK CAPITAL LETTER OMEGA",
+            "CJK UNIFIED IDEOGRAPH-4E16",
+            "HIRAGANA LETTER A",
+            "HANGUL SYLLABLE GA",
+            "MATHEMATICAL BOLD CAPITAL A",
+            "CJK COMPATIBILITY IDEOGRAPH-2F800",
+            "DESERET CAPITAL LETTER LONG I",
+        };
+        const int count = static_cast<int>(sizeof(queries) / sizeof(queries[0]));
+        int next = 0;
+        bench_ops("find by name", 1000 * count, [&] {
+            UErrorCode status = U_ZERO_ERROR;
+            const UChar32 codepoint = u_charFromName(U_UNICODE_CHAR_NAME,
+                queries[next % count], &status);
+            (void)codepoint;
+            next++;
+        });
     }
 
     std::printf("\n-- transliteration --\n");

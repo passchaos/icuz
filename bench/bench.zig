@@ -910,6 +910,40 @@ fn benchDetect(
     reportBytes(name, rounds * text.len, best);
 }
 
+fn benchCharName(name: []const u8, codepoints: []const u21) void {
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 20_000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            for (codepoints) |codepoint| {
+                if (icuz.name.name(codepoint)) |value| sink +%= value.len;
+            }
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps(name, rounds * codepoints.len, best);
+}
+
+fn benchFindByName(name: []const u8, queries: []const []const u8) void {
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 2_000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            for (queries) |query| {
+                if (icuz.name.findByName(query)) |codepoint| sink +%= codepoint;
+            }
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportOps(name, rounds * queries.len, best);
+}
+
 fn benchCollation(
     name: []const u8,
     text: []const u8,
@@ -2244,6 +2278,24 @@ pub fn main() !void {
     std.debug.print("\n-- charset detection --\n", .{});
     benchDetect("detect UTF-8 English", ascii_runtime, .utf8, allocator);
     benchDetect("detect GBK Chinese", chinese_runtime, .gbk, allocator);
+
+    std.debug.print("\n-- character names --\n", .{});
+    benchCharName("char name", &[_]u21{
+        0x41, 0xe9,    0x20ac,  0x3a9,   0x4e16, 0x3042, 0xac00, 0x1f600,
+        0x30, 0x1d160, 0x2f800, 0x10400, 0x9fff, 0x0e33, 0x0f73, 0x0344,
+    });
+    benchFindByName("find by name", &[_][]const u8{
+        "LATIN CAPITAL LETTER A",
+        "LATIN SMALL LETTER E WITH ACUTE",
+        "EURO SIGN",
+        "GREEK CAPITAL LETTER OMEGA",
+        "CJK UNIFIED IDEOGRAPH-4E16",
+        "HIRAGANA LETTER A",
+        "HANGUL SYLLABLE GA",
+        "MATHEMATICAL BOLD CAPITAL A",
+        "CJK COMPATIBILITY IDEOGRAPH-2F800",
+        "DESERET CAPITAL LETTER LONG I",
+    });
 
     std.debug.print("\n-- bidi --\n", .{});
     benchBidi("bidi ASCII", ascii_runtime, allocator);

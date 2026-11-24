@@ -13,15 +13,20 @@ const record_count = readU32(8);
 const pool_len = readU32(12);
 const records_offset = header_len;
 const pool_offset = records_offset + @as(usize, record_count) * 12;
+const index_offset = pool_offset + @as(usize, pool_len);
+const index_count = readU32(index_offset);
+const index_entries_offset = index_offset + 4;
 const record_len = 12;
 
 comptime {
     if (data.len < header_len or !std.mem.eql(u8, data[0..4], "CJNM") or
-        data[4] != 1 or data[5] != 17 or data[6] != 0 or data[7] != 0)
+        data[4] != 2 or data[5] != 17 or data[6] != 0 or data[7] != 0)
     {
         @compileError("invalid Unicode name data");
     }
-    if (pool_offset + @as(usize, pool_len) != data.len) {
+    if (index_count != record_count or
+        index_entries_offset + @as(usize, index_count) * 8 != data.len)
+    {
         @compileError("invalid Unicode name data lengths");
     }
 }
@@ -155,16 +160,43 @@ pub fn firstAlias(codepoint: u21) ?[]const u8 {
 /// Matching is ASCII case-insensitive and ignores spaces, hyphens, and
 /// underscores. Algorithmic pattern names are parsed directly; explicit names
 /// and aliases are scanned from the generated pool.
+/// Algorithmic prefixes, pre-normalized for the loose comparison. The
+/// generator's longest prefix is 26 characters after separators are removed.
+const PatternPrefix = struct {
+    bytes: [32]u8,
+    len: u8,
+    first: u21,
+    last: u21,
+};
+
+const normalized_patterns = blk: {
+    @setEvalBranchQuota(10_000);
+    var list: [ranges.patterns.len]PatternPrefix = undefined;
+    for (ranges.patterns, 0..) |pattern, index| {
+        var entry = PatternPrefix{
+            .bytes = undefined,
+            .len = 0,
+            .first = pattern.first,
+            .last = pattern.last,
+        };
+        for (pattern.prefix) |byte| {
+            if (isLooseIgnored(byte)) continue;
+            entry.bytes[entry.len] = toUpperAscii(byte);
+            entry.len += 1;
+        }
+        list[index] = entry;
+    }
+    break :blk list;
+};
+
 pub fn findByName(query: []const u8) ?u21 {
     var normalized_buffer: [128]u8 = undefined;
     const normalized = normalizeLoose(query, &normalized_buffer) orelse
         return null;
     if (normalized.len == 0) return null;
 
-    for (ranges.patterns) |pattern| {
-        var prefix_buffer: [128]u8 = undefined;
-        const prefix = normalizeLoose(pattern.prefix, &prefix_buffer) orelse
-            continue;
+    for (normalized_patterns) |pattern| {
+        const prefix = pattern.bytes[0..pattern.len];
         if (!std.mem.startsWith(u8, normalized, prefix)) continue;
         const hex = normalized[prefix.len..];
         if (hex.len == 0) continue;
@@ -174,11 +206,36 @@ pub fn findByName(query: []const u8) ?u21 {
         }
     }
 
-    for (0..record_count) |index| {
-        const record = recordAt(index);
-        if (looseEqual(query, recordName(record))) return record.codepoint;
+    // The blob carries a (hash, record index) table sorted by hash, so the
+    // lookup binary-searches instead of scanning every record. Hash matches
+    // are verified with the full loose comparison, which also keeps names
+    // that differ only in separators or case distinct from collisions.
+    const hash = looseHash(normalized);
+    var low: usize = 0;
+    var high: usize = index_count;
+    while (low < high) {
+        const mid = low + (high - low) / 2;
+        const value = readU32(index_entries_offset + mid * 8);
+        if (value < hash) low = mid + 1 else high = mid;
+    }
+    var index = low;
+    while (index < index_count) : (index += 1) {
+        const base = index_entries_offset + index * 8;
+        if (readU32(base) != hash) break;
+        const record = recordAt(readU32(base + 4));
+        if (looseEqual(normalized, recordName(record))) return record.codepoint;
     }
     return null;
+}
+
+/// 32-bit FNV-1a over the loose-normalized name, matching the generator.
+fn looseHash(text: []const u8) u32 {
+    var hash: u32 = 2166136261;
+    for (text) |byte| {
+        if (isLooseIgnored(byte)) continue;
+        hash = (hash ^ toUpperAscii(byte)) *% 16777619;
+    }
+    return hash;
 }
 
 fn looseEqual(a: []const u8, b: []const u8) bool {
@@ -222,6 +279,58 @@ fn readU16(offset: usize) u16 {
 
 fn readU32(offset: usize) u32 {
     return std.mem.readInt(u32, data[offset..][0..4], .little);
+}
+
+test "name hash index covers every record" {
+    const testing = @import("std").testing;
+    var seen = try testing.allocator.alloc(bool, record_count);
+    defer testing.allocator.free(seen);
+    @memset(seen, false);
+    var previous_hash: u32 = 0;
+    var previous_index: u32 = 0;
+    for (0..index_count) |position| {
+        const base = index_entries_offset + position * 8;
+        const hash = readU32(base);
+        const record_index = readU32(base + 4);
+        try testing.expect(record_index < record_count);
+        if (position != 0) {
+            try testing.expect(hash > previous_hash or
+                (hash == previous_hash and record_index > previous_index));
+        }
+        previous_hash = hash;
+        previous_index = record_index;
+        try testing.expect(!seen[record_index]);
+        seen[record_index] = true;
+    }
+    for (seen) |value| try testing.expect(value);
+}
+
+test "findByName resolves sampled records" {
+    const testing = @import("std").testing;
+    var index: usize = 0;
+    while (index < record_count) : (index += 97) {
+        const record = recordAt(index);
+        const found = findByName(recordName(record)) orelse {
+            std.debug.print("missing name: {s}\n", .{recordName(record)});
+            return error.TestUnexpectedResult;
+        };
+        var matched = false;
+        var cursor = firstIndexFor(found);
+        while (cursor < record_count) : (cursor += 1) {
+            const candidate = recordAt(cursor);
+            if (candidate.codepoint != found) break;
+            if (looseEqual(recordName(candidate), recordName(record))) {
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            std.debug.print("wrong scalar for {s}: {x}\n", .{
+                recordName(record), found,
+            });
+        }
+        try testing.expect(matched);
+    }
 }
 
 test "explicit and algorithmic names" {

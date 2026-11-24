@@ -7,6 +7,10 @@ Usage:
 Explicit names and aliases are stored in `data.bin`. Pattern names such as
 `CJK UNIFIED IDEOGRAPH-*` are emitted as ranges in `ranges.zig` and expanded at
 runtime, which keeps the embedded pool small.
+
+The blob also carries a name-hash index: every record's loose-normalized name
+is hashed with 32-bit FNV-1a and the (hash, record index) pairs are sorted, so
+`findByName` binary-searches instead of scanning the whole pool.
 """
 
 from __future__ import annotations
@@ -132,6 +136,33 @@ def build_records(
     return records, bytes(pool)
 
 
+def loose_hash(name: str) -> int:
+    """32-bit FNV-1a over the UAX #44 loose-normalized name."""
+    value = 2166136261
+    for ch in name:
+        if ch in " -_":
+            continue
+        code = ord(ch)
+        if code >= 0x80:
+            raise SystemExit(f"non-ASCII name: {name!r}")
+        if 0x61 <= code <= 0x7A:
+            code -= 0x20
+        value = ((value ^ code) * 16777619) & 0xFFFFFFFF
+    return value
+
+
+def build_index(
+    records: list[tuple[int, int, int, int]],
+    pool: bytes,
+) -> list[tuple[int, int]]:
+    entries: list[tuple[int, int]] = []
+    for index, (_, offset, length, _) in enumerate(records):
+        name = pool[offset : offset + length].decode("ascii")
+        entries.append((loose_hash(name), index))
+    entries.sort()
+    return entries
+
+
 def render_blob(
     records: list[tuple[int, int, int, int]],
     pool: bytes,
@@ -140,7 +171,7 @@ def render_blob(
         struct.pack(
             "<4sBBBBII",
             b"CJNM",
-            1,
+            2,
             17,
             0,
             0,
@@ -151,6 +182,10 @@ def render_blob(
     for codepoint, offset, length, kind in records:
         payload += struct.pack("<IIHBB", codepoint, offset, length, kind, 0)
     payload += pool
+    index = build_index(records, pool)
+    payload += struct.pack("<I", len(index))
+    for value, record_index in index:
+        payload += struct.pack("<II", value, record_index)
     return bytes(payload)
 
 

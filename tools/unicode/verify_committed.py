@@ -245,7 +245,7 @@ BLOBS = (
     Blob("src/unicode/format/plurals_conformance.bin", b"CJPL", 1, "bbae46c2c4f5859bd77e22175aaad6a1fc9ddfc50513094e9235a3b85956f1f6", version=(48, 0, 0)),
     Blob("src/unicode/format/ordinals_conformance.bin", b"CJPL", 1, "e2694b7c8d7a0c196b91445b8e31ca05d4347de7d183b1441d0c8ceaf1ee358d", version=(48, 0, 0)),
     Blob("src/unicode/joining/data.bin", b"CJJ1", 1, "05cf3b4ad489e9012576d26eef615900257c106c56a95bb2969b3e6b62a93af5"),
-    Blob("src/unicode/name/data.bin", b"CJNM", 1, "5115bd72b089087be4c814576d81d2b98b0870799ef1c405c38770b3a20f4dbe"),
+    Blob("src/unicode/name/data.bin", b"CJNM", 2, "e5843aa72db45fe6c37cc105da1e01566ea9d7b4eefc0aebfcd05f72f30d5367"),
     Blob("src/unicode/line_break/conformance.bin", b"CJLT", 2, "28e470fb325428ef1cb18b027b8889add6a18f7bf8046e34a986626b687a8ab9"),
     Blob("src/unicode/line_break/data.bin", b"CJL2", 2, "0fef55798282a97581de58698c3617ee0990a52ff40342230fd083f6f881fa92"),
     Blob("src/unicode/normalization/conformance.bin", b"CJNF", 1, "ed9089885715ea3e92f550d0f462e7fa53a681870b95402dc1cae85fd7d17f45"),
@@ -602,7 +602,7 @@ GENERATORS = {
     "tools/unicode/break/generate_word_conformance.py": "3c2467ffc38b2467cbbc0d895e76b8862774c48567aa3ad26b9681605df3a5ff",
     "tools/unicode/transliterate/generate_icu_conformance.py": "c1f2435db3039a3f569de277eccf5901a7c2ba34d396026be0815f39cd6dc997",
     "tools/unicode/transliterate/generate_rules_conformance.py": "c7cfe82f1d4bc716f4ade5483c2968ce0e3a1a68311fa90d8fbea577116ec73a",
-    "tools/unicode/name/generate_data.py": "bb3a64ad8a8c8fd2e34807cb10d81c76677f5e29c073c4808d75d48f234c9302",
+    "tools/unicode/name/generate_data.py": "e67fd15297ae2c1cc40187bc93f58105c43c5a4b42fb2c9ced4f24ae8fb15dc9",
     "tools/unicode/line_break/generate_conformance.py": "44b205d1b640cdb52e4316d649c584c97c2c94644437291fa568fbec1a2cd630",
     "tools/unicode/line_break/generate_data.py": "fa3d55066a98356ffcbf7abc50955a94e0c0f9eeec15758357bd14b8fcf55ac1",
     "tools/unicode/script/generate_data.py": "ce4168570f34cfa6d77b5f33bcf99a3cbc1f745639cda9878cfcc43407e2b6ab",
@@ -1361,7 +1361,10 @@ def check_layout(blob: Blob, data: bytes) -> None:
         assert 16 + index_count * 2 + page_count * 256 == len(data)
     elif magic == b"CJNM":
         record_count, pool_len = struct.unpack_from("<II", data, 8)
-        assert 16 + record_count * 12 + pool_len == len(data)
+        index_offset = 16 + record_count * 12 + pool_len
+        index_count = struct.unpack_from("<I", data, index_offset)[0]
+        assert index_count == record_count
+        assert index_offset + 4 + index_count * 8 == len(data)
     elif magic == b"CJXC":
         record_count, pool_length = struct.unpack_from("<II", data, 8)
         assert 16 + record_count * 12 + pool_length * 4 == len(data)
