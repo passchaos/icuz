@@ -100,9 +100,94 @@ pub fn pluralCategory(locale: []const u8, value: f64) plural.Category {
         return plural.categoryForInteger(locale, @intFromFloat(magnitude));
     }
     var buffer: [64]u8 = undefined;
+    // Values whose shortest decimal expansion has at most nine fraction
+    // digits skip Zig's general float formatter, which dominates the plural
+    // path for formatted measurements and currency names.
+    if (formatShortDecimal(&buffer, magnitude)) |text| {
+        return plural.categoryForDecimalString(locale, text) catch .other;
+    }
     const text = std.fmt.bufPrint(&buffer, "{d}", .{magnitude}) catch
         return .other;
     return plural.categoryForDecimalString(locale, text) catch .other;
+}
+
+const decimal_scales = [_]f64{
+    1,
+    10,
+    100,
+    1_000,
+    10_000,
+    100_000,
+    1_000_000,
+    10_000_000,
+    100_000_000,
+    1_000_000_000,
+};
+
+/// Write a non-negative integer in decimal.
+fn writeUnsigned(buffer: []u8, value: u64) usize {
+    var temp: [20]u8 = undefined;
+    var index: usize = temp.len;
+    var remaining = value;
+    while (remaining >= 10) {
+        index -= 1;
+        temp[index] = '0' + @as(u8, @intCast(remaining % 10));
+        remaining /= 10;
+    }
+    index -= 1;
+    temp[index] = '0' + @as(u8, @intCast(remaining));
+    const length = temp.len - index;
+    @memcpy(buffer[0..length], temp[index..]);
+    return length;
+}
+
+const decimal_pow10_int = [_]u64{
+    1,
+    10,
+    100,
+    1_000,
+    10_000,
+    100_000,
+    1_000_000,
+    10_000_000,
+    100_000_000,
+    1_000_000_000,
+};
+
+/// Format `magnitude` as its shortest exact decimal expansion when that
+/// expansion has at most nine fraction digits, matching `{d}` output.
+/// Returns null when the general float formatter is required.
+fn formatShortDecimal(buffer: []u8, magnitude: f64) ?[]const u8 {
+    for (1..decimal_scales.len) |digits| {
+        const scaled = magnitude * decimal_scales[digits];
+        // Above 2^53 consecutive integers are no longer exactly
+        // representable, so the rounded value could not be trusted.
+        if (scaled >= 9_007_199_254_740_992.0) return null;
+        const total: u64 = @intFromFloat(@round(scaled));
+        // A candidate is the shortest expansion only when the decimal string
+        // parses back to the same double; otherwise more digits are needed.
+        const back = @as(f64, @floatFromInt(total)) / decimal_scales[digits];
+        if (back != magnitude) continue;
+        const scale = decimal_pow10_int[digits];
+        var length = writeUnsigned(buffer, total / scale);
+        buffer[length] = '.';
+        length += 1;
+        var fraction_buffer: [10]u8 = undefined;
+        const fraction_length = writeUnsigned(
+            &fraction_buffer,
+            total % scale,
+        );
+        const pad = digits - fraction_length;
+        @memset(buffer[length..][0..pad], '0');
+        length += pad;
+        @memcpy(
+            buffer[length..][0..fraction_length],
+            fraction_buffer[0..fraction_length],
+        );
+        length += fraction_length;
+        return buffer[0..length];
+    }
+    return null;
 }
 
 pub fn replacePlaceholderAlloc(
