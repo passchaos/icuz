@@ -197,6 +197,9 @@ pub fn replacePlaceholderAlloc(
 ) error{OutOfMemory}![]u8 {
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
+    // The pattern with "{0}" replaced by the value never exceeds the two
+    // lengths combined, so one exact reservation avoids growing the list.
+    try output.ensureTotalCapacity(allocator, pattern.len + value.len);
     var index: usize = 0;
     while (index < pattern.len) {
         if (pattern[index] == '{' and index + 2 < pattern.len and

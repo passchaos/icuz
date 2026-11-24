@@ -2491,6 +2491,7 @@ fn formatCurrencyNameAlloc(
     var stack: [256]u8 = undefined;
     var fixed = std.heap.FixedBufferAllocator.init(&stack);
     var output = std.ArrayList(u8).empty;
+    output.ensureTotalCapacity(fixed.allocator(), 64) catch {};
     formatCurrencyNameInto(
         fixed.allocator(),
         value,
