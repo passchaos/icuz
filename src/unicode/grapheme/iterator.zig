@@ -378,7 +378,7 @@ const header = parseHeader();
 pub const Iterator = struct {
     text: []const u8,
     cursor: usize = 0,
-    pending: ?Decoded = null,
+    pending: ?u32 = null,
     /// Properties of `pending`, recorded when the previous cluster ended so
     /// the next call does not repeat the two-level table read.
     pending_properties: Properties = .{
@@ -406,12 +406,13 @@ pub const Iterator = struct {
         const pending_used = self.pending != null;
         const first = self.pending orelse decode(self.text, self.cursor) orelse unreachable;
         self.pending = null;
-        self.cursor = first.next;
+        const first_codepoint = scalar_value.packedCodepoint(first);
+        self.cursor += scalar_value.packedLength(first);
 
         // GB3 is the sole multi-byte ASCII cluster.
-        if (first.codepoint < 0x80 and self.cursor < self.text.len and
+        if (first_codepoint < 0x80 and self.cursor < self.text.len and
             self.text[self.cursor] < 0x80 and
-            !(first.codepoint == '\r' and self.text[self.cursor] == '\n'))
+            !(first_codepoint == '\r' and self.text[self.cursor] == '\n'))
         {
             return .{ .byte_start = start, .byte_len = self.cursor - start };
         }
@@ -419,7 +420,7 @@ pub const Iterator = struct {
         var previous = if (pending_used)
             self.pending_properties
         else
-            properties(first.codepoint);
+            properties(first_codepoint);
         var regional_indicator_count: usize =
             if (previous.class == .regional_indicator) 1 else 0;
         var saw_extended_pictographic = previous.extended_pictographic;
@@ -429,10 +430,11 @@ pub const Iterator = struct {
 
         while (self.cursor < self.text.len) {
             const current = decode(self.text, self.cursor) orelse unreachable;
-            const current_properties = properties(current.codepoint);
+            const current_codepoint = scalar_value.packedCodepoint(current);
+            const current_properties = properties(current_codepoint);
             const current_incb = if (current_properties.incb == .linker or
                 (self.tailoring == .legacy_virama_linker and
-                    legacyInCbLinker(current.codepoint)))
+                    legacyInCbLinker(current_codepoint)))
                 InCb.linker
             else
                 current_properties.incb;
@@ -449,7 +451,7 @@ pub const Iterator = struct {
                 self.pending_properties = current_properties;
                 break;
             }
-            self.cursor = current.next;
+            self.cursor += scalar_value.packedLength(current);
 
             const current_completes_incb_chain = incb_consonant and
                 incb_linker and current_incb == .consonant;
@@ -626,10 +628,12 @@ test "Unicode emoji presentation stays distinct from extended pictographic" {
     try std.testing.expect(!isEmojiPresentation('A'));
 }
 
-const Decoded = scalar_value.Decoded;
-
-inline fn decode(text: []const u8, offset: usize) ?Decoded {
-    return scalar_value.decodeValid(text, offset);
+/// Packed decode keeps the codepoint and length in one register, so the
+/// cluster loop avoids spilling a two-field struct.
+inline fn decode(text: []const u8, offset: usize) ?u32 {
+    const value = scalar_value.decodeValidPacked(text, offset);
+    if (value == scalar_value.packed_invalid) return null;
+    return value;
 }
 
 fn parseHeader() Header {
