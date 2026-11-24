@@ -628,12 +628,18 @@ pub const Set = struct {
             casedRangesContained(self);
         if (closure == .simple_case_insensitive and fully_cased) return;
 
-        // The clone below does not change the membership count, so compute
-        // it once for the small/large decision.
+        // The clone does not change the membership count, so compute it once
+        // for the small/large decision.
         const original_count = self.count();
 
-        var original = try self.clone(allocator);
-        defer original.deinit();
+        // The simple closure only reads the set while it collects additions;
+        // the other closures insert strings mid-scan, so they need a snapshot.
+        var owned: ?Set = null;
+        defer if (owned) |*set| set.deinit();
+        if (closure != .simple_case_insensitive) {
+            owned = try self.clone(allocator);
+        }
+        const original: *const Set = if (owned) |*set| set else self;
 
         if (closure == .add_case_mappings) {
             for (original.ranges.items) |range| {
@@ -673,20 +679,57 @@ pub const Set = struct {
             if (original_count < 512) {
                 // Small sets scan their own scalars; a binary search per
                 // scalar is cheaper than a pass over the whole cased table.
-                var class_bits = [_]u64{0} ** cased_class_words;
+                // The classes they hit fit a short list, which avoids zeroing
+                // the full class bitset; a set with many classes falls back
+                // to the bitset scan.
+                var seen: [64]u16 = undefined;
+                var seen_len: usize = 0;
+                var overflow = false;
                 for (original.ranges.items) |range| {
                     var codepoint: u32 = range.first;
                     while (codepoint <= range.last) : (codepoint += 1) {
                         const index = casedIndex(@intCast(codepoint)) orelse continue;
                         const class = cased_classes[index];
-                        if (testCaseClass(&class_bits, class)) continue;
-                        markCaseClass(&class_bits, class);
+                        var already = false;
+                        for (seen[0..seen_len]) |value| {
+                            if (value == class) {
+                                already = true;
+                                break;
+                            }
+                        }
+                        if (already) continue;
+                        if (seen_len == seen.len) {
+                            overflow = true;
+                            break;
+                        }
+                        seen[seen_len] = class;
+                        seen_len += 1;
                         try self.collectCaseClass(
                             class,
                             closure,
                             &additions,
                             allocator,
                         );
+                    }
+                    if (overflow) break;
+                }
+                if (overflow) {
+                    additions.clearRetainingCapacity();
+                    var class_bits = [_]u64{0} ** cased_class_words;
+                    for (original.ranges.items) |range| {
+                        var codepoint: u32 = range.first;
+                        while (codepoint <= range.last) : (codepoint += 1) {
+                            const index = casedIndex(@intCast(codepoint)) orelse continue;
+                            const class = cased_classes[index];
+                            if (testCaseClass(&class_bits, class)) continue;
+                            markCaseClass(&class_bits, class);
+                            try self.collectCaseClass(
+                                class,
+                                closure,
+                                &additions,
+                                allocator,
+                            );
+                        }
                     }
                 }
                 if (additions.items.len != 0 and additions.items.len <= 8) {
