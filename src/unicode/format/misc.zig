@@ -44,6 +44,16 @@ pub const LocaleSplit = struct {
 /// Split a locale name with a numbering-system keyword such as
 /// `en@numbers=arab` or `en-u-nu-arab`.
 pub fn splitNumberingSystem(name: []const u8) LocaleSplit {
+    // Plain language and region tags have none of the three separators; one
+    // scan avoids three substring searches on the common formatting path.
+    var plain = true;
+    for (name) |byte| {
+        if (byte == '@' or byte == ';' or byte == '-') {
+            plain = false;
+            break;
+        }
+    }
+    if (plain) return .{ .locale = name, .system = null };
     if (std.mem.indexOfScalar(u8, name, '@')) |at| {
         return .{
             .locale = name[0..at],

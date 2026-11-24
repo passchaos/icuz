@@ -1104,6 +1104,9 @@ fn formatStandardAlloc(
     var stack: [256]u8 = undefined;
     var fixed = std.heap.FixedBufferAllocator.init(&stack);
     var output = std.ArrayList(u8).empty;
+    // Typical formatted numbers are well under this bound; reserving once
+    // keeps every affix and digit append from remapping the fixed buffer.
+    output.ensureTotalCapacity(fixed.allocator(), 64) catch {};
     formatStandardInto(
         fixed.allocator(),
         value,
@@ -3549,8 +3552,8 @@ fn utf8LengthAt(text: []const u8, index: usize) usize {
 
 /// Exact powers of ten used by the fast decimal conversion.
 const pow10_table = [_]f64{
-    1e0,  1e1,  1e2,  1e3,  1e4,  1e5,  1e6,  1e7,
-    1e8,  1e9,  1e10, 1e11, 1e12, 1e13, 1e14, 1e15,
+    1e0, 1e1, 1e2,  1e3,  1e4,  1e5,  1e6,  1e7,
+    1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15,
 };
 
 fn parseDigit(locale: *const data.Locale, codepoint: u21) ?u8 {
@@ -4943,9 +4946,8 @@ test "floorLog10 matches the libm result" {
         try testing.expectEqual(expected, floorLog10(value));
     }
     const fixed = [_]f64{
-        1, 9.99, 10, 99.9, 100, 1000, 0.1, 0.01, 1e-300, 1e300,
-        1.7976931348623157e308, 2.2250738585072014e-308,
-        4.9e-324, 5e-324,
+        1,                      9.99,                    10,       99.9,   100, 1000, 0.1, 0.01, 1e-300, 1e300,
+        1.7976931348623157e308, 2.2250738585072014e-308, 4.9e-324, 5e-324,
     };
     for (fixed) |value| {
         const expected: i32 = @intFromFloat(@floor(@log10(value)));
