@@ -253,8 +253,9 @@ fn decode(text: []const u8, offset: usize) ?struct {
     next: usize,
 } {
     if (offset >= text.len) return null;
-    const decoded = scalar.decodeValidatingPacked(text, offset);
-    if (decoded == scalar.packed_invalid) return null;
+    // Every caller either validated the text up front or took the
+    // assume-valid contract, so the decode does not re-check the bytes.
+    const decoded = scalar.decodeValidPacked(text, offset);
     return .{
         .codepoint = scalar.packedCodepoint(decoded),
         .next = offset + scalar.packedLength(decoded),
@@ -596,11 +597,6 @@ pub fn segmentSoutheastAsian(
     return count;
 }
 
-fn codepointAt(text: []const u8, offset: usize) u21 {
-    const decoded = decode(text, offset) orelse return 0;
-    return decoded.codepoint;
-}
-
 fn isKatakana(codepoint: u21) bool {
     return (codepoint >= 0x30a1 and codepoint <= 0x30fe and
         codepoint != 0x30fb) or
@@ -620,12 +616,15 @@ pub fn segmentCjk(
     breaks: []usize,
 ) usize {
     var offsets: [max_run_codepoints + 1]usize = undefined;
+    // The Katakana check below would otherwise decode the same scalars again.
+    var codepoints: [max_run_codepoints + 1]u21 = undefined;
     offsets[0] = start;
     var codepoint_count: usize = 0;
     var cursor = start;
     while (cursor < end and codepoint_count < max_run_codepoints) {
         const decoded = decode(text, cursor) orelse break;
         cursor = decoded.next;
+        codepoints[codepoint_count] = decoded.codepoint;
         codepoint_count += 1;
         offsets[codepoint_count] = cursor;
     }
@@ -681,11 +680,11 @@ pub fn segmentCjk(
 
         // ICU treats a continuous Katakana run as one candidate word with a
         // length-based default cost, which prevents single-kana over-splitting.
-        const katakana = isKatakana(codepointAt(text, offsets[index]));
+        const katakana = isKatakana(codepoints[index]);
         if (!previous_katakana and katakana) {
             var run: usize = 1;
             while (index + run < codepoint_count and run < 20 and
-                isKatakana(codepointAt(text, offsets[index + run])))
+                isKatakana(codepoints[index + run]))
             {
                 run += 1;
             }
