@@ -305,10 +305,59 @@ pub fn lookup(locale: []const u8, collation_type: []const u8) ?Tailoring {
     return null;
 }
 
+/// One-entry memo of the last resolved locale and type. The module-level
+/// sort-key and compare entry points resolve the same tailoring on every
+/// call, and the binary search over the locale table costs more than the
+/// comparison here.
+const find_cache_locale_max = 32;
+const find_cache_collation_max = 16;
+
+const FindCache = struct {
+    locale: [find_cache_locale_max]u8 = undefined,
+    collation: [find_cache_collation_max]u8 = undefined,
+    locale_len: u8 = 0,
+    collation_len: u8 = 0,
+    result: ?Tailoring = null,
+};
+
+threadlocal var find_cache: ?FindCache = null;
+
 /// Resolve a BCP 47-ish locale and collation type to a compiled tailoring,
 /// trying the exact tag, an underscore-normalized tag, and the language
 /// subtag. Unknown types fall back to the locale's standard tailoring.
 pub fn find(locale: []const u8, collation_type: []const u8) ?Tailoring {
+    const cacheable = locale.len <= find_cache_locale_max and
+        collation_type.len <= find_cache_collation_max;
+    if (cacheable) {
+        if (find_cache) |entry| {
+            if (@as(usize, entry.locale_len) == locale.len and
+                @as(usize, entry.collation_len) == collation_type.len and
+                std.mem.eql(u8, entry.locale[0..entry.locale_len], locale) and
+                std.mem.eql(
+                    u8,
+                    entry.collation[0..entry.collation_len],
+                    collation_type,
+                ))
+            {
+                return entry.result;
+            }
+        }
+    }
+    const result = findUncached(locale, collation_type);
+    if (cacheable) {
+        var entry = FindCache{
+            .locale_len = @intCast(locale.len),
+            .collation_len = @intCast(collation_type.len),
+            .result = result,
+        };
+        @memcpy(entry.locale[0..locale.len], locale);
+        @memcpy(entry.collation[0..collation_type.len], collation_type);
+        find_cache = entry;
+    }
+    return result;
+}
+
+fn findUncached(locale: []const u8, collation_type: []const u8) ?Tailoring {
     const base = stripExtensions(locale);
     var buffer: [64]u8 = undefined;
     var length: usize = 0;
@@ -599,16 +648,37 @@ fn buildPageIndex(tailoring: Tailoring, pages: *PageIndex) void {
     } else true;
 }
 
+/// Last page index handed out per thread. Module-level collation entry
+/// points resolve the same tailoring on every call, so the slot scan and
+/// its acquire loads are skipped for repeated keys.
+threadlocal var cached_index: ?struct {
+    rule_start: u32,
+    rule_count: u32,
+    pages: ?*PageIndex,
+} = null;
+
 /// Return (building on first use) the page index for this tailoring.
 pub fn pageIndex(tailoring: Tailoring) ?*PageIndex {
     // Page offsets are 16-bit; very large tailorings (Chinese stroke) keep
     // the plain binary search instead.
     if (tailoring.rule_count > 0xFFFF) return null;
+    if (cached_index) |entry| {
+        if (entry.rule_start == tailoring.rule_start and
+            entry.rule_count == tailoring.rule_count)
+        {
+            return entry.pages;
+        }
+    }
     for (&index_slots) |*slot| {
         if (slot.state.load(.acquire) == 2 and
             slot.rule_start == tailoring.rule_start and
             slot.rule_count == tailoring.rule_count)
         {
+            cached_index = .{
+                .rule_start = tailoring.rule_start,
+                .rule_count = tailoring.rule_count,
+                .pages = &slot.pages,
+            };
             return &slot.pages;
         }
     }
@@ -622,6 +692,11 @@ pub fn pageIndex(tailoring: Tailoring) ?*PageIndex {
     slot.rule_start = tailoring.rule_start;
     slot.rule_count = tailoring.rule_count;
     slot.state.store(2, .release);
+    cached_index = .{
+        .rule_start = tailoring.rule_start,
+        .rule_count = tailoring.rule_count,
+        .pages = &slot.pages,
+    };
     return &slot.pages;
 }
 
