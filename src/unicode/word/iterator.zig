@@ -52,12 +52,21 @@ pub const Iterator = struct {
         while (end < self.text.len) {
             if (asciiBreaksAt(self.text, end)) |should_break| {
                 if (should_break) break;
-                if (asciiIsWordAnchor(self.text[end])) is_word = true;
+                const byte = self.text[end];
+                if (asciiIsWordAnchor(byte)) is_word = true;
                 regional_indicator_count = 0;
-                previous_codepoint = self.text[end];
-                previous_start = end;
-                previous_properties = properties(self.text[end]);
                 end += 1;
+                // WB5 forbids a break between two letters, so an ASCII letter
+                // run is one unbroken stretch. Only the last byte's state is
+                // needed for the next decision.
+                if (isAsciiLetter(byte)) {
+                    while (end < self.text.len and
+                        isAsciiLetter(self.text[end])) : (end += 1)
+                    {}
+                }
+                previous_codepoint = self.text[end - 1];
+                previous_start = end - 1;
+                previous_properties = properties(self.text[end - 1]);
                 continue;
             }
             const current_packed = scalar.decodeValidPacked(self.text, end);
@@ -250,6 +259,13 @@ const ascii_word_anchors = blk: {
 
 fn asciiIsWordAnchor(byte: u8) bool {
     return ascii_word_anchors[byte];
+}
+
+/// ASCII letters are one WB class (ALetter), so a run of them has no internal
+/// boundary under WB5. Unlike `asciiIsWordAnchor` this accepts digits and
+/// underscore, so the range test is used and stays safe for any byte.
+inline fn isAsciiLetter(byte: u8) bool {
+    return (byte >= 'A' and byte <= 'Z') or (byte >= 'a' and byte <= 'z');
 }
 
 const ascii_classes = blk: {
