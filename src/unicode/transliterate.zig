@@ -1221,6 +1221,23 @@ fn decodeAlloc(
     // the decode loop avoids the store-forwarding stall of the struct result.
     var index: usize = 0;
     while (index < text.len) {
+        const first = text[index];
+        // Greek and Cyrillic prose is entirely two-byte sequences. Those
+        // leads can never be overlong or a surrogate, so a run decodes
+        // without the general length ladder.
+        if (first >= 0xc2 and first <= 0xdf and index + 2 <= text.len) {
+            while (index + 2 <= text.len) {
+                const lead = text[index];
+                if (lead < 0xc2 or lead > 0xdf) break;
+                const second = text[index + 1];
+                if (second & 0xc0 != 0x80) return error.InvalidUtf8;
+                codepoints.appendAssumeCapacity(
+                    (@as(u21, lead & 0x1f) << 6) | (second & 0x3f),
+                );
+                index += 2;
+            }
+            continue;
+        }
         const decoded = scalar.decodeValidatingPacked(text, index);
         if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
         codepoints.appendAssumeCapacity(scalar.packedCodepoint(decoded));
