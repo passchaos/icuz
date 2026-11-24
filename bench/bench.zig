@@ -461,6 +461,32 @@ fn benchRegexMatches(
     sink +%= matched;
 }
 
+fn benchRegexLookingAt(
+    name: []const u8,
+    pattern: []const u8,
+    text: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    var regex = icuz.Regex.compileAlloc(allocator, pattern, .{}) catch return;
+    defer regex.deinit();
+    var matcher = regex.matcher(text) catch return;
+    defer matcher.deinit();
+
+    const rounds = 20_000;
+    const start = now();
+    var matched: usize = 0;
+    for (0..rounds) |_| {
+        if (matcher.lookingAt() catch return) matched += 1;
+    }
+    const elapsed: u64 = @intCast(now() - start);
+    std.debug.print("{s:<32} {d:>8.3} ns/op ({d} matches)\n", .{
+        name,
+        @as(f64, @floatFromInt(elapsed)) / @as(f64, @floatFromInt(rounds)),
+        matched,
+    });
+    sink +%= matched;
+}
+
 fn benchRegexCompile(
     name: []const u8,
     pattern: []const u8,
@@ -2102,6 +2128,18 @@ pub fn main() !void {
         "class matches miss",
         "[0-9]+",
         "abcdef",
+        allocator,
+    );
+    benchRegexLookingAt(
+        "literal lookingAt",
+        "needle",
+        "needle and more",
+        allocator,
+    );
+    benchRegexLookingAt(
+        "literal lookingAt miss",
+        "needle",
+        "some other text",
         allocator,
     );
     benchRegexCompile("compile literal", "needle", allocator);

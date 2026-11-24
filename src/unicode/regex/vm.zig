@@ -257,6 +257,20 @@ pub const Runner = struct {
         self.beginOperation();
         self.had_match = false;
         self.exhausted = false;
+        // A bare literal is a whole-region equality test; skip the backend.
+        if (self.full_literal) |literal| {
+            const region = self.text[self.region_start..self.region_end];
+            if (literal.len == region.len and std.mem.eql(u8, literal, region)) {
+                self.captures[0] = self.region_start;
+                self.captures[1] = self.region_end;
+                self.last_match_end = self.region_end;
+                self.had_match = true;
+                self.hit_end = true;
+                self.require_end = true;
+                return true;
+            }
+            return false;
+        }
         // A full match needs capture recovery, which regexz only exposes for
         // searches; group-free patterns can use its linear boolean engine.
         if (self.backendActive() and self.captures.len == 2) {
@@ -279,19 +293,6 @@ pub const Runner = struct {
             return false;
         }
         if (!self.matchPrechecks(self.region_start)) return false;
-        if (self.full_literal) |literal| {
-            const region = self.text[self.region_start..self.region_end];
-            if (literal.len == region.len and std.mem.eql(u8, literal, region)) {
-                self.captures[0] = self.region_start;
-                self.captures[1] = self.region_end;
-                self.last_match_end = self.region_end;
-                self.had_match = true;
-                self.hit_end = true;
-                self.require_end = true;
-                return true;
-            }
-            return false;
-        }
         const match_pc: u32 = @intCast(self.program.len - 1);
         const result = try self.execRange(0, match_pc, self.region_start, self.region_end);
         if (result) |end| {
@@ -308,6 +309,19 @@ pub const Runner = struct {
         self.beginOperation();
         self.had_match = false;
         self.exhausted = false;
+        // A bare literal is a prefix equality test; skip the backend.
+        if (self.full_literal) |literal| {
+            if (self.region_start + literal.len <= self.region_end and
+                std.mem.eql(u8, literal, self.text[self.region_start..][0..literal.len]))
+            {
+                self.captures[0] = self.region_start;
+                self.captures[1] = self.region_start + literal.len;
+                self.last_match_end = self.region_start + literal.len;
+                self.had_match = true;
+                return true;
+            }
+            return false;
+        }
         if (self.backendActive()) {
             if (try self.backendLookingAt()) |result| return result;
         }
@@ -327,18 +341,6 @@ pub const Runner = struct {
             return false;
         }
         if (!self.matchPrechecks(self.region_start)) return false;
-        if (self.full_literal) |literal| {
-            if (self.region_start + literal.len <= self.region_end and
-                std.mem.eql(u8, literal, self.text[self.region_start..][0..literal.len]))
-            {
-                self.captures[0] = self.region_start;
-                self.captures[1] = self.region_start + literal.len;
-                self.last_match_end = self.region_start + literal.len;
-                self.had_match = true;
-                return true;
-            }
-            return false;
-        }
         const match_pc: u32 = @intCast(self.program.len - 1);
         const result = try self.execRange(0, match_pc, self.region_start, null);
         if (result) |end| {

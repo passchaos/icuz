@@ -625,6 +625,32 @@ int main() {
             uregex_close(regex);
         }
 
+        struct LookingAtCase {
+            const char* label;
+            const char* pattern;
+            const char* text;
+        };
+        const LookingAtCase looking_at_cases[] = {
+            {"literal lookingAt", "needle", "needle and more"},
+            {"literal lookingAt miss", "needle", "some other text"},
+        };
+        for (const auto& item : looking_at_cases) {
+            const std::vector<UChar> pattern = to_u16(item.pattern);
+            const std::vector<UChar> subject = to_u16(item.text);
+            UErrorCode status = U_ZERO_ERROR;
+            UParseError parse_error;
+            URegularExpression* regex = uregex_open(pattern.data(),
+                static_cast<int32_t>(pattern.size()), 0, &parse_error, &status);
+            if (U_FAILURE(status)) continue;
+            uregex_setText(regex, subject.data(),
+                static_cast<int32_t>(subject.size()), &status);
+            bench_ops(item.label, 20000, [&] {
+                status = U_ZERO_ERROR;
+                uregex_lookingAt(regex, 0, &status);
+            });
+            uregex_close(regex);
+        }
+
         const struct { const char* label; const char* pattern; } compile_cases[] = {
             {"compile literal", "needle"},
             {"compile class", "[0-9]{3}-[0-9]{4}"},
