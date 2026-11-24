@@ -52,9 +52,13 @@ const anchor_accepts = [4]u3{ 0b101, 0b110, 0b011, 0b000 };
 pub const Iterator = struct {
     text: []const u8,
     cursor: usize = 0,
+    /// Set when every byte is ASCII, so `next` can use the byte-oriented
+    /// state machine instead of the general rule engine.
+    ascii_only: bool = false,
 
     pub fn next(self: *Iterator) ?Segment {
         if (self.cursor >= self.text.len) return null;
+        if (self.ascii_only) return self.nextAscii();
 
         const start = self.cursor;
         const first_packed = scalar.decodeValidPacked(self.text, start);
@@ -146,6 +150,59 @@ pub const Iterator = struct {
             previous_start = end;
             previous_properties = current_properties;
             end = current_next;
+        }
+        self.cursor = end;
+        return .{
+            .byte_start = start,
+            .byte_len = end - start,
+            .is_word = is_word,
+        };
+    }
+
+    /// ASCII-only segment scan. UAX #29 reduces to a byte state machine here:
+    /// newlines break on both sides (CR × LF excepted), spaces join spaces,
+    /// letters, digits, and `_` join each other, and a mid character joins
+    /// only when the characters around it keep the segment a letter or number
+    /// run.
+    fn nextAscii(self: *Iterator) ?Segment {
+        const text = self.text;
+        const start = self.cursor;
+        var end = start + 1;
+        var is_word = false;
+        const first = asciiClass(text[start]);
+        switch (first) {
+            .cr => {
+                if (end < text.len and text[end] == '\n') end += 1;
+            },
+            .wseg_space => {
+                while (end < text.len and text[end] == ' ') end += 1;
+            },
+            .a_letter, .numeric, .extend_num_let => {
+                is_word = true;
+                var previous = first;
+                while (end < text.len) {
+                    const current = asciiClass(text[end]);
+                    if (ascii_word_anchors[text[end]]) {
+                        previous = current;
+                        end += 1;
+                        continue;
+                    }
+                    if (end + 1 < text.len) {
+                        const after = asciiClass(text[end + 1]);
+                        if ((isLetterMid(current) and
+                            previous == .a_letter and after == .a_letter) or
+                            (isNumericMid(current) and
+                                previous == .numeric and after == .numeric))
+                        {
+                            previous = after;
+                            end += 2;
+                            continue;
+                        }
+                    }
+                    break;
+                }
+            },
+            else => {},
         }
         self.cursor = end;
         return .{
@@ -345,7 +402,10 @@ pub fn segments(text: []const u8) Error!Iterator {
 
 pub fn assumeValid(text: []const u8) Iterator {
     scalar.assertValidUtf8(text);
-    return .{ .text = text };
+    return .{
+        .text = text,
+        .ascii_only = scalar.validate.asciiOnly(text),
+    };
 }
 
 pub fn segmentsWithDictionaries(text: []const u8) Error!DictionaryIterator {
@@ -660,4 +720,42 @@ test "dictionary segmentation conformance" {
     }
     if (offset != fixture.len) return error.InvalidFixture;
     if (failures != 0) return error.TestUnexpectedResult;
+}
+
+test "ASCII fast path matches the general rule engine" {
+    const testing = @import("std").testing;
+    // Every ASCII scalar, then random strings over the classes that decide
+    // boundaries: letters, digits, connector, mid characters, spaces, and
+    // newlines.
+    for (0..128) |byte| {
+        const text = [_]u8{@intCast(byte)};
+        var fast = Iterator{ .text = &text, .ascii_only = true };
+        var general = Iterator{ .text = &text };
+        const expected = general.next().?;
+        const actual = fast.next().?;
+        try testing.expectEqual(expected.byte_len, actual.byte_len);
+        try testing.expectEqual(expected.is_word, actual.is_word);
+        try testing.expect(fast.next() == null);
+    }
+    const pool = "abzAZ09_.,;:'\" \n\r\t-@/#!?()[]";
+    var random = std.Random.DefaultPrng.init(0x5eed);
+    var buffer: [64]u8 = undefined;
+    for (0..20_000) |_| {
+        const length = random.random().uintLessThan(usize, buffer.len);
+        for (buffer[0..length]) |*byte| {
+            byte.* = pool[random.random().uintLessThan(usize, pool.len)];
+        }
+        const text = buffer[0..length];
+        var fast = Iterator{ .text = text, .ascii_only = true };
+        var general = Iterator{ .text = text };
+        while (true) {
+            const expected = general.next();
+            const actual = fast.next();
+            try testing.expectEqual(expected == null, actual == null);
+            if (expected == null) break;
+            try testing.expectEqual(expected.?.byte_start, actual.?.byte_start);
+            try testing.expectEqual(expected.?.byte_len, actual.?.byte_len);
+            try testing.expectEqual(expected.?.is_word, actual.?.is_word);
+        }
+    }
 }

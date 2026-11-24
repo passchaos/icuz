@@ -58,7 +58,9 @@ inline fn sequenceLen(text: []const u8, offset: usize) ?usize {
 
 /// True when every byte is ASCII. Eight bytes per step keeps short ASCII
 /// strings, the common `compare` input, away from the scalar sequence loop.
-fn asciiOnly(text: []const u8) bool {
+/// True when every byte is ASCII. Callers can then skip UTF-8 decoding and
+/// use byte-oriented fast paths.
+pub fn asciiOnly(text: []const u8) bool {
     var offset: usize = 0;
     while (offset + 8 <= text.len) : (offset += 8) {
         const word = std.mem.readInt(u64, text[offset..][0..8], .little);
