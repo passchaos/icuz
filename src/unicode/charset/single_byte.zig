@@ -24,6 +24,33 @@ pub const Kind = union(enum) {
     ibm_page: usize,
 };
 
+/// UTF-8 bytes for every non-ASCII byte of each 128-entry table, with the
+/// encoded length in the fourth lane (zero marks an unmapped byte). Decoding a
+/// byte then costs one four-byte load and one store instead of a codepoint
+/// lookup plus a length ladder.
+const expanded_tables = blk: {
+    @setEvalBranchQuota(200_000);
+    var list: [28][128][4]u8 = undefined;
+    for (0..28) |table_index| {
+        for (0..128) |offset| {
+            const byte: u8 = @intCast(0x80 + offset);
+            const codepoint = tables.singleByteForward(table_index, byte) orelse {
+                list[table_index][offset] = .{ 0, 0, 0, 0 };
+                continue;
+            };
+            var buffer: [4]u8 = undefined;
+            const length = std.unicode.utf8Encode(codepoint, &buffer) catch 0;
+            list[table_index][offset] = .{
+                buffer[0],
+                buffer[1],
+                buffer[2],
+                @intCast(length),
+            };
+        }
+    }
+    break :blk list;
+};
+
 inline fn decodeByte(
     kind: Kind,
     forward: ?tables.SingleByteForwardTable,
@@ -76,6 +103,13 @@ pub fn decodeInto(
         .table => |table_index| tables.singleByteForwardView(table_index),
         else => null,
     };
+    const expanded: ?*const [128][4]u8 = switch (kind) {
+        .table => |table_index| if (table_index < expanded_tables.len)
+            &expanded_tables[table_index]
+        else
+            null,
+        else => null,
+    };
     var index: usize = 0;
     while (index < input.len) {
         if (ascii_runs and input[index] < 0x80) {
@@ -96,6 +130,25 @@ pub fn decodeInto(
         }
         const byte = input[index];
         index += 1;
+        if (expanded) |table| {
+            const entry = table[byte - 0x80];
+            const length = entry[3];
+            if (length != 0) {
+                spare[written..][0..4].* = entry;
+                written += length;
+                continue;
+            }
+            if (utf8_vec.writeError(
+                options,
+                spare,
+                &written,
+                replacement[0..replacement_len],
+            )) {
+                output.items.len += written;
+                return error.InvalidSequence;
+            }
+            continue;
+        }
         const codepoint = decodeByte(kind, forward, byte) orelse {
             if (utf8_vec.writeError(
                 options,
