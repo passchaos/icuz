@@ -1337,7 +1337,7 @@ pub fn formatSkeletonAlloc(
     locale_name: []const u8,
     skeleton: []const u8,
 ) Error![]u8 {
-    const options = try parseSkeleton(skeleton);
+    const options = try parseSkeletonCached(skeleton);
     if (options.unit_id) |unit_id| {
         const unit = units.unitFromId(unit_id) orelse
             return error.InvalidPattern;
@@ -1383,7 +1383,7 @@ pub fn formatSkeletonFieldsAlloc(
     fields: *std.ArrayList(NumberFieldPosition),
 ) Error![]u8 {
     fields.clearRetainingCapacity();
-    const options = try parseSkeleton(skeleton);
+    const options = try parseSkeletonCached(skeleton);
     if (options.unit_id) |unit_id| {
         const unit = units.unitFromId(unit_id) orelse
             return error.InvalidPattern;
@@ -1435,7 +1435,7 @@ pub fn formatSkeletonIntegerAlloc(
     locale_name: []const u8,
     skeleton: []const u8,
 ) Error![]u8 {
-    const options = try parseSkeleton(skeleton);
+    const options = try parseSkeletonCached(skeleton);
     return formatIntegerAlloc(allocator, value, locale_name, options);
 }
 
@@ -1706,6 +1706,7 @@ fn formatScientificAlloc(
     var stack: [256]u8 = undefined;
     var fixed = std.heap.FixedBufferAllocator.init(&stack);
     var output = std.ArrayList(u8).empty;
+    output.ensureTotalCapacity(fixed.allocator(), 64) catch {};
     formatScientificInto(
         fixed.allocator(),
         value,
@@ -1968,6 +1969,7 @@ fn formatCompactAlloc(
     var stack: [256]u8 = undefined;
     var fixed = std.heap.FixedBufferAllocator.init(&stack);
     var output = std.ArrayList(u8).empty;
+    output.ensureTotalCapacity(fixed.allocator(), 64) catch {};
     formatCompactInto(
         fixed.allocator(),
         value,
@@ -2829,6 +2831,24 @@ const Subpattern = struct {
 /// avoids re-scanning the pattern on every format call.
 threadlocal var cached_pattern_text: ?[]const u8 = null;
 threadlocal var cached_pattern: Pattern = undefined;
+
+/// Last parsed skeleton on this thread. Callers pass the same skeleton
+/// literal for repeated formats, so pointer equality answers the common
+/// case without re-tokenizing the string.
+threadlocal var cached_skeleton_text: ?[]const u8 = null;
+threadlocal var cached_skeleton_options: Options = undefined;
+
+fn parseSkeletonCached(skeleton: []const u8) Error!Options {
+    if (cached_skeleton_text) |cached| {
+        if (cached.ptr == skeleton.ptr and cached.len == skeleton.len) {
+            return cached_skeleton_options;
+        }
+    }
+    const options = try parseSkeleton(skeleton);
+    cached_skeleton_text = skeleton;
+    cached_skeleton_options = options;
+    return options;
+}
 
 fn parsePatternCached(text: []const u8) ?Pattern {
     if (cached_pattern_text) |cached| {
