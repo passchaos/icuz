@@ -16,6 +16,7 @@
 #include <unicode/ucsdet.h>
 #include <unicode/ubidi.h>
 #include <unicode/uidna.h>
+#include <unicode/uset.h>
 #include <unicode/uspoof.h>
 #include <unicode/ushape.h>
 #include <unicode/udat.h>
@@ -200,9 +201,8 @@ int main() {
 
     std::printf("ICU %s microbenchmarks\n", U_ICU_VERSION);
 
-    std::printf("\n-- scalar properties --\n");
+    std::vector<UChar32> codepoints(1 << 20);
     {
-        std::vector<UChar32> codepoints(1 << 20);
         uint32_t state = 0x12345678;
         for (auto& codepoint : codepoints) {
             state = state * 1664525u + 1013904223u;
@@ -210,8 +210,13 @@ int main() {
             if (value >= 0xD800 && value <= 0xDFFF) value += 0x800;
             codepoint = static_cast<UChar32>(value & 0x10FFFF);
         }
+    }
+    const size_t codepoint_mask = (1 << 20) - 1;
+
+    std::printf("\n-- scalar properties --\n");
+    {
         const int rounds = 16 * (1 << 20);
-        const size_t mask = (1 << 20) - 1;
+        const size_t mask = codepoint_mask;
         size_t next = 0;
         bench_ops("General_Category", rounds, [&] {
             volatile int value = u_charType(codepoints[next++ & mask]);
@@ -264,6 +269,46 @@ int main() {
                 codepoints[next++ & mask], UCHAR_LINE_BREAK);
             (void)value;
         });
+    }
+
+    std::printf("\n-- UnicodeSet --\n");
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        USet* alphabetic = uset_openPattern(u"[:Alphabetic:]", -1, &status);
+        if (U_SUCCESS(status)) {
+            const int rounds = 16 * (1 << 20);
+            size_t next = 0;
+            bench_ops("UnicodeSet contains", rounds, [&] {
+                volatile UBool value =
+                    uset_contains(alphabetic, codepoints[next++ & codepoint_mask]);
+                (void)value;
+            });
+            USet* complement = uset_openPattern(u"[^[:Alphabetic:]]", -1, &status);
+            if (U_SUCCESS(status)) {
+                next = 0;
+                bench_ops("UnicodeSet contains complement", rounds, [&] {
+                    volatile UBool value = uset_contains(
+                        complement, codepoints[next++ & codepoint_mask]);
+                    (void)value;
+                });
+                uset_close(complement);
+            }
+            uset_close(alphabetic);
+        }
+        USet* small = uset_openPattern(u"[a]", -1, &status);
+        if (U_SUCCESS(status)) {
+            bench_ops("UnicodeSet closeOver [a]", 4000, [&] {
+                uset_closeOver(small, USET_CASE_INSENSITIVE);
+            });
+            uset_close(small);
+        }
+        USet* upper = uset_openPattern(u"[:Uppercase:]", -1, &status);
+        if (U_SUCCESS(status)) {
+            bench_ops("UnicodeSet closeOver Uppercase", 400, [&] {
+                uset_closeOver(upper, USET_CASE_INSENSITIVE);
+            });
+            uset_close(upper);
+        }
     }
 
     std::printf("\n-- collation --\n");
