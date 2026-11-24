@@ -1070,6 +1070,9 @@ pub fn normalizeCodepointsInto(
         .compose = form == .nfc or form == .nfkc,
     };
     defer engine.deinit();
+    // Recursive decomposition of one scalar, reused by the decomposing-form
+    // fast path below.
+    var parts: [64]u21 = undefined;
     var index: usize = 0;
     while (index < codepoints.len) {
         // Bulk-copy inert starters; only the final one may still receive
@@ -1089,6 +1092,24 @@ pub fn normalizeCodepointsInto(
             }
             engine.pending = run[run.len - 1];
             continue;
+        }
+        // Decomposing forms: a starter plus one more scalar, followed by a
+        // scalar that starts its own segment, cannot reorder with its
+        // neighbours, so the segment engine is not needed for the precomposed
+        // letters that dominate prose.
+        if (!engine.compose) {
+            const count = decomposeInto(&parts, codepoints[index], engine.compatibility);
+            if (count == 2 and
+                (parts[0] < 0x80 or
+                    combining_class.forCodepoint(parts[0]) == 0) and
+                (index + 1 == codepoints.len or
+                    !continuesSegment(codepoints[index + 1], engine.compatibility)))
+            {
+                try engine.settle();
+                try engine.sink.appendCodepoints(parts[0..count]);
+                index += 1;
+                continue;
+            }
         }
         try engine.feed(codepoints[index]);
         index += 1;
