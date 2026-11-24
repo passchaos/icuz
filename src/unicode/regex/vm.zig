@@ -8,6 +8,7 @@ const std = @import("std");
 const regexz = @import("regexz");
 const regexz_backend = @import("regexz_backend.zig");
 const compiler = @import("compiler.zig");
+const literal_search = @import("literal.zig");
 const parser = @import("parser.zig");
 const set_mod = @import("../set.zig");
 const properties = @import("../properties.zig");
@@ -353,11 +354,24 @@ pub const Runner = struct {
 
     pub fn findAt(self: *Runner, start: usize) Error!bool {
         self.had_match = false;
+        if (self.full_literal) |literal| return self.searchLiteral(literal, start);
         return self.searchFrom(start);
     }
 
     pub fn findNext(self: *Runner) Error!bool {
         if (self.exhausted) return false;
+        if (self.full_literal) |literal| {
+            if (!self.had_match) return self.searchLiteral(literal, self.region_start);
+            const start = self.last_match_end;
+            if (literal.len != 0) return self.searchLiteral(literal, start);
+            // An empty literal matches at the previous position again, so
+            // advance one scalar exactly as the generic path does.
+            const decoded = nextScalar(self.text, start) orelse {
+                self.exhausted = true;
+                return false;
+            };
+            return self.searchLiteral(literal, decoded.next);
+        }
         if (!self.had_match) return self.searchFrom(self.region_start);
         const start = self.last_match_end;
         const previous_start = self.groupSpan(0) orelse return self.searchFrom(self.region_start);
@@ -382,7 +396,7 @@ pub const Runner = struct {
             }
         }
         if (self.required_literal) |literal| {
-            const found = std.mem.indexOfPos(u8, self.text, start, literal) orelse
+            const found = literal_search.indexOf(self.text, start, literal) orelse
                 return false;
             if (found + literal.len > self.region_end) return false;
         }
@@ -393,6 +407,30 @@ pub const Runner = struct {
             const bits_word = bits[byte >> 6];
             if ((bits_word >> @intCast(byte & 63)) & 1 == 0) return false;
         }
+        return true;
+    }
+
+    /// Bare-literal search. A first-byte scan beats the backend's dispatch and
+    /// `std.mem.indexOfPos`'s per-call Boyer-Moore table setup.
+    fn searchLiteral(self: *Runner, literal: []const u8, start: usize) bool {
+        self.beginOperation();
+        self.exhausted = false;
+        var position = snapForward(self.text, @max(start, self.region_start));
+        position = @min(position, self.region_end);
+        const found = literal_search.indexOf(self.text, position, literal) orelse {
+            self.had_match = false;
+            self.exhausted = true;
+            return false;
+        };
+        if (found + literal.len > self.region_end) {
+            self.had_match = false;
+            self.exhausted = true;
+            return false;
+        }
+        self.captures[0] = found;
+        self.captures[1] = found + literal.len;
+        self.last_match_end = found + literal.len;
+        self.had_match = true;
         return true;
     }
 
@@ -411,7 +449,7 @@ pub const Runner = struct {
             var best_length: usize = 0;
             for (alternatives) |alternative| {
                 const literal = self.exact[alternative.offset..][0..alternative.len];
-                const found = std.mem.indexOfPos(u8, self.text, position, literal) orelse continue;
+                const found = literal_search.indexOf(self.text, position, literal) orelse continue;
                 if (found + literal.len > self.region_end) continue;
                 if (best_start == null or found < best_start.?) {
                     best_start = found;
@@ -430,26 +468,8 @@ pub const Runner = struct {
             return true;
         }
 
-        if (self.full_literal) |literal| {
-            const found = std.mem.indexOfPos(u8, self.text, position, literal) orelse {
-                self.had_match = false;
-                self.exhausted = true;
-                return false;
-            };
-            if (found + literal.len > self.region_end) {
-                self.had_match = false;
-                self.exhausted = true;
-                return false;
-            }
-            self.captures[0] = found;
-            self.captures[1] = found + literal.len;
-            self.last_match_end = found + literal.len;
-            self.had_match = true;
-            return true;
-        }
-
         if (self.required_literal) |literal| {
-            const found = std.mem.indexOfPos(u8, self.text, position, literal);
+            const found = literal_search.indexOf(self.text, position, literal);
             if (found == null or found.? + literal.len > self.region_end) {
                 self.had_match = false;
                 self.exhausted = true;
@@ -460,7 +480,7 @@ pub const Runner = struct {
         if (self.literal_prefix) |prefix| {
             var search = position;
             while (search <= self.region_end) {
-                const found = std.mem.indexOfPos(u8, self.text, search, prefix) orelse break;
+                const found = literal_search.indexOf(self.text, search, prefix) orelse break;
                 if (found + prefix.len > self.region_end) break;
                 if (try self.execRange(0, match_pc, found, null)) |end| {
                     self.last_match_end = end;
