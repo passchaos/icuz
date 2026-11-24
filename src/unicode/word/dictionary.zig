@@ -300,8 +300,36 @@ pub fn matchesAt(
     cp_lengths: []usize,
     costs: []u16,
 ) usize {
+    var prefix: usize = undefined;
+    return matchesAndPrefix(
+        language,
+        text,
+        start,
+        end,
+        byte_lengths,
+        cp_lengths,
+        costs,
+        &prefix,
+    );
+}
+
+/// `matchesAt` that also reports the codepoint length of the longest trie
+/// prefix, which is the walk `longestPrefix` would repeat from the root.
+fn matchesAndPrefix(
+    language: Language,
+    text: []const u8,
+    start: usize,
+    end: usize,
+    byte_lengths: []usize,
+    cp_lengths: []usize,
+    costs: []u16,
+    prefix_codepoints: *usize,
+) usize {
     const limit = @min(end, text.len);
-    if (start >= limit) return 0;
+    if (start >= limit) {
+        prefix_codepoints.* = 0;
+        return 0;
+    }
     const table = trie(language);
     const byte_limit = @min(limit - start, table.max_word_bytes);
     var node_index: usize = 0;
@@ -313,14 +341,15 @@ pub fn matchesAt(
         node_index = table.child(node_index, byte) orelse break;
         if ((byte & 0xc0) != 0x80) codepoints += 1;
         const cost_plus_one = table.node(node_index).cost_plus_one;
-        if (cost_plus_one != 0) {
-            if (count == byte_lengths.len) break;
+        // A full match buffer keeps walking so the prefix length stays exact.
+        if (cost_plus_one != 0 and count < byte_lengths.len) {
             byte_lengths[count] = offset + 1;
             cp_lengths[count] = codepoints;
             costs[count] = cost_plus_one - 1;
             count += 1;
         }
     }
+    prefix_codepoints.* = codepoints;
     return count;
 }
 
@@ -348,7 +377,7 @@ const PossibleWord = struct {
     ) usize {
         if (start != self.offset) {
             self.offset = start;
-            self.count = matchesAt(
+            self.count = matchesAndPrefix(
                 language,
                 text,
                 start,
@@ -356,8 +385,8 @@ const PossibleWord = struct {
                 &self.byte_lengths,
                 &self.cp_lengths,
                 &self.costs,
+                &self.prefix,
             );
-            self.prefix = longestPrefix(language, text, start, end);
         }
         if (self.count > 0) {
             self.current = self.count - 1;
