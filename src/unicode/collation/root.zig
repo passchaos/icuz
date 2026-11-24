@@ -1837,6 +1837,10 @@ fn buildElements(
         }
         return;
     }
+    const tag_base = if (locale_tailoring) |tailoring|
+        tailorings.cacheTagBase(tailoring)
+    else
+        0;
     var index: usize = 0;
     while (index < source.len) {
         if (options.numeric) {
@@ -1849,33 +1853,32 @@ fn buildElements(
         }
         if (locale_tailoring) |tailoring| {
             const first = source[index];
-            const tag = tailorings.cacheTag(tailoring, first);
+            const tag = tag_base + first + 1;
             const cached = tailorings.cachedElement(first);
             if (cached.tag == tag) {
-                switch (cached.kind) {
-                    .single => {
-                        try ces.append(allocator, .{
-                            .primary = cached.primary,
-                            .secondary = cached.secondary,
-                            .tertiary = cached.tertiary,
-                            .variable = cached.variable,
-                        });
-                        index += 1;
-                        continue;
-                    },
-                    .absent => {
-                        index += try appendElements(
-                            allocator,
-                            ces,
-                            source,
-                            index,
-                            reorder,
-                            shifted,
-                            tables,
-                        );
-                        continue;
-                    },
-                    .complex, .empty => {},
+                // `.single` dominates tailored prose; two compares beat the
+                // indirect jump of a four-way switch.
+                if (cached.kind == .single) {
+                    try ces.append(allocator, .{
+                        .primary = cached.primary,
+                        .secondary = cached.secondary,
+                        .tertiary = cached.tertiary,
+                        .variable = cached.variable,
+                    });
+                    index += 1;
+                    continue;
+                }
+                if (cached.kind == .absent) {
+                    index += try appendElements(
+                        allocator,
+                        ces,
+                        source,
+                        index,
+                        reorder,
+                        shifted,
+                        tables,
+                    );
+                    continue;
                 }
             }
             if (tailorings.couldMatch(tailoring_pages, first)) {

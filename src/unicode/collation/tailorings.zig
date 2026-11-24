@@ -256,12 +256,18 @@ pub inline fn cachedElement(codepoint: u21) *CachedElement {
     return &element_cache[hash & (element_cache_len - 1)];
 }
 
+/// Tag bits shared by every code point under `tailoring`. Callers that tag
+/// many scalars hoist this out of their loop.
+pub inline fn cacheTagBase(tailoring: Tailoring) u64 {
+    return (@as(u64, tailoring.rule_start) << 39) |
+        (@as(u64, tailoring.rule_count) << 21);
+}
+
 /// Cache tag for `codepoint` under `tailoring`. The tag carries the rule
 /// range, so switching locales only misses; it never reuses another locale's
 /// rule. Zero is reserved for empty slots.
 pub inline fn cacheTag(tailoring: Tailoring, codepoint: u21) u64 {
-    return ((@as(u64, tailoring.rule_start) << 39) |
-        (@as(u64, tailoring.rule_count) << 21) | codepoint) + 1;
+    return cacheTagBase(tailoring) + codepoint + 1;
 }
 
 pub fn lookup(locale: []const u8, collation_type: []const u8) ?Tailoring {
