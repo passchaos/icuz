@@ -944,6 +944,27 @@ fn benchFindByName(name: []const u8, queries: []const []const u8) void {
     reportOps(name, rounds * queries.len, best);
 }
 
+fn benchTitle(name: []const u8, text: []const u8, allocator: std.mem.Allocator) void {
+    var best: u64 = std.math.maxInt(u64);
+    const trials = 5;
+    const rounds = 4000;
+    for (0..trials) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            const output = icuz.case.fullTitleAlloc(
+                allocator,
+                text,
+                .{},
+            ) catch unreachable;
+            sink +%= output.len;
+            allocator.free(output);
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
+    }
+    reportBytes(name, rounds * text.len, best);
+}
+
 fn benchPlural(name: []const u8, locale: []const u8, comptime ordinal: bool) void {
     var best: u64 = std.math.maxInt(u64);
     const values = [_]i64{ 0, 1, 2, 3, 5, 11, 21, 100, 101, 1_000_001 };
@@ -2318,6 +2339,11 @@ pub fn main() !void {
         "CJK COMPATIBILITY IDEOGRAPH-2F800",
         "DESERET CAPITAL LETTER LONG I",
     });
+
+    std.debug.print("\n-- title casing --\n", .{});
+    benchTitle("title ASCII", ascii_runtime, allocator);
+    benchTitle("title mixed", mixed_runtime, allocator);
+    benchTitle("title German", german_runtime, allocator);
 
     std.debug.print("\n-- plural rules --\n", .{});
     benchPlural("plural en", "en", false);

@@ -761,6 +761,30 @@ int main() {
         });
     }
 
+    std::printf("\n-- title casing --\n");
+    {
+        const struct { const char* label; int text; } title_cases[] = {
+            {"title ASCII", 0},
+            {"title mixed", 1},
+            {"title German", 3},
+        };
+        for (const auto& item : title_cases) {
+            const auto& u16 = texts[item.text].u16;
+            UErrorCode status = U_ZERO_ERROR;
+            UBreakIterator* iter = ubrk_open(UBRK_WORD, "en", u16.data(),
+                static_cast<int32_t>(u16.size()), &status);
+            if (U_FAILURE(status)) continue;
+            std::vector<UChar> out(u16.size() * 3 + 32);
+            bench_bytes(item.label, texts[item.text].utf8.size(), 4000, [&] {
+                UErrorCode s2 = U_ZERO_ERROR;
+                u_strToTitle(out.data(), static_cast<int32_t>(out.size()),
+                    u16.data(), static_cast<int32_t>(u16.size()), iter, "en",
+                    &s2);
+            });
+            ubrk_close(iter);
+        }
+    }
+
     std::printf("\n-- plural rules --\n");
     {
         const struct {

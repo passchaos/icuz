@@ -232,6 +232,62 @@ pub fn foldWithEditsAlloc(
     return output.toOwnedSlice(allocator);
 }
 
+/// True when every byte is ASCII. Title casing preserves the length of ASCII
+/// text, so the fast path writes directly into an exact allocation.
+inline fn isAsciiText(text: []const u8) bool {
+    var index: usize = 0;
+    while (index + 32 <= text.len) : (index += 32) {
+        const chunk: @Vector(32, u8) = text[index..][0..32].*;
+        if (@reduce(.Or, chunk >= @as(@Vector(32, u8), @splat(0x80)))) {
+            return false;
+        }
+    }
+    while (index < text.len) : (index += 1) {
+        if (text[index] >= 0x80) return false;
+    }
+    return true;
+}
+
+/// Title-case ASCII text with the same word boundaries as the general path.
+/// ASCII mappings are one-to-one, so the output is filled in place.
+fn titleAsciiAlloc(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+) error{OutOfMemory}![]u8 {
+    const output = try allocator.alloc(u8, text.len);
+    errdefer allocator.free(output);
+    var segments = word.segments(text) catch unreachable;
+    var emitted: usize = 0;
+    while (segments.next()) |segment| {
+        const start = segment.byte_start;
+        const end = start + segment.byte_len;
+        if (start > emitted) {
+            @memcpy(output[emitted..start], text[emitted..start]);
+        }
+        if (segment.is_word) {
+            var first_cased = true;
+            for (text[start..end], start..) |byte, position| {
+                if (isAsciiLetter(byte)) {
+                    output[position] = if (first_cased)
+                        std.ascii.toUpper(byte)
+                    else
+                        std.ascii.toLower(byte);
+                    first_cased = false;
+                } else {
+                    output[position] = byte;
+                }
+            }
+        } else if (end > start) {
+            @memcpy(output[start..end], text[start..end]);
+        }
+        emitted = end;
+    }
+    if (emitted < text.len) {
+        @memcpy(output[emitted..], text[emitted..]);
+    }
+    return output;
+}
+
 fn titleAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -239,6 +295,9 @@ fn titleAlloc(
     edits: ?*Edits,
 ) Error![]u8 {
     if (edits) |value| value.clearRetainingCapacity();
+    if (edits == null and isAsciiText(text)) {
+        return titleAsciiAlloc(allocator, text);
+    }
 
     var decoded = try decodeAlloc(allocator, text, true);
     defer decoded.deinit(allocator);
@@ -248,12 +307,21 @@ fn titleAlloc(
 
     var segments = word.segments(text) catch unreachable;
     var emitted: usize = 0;
+    var decoded_index: usize = 0;
     while (segments.next()) |segment| {
-        const start = indexForByte(decoded.offsets.items, segment.byte_start);
-        const end = indexForByte(
-            decoded.offsets.items,
-            segment.byte_start + segment.byte_len,
-        );
+        const segment_end = segment.byte_start + segment.byte_len;
+        while (decoded_index < decoded.offsets.items.len and
+            decoded.offsets.items[decoded_index] < segment.byte_start)
+        {
+            decoded_index += 1;
+        }
+        const start = decoded_index;
+        while (decoded_index < decoded.offsets.items.len and
+            decoded.offsets.items[decoded_index] < segment_end)
+        {
+            decoded_index += 1;
+        }
+        const end = decoded_index;
         while (emitted < start) : (emitted += 1) {
             const before = output.items.len;
             try appendCodepoint(allocator, &output, decoded.codepoints.items[emitted]);
@@ -373,6 +441,34 @@ fn decodeAlloc(
 
     var cursor: usize = 0;
     while (cursor < text.len) {
+        // ASCII runs widen sixteen scalars at a time; title casing decodes
+        // whole texts up front, so this loop sees prose-dominated input.
+        if (text[cursor] < 0x80) {
+            var end = cursor;
+            while (end + 16 <= text.len) {
+                const chunk: @Vector(16, u8) = text[end..][0..16].*;
+                if (@reduce(.Or, chunk >= @as(@Vector(16, u8), @splat(0x80)))) {
+                    break;
+                }
+                const wide: @Vector(16, u21) = @intCast(chunk);
+                const base = codepoints.items.len;
+                inline for (0..16) |lane| {
+                    codepoints.items[base + lane] = wide[lane];
+                }
+                codepoints.items.len = base + 16;
+                if (need_offsets) {
+                    for (0..16) |lane| offsets.items[base + lane] = end + lane;
+                    offsets.items.len = base + 16;
+                }
+                end += 16;
+            }
+            while (end < text.len and text[end] < 0x80) : (end += 1) {
+                codepoints.appendAssumeCapacity(text[end]);
+                if (need_offsets) offsets.appendAssumeCapacity(end);
+            }
+            cursor = end;
+            continue;
+        }
         const decoded = scalar.decodeValidatingPacked(text, cursor);
         if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
         codepoints.appendAssumeCapacity(scalar.packedCodepoint(decoded));
