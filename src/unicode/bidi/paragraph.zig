@@ -991,6 +991,32 @@ fn isCombiningMark(codepoint: u21) bool {
     };
 }
 
+/// Append a one- to four-byte UTF-8 sequence with inline stores; the list
+/// slice helpers call memcpy for every runtime length, which costs more than
+/// the copy for a single scalar.
+inline fn appendShort(
+    allocator: std.mem.Allocator,
+    list: *std.ArrayList(u8),
+    bytes: []const u8,
+) error{OutOfMemory}!void {
+    if (list.unusedCapacitySlice().len < bytes.len) {
+        try list.ensureUnusedCapacity(allocator, bytes.len);
+    }
+    const dest = list.unusedCapacitySlice();
+    const length = bytes.len;
+    if (length != 0) {
+        dest[0] = bytes[0];
+        if (length > 1) {
+            dest[1] = bytes[1];
+            if (length > 2) {
+                dest[2] = bytes[2];
+                if (length > 3) dest[3] = bytes[3];
+            }
+        }
+    }
+    list.items.len += length;
+}
+
 fn isBidiControl(codepoint: u21) bool {
     return codepoint == 0x200C or codepoint == 0x200D or
         codepoint == 0x200E or codepoint == 0x200F or
@@ -1016,13 +1042,13 @@ fn appendScalar(
             var buffer: [4]u8 = undefined;
             const length = std.unicode.utf8Encode(mirrored, &buffer) catch
                 return error.InvalidUtf8;
-            try output.appendSlice(allocator, buffer[0..length]);
+            try appendShort(allocator, output, buffer[0..length]);
             return;
         }
     }
     const end = scalar.byte_start + scalar.byte_len;
     if (end > text.len) return error.InvalidUtf8;
-    try output.appendSlice(allocator, text[scalar.byte_start..end]);
+    try appendShort(allocator, output, text[scalar.byte_start..end]);
 }
 
 fn isRemovedByX9(value: Class) bool {
