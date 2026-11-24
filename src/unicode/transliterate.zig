@@ -978,6 +978,25 @@ fn decodeAlloc(
     return codepoints;
 }
 
+/// Store a one- to four-byte sequence in the list's spare capacity. The
+/// ArrayList slice helpers call memcpy for every runtime length, which costs
+/// more than the copy for the single scalars transliteration emits.
+inline fn storeEncoded(list: *std.ArrayList(u8), bytes: []const u8) void {
+    const dest = list.unusedCapacitySlice();
+    const length = bytes.len;
+    if (length != 0) {
+        dest[0] = bytes[0];
+        if (length > 1) {
+            dest[1] = bytes[1];
+            if (length > 2) {
+                dest[2] = bytes[2];
+                if (length > 3) dest[3] = bytes[3];
+            }
+        }
+    }
+    list.items.len += length;
+}
+
 fn appendCodepoint(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
@@ -986,7 +1005,10 @@ fn appendCodepoint(
     var buffer: [4]u8 = undefined;
     const length = std.unicode.utf8Encode(codepoint, &buffer) catch
         return error.InvalidUtf8;
-    try output.appendSlice(allocator, buffer[0..length]);
+    if (output.unusedCapacitySlice().len < length) {
+        try output.ensureUnusedCapacity(allocator, length);
+    }
+    storeEncoded(output, buffer[0..length]);
 }
 
 fn appendTarget(
@@ -1805,7 +1827,7 @@ fn encodeCodepointsAlloc(
         var buffer: [4]u8 = undefined;
         const length = std.unicode.utf8Encode(codepoint, &buffer) catch
             return error.InvalidUtf8;
-        output.appendSliceAssumeCapacity(buffer[0..length]);
+        storeEncoded(&output, buffer[0..length]);
     }
     return output.toOwnedSlice(allocator);
 }
