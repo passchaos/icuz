@@ -417,19 +417,23 @@ fn benchRegex(
     var matcher = regex.matcher(text) catch return;
     defer matcher.deinit();
 
-    const rounds = 200;
+    const rounds = 2000;
     var matches: usize = 0;
-    const start = now();
-    for (0..rounds) |_| {
-        matcher.reset(text) catch return;
-        while (matcher.find() catch return) {
-            matches += 1;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            matcher.reset(text) catch return;
+            while (matcher.find() catch return) {
+                matches += 1;
+            }
         }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
     }
-    const elapsed: u64 = @intCast(now() - start);
     std.debug.print("{s:<32} {d:>8.3} us/scan ({d} matches)\n", .{
         name,
-        @as(f64, @floatFromInt(elapsed)) / @as(f64, rounds) / 1000.0,
+        @as(f64, @floatFromInt(best)) / @as(f64, rounds) / 1000.0,
         matches,
     });
     sink +%= matches;
@@ -447,15 +451,19 @@ fn benchRegexMatches(
     defer matcher.deinit();
 
     const rounds = 20_000;
-    const start = now();
     var matched: usize = 0;
-    for (0..rounds) |_| {
-        if (matcher.matches() catch return) matched += 1;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            if (matcher.matches() catch return) matched += 1;
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
     }
-    const elapsed: u64 = @intCast(now() - start);
     std.debug.print("{s:<32} {d:>8.3} ns/op ({d} matches)\n", .{
         name,
-        @as(f64, @floatFromInt(elapsed)) / @as(f64, @floatFromInt(rounds)),
+        @as(f64, @floatFromInt(best)) / @as(f64, @floatFromInt(rounds)),
         matched,
     });
     sink +%= matched;
@@ -473,15 +481,19 @@ fn benchRegexLookingAt(
     defer matcher.deinit();
 
     const rounds = 20_000;
-    const start = now();
     var matched: usize = 0;
-    for (0..rounds) |_| {
-        if (matcher.lookingAt() catch return) matched += 1;
+    var best: u64 = std.math.maxInt(u64);
+    for (0..5) |_| {
+        const start = now();
+        for (0..rounds) |_| {
+            if (matcher.lookingAt() catch return) matched += 1;
+        }
+        const elapsed: u64 = @intCast(now() - start);
+        if (elapsed < best) best = elapsed;
     }
-    const elapsed: u64 = @intCast(now() - start);
     std.debug.print("{s:<32} {d:>8.3} ns/op ({d} matches)\n", .{
         name,
-        @as(f64, @floatFromInt(elapsed)) / @as(f64, @floatFromInt(rounds)),
+        @as(f64, @floatFromInt(best)) / @as(f64, @floatFromInt(rounds)),
         matched,
     });
     sink +%= matched;
