@@ -1002,8 +1002,8 @@ fn normalizeFusedInto(
                 const lead = text[run_end];
                 if (lead >= 0xe3 and lead <= 0xef) break;
                 if (lead < 0x80) {
-                    // Bridge one space to the next inert two-byte scalar so
-                    // spaced Hebrew and Arabic prose stays in one run.
+                    // Bridge one space to the next inert scalar so spaced
+                    // Semitic and Indic prose stays in one run.
                     if (lead == ' ' and run_end + 3 <= text.len) {
                         const next_lead = text[run_end + 1];
                         if (next_lead >= 0xc2 and next_lead < 0xe0) {
@@ -1018,6 +1018,24 @@ fn normalizeFusedInto(
                                 mark_chain = 0;
                                 run_end += 3;
                                 continue;
+                            }
+                        } else if (next_lead == 0xe0 and
+                            run_end + 4 <= text.len)
+                        {
+                            const second = text[run_end + 2];
+                            const third = text[run_end + 3];
+                            if (second >= 0xa0 and (third & 0xc0) == 0x80) {
+                                const low: u11 = @intCast(
+                                    ((@as(u32, second & 0x3f) << 6) |
+                                        (third & 0x3f)) - 0x800,
+                                );
+                                if (inert.e0Inert(low, form)) {
+                                    run_offset = run_end + 1;
+                                    run_codepoint = 0x800 + @as(u21, low);
+                                    mark_chain = 0;
+                                    run_end += 4;
+                                    continue;
+                                }
                             }
                         }
                     }
@@ -3799,7 +3817,44 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
             while (run_end < text.len) {
                 const lead = text[run_end];
                 if (lead >= 0xe3 and lead <= 0xef) break;
-                if (lead < 0x80) break;
+                if (lead < 0x80) {
+                    // Bridge one space to the next inert scalar so spaced
+                    // Semitic and Indic prose stays in one run.
+                    if (lead == ' ' and run_end + 3 <= text.len) {
+                        const next_lead = text[run_end + 1];
+                        if (next_lead >= 0xc2 and next_lead < 0xe0) {
+                            const next_second = text[run_end + 2];
+                            if ((next_second & 0xc0) == 0x80 and
+                                inert.twoByteInert(next_lead, next_second, form))
+                            {
+                                run_codepoint =
+                                    (@as(u21, next_lead & 0x1f) << 6) |
+                                    (next_second & 0x3f);
+                                mark_chain = 0;
+                                run_end += 3;
+                                continue;
+                            }
+                        } else if (next_lead == 0xe0 and
+                            run_end + 4 <= text.len)
+                        {
+                            const second = text[run_end + 2];
+                            const third = text[run_end + 3];
+                            if (second >= 0xa0 and (third & 0xc0) == 0x80) {
+                                const low: u11 = @intCast(
+                                    ((@as(u32, second & 0x3f) << 6) |
+                                        (third & 0x3f)) - 0x800,
+                                );
+                                if (inert.e0Inert(low, form)) {
+                                    run_codepoint = 0x800 + @as(u21, low);
+                                    mark_chain = 0;
+                                    run_end += 4;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
                 if (lead < 0xe0) {
                     if (lead < 0xc2 or run_end + 1 >= text.len) break;
                     const second = text[run_end + 1];
