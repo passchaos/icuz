@@ -526,6 +526,37 @@ fn normalizeFusedInto(
             index = end;
             continue;
         }
+        if (!compose and previous_input_class == 0 and
+            text[index] >= 0xea and text[index] <= 0xed and
+            hangulInertAt(text, index))
+        {
+            // A precomposed syllable always starts its own segment in the
+            // decomposed forms, and every jamo it decomposes to has combining
+            // class zero, so it can be emitted without the segment machinery.
+            const codepoint = (@as(u21, text[index] & 0x0f) << 12) |
+                (@as(u21, text[index + 1] & 0x3f) << 6) |
+                (text[index + 2] & 0x3f);
+            if (decomposeHangul(codepoint)) |parts| {
+                if (!changed) {
+                    try output.ensureTotalCapacityPrecise(allocator, text.len);
+                    changed = true;
+                }
+                if (index > stable_start) {
+                    try appendBytes(
+                        allocator,
+                        output,
+                        text[stable_start..index],
+                    );
+                }
+                try engine.sink.appendHangul(parts);
+                stable_start = index + 3;
+                index += 3;
+                starter = null;
+                starter_offset = index;
+                previous_input_class = 0;
+                continue;
+            }
+        }
         if ((cjk_lead_simple and
             ((text[index] >= 0xe4 and text[index] <= 0xe9) or
                 (compose and text[index] == 0xe3 and
@@ -1118,6 +1149,29 @@ const Utf8Sink = struct {
             written += encodeScalarInto(dest, written, codepoint);
         }
         self.list.items.len += written;
+    }
+
+    fn appendHangul(
+        self: *Utf8Sink,
+        parts: HangulDecomposition,
+    ) error{OutOfMemory}!void {
+        // Every jamo encodes to exactly three bytes, so the size is known
+        // without the per-scalar length scan in `appendCodepoints`.
+        const needed = @as(usize, parts.len) * 3;
+        if (self.list.unusedCapacitySlice().len < needed) {
+            try self.list.ensureTotalCapacityPrecise(
+                self.allocator,
+                self.list.items.len + needed,
+            );
+        }
+        const dest = self.list.unusedCapacitySlice();
+        for (parts.slice(), 0..) |part, index| {
+            const offset = index * 3;
+            dest[offset] = @intCast(0xe0 | (part >> 12));
+            dest[offset + 1] = @intCast(0x80 | ((part >> 6) & 0x3f));
+            dest[offset + 2] = @intCast(0x80 | (part & 0x3f));
+        }
+        self.list.items.len += needed;
     }
 
     fn appendOne(
@@ -3681,6 +3735,28 @@ test "Hangul syllable runs keep trailing jamo composition" {
     try expectFormNormalized(
         "\u{ac00}\u{ac00}",
         "\u{1100}\u{1161}\u{1100}\u{1161}",
+        .nfd,
+    );
+    // Marks before and after a syllable stay attached to their own segment.
+    try expectFormNormalized(
+        "\u{0301}\u{ac00}",
+        "\u{0301}\u{1100}\u{1161}",
+        .nfd,
+    );
+    try expectFormNormalized(
+        "\u{ac00}\u{0301}",
+        "\u{1100}\u{1161}\u{0301}",
+        .nfd,
+    );
+    // A mark after a decomposed syllable still reorders against later marks.
+    try expectFormNormalized(
+        "\u{ac00}\u{0301}\u{0316}",
+        "\u{1100}\u{1161}\u{0316}\u{0301}",
+        .nfd,
+    );
+    try expectFormNormalized(
+        "\u{ac00}\u{0301}\u{ac00}",
+        "\u{1100}\u{1161}\u{0301}\u{1100}\u{1161}",
         .nfd,
     );
     // The compatibility forms leave syllable runs unchanged.
