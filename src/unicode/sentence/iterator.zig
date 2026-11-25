@@ -96,6 +96,15 @@ pub const Iterator = struct {
                         continue;
                     }
                 }
+                if (state.terminator == null and
+                    !isParagraphSeparator(state.previous_actual))
+                {
+                    // SB998: without a pending terminator and with no
+                    // separator on the left there is no break here.
+                    state.consume(current_class);
+                    end += 1;
+                    continue;
+                }
                 if (self.breaksAt(end, current_class, &state)) break;
                 state.consume(current_class);
                 end += 1;
@@ -103,31 +112,33 @@ pub const Iterator = struct {
             }
             const value = decode(self.text, end) orelse unreachable;
             const current_class = classForCodepoint(scalar.packedCodepoint(value));
-            // Without a pending terminator only SB3-SB5 can fire, and a
-            // letter triggers none of them, so the rule chain is skipped for
-            // the non-ASCII letters of scripts without sentence punctuation.
+            // Without a pending terminator and with no separator on the
+            // left, SB998 makes every boundary here a non-break. Letters are
+            // consumed as a run; any other class just updates the state.
             if (state.terminator == null and
-                !isParagraphSeparator(state.previous_actual) and
-                isLetter(current_class))
+                !isParagraphSeparator(state.previous_actual))
             {
-                // Bulk-consume the letter run: without a pending terminator
-                // only the last two classes feed the state machine.
-                var last = current_class;
-                var previous = state.last_significant;
-                end += scalar.packedLength(value);
-                while (end < self.text.len) {
-                    const next_value = decode(self.text, end) orelse break;
-                    const next_class = classForCodepoint(
-                        scalar.packedCodepoint(next_value),
-                    );
-                    if (!isLetter(next_class)) break;
-                    previous = last;
-                    last = next_class;
-                    end += scalar.packedLength(next_value);
+                if (isLetter(current_class)) {
+                    var last = current_class;
+                    var previous = state.last_significant;
+                    end += scalar.packedLength(value);
+                    while (end < self.text.len) {
+                        const next_value = decode(self.text, end) orelse break;
+                        const next_class = classForCodepoint(
+                            scalar.packedCodepoint(next_value),
+                        );
+                        if (!isLetter(next_class)) break;
+                        previous = last;
+                        last = next_class;
+                        end += scalar.packedLength(next_value);
+                    }
+                    state.previous_actual = last;
+                    state.previous_significant = previous;
+                    state.last_significant = last;
+                    continue;
                 }
-                state.previous_actual = last;
-                state.previous_significant = previous;
-                state.last_significant = last;
+                state.consume(current_class);
+                end += scalar.packedLength(value);
                 continue;
             }
             if (self.breaksAt(end, current_class, &state)) break;
