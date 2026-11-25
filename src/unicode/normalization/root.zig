@@ -2350,9 +2350,35 @@ fn normalizeFusedUtf16Into(
         }
 
         if (codepoint >= 0x80 and inert.isInert(codepoint, form)) {
-            starter = codepoint;
-            starter_offset = start;
+            // Consecutive inert scalars need no per-unit dispatch. The last
+            // one stays the starter for a following mark, and ASCII ends the
+            // run so the ASCII path keeps handling it.
+            var run_end = index;
+            var run_codepoint = codepoint;
+            var run_offset = start;
+            while (run_end < units.len) {
+                const next_unit = units[run_end];
+                if (next_unit < 0x80) break;
+                if (next_unit >= 0xd800 and next_unit <= 0xdfff) {
+                    const next_decoded = utf16.decodePacked(units, run_end);
+                    if (next_decoded == utf16.packed_invalid) break;
+                    const next = utf16.packedCodepoint(next_decoded);
+                    if (!inert.isInert(next, form)) break;
+                    run_offset = run_end;
+                    run_codepoint = next;
+                    run_end += utf16.packedLength(next_decoded);
+                    continue;
+                }
+                const next: u21 = next_unit;
+                if (!inert.isInert(next, form)) break;
+                run_offset = run_end;
+                run_codepoint = next;
+                run_end += 1;
+            }
+            starter = run_codepoint;
+            starter_offset = run_offset;
             previous_input_class = 0;
+            index = run_end;
             continue;
         }
         const quick_check = data.quickCheck(codepoint, form);
