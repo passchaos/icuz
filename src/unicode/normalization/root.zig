@@ -151,6 +151,89 @@ inline fn scanKanaRun(text: []const u8, start: usize, form: Form) ScanRun {
     };
 }
 
+/// True when a precomposed Hangul syllable, or an unassigned scalar in the
+/// same lead-byte window, is unchanged by the composed forms. The last
+/// scalar of a syllable run stays the starter because a trailing jamo T
+/// composes with an LV syllable.
+inline fn hangulBytesInert(lead: u8, second: u8, third: u8) bool {
+    return switch (lead) {
+        0xea => second >= 0xb0,
+        0xeb, 0xec => true,
+        // U+D7A4..U+D7AF are unassigned; U+D7B0 and above are jamo that can
+        // compose with a preceding syllable.
+        0xed => second <= 0x9d or (second == 0x9e and third <= 0xaf),
+        else => false,
+    };
+}
+
+inline fn hangulInertAt(text: []const u8, offset: usize) bool {
+    if (offset + 3 > text.len) return false;
+    const lead = text[offset];
+    if (lead < 0xea or lead > 0xed) return false;
+    const second = text[offset + 1];
+    const third = text[offset + 2];
+    if ((second & 0xc0) != 0x80 or (third & 0xc0) != 0x80) return false;
+    return hangulBytesInert(lead, second, third);
+}
+
+/// Scan a run of precomposed Hangul syllables. `start` must point at an
+/// EA..ED lead byte; returns an empty run when the first scalar is not an
+/// inert syllable.
+inline fn scanHangulRun(text: []const u8, start: usize) ScanRun {
+    var end = start;
+    while (true) {
+        // Syllable runs are long, so advance two scalars per check.
+        while (end + 6 <= text.len) {
+            const lead0 = text[end];
+            const lead1 = text[end + 3];
+            if (lead0 < 0xea or lead0 > 0xed or
+                lead1 < 0xea or lead1 > 0xed)
+            {
+                break;
+            }
+            const second0 = text[end + 1];
+            const third0 = text[end + 2];
+            const second1 = text[end + 4];
+            const third1 = text[end + 5];
+            if ((second0 & 0xc0) != 0x80 or (third0 & 0xc0) != 0x80 or
+                (second1 & 0xc0) != 0x80 or (third1 & 0xc0) != 0x80 or
+                !hangulBytesInert(lead0, second0, third0) or
+                !hangulBytesInert(lead1, second1, third1))
+            {
+                break;
+            }
+            end += 6;
+        }
+        while (hangulInertAt(text, end)) end += 3;
+        // Korean words are separated by short ASCII spans, usually a space
+        // and punctuation. Bridge up to two of them when another syllable
+        // follows so the phrase stays in one run.
+        var bridge = end;
+        while (bridge < text.len and bridge - end < 2 and text[bridge] < 0x80) {
+            bridge += 1;
+        }
+        if (bridge > end and bridge < text.len and hangulInertAt(text, bridge)) {
+            end = bridge;
+            continue;
+        }
+        break;
+    }
+    if (end == start) {
+        return .{
+            .end = start,
+            .last_codepoint = 0,
+            .last_offset = start,
+        };
+    }
+    return .{
+        .end = end,
+        .last_codepoint = (@as(u21, text[end - 3] & 0x0f) << 12) |
+            (@as(u21, text[end - 2] & 0x3f) << 6) |
+            (text[end - 1] & 0x3f),
+        .last_offset = end - 3,
+    };
+}
+
 /// True when `codepoint` is inert for `form`: unchanged and unable to compose
 /// with a preceding starter.
 fn latin1Inert(form: Form, codepoint: u21) bool {
@@ -511,6 +594,19 @@ fn normalizeFusedInto(
                 starter_offset = cursor - 3;
                 previous_input_class = 0;
                 index = cursor;
+                continue;
+            }
+        }
+        if (compose and text[index] >= 0xea and text[index] <= 0xed) {
+            // Precomposed Hangul syllables are inert under the composed
+            // forms. The last syllable stays the starter because a trailing
+            // jamo T composes with an LV syllable.
+            const run = scanHangulRun(text, index);
+            if (run.end > index) {
+                starter = run.last_codepoint;
+                starter_offset = run.last_offset;
+                previous_input_class = 0;
+                index = run.end;
                 continue;
             }
         }
@@ -2797,6 +2893,15 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                 continue;
             }
         }
+        if (kana_run and text[index] >= 0xea and text[index] <= 0xed) {
+            const run = scanHangulRun(text, index);
+            if (run.end > index) {
+                starter = run.last_codepoint;
+                previous_input_class = 0;
+                index = run.end;
+                continue;
+            }
+        }
         // CJK punctuation and fullwidth forms are inert under the canonical
         // forms, so the scan skips them without a decoder or table probe,
         // matching the fused normalizer's fast path.
@@ -2998,6 +3103,16 @@ fn spanQuickCheckYesImpl(
                 starter_offset = cursor - 3;
                 previous_input_class = 0;
                 index = cursor;
+                continue;
+            }
+        }
+        if (kana_run and text[index] >= 0xea and text[index] <= 0xed) {
+            const run = scanHangulRun(text, index);
+            if (run.end > index) {
+                starter = run.last_codepoint;
+                starter_offset = run.last_offset;
+                previous_input_class = 0;
+                index = run.end;
                 continue;
             }
         }
@@ -3543,6 +3658,33 @@ test "Hangul jamo runs compose directly" {
         "\u{1100}\u{1161}\u{11a8}",
         .nfd,
     );
+}
+
+test "Hangul syllable runs keep trailing jamo composition" {
+    // A run of precomposed syllables must keep the last syllable as the
+    // starter so a trailing jamo T still composes with an LV syllable.
+    try std.testing.expect(!(try isNormalized("\u{ac00}\u{ac00}\u{11a8}")));
+    try expectNormalized(
+        "\u{ac00}\u{ac00}\u{11a8}",
+        "\u{ac00}\u{ac01}",
+    );
+    // LVT syllables cannot take another T jamo.
+    try std.testing.expect(try isNormalized("\u{ac01}\u{11a8}"));
+    try expectNormalized("\u{ac01}\u{11a8}", "\u{ac01}\u{11a8}");
+    // ASCII words between syllables stay inert under every form.
+    try expectNormalized(
+        "\u{ac00} \u{ac00}, \u{ac00}",
+        "\u{ac00} \u{ac00}, \u{ac00}",
+    );
+    try std.testing.expect(try isNormalized("\u{ac00} \u{11a8}"));
+    // The decomposed forms still split every precomposed syllable.
+    try expectFormNormalized(
+        "\u{ac00}\u{ac00}",
+        "\u{1100}\u{1161}\u{1100}\u{1161}",
+        .nfd,
+    );
+    // The compatibility forms leave syllable runs unchanged.
+    try expectFormNormalized("\u{ac00}\u{ac00}", "\u{ac00}\u{ac00}", .nfkc);
 }
 
 test "NFC does not apply display-only Vietnamese mark reordering" {
