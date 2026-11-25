@@ -87,6 +87,28 @@ fn buildRemovalPages(
     return pages;
 }
 
+/// Pages that any removal range overlaps. Most pages have none, so their
+/// scalars skip the removal search entirely.
+fn buildRemovalCoverage(
+    comptime blob: []const u8,
+    comptime removal_count: u32,
+    comptime removal_offset: u32,
+) [page_count]bool {
+    @setEvalBranchQuota(200_000);
+    var covered = [_]bool{false} ** page_count;
+    for (0..removal_count) |record| {
+        const first = readU32(blob, removal_offset + record * removal_record_len);
+        const last = readU32(
+            blob,
+            removal_offset + record * removal_record_len + 4,
+        );
+        const first_page: usize = @intCast(first >> 8);
+        const last_page: usize = @intCast(@min(last >> 8, page_count - 1));
+        for (first_page..last_page + 1) |page| covered[page] = true;
+    }
+    return covered;
+}
+
 const Table = struct {
     blob: []const u8,
     mapping_count: u32,
@@ -97,6 +119,7 @@ const Table = struct {
     pool_offset: u32,
     mapping: MappingIndex,
     removal_pages: [page_count + 1]u16,
+    removal_covered: [page_count]bool,
 
     fn init(comptime blob: []const u8) Table {
         comptime {
@@ -155,6 +178,11 @@ const Table = struct {
                 readU32(blob, 12),
                 readU32(blob, 24),
             ),
+            .removal_covered = buildRemovalCoverage(
+                blob,
+                readU32(blob, 12),
+                readU32(blob, 24),
+            ),
         };
     }
 
@@ -174,6 +202,7 @@ const Table = struct {
                 } };
             }
         }
+        if (!self.removal_covered[page]) return null;
         var low: usize = self.removal_pages[page];
         // The range that ends past this page may start inside it, so include
         // one record beyond the page boundary.
