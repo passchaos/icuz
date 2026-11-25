@@ -990,10 +990,18 @@ fn normalizeFusedInto(
             var run_offset = start;
             while (run_end < text.len) {
                 // Let the CJK, kana, Hangul, and fullwidth paths keep their
-                // dedicated run scanners.
+                // dedicated run scanners. E1 (Georgian, Myanmar, Ethiopic)
+                // and E2 (punctuation and symbols) have no dedicated scanner,
+                // so those scalars take the same inert test below instead of
+                // bouncing back to the main dispatch. Hangul jamo keep the
+                // break so the jamo scanner can claim decomposed Korean.
                 const lead = text[run_end];
-                if (lead >= 0xe1 and lead <= 0xef) break;
+                if (lead >= 0xe3 and lead <= 0xef) break;
                 if (lead < 0x80) break;
+                if (lead == 0xe1) {
+                    if (run_end + 1 >= text.len) break;
+                    if ((text[run_end + 1] & 0xfc) == 0x84) break;
+                }
                 if (lead < 0xe0) {
                     // Two-byte scalars are common in Semitic prose and test
                     // inertness with one table load.
@@ -4310,6 +4318,28 @@ test "NFC composes one and two simple marks after a starter" {
     // marks are ordered, even though it looks like a plain pair.
     try expectFormNormalized("\u{00e9}\u{0323}", "\u{1eb9}\u{0301}", .nfc);
     try expectFormNormalized("\u{00e9}\u{0301}", "\u{00e9}\u{0301}", .nfc);
+}
+
+test "inert runs cover E1 and E2 blocks" {
+    // Georgian, Ethiopic, symbols, and punctuation are inert prose: the run
+    // scanner must keep them in one run instead of per-scalar dispatch.
+    try expectNormalized("საქართველო", "საქართველო");
+    try expectNormalized("\u{10d0}\u{10e1}\u{10e3}", "\u{10d0}\u{10e1}\u{10e3}");
+    try expectNormalized("→ ≤ ∑ ∞", "→ ≤ ∑ ∞");
+    try expectNormalized("\u{2190}\u{2192}\u{2211}", "\u{2190}\u{2192}\u{2211}");
+    // A mark after an E2 symbol starts its own segment and stays put.
+    try expectNormalized("\u{2192}\u{0301}", "\u{2192}\u{0301}");
+    // E1 letters that do decompose must still leave the inert run.
+    try expectFormNormalized("\u{1e00}", "A\u{0325}", .nfd);
+    try expectFormNormalized("\u{1e9b}", "\u{017f}\u{0307}", .nfd);
+    // U+2000 and U+2001 have canonical decompositions to the next space, so
+    // they must leave the inert run; U+2002 and the arrows stay put under
+    // the canonical forms and decompose only under the compatibility forms.
+    try expectNormalized("\u{2000}", "\u{2002}");
+    try expectFormNormalized("\u{2000}", " ", .nfkc);
+    try expectNormalized("\u{2002}", "\u{2002}");
+    try expectFormNormalized("\u{2002}", " ", .nfkc);
+    try expectNormalized("\u{200d}", "\u{200d}");
 }
 
 test "Hangul jamo runs compose directly" {
