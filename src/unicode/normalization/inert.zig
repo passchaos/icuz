@@ -171,6 +171,34 @@ pub inline fn twoByteInert(lead: u8, second: u8, form: data.Form) bool {
         @intCast(second & 0x3f)) & 1 != 0;
 }
 
+/// Combining class of a validated two-byte scalar when it is a simple mark
+/// for `form` (unchanged and unable to compose with a previous starter), or
+/// zero otherwise. One load replaces the quick-check plus class pair.
+const two_byte_mark_classes: [4][30][64]u8 = blk: {
+    @setEvalBranchQuota(2_000_000);
+    var table: [4][30][64]u8 =
+        [_][30][64]u8{[_][64]u8{[_]u8{0} ** 64} ** 30} ** 4;
+    for (0..4) |form_index| {
+        const form: data.Form = @enumFromInt(form_index);
+        for (0xc2..0xe0) |lead| {
+            for (0x80..0xc0) |second| {
+                const codepoint: u21 = @intCast(
+                    (@as(u21, lead & 0x1f) << 6) | (second & 0x3f),
+                );
+                if (data.quickCheck(codepoint, form) != .yes) continue;
+                const class = combining_class.forCodepoint(codepoint);
+                if (class == 0) continue;
+                table[form_index][lead - 0xc2][second & 0x3f] = class;
+            }
+        }
+    }
+    break :blk table;
+};
+
+pub inline fn twoByteMarkClass(lead: u8, second: u8, form: data.Form) u8 {
+    return two_byte_mark_classes[@intFromEnum(form)][lead - 0xc2][second & 0x3f];
+}
+
 /// Inertness of three-byte scalars with lead 0xE0 (U+0800..U+0FFF), indexed
 /// by the eleven-bit offset from U+0800. This covers Devanagari, Thai, Lao,
 /// Tibetan, Myanmar, and the other Indic scripts.

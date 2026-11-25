@@ -1001,7 +1001,28 @@ fn normalizeFusedInto(
                 // break so the jamo scanner can claim decomposed Korean.
                 const lead = text[run_end];
                 if (lead >= 0xe3 and lead <= 0xef) break;
-                if (lead < 0x80) break;
+                if (lead < 0x80) {
+                    // Bridge one space to the next inert two-byte scalar so
+                    // spaced Hebrew and Arabic prose stays in one run.
+                    if (lead == ' ' and run_end + 3 <= text.len) {
+                        const next_lead = text[run_end + 1];
+                        if (next_lead >= 0xc2 and next_lead < 0xe0) {
+                            const next_second = text[run_end + 2];
+                            if ((next_second & 0xc0) == 0x80 and
+                                inert.twoByteInert(next_lead, next_second, form))
+                            {
+                                run_offset = run_end + 1;
+                                run_codepoint =
+                                    (@as(u21, next_lead & 0x1f) << 6) |
+                                    (next_second & 0x3f);
+                                mark_chain = 0;
+                                run_end += 3;
+                                continue;
+                            }
+                        }
+                    }
+                    break;
+                }
                 if (lead == 0xe1) {
                     // Hangul jamo keep their dedicated scanner; the rest of
                     // the block (Georgian, Myanmar, Ethiopic, Latin Extended
@@ -1077,11 +1098,13 @@ fn normalizeFusedInto(
                         continue;
                     }
                     // Simple marks (Hebrew niqqud, Arabic harakat) join the
-                    // run the same way Indic marks do.
-                    const cp: u21 = (@as(u21, lead & 0x1f) << 6) |
-                        (second & 0x3f);
-                    if (data.quickCheck(cp, form) != .yes) break;
-                    const mark_class = combining_class.forCodepoint(cp);
+                    // run the same way Indic marks do; one table load gives
+                    // the class or zero for a non-simple scalar.
+                    const mark_class = inert.twoByteMarkClass(
+                        lead,
+                        second,
+                        form,
+                    );
                     if (mark_class == 0 or mark_class < mark_chain) break;
                     mark_chain = mark_class;
                     run_end += 2;
@@ -3622,10 +3645,11 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                         run_end += 2;
                         continue;
                     }
-                    const cp: u21 = (@as(u21, lead & 0x1f) << 6) |
-                        (second & 0x3f);
-                    if (data.quickCheck(cp, form) != .yes) break;
-                    const mark_class = combining_class.forCodepoint(cp);
+                    const mark_class = inert.twoByteMarkClass(
+                        lead,
+                        second,
+                        form,
+                    );
                     if (mark_class == 0 or mark_class < mark_chain) break;
                     mark_chain = mark_class;
                     run_end += 2;
@@ -4577,6 +4601,25 @@ test "vocalized Hebrew and Arabic stay in inert runs" {
         "\u{05e9}\u{05c1}\u{05b8}",
         "\u{05e9}\u{05b8}\u{05c1}",
     );
+}
+
+test "spaced Semitic phrases bridge into one run" {
+    try expectNormalized(
+        "\u{05e9}\u{05b8}\u{05c1}\u{05dc}\u{05d5}\u{05b9}\u{05dd} \u{05e2}\u{05d5}\u{05b9}\u{05dc}\u{05b8}\u{05dd}",
+        "\u{05e9}\u{05b8}\u{05c1}\u{05dc}\u{05d5}\u{05b9}\u{05dd} \u{05e2}\u{05d5}\u{05b9}\u{05dc}\u{05b8}\u{05dd}",
+    );
+    try expectNormalized(
+        "\u{0645}\u{064f}\u{062d}\u{064e}\u{0645}\u{0651}\u{064e}\u{062f}\u{064c} \u{0631}\u{064e}\u{0633}\u{064f}\u{0648}\u{0644}\u{064f}",
+        "\u{0645}\u{064f}\u{062d}\u{064e}\u{0645}\u{064e}\u{0651}\u{062f}\u{064c} \u{0631}\u{064e}\u{0633}\u{064f}\u{0648}\u{0644}\u{064f}",
+    );
+    // The bridge still hands a composing mark after the bridged scalar to
+    // the segment machinery.
+    try expectNormalized(
+        "\u{05d0} \u{0627}\u{0654}",
+        "\u{05d0} \u{0623}",
+    );
+    // A space followed by a non-inert mark is not bridged.
+    try expectNormalized("\u{05d0} \u{0301}", "\u{05d0} \u{0301}");
 }
 
 test "Hangul jamo runs compose directly" {
