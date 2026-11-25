@@ -9,6 +9,7 @@
 const std = @import("std");
 const scalar = @import("../scalar/root.zig");
 
+const inert = @import("inert.zig");
 const normalization = @import("root.zig");
 
 const header_len = 32;
@@ -316,6 +317,9 @@ fn mapAlloc(
     // and are copied in bulk, so scripts with no mappings cost one copy.
     var pending: usize = 0;
     var index: usize = 0;
+    // When every emitted scalar is NFC-inert, the output cannot compose or
+    // reorder across boundaries and the final NFC scan is unnecessary.
+    var nfc_safe = true;
     while (index < text.len) {
         // ASCII maps to lowercase and never appears in either table, so a
         // run can be copied and lowered in one pass.
@@ -357,16 +361,20 @@ fn mapAlloc(
                         const target_offset = readU32(table.blob, record + 4);
                         const target_length = readU16(table.blob, record + 8);
                         for (0..target_length) |target_index| {
+                            const target_codepoint = table.targetCodepoint(
+                                target_offset,
+                                target_index,
+                            );
+                            if (!inert.isInert(target_codepoint, .nfc)) {
+                                nfc_safe = false;
+                            }
                             if (output.unusedCapacitySlice().len < 4) {
                                 try output.ensureUnusedCapacity(allocator, 4);
                             }
                             const dest = output.unusedCapacitySlice();
                             const written = scalar.encodeUtf8(
                                 dest,
-                                table.targetCodepoint(
-                                    target_offset,
-                                    target_index,
-                                ),
+                                target_codepoint,
                             );
                             output.items.len += written;
                         }
@@ -388,6 +396,9 @@ fn mapAlloc(
                         index += 2;
                         pending = index;
                         continue;
+                    }
+                    if (!inert.twoByteInert(lead, second, .nfc)) {
+                        nfc_safe = false;
                     }
                     index += 2;
                     continue;
@@ -414,6 +425,7 @@ fn mapAlloc(
         // unmapped non-ASCII text (most prose) copy in bulk.
         const match = table.lookup(codepoint);
         if (match == null) {
+            if (!inert.isInert(codepoint, .nfc)) nfc_safe = false;
             index += length;
             continue;
         }
@@ -425,14 +437,16 @@ fn mapAlloc(
             .remove => {},
             .target => |target| {
                 for (0..target.length) |offset| {
+                    const target_codepoint =
+                        table.targetCodepoint(target.offset, offset);
+                    if (!inert.isInert(target_codepoint, .nfc)) {
+                        nfc_safe = false;
+                    }
                     if (output.unusedCapacitySlice().len < 4) {
                         try output.ensureUnusedCapacity(allocator, 4);
                     }
                     const dest = output.unusedCapacitySlice();
-                    const written = scalar.encodeUtf8(
-                        dest,
-                        table.targetCodepoint(target.offset, offset),
-                    );
+                    const written = scalar.encodeUtf8(dest, target_codepoint);
                     output.items.len += written;
                 }
             },
@@ -446,7 +460,7 @@ fn mapAlloc(
     // The per-scalar mappings can compose across boundaries, so the result
     // still needs an NFC pass. Most mapped prose is already NFC, and the
     // scan avoids the second buffer and rewrite in that case.
-    if (normalization.isNormalizedAssumeValid(output.items)) {
+    if (nfc_safe or normalization.isNormalizedAssumeValid(output.items)) {
         return output.toOwnedSlice(allocator);
     }
     var normalized = std.ArrayList(u8).empty;
@@ -482,6 +496,32 @@ test "NFKC_Casefold examples" {
         .{ .input = "A\u{200d}B", .expected = "ab" },
         .{ .input = "A\u{fe0f}B", .expected = "ab" },
         .{ .input = "Hello World", .expected = "hello world" },
+    };
+    for (cases) |case| {
+        const actual = try nfkcCasefoldAlloc(allocator, case.input);
+        defer allocator.free(actual);
+        try std.testing.expectEqualStrings(case.expected, actual);
+    }
+}
+
+test "NFKC_Casefold normalizes mapped sequences" {
+    const allocator = std.testing.allocator;
+    const cases = [_]struct { input: []const u8, expected: []const u8 }{
+        // A removed ignorable joins a starter and a mark, which composes.
+        .{ .input = "A\u{00ad}\u{0301}", .expected = "\u{00e1}" },
+        // A mapped sequence ending in a mark reorders and recomposes.
+        .{
+            .input = "\u{0130}\u{0323}",
+            .expected = "\u{1ecb}\u{0307}",
+        },
+        // Inert targets keep the fast path.
+        .{ .input = "\u{00c5}", .expected = "\u{00e5}" },
+        .{ .input = "\u{ff21}\u{ff22}", .expected = "ab" },
+        .{
+            .input = "\u{041f}\u{0420}\u{0418}",
+            .expected = "\u{043f}\u{0440}\u{0438}",
+        },
+        .{ .input = "\u{0391}\u{03a3}", .expected = "\u{03b1}\u{03c3}" },
     };
     for (cases) |case| {
         const actual = try nfkcCasefoldAlloc(allocator, case.input);
