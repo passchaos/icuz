@@ -672,6 +672,18 @@ fn asciiCommonDecision(
         return .{ .kind = null };
     }
     if (state.previous_raw == .zero_width_joiner) return .{ .kind = null };
+    // LB13: no break before close punctuation, close parenthesis, an
+    // exclamation, or a symbol, even after spaces. LB8 (a break after a
+    // zero-width space) is the only earlier rule that can differ. Infix
+    // separators follow LB15d instead, which allows the break after spaces.
+    if (state.beforeSpaceRun().class != .zero_width_space and
+        (current == .close_punctuation or
+            current == .close_parenthesis or
+            current == .exclamation or
+            current == .symbol))
+    {
+        return .{ .kind = null };
+    }
 
     if (current == .alphabetic or current == .numeric) {
         if (state.last.class == .alphabetic or
