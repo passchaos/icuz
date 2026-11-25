@@ -2919,44 +2919,37 @@ pub const Normalizer = struct {
             self.last_segment_start = 0;
             return;
         }
+        // One capacity reservation covers every scalar in the chunk, so the
+        // hot loop appends without a per-scalar capacity check.
+        try self.pending.ensureUnusedCapacity(self.allocator, text.len);
         var index: usize = 0;
         while (index < text.len) {
             const decoded = scalar.decodeValid(text, index) orelse
                 return error.InvalidUtf8;
             index = decoded.next;
-            try self.process(decoded.codepoint, output);
+            const codepoint = decoded.codepoint;
+            if (self.pending.items.len == 0) {
+                self.last_segment_start = 0;
+                self.pending.appendAssumeCapacity(codepoint);
+                continue;
+            }
+            if (continuesSegment(
+                codepoint,
+                self.form == .nfkc or self.form == .nfkd,
+            )) {
+                self.pending.appendAssumeCapacity(codepoint);
+                continue;
+            }
+            self.last_segment_start = self.pending.items.len;
+            self.pending.appendAssumeCapacity(codepoint);
+            if (self.last_segment_start >= flush_threshold) {
+                try self.flushComplete(output);
+            }
         }
     }
 
     pub fn finish(self: *Normalizer, output: *std.ArrayList(u8)) Error!void {
         try self.flushPending(output);
-    }
-
-    fn process(
-        self: *Normalizer,
-        codepoint: u21,
-        output: *std.ArrayList(u8),
-    ) Error!void {
-        if (self.pending.items.len == 0) {
-            self.last_segment_start = 0;
-            try self.pending.append(self.allocator, codepoint);
-            return;
-        }
-        if (continuesSegment(
-            codepoint,
-            self.form == .nfkc or self.form == .nfkd,
-        )) {
-            try self.pending.append(self.allocator, codepoint);
-            return;
-        }
-
-        // The new scalar starts its own segment; everything before it is
-        // complete and can wait for the next batch normalization.
-        self.last_segment_start = self.pending.items.len;
-        try self.pending.append(self.allocator, codepoint);
-        if (self.last_segment_start >= flush_threshold) {
-            try self.flushComplete(output);
-        }
     }
 
     /// Normalize and emit every complete segment, keeping the current one.
