@@ -200,22 +200,6 @@ const Table = struct {
         return null;
     }
 
-    /// True when no mapping or removal record can affect `codepoint`'s page,
-    /// so the scalar passes through unchanged.
-    fn pageEmpty(self: *const Table, codepoint: u21) bool {
-        const page: usize = @intCast(codepoint >> 8);
-        if (self.mapping.slots[page] != 0xffff) return false;
-        const removal = self.removal_pages[page];
-        if (removal < self.removal_count) {
-            // A range that begins before this page can still cover it.
-            const record = self.removal_offset + removal * removal_record_len;
-            const first = readU32(self.blob, record);
-            const page_end: u32 = @intCast((page << 8) | 0xff);
-            if (first <= page_end) return false;
-        }
-        return true;
-    }
-
     fn targetCodepoint(self: *const Table, offset: u32, index: usize) u21 {
         return @intCast(readU32(
             self.blob,
@@ -310,9 +294,10 @@ fn mapAlloc(
         if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
         const codepoint = scalar.packedCodepoint(decoded);
         const length = scalar.packedLength(decoded);
-        // Pages without mapping or removal records pass through verbatim,
-        // which covers scripts such as Han with no case mappings.
-        if (table.pageEmpty(codepoint)) {
+        // Scalars with no mapping stay in the verbatim run, so runs of
+        // unmapped non-ASCII text (most prose) copy in bulk.
+        const match = table.lookup(codepoint);
+        if (match == null) {
             index += length;
             continue;
         }
@@ -320,20 +305,21 @@ fn mapAlloc(
             try output.appendSlice(allocator, text[pending..index]);
         }
         index += length;
-        if (table.lookup(codepoint)) |match| switch (match) {
+        switch (match.?) {
             .remove => {},
             .target => |target| {
                 for (0..target.length) |offset| {
-                    var encoded: [4]u8 = undefined;
-                    const encoded_len = scalar.encodeUtf8(
-                        &encoded,
+                    if (output.unusedCapacitySlice().len < 4) {
+                        try output.ensureUnusedCapacity(allocator, 4);
+                    }
+                    const dest = output.unusedCapacitySlice();
+                    const written = scalar.encodeUtf8(
+                        dest,
                         table.targetCodepoint(target.offset, offset),
                     );
-                    try output.appendSlice(allocator, encoded[0..encoded_len]);
+                    output.items.len += written;
                 }
             },
-        } else {
-            try output.appendSlice(allocator, text[index - length ..][0..length]);
         }
         pending = index;
     }
