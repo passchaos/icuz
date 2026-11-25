@@ -226,6 +226,20 @@ pub fn encodeInto(
     const resolved = resolveEncodeKind(kind) orelse {
         return error.UnmappableCharacter;
     };
+    switch (resolved) {
+        .table => return encodeIntoKind(true, allocator, input, resolved, options, output),
+        else => return encodeIntoKind(false, allocator, input, resolved, options, output),
+    }
+}
+
+fn encodeIntoKind(
+    comptime cached: bool,
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    resolved: EncodeKind,
+    options: Options,
+    output: *std.ArrayList(u8),
+) Error!void {
     // Every scalar becomes one byte, replacements included.
     try output.ensureUnusedCapacity(allocator, input.len + 8);
     const spare = output.unusedCapacitySlice();
@@ -241,12 +255,12 @@ pub fn encodeInto(
     }
     // Real text repeats scalars, so a tiny direct-mapped cache turns most
     // reverse lookups into two loads.
-    const cached = switch (resolved) {
-        .table => true,
-        else => false,
-    };
     var cache_keys: [64]u32 = @splat(0xFFFF_FFFF);
     var cache_values: [64]u8 = undefined;
+    // Two-byte UTF-8 sequences repeat across accented prose, so a raw-pair
+    // cache skips both the decoder and the code-point cache on repeats.
+    var pair_keys: [64]u16 = @splat(0xFFFF);
+    var pair_values: [64]u8 = undefined;
     var index: usize = 0;
     while (index < input.len) {
         if (input[index] < 0x80) {
@@ -276,6 +290,34 @@ pub fn encodeInto(
             written += count;
             index = end;
             continue;
+        }
+        if (cached) {
+            const first = input[index];
+            if (first >= 0xC2 and first < 0xE0 and index + 2 <= input.len) {
+                const second = input[index + 1];
+                if (second & 0xC0 == 0x80) {
+                    const pair: u16 = (@as(u16, first) << 8) | second;
+                    const slot = second & 63;
+                    if (pair_keys[slot] == pair) {
+                        spare[written] = pair_values[slot];
+                        written += 1;
+                        index += 2;
+                        continue;
+                    }
+                    const codepoint = (@as(u21, first & 0x1F) << 6) |
+                        (second & 0x3F);
+                    if (encodeScalar(resolved, codepoint)) |byte| {
+                        pair_keys[slot] = pair;
+                        pair_values[slot] = byte;
+                        spare[written] = byte;
+                        written += 1;
+                        index += 2;
+                        continue;
+                    }
+                    // Unmappable pairs fall through to the generic path so
+                    // the configured error mode still applies.
+                }
+            }
         }
         const decoded = scalar.decodeValidatingPacked(input, index);
         if (decoded == scalar.packed_invalid) {
