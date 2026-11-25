@@ -110,8 +110,24 @@ pub const Iterator = struct {
                 !isParagraphSeparator(state.previous_actual) and
                 isLetter(current_class))
             {
-                state.consume(current_class);
+                // Bulk-consume the letter run: without a pending terminator
+                // only the last two classes feed the state machine.
+                var last = current_class;
+                var previous = state.last_significant;
                 end += scalar.packedLength(value);
+                while (end < self.text.len) {
+                    const next_value = decode(self.text, end) orelse break;
+                    const next_class = classForCodepoint(
+                        scalar.packedCodepoint(next_value),
+                    );
+                    if (!isLetter(next_class)) break;
+                    previous = last;
+                    last = next_class;
+                    end += scalar.packedLength(next_value);
+                }
+                state.previous_actual = last;
+                state.previous_significant = previous;
+                state.last_significant = last;
                 continue;
             }
             if (self.breaksAt(end, current_class, &state)) break;
