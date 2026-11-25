@@ -443,11 +443,14 @@ fn normalizeFusedInto(
             index = end;
             continue;
         }
-        if (cjk_lead_simple and
+        if ((cjk_lead_simple and
             ((text[index] >= 0xe4 and text[index] <= 0xe9) or
                 (compose and text[index] == 0xe3 and
                     index + 1 < text.len and
-                    text[index + 1] >= 0x81 and text[index + 1] <= 0x83)))
+                    text[index + 1] >= 0x81 and text[index + 1] <= 0x83))) or
+            (!compatibility and text[index] == 0xef and
+                index + 1 < text.len and
+                text[index + 1] >= 0xbc and text[index + 1] <= 0xbf))
         {
             // CJK prose dominates this scan. Every scalar in the run is a
             // simple starter, so advance two ideographs per check and commit
@@ -489,7 +492,7 @@ fn normalizeFusedInto(
                     const third = text[cursor + 2];
                     if ((text[cursor] == 0xe3 and second == 0x80 and
                         (third < 0xaa or third > 0xaf)) or
-                        (text[cursor] == 0xef and second == 0xbc))
+                        (text[cursor] == 0xef and (second & 0xfc) == 0xbc))
                     {
                         if (third & 0xc0 != 0x80) return error.InvalidUtf8;
                         cursor += 3;
@@ -524,7 +527,7 @@ fn normalizeFusedInto(
                 const third = text[index + 2];
                 if ((lead == 0xe3 and second == 0x80 and
                     (third < 0xaa or third > 0xaf)) or
-                    (lead == 0xef and second == 0xbc))
+                    (lead == 0xef and (second & 0xfc) == 0xbc))
                 {
                     if (third & 0xc0 != 0x80) return error.InvalidUtf8;
                     starter = null;
@@ -2723,13 +2726,16 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
             index = end;
             continue;
         }
-        if (cjk_lead_simple and
+        const canonical = form == .nfc or form == .nfd;
+        if ((cjk_lead_simple and
             ((text[index] >= 0xe4 and text[index] <= 0xe9) or
                 (kana_run and text[index] == 0xe3 and
                     index + 1 < text.len and
-                    text[index + 1] >= 0x81 and text[index + 1] <= 0x83)))
+                    text[index + 1] >= 0x81 and text[index + 1] <= 0x83))) or
+            (canonical and text[index] == 0xef and
+                index + 1 < text.len and
+                text[index + 1] >= 0xbc and text[index + 1] <= 0xbf))
         {
-            const canonical = form == .nfc or form == .nfd;
             var cursor = index;
             while (true) {
                 while (cursor + 6 <= text.len and
@@ -2768,7 +2774,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     const third = text[cursor + 2];
                     if ((text[cursor] == 0xe3 and second == 0x80 and
                         (third < 0xaa or third > 0xaf)) or
-                        (text[cursor] == 0xef and second == 0xbc))
+                        (text[cursor] == 0xef and (second & 0xfc) == 0xbc))
                     {
                         if (third & 0xc0 != 0x80) {
                             return .{
@@ -2801,7 +2807,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                 const third = text[index + 2];
                 if ((lead == 0xe3 and second == 0x80 and
                     (third < 0xaa or third > 0xaf)) or
-                    (lead == 0xef and second == 0xbc))
+                    (lead == 0xef and (second & 0xfc) == 0xbc))
                 {
                     if (third & 0xc0 != 0x80) {
                         return .{ .normalized = false, .valid_until = start };
@@ -2884,6 +2890,7 @@ fn spanQuickCheckYesImpl(
     const latin1_mask = &latin1_inert_by_form[@intFromEnum(form)];
     const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
     const kana_run = form == .nfc or form == .nfkc;
+    const canonical = form == .nfc or form == .nfd;
     var starter_offset: usize = if (ascii_end > 0) ascii_end - 1 else 0;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
@@ -2926,11 +2933,14 @@ fn spanQuickCheckYesImpl(
             index = end;
             continue;
         }
-        if (cjk_lead_simple and
+        if ((cjk_lead_simple and
             ((text[index] >= 0xe4 and text[index] <= 0xe9) or
                 (kana_run and text[index] == 0xe3 and
                     index + 1 < text.len and
-                    text[index + 1] >= 0x81 and text[index + 1] <= 0x83)))
+                    text[index + 1] >= 0x81 and text[index + 1] <= 0x83))) or
+            (canonical and text[index] == 0xef and
+                index + 1 < text.len and
+                text[index + 1] >= 0xbc and text[index + 1] <= 0xbf))
         {
             var cursor = index;
             while (true) {
@@ -2959,6 +2969,23 @@ fn spanQuickCheckYesImpl(
                     const run = scanKanaRun(text, cursor, form);
                     if (run.end > cursor) {
                         cursor = run.end;
+                        continue;
+                    }
+                }
+                if (canonical and cursor + 3 <= text.len and
+                    (text[cursor] | 0x0c) == 0xef)
+                {
+                    const second = text[cursor + 1];
+                    const third = text[cursor + 2];
+                    if ((text[cursor] == 0xe3 and second == 0x80 and
+                        (third < 0xaa or third > 0xaf)) or
+                        (text[cursor] == 0xef and (second & 0xfc) == 0xbc))
+                    {
+                        if (third & 0xc0 != 0x80) {
+                            if (validating) return error.InvalidUtf8;
+                            return text.len;
+                        }
+                        cursor += 3;
                         continue;
                     }
                 }
