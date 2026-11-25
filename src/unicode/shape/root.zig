@@ -356,10 +356,19 @@ fn shapeArabicInner(
             calculateSize(working, options)
         else
             working.len;
-        const storage = try allocator.alloc(u21, @max(output_size, working.len));
-        shaped = storage;
-        @memcpy(storage[0..working.len], working);
-        @memset(storage[working.len..], 0);
+        const storage_len = @max(output_size, working.len);
+        // The decoded list owns a buffer this large, so shape its scalars in
+        // place instead of allocating and copying them.
+        const storage: []u21 = if (aggregated == null and
+            storage_len <= source.capacity)
+            source.items.ptr[0..storage_len]
+        else blk: {
+            const buffer = try allocator.alloc(u21, storage_len);
+            shaped = buffer;
+            @memcpy(buffer[0..working.len], working);
+            @memset(buffer[working.len..], 0);
+            break :blk buffer;
+        };
 
         if (options.text_direction == .logical) {
             invertBufferSpaces(storage[0..working.len]);
