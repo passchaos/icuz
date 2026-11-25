@@ -620,6 +620,30 @@ pub inline fn isAsciiProsePunctuation(byte: u8) bool {
     return ascii_prose_punctuation[byte];
 }
 
+/// True when LB13 or LB15d settles the boundary before an ASCII prose
+/// punctuation scalar as prohibited, so the iterator can consume it without
+/// the full rule engine. Hard breaks precede LB13, and LB8 allows a break
+/// after a zero-width space; both fall back to `decide`.
+pub fn asciiPunctuationSettled(
+    state: *const StreamState,
+    class: BreakClass,
+) bool {
+    if (state.previous_raw == .mandatory or
+        state.previous_raw == .carriage_return or
+        state.previous_raw == .line_feed or
+        state.previous_raw == .next_line)
+    {
+        return false;
+    }
+    // LB15d only prohibits an infix separator directly after a non-space;
+    // after spaces LB18 decides, so that boundary keeps the general path.
+    if (class == .infix_separator) {
+        return state.last.class != .space and
+            state.last.class != .zero_width_space;
+    }
+    return state.beforeSpaceRun().class != .zero_width_space;
+}
+
 pub inline fn isWordClass(class: BreakClass) bool {
     return class == .alphabetic or class == .hebrew_letter or
         class == .numeric;

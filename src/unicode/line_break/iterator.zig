@@ -142,6 +142,27 @@ pub const Iterator = struct {
             if (self.text[self.cursor] < 0x80) {
                 if (self.nextSimpleAscii()) |opportunity| return opportunity;
                 if (self.consumeAsciiWordRun()) continue;
+                // LB13 and LB15d prohibit the break before ASCII closing
+                // punctuation, exclamation, symbols, and infix separators, so
+                // the scalar can be consumed without the rule engine.
+                if (!self.suppress_break_at_cursor) {
+                    const byte = self.text[self.cursor];
+                    if (rules.isAsciiProsePunctuation(byte)) {
+                        const raw = properties(byte);
+                        if (rules.asciiPunctuationSettled(&self.state, raw.class)) {
+                            self.state.consume(raw.class, .{
+                                .codepoint = byte,
+                                .properties = raw,
+                                .class = raw.class,
+                                .start = self.cursor,
+                                .next = self.cursor + 1,
+                            });
+                            self.cursor += 1;
+                            self.simple_ascii = false;
+                            continue;
+                        }
+                    }
+                }
                 // LB7 forbids a break before a space, so an ASCII space run
                 // can be consumed without consulting the rule engine. A
                 // pending break was already returned at this cursor, and a
