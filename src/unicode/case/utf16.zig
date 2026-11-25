@@ -40,6 +40,53 @@ pub fn foldInto(
 
 const Mode = enum { simple, fold };
 
+/// Vector width for the ASCII run scanner.
+const ascii_chunk = 16;
+
+/// Map a long ASCII run whose first window is already known to be ASCII, and
+/// return the offset just past it. Kept out of line so `mapInto`'s short-run
+/// path stays compact.
+noinline fn mapAsciiRunLong(
+    comptime kind: full_data.Kind,
+    allocator: std.mem.Allocator,
+    units: []const u16,
+    start: usize,
+    output: *std.ArrayList(u16),
+) error{OutOfMemory}!usize {
+    var run_end = start + ascii_chunk;
+    while (run_end + ascii_chunk <= units.len) {
+        const chunk: @Vector(ascii_chunk, u16) =
+            units[run_end..][0..ascii_chunk].*;
+        const high: @Vector(ascii_chunk, bool) =
+            chunk >= @as(@Vector(ascii_chunk, u16), @splat(0x80));
+        const bits: u16 = @bitCast(high);
+        if (bits != 0) {
+            run_end += @ctz(bits);
+            break;
+        }
+        run_end += ascii_chunk;
+    }
+    while (run_end < units.len and units[run_end] < 0x80) {
+        run_end += 1;
+    }
+    const run = units[start..run_end];
+    if (output.unusedCapacitySlice().len < run.len) {
+        try output.ensureUnusedCapacity(allocator, run.len);
+    }
+    const dest = output.unusedCapacitySlice();
+    var offset: usize = 0;
+    while (offset + ascii_chunk <= run.len) : (offset += ascii_chunk) {
+        const chunk: @Vector(ascii_chunk, u16) =
+            run[offset..][0..ascii_chunk].*;
+        dest[offset..][0..ascii_chunk].* = asciiMap(chunk, kind);
+    }
+    while (offset < run.len) : (offset += 1) {
+        dest[offset] = asciiMapScalar(run[offset], kind);
+    }
+    output.items.len += run.len;
+    return run_end;
+}
+
 fn mapInto(
     allocator: std.mem.Allocator,
     units: []const u16,
@@ -56,49 +103,55 @@ fn mapInto(
     } else {
         try output.ensureTotalCapacityPrecise(allocator, units.len + 8);
     }
-    const ascii_chunk = 16;
     var index: usize = 0;
     while (index < units.len) {
         const unit = units[index];
         if (unit < 0x80) {
-            while (index + ascii_chunk <= units.len) {
+            if (index + ascii_chunk <= units.len) {
                 const chunk: @Vector(ascii_chunk, u16) =
                     units[index..][0..ascii_chunk].*;
                 const high: @Vector(ascii_chunk, bool) =
                     chunk >= @as(@Vector(ascii_chunk, u16), @splat(0x80));
                 const bits: u16 = @bitCast(high);
-                const count: usize = if (bits == 0)
-                    ascii_chunk
-                else
-                    @ctz(bits);
-                if (count == 0) break;
-                if (mode == .simple) {
-                    output.unusedCapacitySlice()[0..ascii_chunk].* =
-                        asciiMap(chunk, kind);
-                    output.items.len += count;
-                } else {
-                    if (output.unusedCapacitySlice().len < ascii_chunk) {
-                        try output.ensureUnusedCapacity(
-                            allocator,
-                            ascii_chunk,
-                        );
-                    }
-                    output.unusedCapacitySlice()[0..ascii_chunk].* =
-                        asciiMap(chunk, kind);
-                    output.items.len += count;
+                if (bits == 0) {
+                    // A full ASCII window opens a long run; map it out of
+                    // line so the short-run path stays compact.
+                    index = try mapAsciiRunLong(
+                        kind,
+                        allocator,
+                        units,
+                        index,
+                        output,
+                    );
+                    continue;
                 }
+                // The run ends inside this window: one mapped store covers
+                // it, so short runs cost a single load and store.
+                const count = @ctz(bits);
+                if (output.unusedCapacitySlice().len < ascii_chunk) {
+                    try output.ensureUnusedCapacity(allocator, ascii_chunk);
+                }
+                output.unusedCapacitySlice()[0..ascii_chunk].* =
+                    asciiMap(chunk, kind);
+                output.items.len += count;
                 index += count;
-                if (count < ascii_chunk) break;
+                continue;
             }
-            while (index < units.len and units[index] < 0x80) {
-                const mapped = asciiMapScalar(units[index], kind);
-                if (mode == .simple) {
-                    output.appendAssumeCapacity(mapped);
-                } else {
-                    try output.append(allocator, mapped);
-                }
-                index += 1;
+            // Fewer than one window remains: map the ASCII tail directly.
+            var run_end = index + 1;
+            while (run_end < units.len and units[run_end] < 0x80) {
+                run_end += 1;
             }
+            const run = units[index..run_end];
+            if (output.unusedCapacitySlice().len < run.len) {
+                try output.ensureUnusedCapacity(allocator, run.len);
+            }
+            const dest = output.unusedCapacitySlice();
+            for (run, 0..) |ascii, offset| {
+                dest[offset] = asciiMapScalar(ascii, kind);
+            }
+            output.items.len += run.len;
+            index = run_end;
             continue;
         }
         var codepoint: u21 = unit;
