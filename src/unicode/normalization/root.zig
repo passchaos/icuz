@@ -2433,6 +2433,97 @@ inline fn unitRunEnd16(
     return end;
 }
 
+/// Compose a segment of a non-decomposing starter plus one or two simple
+/// combining marks under NFC, or return null to use the generic machinery.
+/// Kept out of line so the fused scan stays compact.
+noinline fn tryAccentSegment16(
+    comptime compatibility: bool,
+    units: []const u16,
+    after_mark: usize,
+    starter_cp: u21,
+    mark: u21,
+    mark_class: u8,
+    sink: *Utf16Sink,
+) error{OutOfMemory}!?usize {
+    if (decomposition.hasCanonical(starter_cp) or
+        continuesSegment(starter_cp, compatibility))
+    {
+        return null;
+    }
+    var out_cps: [3]u21 = undefined;
+    var count: usize = 0;
+    const end = after_mark;
+    if (end < units.len) {
+        const decoded2 = utf16.decodePacked(units, end);
+        if (decoded2 != utf16.packed_invalid) {
+            const mark2 = utf16.packedCodepoint(decoded2);
+            if (mark2 >= 0x300 and mark2 < mark_decomposition_limit and
+                !mark_has_decomposition[mark2 - 0x300])
+            {
+                const class2 = combining_class.forCodepoint(mark2);
+                const after2 = end + utf16.packedLength(decoded2);
+                if (class2 != 0 and
+                    nextStartsSegment16(units, after2, compatibility))
+                {
+                    const first: u21 = if (mark_class <= class2) mark else mark2;
+                    const second: u21 = if (mark_class <= class2) mark2 else mark;
+                    const first_class: u8 = if (mark_class <= class2)
+                        mark_class
+                    else
+                        class2;
+                    const second_class: u8 = if (mark_class <= class2)
+                        class2
+                    else
+                        mark_class;
+                    var composed = starter_cp;
+                    var first_composed = false;
+                    if (composePair(starter_cp, first)) |value| {
+                        composed = value;
+                        first_composed = true;
+                    }
+                    var second_composed = false;
+                    const blocking_class: u8 = if (first_composed)
+                        0
+                    else
+                        first_class;
+                    if (blocking_class == 0 or blocking_class < second_class) {
+                        if (composePair(composed, second)) |value| {
+                            composed = value;
+                            second_composed = true;
+                        }
+                    }
+                    if (first_composed) {
+                        out_cps[0] = composed;
+                        count = 1;
+                        if (!second_composed) {
+                            out_cps[1] = second;
+                            count = 2;
+                        }
+                    } else {
+                        out_cps[0] = composed;
+                        out_cps[1] = first;
+                        count = 2;
+                        if (!second_composed) {
+                            out_cps[2] = second;
+                            count = 3;
+                        }
+                    }
+                    try sink.appendCodepoints(out_cps[0..count]);
+                    return after2;
+                }
+            }
+        }
+    }
+    if (nextStartsSegment16(units, end, compatibility)) {
+        if (composePair(starter_cp, mark)) |value| {
+            out_cps[0] = value;
+            try sink.appendCodepoints(out_cps[0..1]);
+            return end;
+        }
+    }
+    return null;
+}
+
 /// Fused UTF-16 normalizer: the scan mirrors the UTF-8 path but decodes and
 /// emits UTF-16 units directly, avoiding a codepoint intermediate.
 ///
@@ -2716,6 +2807,35 @@ fn normalizeFusedUtf16Into(
                     allocator,
                     units[stable_start..segment_start],
                 );
+            }
+            // Accent-heavy Latin text is a non-decomposing starter followed
+            // by one or two simple combining marks; the helper composes the
+            // whole segment without the generic segment machinery.
+            if (compose and form == .nfc and
+                segment_start == starter_offset and
+                previous_input_class == 0 and
+                current_class != 0 and
+                starter != null and
+                codepoint >= 0x300 and
+                codepoint < mark_decomposition_limit and
+                !mark_has_decomposition[codepoint - 0x300])
+            {
+                if (try tryAccentSegment16(
+                    compatibility,
+                    units,
+                    index,
+                    starter.?,
+                    codepoint,
+                    current_class,
+                    &sink,
+                )) |end| {
+                    stable_start = end;
+                    index = end;
+                    starter = null;
+                    starter_offset = end;
+                    previous_input_class = 0;
+                    continue;
+                }
             }
             // A starter that no following scalar continues is its own
             // segment, so it can skip the generic segment machinery.
