@@ -81,6 +81,23 @@ pub fn scalarValid(text: []const u8) bool {
     return true;
 }
 
+/// The window shifted left by one lane, with the byte after the window in
+/// the last lane. Only the second-byte range checks need it.
+inline fn shiftOne(text: []const u8, bytes: V, offset: usize) V {
+    const after: @Vector(1, u8) = @bitCast(text[offset + vector_len ..][0..1].*);
+    return @shuffle(
+        u8,
+        bytes,
+        after,
+        blk: {
+            var mask: [vector_len]i32 = undefined;
+            for (0..vector_len - 1) |lane| mask[lane] = @intCast(lane + 1);
+            mask[vector_len - 1] = ~@as(i32, 0);
+            break :blk mask;
+        },
+    );
+}
+
 /// Validate one 32-byte window starting at `offset`. The caller guarantees
 /// `offset >= 3` and `offset + 33 <= text.len`, so the three preceding bytes
 /// and the one following byte are readable.
@@ -143,19 +160,6 @@ inline fn windowValid(text: []const u8, offset: usize) bool {
         return !@reduce(.Or, bad_lead);
     }
 
-    const after: @Vector(1, u8) = @bitCast(text[offset + vector_len ..][0..1].*);
-    const next = @shuffle(
-        u8,
-        bytes,
-        after,
-        blk: {
-            var mask: [vector_len]i32 = undefined;
-            for (0..vector_len - 1) |lane| mask[lane] = @intCast(lane + 1);
-            mask[vector_len - 1] = ~@as(i32, 0);
-            break :blk mask;
-        },
-    );
-
     const lead4_only: u32 = @bitCast(lead4);
     var expected: u32 = (lead234 << 1) | (lead34 << 2) | (lead4_only << 3);
     if (carry1 >= 0xc2 and carry1 <= 0xf4) expected |= 1;
@@ -171,15 +175,27 @@ inline fn windowValid(text: []const u8, offset: usize) bool {
     const bad_lead = (bytes == @as(V, @splat(0xc0))) |
         (bytes == @as(V, @splat(0xc1))) |
         (bytes >= @as(V, @splat(0xf5)));
+    // CJK prose is entirely three-byte sequences: a window without four-byte
+    // leads skips the F0/F4 checks, and without E0 or ED leads it needs no
+    // lookahead at all.
+    if (lead4_only == 0) {
+        if (!@reduce(.Or, (bytes == @as(V, @splat(0xe0))) |
+            (bytes == @as(V, @splat(0xed)))))
+        {
+            return !@reduce(.Or, bad_lead);
+        }
+        const next = shiftOne(text, bytes, offset);
+        const overlong3 = (bytes == @as(V, @splat(0xe0))) &
+            (next < @as(V, @splat(0xa0)));
+        const surrogate = (bytes == @as(V, @splat(0xed))) &
+            (next >= @as(V, @splat(0xa0)));
+        return !@reduce(.Or, bad_lead | overlong3 | surrogate);
+    }
+    const next = shiftOne(text, bytes, offset);
     const overlong3 = (bytes == @as(V, @splat(0xe0))) &
         (next < @as(V, @splat(0xa0)));
     const surrogate = (bytes == @as(V, @splat(0xed))) &
         (next >= @as(V, @splat(0xa0)));
-    // Windows without four-byte leads skip the F0/F4 range checks; CJK prose
-    // is entirely three-byte sequences.
-    if (lead4_only == 0) {
-        return !@reduce(.Or, bad_lead | overlong3 | surrogate);
-    }
     const overlong4 = (bytes == @as(V, @splat(0xf0))) &
         (next < @as(V, @splat(0x90)));
     const too_large = (bytes == @as(V, @splat(0xf4))) &
