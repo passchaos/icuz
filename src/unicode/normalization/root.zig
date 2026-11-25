@@ -194,6 +194,14 @@ fn nextIsStarterOrEnd(text: []const u8, offset: usize) bool {
     return combining_class.forCodepoint(scalar.packedCodepoint(decoded)) == 0;
 }
 
+/// True when the three bytes at `offset` are the halfwidth voiced or
+/// semi-voiced sound mark.
+fn halfwidthMarkAt(text: []const u8, offset: usize) bool {
+    if (offset + 3 > text.len) return false;
+    return text[offset] == 0xef and text[offset + 1] == 0xbe and
+        (text[offset + 2] == 0x9e or text[offset + 2] == 0x9f);
+}
+
 /// True when a precomposed Hangul syllable, or an unassigned scalar in the
 /// same lead-byte window, is unchanged by the composed forms. The last
 /// scalar of a syllable run stays the starter because a trailing jamo T
@@ -571,6 +579,124 @@ fn normalizeFusedInto(
                 }
             }
         }
+        if (compatibility and previous_input_class == 0 and
+            text[index] == 0xe3 and index + 3 <= text.len and
+            text[index + 1] == 0x80 and text[index + 2] == 0x80 and
+            nextIsStarterOrEnd(text, index + 3))
+        {
+            // U+3000 decomposes to a space under the compatibility forms.
+            if (!changed) {
+                try output.ensureTotalCapacityPrecise(allocator, text.len);
+                changed = true;
+            }
+            if (index > stable_start) {
+                try appendBytes(
+                    allocator,
+                    output,
+                    text[stable_start..index],
+                );
+            }
+            try engine.sink.appendOne(' ');
+            stable_start = index + 3;
+            index += 3;
+            starter = null;
+            starter_offset = index;
+            previous_input_class = 0;
+            continue;
+        }
+        // A halfwidth Katakana base followed by a halfwidth sound mark
+        // decomposes and recomposes into one fullwidth syllable, so the
+        // whole pair can be emitted at once.
+        if (compatibility and previous_input_class == 0 and
+            text[index] == 0xef and index + 6 <= text.len and
+            (text[index + 1] == 0xbd or text[index + 1] == 0xbe) and
+            (text[index + 2] & 0xc0) == 0x80 and
+            text[index + 3] == 0xef and text[index + 4] == 0xbe and
+            (text[index + 5] == 0x9e or text[index + 5] == 0x9f))
+        {
+            const base = (@as(u21, 0x0f) << 12) |
+                (@as(u21, text[index + 1] & 0x3f) << 6) |
+                (text[index + 2] & 0x3f);
+            if (base >= 0xff66 and base <= 0xff9d) {
+                const components = fullwidth_compatibility_decomposition[
+                    base - 0xff00
+                ];
+                if (components != null and components.?.len == 1 and
+                    nextIsStarterOrEnd(text, index + 6))
+                {
+                    const mark: u21 = if (text[index + 5] == 0x9e)
+                        0x3099
+                    else
+                        0x309a;
+                    if (composePair(components.?[0], mark)) |composed| {
+                        if (!changed) {
+                            try output.ensureTotalCapacityPrecise(
+                                allocator,
+                                text.len,
+                            );
+                            changed = true;
+                        }
+                        if (index > stable_start) {
+                            try appendBytes(
+                                allocator,
+                                output,
+                                text[stable_start..index],
+                            );
+                        }
+                        try engine.sink.appendOne(composed);
+                        stable_start = index + 6;
+                        index += 6;
+                        starter = null;
+                        starter_offset = index;
+                        previous_input_class = 0;
+                        continue;
+                    }
+                }
+            }
+        }
+        // A lone halfwidth Katakana scalar maps to its fullwidth form. A
+        // following halfwidth sound mark keeps the pair path or the generic
+        // composition path instead.
+        if (compatibility and previous_input_class == 0 and
+            text[index] == 0xef and index + 3 <= text.len and
+            (text[index + 1] == 0xbd or text[index + 1] == 0xbe) and
+            (text[index + 2] & 0xc0) == 0x80)
+        {
+            const base = (@as(u21, 0x0f) << 12) |
+                (@as(u21, text[index + 1] & 0x3f) << 6) |
+                (text[index + 2] & 0x3f);
+            if (base >= 0xff66 and base <= 0xff9d and
+                !halfwidthMarkAt(text, index + 3) and
+                nextIsStarterOrEnd(text, index + 3))
+            {
+                const components = fullwidth_compatibility_decomposition[
+                    base - 0xff00
+                ];
+                if (components != null and components.?.len == 1) {
+                    if (!changed) {
+                        try output.ensureTotalCapacityPrecise(
+                            allocator,
+                            text.len,
+                        );
+                        changed = true;
+                    }
+                    if (index > stable_start) {
+                        try appendBytes(
+                            allocator,
+                            output,
+                            text[stable_start..index],
+                        );
+                    }
+                    try engine.sink.appendOne(components.?[0]);
+                    stable_start = index + 3;
+                    index += 3;
+                    starter = null;
+                    starter_offset = index;
+                    previous_input_class = 0;
+                    continue;
+                }
+            }
+        }
         const start = index;
         if (jamo_run and text[index] == 0xe1 and index + 2 < text.len and
             (text[index + 1] & 0xfc) == 0x84 and
@@ -623,31 +749,6 @@ fn normalizeFusedInto(
                 previous_input_class = 0;
                 continue;
             }
-        }
-        if (compatibility and previous_input_class == 0 and
-            text[index] == 0xe3 and index + 3 <= text.len and
-            text[index + 1] == 0x80 and text[index + 2] == 0x80 and
-            nextIsStarterOrEnd(text, index + 3))
-        {
-            // U+3000 decomposes to a space under the compatibility forms.
-            if (!changed) {
-                try output.ensureTotalCapacityPrecise(allocator, text.len);
-                changed = true;
-            }
-            if (index > stable_start) {
-                try appendBytes(
-                    allocator,
-                    output,
-                    text[stable_start..index],
-                );
-            }
-            try engine.sink.appendOne(' ');
-            stable_start = index + 3;
-            index += 3;
-            starter = null;
-            starter_offset = index;
-            previous_input_class = 0;
-            continue;
         }
         if ((cjk_lead_simple and
             ((text[index] >= 0xe4 and text[index] <= 0xe9) or
@@ -3955,6 +4056,44 @@ test "compatibility forms decompose fullwidth runs and ideographic space" {
     try expectFormNormalized("\u{ff21}\u{ff22}\u{ff23}", "ABC", .nfkd);
     try expectFormNormalized("\u{3000}", " ", .nfkd);
     try expectFormNormalized("\u{3000}\u{0301}", " \u{0301}", .nfkd);
+    // Halfwidth Katakana pairs compose; a mark that does not compose, a
+    // repeated mark, and a lower-class mark keep the generic path.
+    try expectFormNormalized("\u{ff76}\u{ff9e}", "\u{30ac}", .nfkc);
+    try expectFormNormalized(
+        "\u{ff9d}\u{ff9e}",
+        "\u{30f3}\u{3099}",
+        .nfkc,
+    );
+    try expectFormNormalized(
+        "\u{ff76}\u{ff9e}\u{ff9e}",
+        "\u{30ac}\u{3099}",
+        .nfkc,
+    );
+    // A following mark with a lower combining class reorders before the
+    // sound mark but does not block the composition.
+    try expectFormNormalized(
+        "\u{ff76}\u{ff9e}\u{0334}",
+        "\u{30ac}\u{0334}",
+        .nfkc,
+    );
+    try expectFormNormalized(
+        "\u{ff76}\u{ff9e}\u{0301}",
+        "\u{30ac}\u{0301}",
+        .nfkc,
+    );
+    try expectFormNormalized("\u{ff9e}", "\u{3099}", .nfkc);
+    try expectFormNormalized("\u{ff76}\u{3099}", "\u{30ac}", .nfkc);
+    try expectFormNormalized(
+        "\u{ff76}\u{ff9e}\u{ff77}\u{ff9e}",
+        "\u{30ac}\u{30ae}",
+        .nfkc,
+    );
+    // A handakuten on a base with no semi-voiced form stays decomposed.
+    try expectFormNormalized(
+        "\u{ff76}\u{ff9e}\u{ff77}\u{ff9f}",
+        "\u{30ac}\u{30ad}\u{309a}",
+        .nfkc,
+    );
 }
 
 test "segments keep composed, mark-leading, and non-CJK scalars" {
