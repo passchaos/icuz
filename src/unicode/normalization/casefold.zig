@@ -424,14 +424,29 @@ fn mapAlloc(
         }
         // CJK ideographs occupy pages with no mapping or removal records and
         // cannot be overlong, so their three bytes validate with two checks.
+        // Advance two ideographs per check on the common prose run.
         if (text[index] >= 0xe4 and text[index] <= 0xe9) {
-            if (index + 3 > text.len or
-                (text[index + 1] & 0xc0) != 0x80 or
-                (text[index + 2] & 0xc0) != 0x80)
+            var cursor = index;
+            while (cursor + 6 <= text.len and
+                text[cursor] >= 0xe4 and text[cursor] <= 0xe9 and
+                text[cursor + 3] >= 0xe4 and text[cursor + 3] <= 0xe9 and
+                ((text[cursor + 1] | text[cursor + 2] |
+                    text[cursor + 4] | text[cursor + 5]) & 0xc0) == 0x80)
             {
-                return error.InvalidUtf8;
+                cursor += 6;
             }
-            index += 3;
+            if (cursor < text.len and text[cursor] >= 0xe4 and
+                text[cursor] <= 0xe9)
+            {
+                if (cursor + 3 > text.len or
+                    (text[cursor + 1] & 0xc0) != 0x80 or
+                    (text[cursor + 2] & 0xc0) != 0x80)
+                {
+                    return error.InvalidUtf8;
+                }
+                cursor += 3;
+            }
+            index = cursor;
             continue;
         }
         const decoded = scalar.decodeValidatingPacked(text, index);
