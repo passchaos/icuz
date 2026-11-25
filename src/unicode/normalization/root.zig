@@ -1068,11 +1068,22 @@ fn normalizeFusedInto(
                     if (lead < 0xc2 or run_end + 1 >= text.len) break;
                     const second = text[run_end + 1];
                     if ((second & 0xc0) != 0x80) break;
-                    if (!inert.twoByteInert(lead, second, form)) break;
-                    run_offset = run_end;
-                    run_codepoint = (@as(u21, lead & 0x1f) << 6) |
+                    if (inert.twoByteInert(lead, second, form)) {
+                        run_offset = run_end;
+                        run_codepoint = (@as(u21, lead & 0x1f) << 6) |
+                            (second & 0x3f);
+                        mark_chain = 0;
+                        run_end += 2;
+                        continue;
+                    }
+                    // Simple marks (Hebrew niqqud, Arabic harakat) join the
+                    // run the same way Indic marks do.
+                    const cp: u21 = (@as(u21, lead & 0x1f) << 6) |
                         (second & 0x3f);
-                    mark_chain = 0;
+                    if (data.quickCheck(cp, form) != .yes) break;
+                    const mark_class = combining_class.forCodepoint(cp);
+                    if (mark_class == 0 or mark_class < mark_chain) break;
+                    mark_chain = mark_class;
                     run_end += 2;
                     continue;
                 }
@@ -3604,10 +3615,19 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     if (lead < 0xc2 or run_end + 1 >= text.len) break;
                     const second = text[run_end + 1];
                     if ((second & 0xc0) != 0x80) break;
-                    if (!inert.twoByteInert(lead, second, form)) break;
-                    run_codepoint = (@as(u21, lead & 0x1f) << 6) |
+                    if (inert.twoByteInert(lead, second, form)) {
+                        run_codepoint = (@as(u21, lead & 0x1f) << 6) |
+                            (second & 0x3f);
+                        mark_chain = 0;
+                        run_end += 2;
+                        continue;
+                    }
+                    const cp: u21 = (@as(u21, lead & 0x1f) << 6) |
                         (second & 0x3f);
-                    mark_chain = 0;
+                    if (data.quickCheck(cp, form) != .yes) break;
+                    const mark_class = combining_class.forCodepoint(cp);
+                    if (mark_class == 0 or mark_class < mark_chain) break;
+                    mark_chain = mark_class;
                     run_end += 2;
                     continue;
                 }
@@ -4532,6 +4552,30 @@ test "Indic and Thai marks stay in inert runs" {
     try expectNormalized(
         "\u{0915}\u{094d}\u{093c}",
         "\u{0915}\u{093c}\u{094d}",
+    );
+}
+
+test "vocalized Hebrew and Arabic stay in inert runs" {
+    // Niqqud and harakat neither decompose nor compose, so vocalized words
+    // stay in one run.
+    try expectNormalized(
+        "\u{05e9}\u{05b8}\u{05c1}\u{05dc}\u{05d5}\u{05b9}\u{05dd}",
+        "\u{05e9}\u{05b8}\u{05c1}\u{05dc}\u{05d5}\u{05b9}\u{05dd}",
+    );
+    try expectNormalized(
+        "\u{0645}\u{064f}\u{062d}\u{064e}\u{0645}\u{0651}\u{064e}\u{062f}",
+        "\u{0645}\u{064f}\u{062d}\u{064e}\u{0645}\u{064e}\u{0651}\u{062f}",
+    );
+    // Hamza above is a composition second, so it must leave the run.
+    try expectNormalized("\u{0627}\u{0654}", "\u{0623}");
+    // A lower-class mark reorders against a higher-class one.
+    try expectNormalized(
+        "\u{05d1}\u{05b8}\u{05b0}",
+        "\u{05d1}\u{05b0}\u{05b8}",
+    );
+    try expectNormalized(
+        "\u{05e9}\u{05c1}\u{05b8}",
+        "\u{05e9}\u{05b8}\u{05c1}",
     );
 }
 
