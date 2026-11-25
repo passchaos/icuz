@@ -97,6 +97,30 @@ pub inline fn classForCodepoint(codepoint: u21) Class {
     return classForCodepointSlow(codepoint);
 }
 
+/// ASCII class with bit 7 set for the three letter classes, so run scans
+/// test membership and recover the class from one load.
+const ascii_letter_entries: [128]u8 = blk: {
+    var table: [128]u8 = undefined;
+    for (0..128) |codepoint| {
+        const class = classForCodepointSlow(@intCast(codepoint));
+        table[codepoint] = @intFromEnum(class) |
+            (if (isLetter(class)) @as(u8, 0x80) else 0);
+    }
+    break :blk table;
+};
+
+pub inline fn asciiLetterEntry(byte: u8) u8 {
+    return ascii_letter_entries[byte];
+}
+
+pub inline fn entryClass(entry: u8) Class {
+    return @enumFromInt(entry & 0x7f);
+}
+
+pub inline fn entryIsLetter(entry: u8) bool {
+    return entry & 0x80 != 0;
+}
+
 fn classForCodepointSlow(codepoint: u21) Class {
     if (!scalar_value.isValid(codepoint)) return .other;
     const page = @as(usize, codepoint) >> 8;

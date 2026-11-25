@@ -45,12 +45,15 @@ pub const Iterator = struct {
             // ASCII prose dominates sentence scanning; classify the byte
             // directly and keep the decoded-struct path for other scripts.
             if (self.text[end] < 0x80) {
-                const current_class = classForCodepoint(self.text[end]);
+                const entry = rules.asciiLetterEntry(self.text[end]);
+                const current_class = rules.entryClass(entry);
                 if (!isParagraphSeparator(state.previous_actual)) {
                     // SB4 has been ruled out, so no letter or space can
                     // start a boundary. Consume whole ASCII runs instead of
                     // re-running the rule chain for every byte.
-                    if (state.terminator == null and isLetter(current_class)) {
+                    if (state.terminator == null and
+                        rules.entryIsLetter(entry))
+                    {
                         // A terminator-free state makes every letter
                         // boundary-free: SB6/SB7 need a terminator and
                         // SB8-SB11 return early without one.
@@ -58,12 +61,12 @@ pub const Iterator = struct {
                         var previous = state.last_significant;
                         end += 1;
                         while (end < self.text.len and self.text[end] < 0x80) {
-                            const next_class = classForCodepoint(
+                            const next_entry = rules.asciiLetterEntry(
                                 self.text[end],
                             );
-                            if (!isLetter(next_class)) break;
+                            if (!rules.entryIsLetter(next_entry)) break;
                             previous = last;
-                            last = next_class;
+                            last = rules.entryClass(next_entry);
                             end += 1;
                         }
                         state.previous_actual = last;
