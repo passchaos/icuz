@@ -642,8 +642,9 @@ fn katakanaCost(length: usize) u32 {
 pub fn segmentCjk(
     text: []const u8,
     start: usize,
-    end: usize,
+    end_limit: usize,
     breaks: []usize,
+    run_end: *usize,
 ) usize {
     var offsets: [max_run_codepoints + 1]usize = undefined;
     // The Katakana check below would otherwise decode the same scalars again.
@@ -651,13 +652,16 @@ pub fn segmentCjk(
     offsets[0] = start;
     var codepoint_count: usize = 0;
     var cursor = start;
-    while (cursor < end and codepoint_count < max_run_codepoints) {
+    // Scan the run here so the iterator does not decode it a second time.
+    while (cursor < end_limit and codepoint_count < max_run_codepoints) {
         const decoded = decode(text, cursor) orelse break;
+        if (!isRunCodepoint(.cjk, decoded.codepoint)) break;
         cursor = decoded.next;
         codepoints[codepoint_count] = decoded.codepoint;
         codepoint_count += 1;
         offsets[codepoint_count] = cursor;
     }
+    run_end.* = cursor;
     if (codepoint_count == 0) return 0;
     const limit = offsets[codepoint_count];
 
@@ -804,7 +808,15 @@ test "CJK Viterbi segmentation" {
         .{ .text = "重庆市", .expected = &.{ "重庆", "市" } },
     };
     for (cases) |case| {
-        const count = segmentCjk(case.text, 0, case.text.len, &breaks);
+        var run_end: usize = undefined;
+        const count = segmentCjk(
+            case.text,
+            0,
+            case.text.len,
+            &breaks,
+            &run_end,
+        );
+        try testing.expectEqual(case.text.len, run_end);
         try testing.expectEqual(case.expected.len, count);
         var start: usize = 0;
         for (case.expected, 0..) |expected, index| {

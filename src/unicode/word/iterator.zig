@@ -254,31 +254,40 @@ pub const DictionaryIterator = struct {
         };
 
         var run_end = first.next;
-        var codepoint_count: usize = 1;
-        while (run_end < self.text.len and
-            codepoint_count < dictionary.max_run_codepoints)
-        {
-            const decoded = decode(self.text, run_end) orelse break;
-            if (!dictionary.isRunCodepoint(language, decoded.codepoint)) break;
-            run_end = decoded.next;
-            codepoint_count += 1;
-        }
-
-        const count = if (language == .cjk)
-            dictionary.segmentCjk(
+        const count = if (language == .cjk) blk: {
+            // The CJK segmenter scans the run itself, so the scalars are
+            // decoded once instead of twice.
+            var end: usize = undefined;
+            const cjk_count = dictionary.segmentCjk(
                 self.text,
                 self.cursor,
-                run_end,
+                self.text.len,
                 &self.cached_breaks,
-            )
-        else
-            dictionary.segmentSoutheastAsian(
+                &end,
+            );
+            run_end = end;
+            break :blk cjk_count;
+        } else blk: {
+            var codepoint_count: usize = 1;
+            while (run_end < self.text.len and
+                codepoint_count < dictionary.max_run_codepoints)
+            {
+                const decoded = decode(self.text, run_end) orelse break;
+                if (!dictionary.isRunCodepoint(
+                    language,
+                    decoded.codepoint,
+                )) break;
+                run_end = decoded.next;
+                codepoint_count += 1;
+            }
+            break :blk dictionary.segmentSoutheastAsian(
                 language,
                 self.text,
                 self.cursor,
                 run_end,
                 &self.cached_breaks,
             );
+        };
         self.cached_count = count;
         self.cached_index = 0;
         if (count == 0 or self.cached_breaks[count - 1] < run_end) {
