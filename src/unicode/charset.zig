@@ -1589,18 +1589,49 @@ fn convertGbkToUtf8Fast(
         if (codepoint < 0x80) {
             spare[written] = @intCast(codepoint);
             written += 1;
-        } else if (codepoint < 0x800) {
+            continue;
+        }
+        if (codepoint < 0x800) {
             spare[written] = @intCast(0xC0 | (codepoint >> 6));
             spare[written + 1] = @intCast(0x80 | (codepoint & 0x3F));
             written += 2;
-        } else {
-            spare[written] = @intCast(0xE0 | (codepoint >> 12));
-            spare[written + 1] = @intCast(
-                0x80 | ((codepoint >> 6) & 0x3F),
-            );
-            spare[written + 2] = @intCast(0x80 | (codepoint & 0x3F));
-            written += 3;
+            continue;
         }
+        // GBK prose pairs two-byte syllables, so the next scalar is usually
+        // another three-byte UTF-8 sequence. Encode both into one 64-bit
+        // store; the reserved slack keeps the two extra bytes writable.
+        if (index < input.len) {
+            const retry_at = index;
+            if (cjk.gbkNextFast(input, &index)) |second| {
+                if (second >= 0x800 and second < 0x10000) {
+                    const bytes: u64 =
+                        (@as(u64, 0xE0 | (codepoint >> 12))) |
+                        (@as(u64, 0x80 | ((codepoint >> 6) & 0x3F)) << 8) |
+                        (@as(u64, 0x80 | (codepoint & 0x3F)) << 16) |
+                        (@as(u64, 0xE0 | (second >> 12)) << 24) |
+                        (@as(u64, 0x80 | ((second >> 6) & 0x3F)) << 32) |
+                        (@as(u64, 0x80 | (second & 0x3F)) << 40);
+                    std.mem.writeInt(
+                        u64,
+                        spare[written..][0..8],
+                        bytes,
+                        .little,
+                    );
+                    written += 6;
+                    continue;
+                }
+                index = retry_at;
+            } else {
+                output.deinit(allocator);
+                return null;
+            }
+        }
+        spare[written] = @intCast(0xE0 | (codepoint >> 12));
+        spare[written + 1] = @intCast(
+            0x80 | ((codepoint >> 6) & 0x3F),
+        );
+        spare[written + 2] = @intCast(0x80 | (codepoint & 0x3F));
+        written += 3;
     }
     output.items.len = written;
     return try output.toOwnedSlice(allocator);
