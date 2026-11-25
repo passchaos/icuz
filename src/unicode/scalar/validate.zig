@@ -214,6 +214,23 @@ pub fn isValid(text: []const u8) bool {
     // no scalar walk.
     if (text[offset - 1] < 0x80 and asciiOnly(text[offset..])) return true;
 
+    // The remaining bytes are fewer than one window. Re-validate them with an
+    // overlapping window, which leaves only the final sequence for the scalar
+    // checker; on short inputs the plain tail used to cover a tenth of the
+    // text.
+    if (offset < text.len and text.len >= vector_len + 4) {
+        if (!windowValid(text, text.len - vector_len - 1)) return false;
+        // The window stops one byte short, and a lead at its last position
+        // can reach past the end, so the scalar check starts at the sequence
+        // containing the final window byte.
+        var tail = text.len - 2;
+        var steps: usize = 0;
+        while (tail > 0 and text[tail] & 0xc0 == 0x80 and steps < 3) : (steps += 1) {
+            tail -= 1;
+        }
+        return scalarValid(text[tail..]);
+    }
+
     // The window scan may stop inside a sequence. Back up at least three
     // bytes, then to the start of the sequence that crosses the boundary, so
     // truncated and oversized tails are rejected.
@@ -346,6 +363,43 @@ test "vector validation accepts long three-byte text" {
     buffer[length + 3] = 0x80;
     try testing.expect(isValid(buffer[0 .. length + 4]));
     try testing.expect(std.unicode.utf8ValidateSlice(buffer[0 .. length + 4]));
+}
+
+test "vector validation checks the overlapping tail window" {
+    const testing = std.testing;
+    // The tail path re-validates the final window, so exercise valid and
+    // invalid endings at lengths where only one window fits.
+    var buffer: [64]u8 = undefined;
+    const prefix = "abcdefghijklmnopqrstuvwxyz0123456789abcdefgh";
+    @memcpy(buffer[0..prefix.len], prefix);
+    const good_endings = [_][]const u8{
+        "\u{4e16}\u{754c}",
+        "a\u{4e16}",
+        "\u{1f600}",
+        "\u{00e9}\u{4e16}",
+        "\u{00e9}",
+    };
+    for (good_endings) |ending| {
+        const len = prefix.len + ending.len;
+        @memcpy(buffer[prefix.len..][0..ending.len], ending);
+        try testing.expect(isValid(buffer[0..len]));
+        try testing.expect(std.unicode.utf8ValidateSlice(buffer[0..len]));
+    }
+    const bad_endings = [_][]const u8{
+        "\xe4",
+        "\xe4\xb8",
+        "\x80",
+        "\xf0\x9f\x98",
+        "\xc3",
+        "\xed\xa0\x80",
+        "\xe0\x80\x80",
+    };
+    for (bad_endings) |ending| {
+        const len = prefix.len + ending.len;
+        @memcpy(buffer[prefix.len..][0..ending.len], ending);
+        try testing.expect(!isValid(buffer[0..len]));
+        try testing.expect(!std.unicode.utf8ValidateSlice(buffer[0..len]));
+    }
 }
 
 test "vector validation rejects leads crossing the tail boundary" {
