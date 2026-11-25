@@ -1136,7 +1136,10 @@ fn normalizeFusedInto(
                 }
                 if (lead < 0xe0) {
                     // Two-byte scalars are common in Semitic prose and test
-                    // inertness with one table load.
+                    // inertness with one table load. Consecutive inert
+                    // scalars stay in this branch instead of re-running the
+                    // outer dispatch per scalar, and a space between two of
+                    // them bridges the words so a phrase stays in one loop.
                     if (lead < 0xc2 or run_end + 1 >= text.len) break;
                     const second = text[run_end + 1];
                     if ((second & 0xc0) != 0x80) break;
@@ -1146,6 +1149,45 @@ fn normalizeFusedInto(
                             (second & 0x3f);
                         mark_chain = 0;
                         run_end += 2;
+                        while (true) {
+                            while (run_end + 1 < text.len) {
+                                const next_lead = text[run_end];
+                                if (next_lead < 0xc2 or next_lead >= 0xe0) break;
+                                const next_second = text[run_end + 1];
+                                if ((next_second & 0xc0) != 0x80) break;
+                                if (!inert.twoByteInert(
+                                    next_lead,
+                                    next_second,
+                                    form,
+                                )) break;
+                                run_offset = run_end;
+                                run_codepoint =
+                                    (@as(u21, next_lead & 0x1f) << 6) |
+                                    (next_second & 0x3f);
+                                run_end += 2;
+                            }
+                            if (run_end + 3 <= text.len and
+                                text[run_end] == ' ')
+                            {
+                                const next_lead = text[run_end + 1];
+                                if (next_lead < 0xc2 or next_lead >= 0xe0) break;
+                                const next_second = text[run_end + 2];
+                                if ((next_second & 0xc0) != 0x80) break;
+                                if (!inert.twoByteInert(
+                                    next_lead,
+                                    next_second,
+                                    form,
+                                )) break;
+                                run_offset = run_end + 1;
+                                run_codepoint =
+                                    (@as(u21, next_lead & 0x1f) << 6) |
+                                    (next_second & 0x3f);
+                                mark_chain = 0;
+                                run_end += 3;
+                                continue;
+                            }
+                            break;
+                        }
                         continue;
                     }
                     // Simple marks (Hebrew niqqud, Arabic harakat) join the
@@ -3900,6 +3942,43 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                             (second & 0x3f);
                         mark_chain = 0;
                         run_end += 2;
+                        while (true) {
+                            while (run_end + 1 < text.len) {
+                                const next_lead = text[run_end];
+                                if (next_lead < 0xc2 or next_lead >= 0xe0) break;
+                                const next_second = text[run_end + 1];
+                                if ((next_second & 0xc0) != 0x80) break;
+                                if (!inert.twoByteInert(
+                                    next_lead,
+                                    next_second,
+                                    form,
+                                )) break;
+                                run_codepoint =
+                                    (@as(u21, next_lead & 0x1f) << 6) |
+                                    (next_second & 0x3f);
+                                run_end += 2;
+                            }
+                            if (run_end + 3 <= text.len and
+                                text[run_end] == ' ')
+                            {
+                                const next_lead = text[run_end + 1];
+                                if (next_lead < 0xc2 or next_lead >= 0xe0) break;
+                                const next_second = text[run_end + 2];
+                                if ((next_second & 0xc0) != 0x80) break;
+                                if (!inert.twoByteInert(
+                                    next_lead,
+                                    next_second,
+                                    form,
+                                )) break;
+                                run_codepoint =
+                                    (@as(u21, next_lead & 0x1f) << 6) |
+                                    (next_second & 0x3f);
+                                mark_chain = 0;
+                                run_end += 3;
+                                continue;
+                            }
+                            break;
+                        }
                         continue;
                     }
                     const mark_class = inert.twoByteMarkClass(
