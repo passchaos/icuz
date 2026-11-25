@@ -224,6 +224,19 @@ pub inline fn e1Inert(low: u12, form: data.Form) bool {
         @intCast(low & 0x3f)) & 1 != 0;
 }
 
+/// `e1Inert` for two scalars at once. Word-internal scalars usually share a
+/// 64-codepoint group, so one mask load answers both.
+pub inline fn e1InertPair(low0: u12, low1: u12, form: data.Form) bool {
+    const group = low0 >> 6;
+    if (group != low1 >> 6) {
+        return e1Inert(low0, form) and e1Inert(low1, form);
+    }
+    const mask = e1_masks[@intFromEnum(form)][group];
+    const bits = (@as(u64, 1) << @intCast(low0 & 0x3f)) |
+        (@as(u64, 1) << @intCast(low1 & 0x3f));
+    return mask & bits == bits;
+}
+
 test "inert tables follow each normalization form" {
     const testing = @import("std").testing;
     inline for ([_]data.Form{ .nfc, .nfd, .nfkc, .nfkd }) |form| {

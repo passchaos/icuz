@@ -1011,8 +1011,6 @@ fn normalizeFusedInto(
                         (@as(u32, second & 0x3f) << 6) | (third & 0x3f),
                     );
                     if (!inert.e1Inert(low, form)) break;
-                    run_offset = run_end;
-                    run_codepoint = 0x1000 + @as(u21, low);
                     run_end += 3;
                     // Georgian and Ethiopic words run several scalars, so
                     // test two at a time once the run is confirmed.
@@ -1032,11 +1030,8 @@ fn normalizeFusedInto(
                         const low1: u12 = @intCast(
                             (@as(u32, b1 & 0x3f) << 6) | (c1 & 0x3f),
                         );
-                        if (!inert.e1Inert(low0, form) or
-                            !inert.e1Inert(low1, form)) break;
+                        if (!inert.e1InertPair(low0, low1, form)) break;
                         run_end += 6;
-                        run_offset = run_end - 3;
-                        run_codepoint = 0x1000 + @as(u21, low1);
                     }
                     // Georgian and Ethiopic phrases separate words with a
                     // space; bridge one space to the next inert E1 scalar so
@@ -1052,9 +1047,14 @@ fn normalizeFusedInto(
                         );
                         if (!inert.e1Inert(next_low, form)) break;
                         run_end += 4;
-                        run_offset = run_end - 3;
-                        run_codepoint = 0x1000 + @as(u21, next_low);
                     }
+                    // Every scalar consumed here is three bytes, so the last
+                    // one starts three bytes back; decode it once.
+                    run_offset = run_end - 3;
+                    run_codepoint = 0x1000 + @as(u21, @as(u12, @intCast(
+                        (@as(u32, text[run_end - 2] & 0x3f) << 6) |
+                            (text[run_end - 1] & 0x3f),
+                    )));
                     continue;
                 }
                 if (lead < 0xe0) {
@@ -3615,7 +3615,6 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                         (@as(u32, second & 0x3f) << 6) | (third & 0x3f),
                     );
                     if (!inert.e1Inert(low, form)) break;
-                    run_codepoint = 0x1000 + @as(u21, low);
                     run_end += 3;
                     while (run_end + 6 <= text.len) {
                         const s0 = text[run_end];
@@ -3633,10 +3632,8 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                         const low1: u12 = @intCast(
                             (@as(u32, b1 & 0x3f) << 6) | (c1 & 0x3f),
                         );
-                        if (!inert.e1Inert(low0, form) or
-                            !inert.e1Inert(low1, form)) break;
+                        if (!inert.e1InertPair(low0, low1, form)) break;
                         run_end += 6;
-                        run_codepoint = 0x1000 + @as(u21, low1);
                     }
                     while (run_end + 4 <= text.len and text[run_end] == ' ') {
                         if (text[run_end + 1] != 0xe1) break;
@@ -3649,8 +3646,11 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                         );
                         if (!inert.e1Inert(next_low, form)) break;
                         run_end += 4;
-                        run_codepoint = 0x1000 + @as(u21, next_low);
                     }
+                    run_codepoint = 0x1000 + @as(u21, @as(u12, @intCast(
+                        (@as(u32, text[run_end - 2] & 0x3f) << 6) |
+                            (text[run_end - 1] & 0x3f),
+                    )));
                     continue;
                 }
                 const next_decoded = scalar.decodeValidatingPacked(text, run_end);
