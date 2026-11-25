@@ -932,6 +932,134 @@ fn appendPunycode(
     output: *std.ArrayList(u8),
     codepoints: []const u21,
 ) Error!void {
+    // Every valid label fits in 64 scalars, and positions below 64 can be
+    // tracked with one mask. The mask path replaces the RFC 3492 scan with
+    // a sorted group walk; longer inputs (invalid labels) keep the scan.
+    if (codepoints.len <= 64) {
+        return appendPunycodeMasked(allocator, output, codepoints);
+    }
+    return appendPunycodeScan(allocator, output, codepoints);
+}
+
+/// Emit one RFC 3492 delta and update the adaptive bias.
+inline fn emitPunycodeDelta(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    delta: u64,
+    bias: *u32,
+    handled: usize,
+    basic_count: usize,
+) Error!void {
+    var q = delta;
+    var k: u32 = base;
+    while (true) {
+        const t = if (k <= bias.*) tmin else if (k >= bias.* + tmax)
+            tmax
+        else
+            k - bias.*;
+        if (q < t) break;
+        try output.append(
+            allocator,
+            digitChar(t + @as(u32, @intCast((q - t) % (base - t)))),
+        );
+        q = (q - t) / (base - t);
+        k += base;
+    }
+    try output.append(allocator, digitChar(@intCast(q)));
+    bias.* = adapt(delta, handled + 1, handled == basic_count);
+}
+
+/// Punycode encoder for label-sized inputs. Sorting the non-basic scalars
+/// once by value (positions follow) removes the repeated minimum scan, and a
+/// position mask answers "how many handled scalars precede this occurrence"
+/// with one popcount instead of another full scan.
+fn appendPunycodeMasked(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    codepoints: []const u21,
+) Error!void {
+    var basic_count: usize = 0;
+    var handled_mask: u64 = 0;
+    var entries: [64]u32 = undefined;
+    var entry_count: usize = 0;
+    for (codepoints, 0..) |codepoint, position| {
+        if (codepoint < 0x80) {
+            try output.append(allocator, @intCast(codepoint));
+            basic_count += 1;
+            handled_mask |= @as(u64, 1) << @intCast(position);
+        } else {
+            entries[entry_count] =
+                (@as(u32, codepoint) << 6) | @as(u32, @intCast(position));
+            entry_count += 1;
+        }
+    }
+    if (basic_count > 0) try output.append(allocator, '-');
+
+    var insert: usize = 1;
+    while (insert < entry_count) : (insert += 1) {
+        const value = entries[insert];
+        var slot = insert;
+        while (slot > 0 and entries[slot - 1] > value) : (slot -= 1) {
+            entries[slot] = entries[slot - 1];
+        }
+        entries[slot] = value;
+    }
+
+    var n: u32 = initial_n;
+    var delta: u64 = 0;
+    var bias: u32 = initial_bias;
+    var handled = basic_count;
+    var index: usize = 0;
+    while (index < entry_count) {
+        const m = entries[index] >> 6;
+        delta += @as(u64, m - n) * @as(u64, @intCast(handled + 1));
+        n = m;
+
+        var group_mask: u64 = 0;
+        var previous_position: u32 = 0;
+        var first = true;
+        while (index < entry_count and entries[index] >> 6 == m) : (index += 1) {
+            const position = entries[index] & 0x3f;
+            const below = (@as(u64, 1) << @intCast(position)) - 1;
+            const emitted = if (first)
+                delta + @popCount(handled_mask & below)
+            else blk: {
+                const through_previous =
+                    (@as(u64, 1) << @intCast(previous_position + 1)) - 1;
+                break :blk @popCount(handled_mask & below & ~through_previous);
+            };
+            first = false;
+            try emitPunycodeDelta(
+                allocator,
+                output,
+                emitted,
+                &bias,
+                handled,
+                basic_count,
+            );
+            delta = 0;
+            handled += 1;
+            previous_position = position;
+            group_mask |= @as(u64, 1) << @intCast(position);
+        }
+        // Scalars that follow the group's last occurrence still count
+        // toward the next group's delta, and every group adds one more.
+        const trailing = if (previous_position >= 63)
+            0
+        else
+            @popCount(handled_mask >> @intCast(previous_position + 1));
+        delta += trailing + 1;
+        handled_mask |= group_mask;
+        n += 1;
+    }
+}
+
+/// Punycode encoder for inputs too long to track with a position mask.
+fn appendPunycodeScan(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    codepoints: []const u21,
+) Error!void {
     var basic_count: usize = 0;
     for (codepoints) |codepoint| {
         if (codepoint < 0x80) {
@@ -956,23 +1084,14 @@ fn appendPunycode(
         for (codepoints) |codepoint| {
             if (codepoint < n) delta += 1;
             if (codepoint == n) {
-                var q = delta;
-                var k: u32 = base;
-                while (true) {
-                    const t = if (k <= bias) tmin else if (k >= bias + tmax)
-                        tmax
-                    else
-                        k - bias;
-                    if (q < t) break;
-                    try output.append(
-                        allocator,
-                        digitChar(t + @as(u32, @intCast((q - t) % (base - t)))),
-                    );
-                    q = (q - t) / (base - t);
-                    k += base;
-                }
-                try output.append(allocator, digitChar(@intCast(q)));
-                bias = adapt(delta, handled + 1, handled == basic_count);
+                try emitPunycodeDelta(
+                    allocator,
+                    output,
+                    delta,
+                    &bias,
+                    handled,
+                    basic_count,
+                );
                 delta = 0;
                 handled += 1;
             }
