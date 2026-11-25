@@ -3952,37 +3952,74 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     );
                     if (!inert.e1Inert(low, form)) break;
                     run_end += 3;
-                    while (run_end + 6 <= text.len) {
-                        const s0 = text[run_end];
-                        const s1 = text[run_end + 3];
-                        if (s0 != 0xe1 or s1 != 0xe1) break;
-                        const b0 = text[run_end + 1];
-                        const c0 = text[run_end + 2];
-                        const b1 = text[run_end + 4];
-                        const c1 = text[run_end + 5];
-                        if (jamo_run and
-                            ((b0 & 0xfc) == 0x84 or (b1 & 0xfc) == 0x84)) break;
-                        if (((b0 | c0 | b1 | c1) & 0xc0) != 0x80) break;
-                        const low0: u12 = @intCast(
-                            (@as(u32, b0 & 0x3f) << 6) | (c0 & 0x3f),
-                        );
-                        const low1: u12 = @intCast(
-                            (@as(u32, b1 & 0x3f) << 6) | (c1 & 0x3f),
-                        );
-                        if (!inert.e1InertPair(low0, low1, form)) break;
-                        run_end += 6;
-                    }
-                    while (run_end + 4 <= text.len and text[run_end] == ' ') {
-                        if (text[run_end + 1] != 0xe1) break;
-                        const b = text[run_end + 2];
-                        const c = text[run_end + 3];
-                        if ((b & 0xfc) == 0x84) break;
-                        if (((b | c) & 0xc0) != 0x80) break;
-                        const next_low: u12 = @intCast(
-                            (@as(u32, b & 0x3f) << 6) | (c & 0x3f),
-                        );
-                        if (!inert.e1Inert(next_low, form)) break;
-                        run_end += 4;
+                    // Georgian and Ethiopic words run several scalars, so
+                    // test two at a time once the run is confirmed. A space
+                    // between two inert E1 scalars bridges the words, so a
+                    // whole phrase stays in this loop instead of returning
+                    // to the main dispatch once per word.
+                    while (true) {
+                        // Two scalars occupy six bytes; read eight so the
+                        // lead and continuation checks fold into one load
+                        // and two masked compares. The tail of the text
+                        // falls through to the scalar steps below.
+                        while (run_end + 8 <= text.len) {
+                            const pair = std.mem.readInt(
+                                u64,
+                                text[run_end..][0..8],
+                                .little,
+                            );
+                            if ((pair & 0x00000000_ff0000ff) !=
+                                0x00000000_e10000e1) break;
+                            if (jamo_run and
+                                (((pair >> 8) & 0xfc) == 0x84 or
+                                    ((pair >> 32) & 0xfc) == 0x84))
+                            {
+                                break;
+                            }
+                            if ((pair & 0x0000c0c0_00c0c000) !=
+                                0x00008080_00808000) break;
+                            const low0: u12 = @intCast(
+                                (((pair >> 8) & 0x3f) << 6) |
+                                    ((pair >> 16) & 0x3f),
+                            );
+                            const low1: u12 = @intCast(
+                                (((pair >> 32) & 0x3f) << 6) |
+                                    ((pair >> 40) & 0x3f),
+                            );
+                            if (!inert.e1InertPair(low0, low1, form)) break;
+                            run_end += 6;
+                        }
+                        // An odd-length word leaves one scalar before the
+                        // next space; consume it here.
+                        if (run_end + 3 <= text.len and text[run_end] == 0xe1) {
+                            const b = text[run_end + 1];
+                            const c = text[run_end + 2];
+                            if (jamo_run and (b & 0xfc) == 0x84) break;
+                            if (((b | c) & 0xc0) != 0x80) break;
+                            const low_s: u12 = @intCast(
+                                (@as(u32, b & 0x3f) << 6) | (c & 0x3f),
+                            );
+                            if (!inert.e1Inert(low_s, form)) break;
+                            run_end += 3;
+                        }
+                        // Georgian and Ethiopic phrases separate words with
+                        // a space; bridge one space to the next inert E1
+                        // scalar so the phrase stays in a single run.
+                        if (run_end + 4 <= text.len and text[run_end] == ' ' and
+                            text[run_end + 1] == 0xe1)
+                        {
+                            const b = text[run_end + 2];
+                            const c = text[run_end + 3];
+                            if ((b & 0xfc) == 0x84) break;
+                            if (((b | c) & 0xc0) != 0x80) break;
+                            const next_low: u12 = @intCast(
+                                (@as(u32, b & 0x3f) << 6) | (c & 0x3f),
+                            );
+                            if (!inert.e1Inert(next_low, form)) break;
+                            run_end += 4;
+                            continue;
+                        }
+                        break;
                     }
                     run_codepoint = 0x1000 + @as(u21, @as(u12, @intCast(
                         (@as(u32, text[run_end - 2] & 0x3f) << 6) |
