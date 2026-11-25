@@ -973,6 +973,21 @@ fn normalizeFusedInto(
                     run_end += 2;
                     continue;
                 }
+                if (lead == 0xe0) {
+                    // Indic and Southeast Asian prose sits on the E0 lead.
+                    if (run_end + 2 >= text.len) break;
+                    const second = text[run_end + 1];
+                    const third = text[run_end + 2];
+                    if (second < 0xa0 or (third & 0xc0) != 0x80) break;
+                    const offset = (@as(u32, second & 0x3f) << 6) |
+                        (third & 0x3f);
+                    const low: u11 = @intCast(offset - 0x800);
+                    if (!inert.e0Inert(low, form)) break;
+                    run_offset = run_end;
+                    run_codepoint = 0x800 + @as(u21, low);
+                    run_end += 3;
+                    continue;
+                }
                 const next_decoded = scalar.decodeValidatingPacked(text, run_end);
                 if (next_decoded == scalar.packed_invalid) break;
                 const next = scalar.packedCodepoint(next_decoded);
@@ -3293,6 +3308,19 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     run_end += 2;
                     continue;
                 }
+                if (lead == 0xe0) {
+                    if (run_end + 2 >= text.len) break;
+                    const second = text[run_end + 1];
+                    const third = text[run_end + 2];
+                    if (second < 0xa0 or (third & 0xc0) != 0x80) break;
+                    const offset = (@as(u32, second & 0x3f) << 6) |
+                        (third & 0x3f);
+                    const low: u11 = @intCast(offset - 0x800);
+                    if (!inert.e0Inert(low, form)) break;
+                    run_codepoint = 0x800 + @as(u21, low);
+                    run_end += 3;
+                    continue;
+                }
                 const next_decoded = scalar.decodeValidatingPacked(text, run_end);
                 if (next_decoded == scalar.packed_invalid) break;
                 const next = scalar.packedCodepoint(next_decoded);
@@ -3509,6 +3537,21 @@ fn spanQuickCheckYesImpl(
                     run_codepoint = (@as(u21, lead & 0x1f) << 6) |
                         (second & 0x3f);
                     run_end += 2;
+                    continue;
+                }
+                if (lead == 0xe0) {
+                    // Indic and Southeast Asian prose sits on the E0 lead.
+                    if (run_end + 2 >= text.len) break;
+                    const second = text[run_end + 1];
+                    const third = text[run_end + 2];
+                    if (second < 0xa0 or (third & 0xc0) != 0x80) break;
+                    const offset = (@as(u32, second & 0x3f) << 6) |
+                        (third & 0x3f);
+                    const low: u11 = @intCast(offset - 0x800);
+                    if (!inert.e0Inert(low, form)) break;
+                    run_offset = run_end;
+                    run_codepoint = 0x800 + @as(u21, low);
+                    run_end += 3;
                     continue;
                 }
                 const next_decoded = scalar.decodeValidatingPacked(text, run_end);

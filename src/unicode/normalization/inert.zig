@@ -148,6 +148,32 @@ pub inline fn twoByteInert(lead: u8, second: u8, form: data.Form) bool {
         @intCast(second & 0x3f)) & 1 != 0;
 }
 
+/// Inertness of three-byte scalars with lead 0xE0 (U+0800..U+0FFF), indexed
+/// by the eleven-bit offset from U+0800. This covers Devanagari, Thai, Lao,
+/// Tibetan, Myanmar, and the other Indic scripts.
+const e0_masks: [4][32]u64 = blk: {
+    @setEvalBranchQuota(400_000);
+    var table: [4][32]u64 = [_][32]u64{[_]u64{0} ** 32} ** 4;
+    for (0..4) |form_index| {
+        const form: data.Form = @enumFromInt(form_index);
+        for (0x800..0x1000) |codepoint| {
+            if (isInert(@intCast(codepoint), form)) {
+                const low = codepoint - 0x800;
+                table[form_index][low >> 6] |=
+                    @as(u64, 1) << @intCast(low & 0x3f);
+            }
+        }
+    }
+    break :blk table;
+};
+
+/// `isInert` for a validated three-byte sequence with lead 0xE0 and
+/// `low` = (second & 0x3F) << 6 | (third & 0x3F) - 0x800.
+pub inline fn e0Inert(low: u11, form: data.Form) bool {
+    return (e0_masks[@intFromEnum(form)][low >> 6] >>
+        @intCast(low & 0x3f)) & 1 != 0;
+}
+
 test "inert tables follow each normalization form" {
     const testing = @import("std").testing;
     inline for ([_]data.Form{ .nfc, .nfd, .nfkc, .nfkd }) |form| {
