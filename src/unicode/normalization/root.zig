@@ -104,6 +104,53 @@ inline fn isInertCjkPunctuation(unit: u21) bool {
         (unit >= 0xff00 and unit <= 0xffef);
 }
 
+/// True when the three bytes at `offset` encode a Hiragana or Katakana
+/// scalar that `form` leaves unchanged and that cannot compose with a
+/// preceding starter. The decomposed forms split the dakuten kana, so only
+/// the composed forms have inert kana runs.
+inline fn kanaInertAt(text: []const u8, offset: usize, form: Form) bool {
+    if (offset + 3 > text.len or text[offset] != 0xe3) return false;
+    const second = text[offset + 1];
+    if (second < 0x81 or second > 0x83) return false;
+    const third = text[offset + 2];
+    if (third & 0xc0 != 0x80) return false;
+    if (second == 0x82) {
+        // U+3099/U+309A are combining marks; the compatibility forms also
+        // decompose the spacing marks U+309B, U+309C, and U+309F.
+        if (third == 0x99 or third == 0x9a) return false;
+        if (form == .nfkc and
+            (third == 0x9b or third == 0x9c or third == 0x9f))
+        {
+            return false;
+        }
+    }
+    // U+30FF decomposes under the compatibility forms.
+    if (form == .nfkc and second == 0x83 and third == 0xbf) return false;
+    return true;
+}
+
+/// Scan a run of Hiragana/Katakana scalars that `form` leaves unchanged.
+/// `start` must point at an E3 lead byte; returns an empty run when the
+/// first scalar is not inert.
+inline fn scanKanaRun(text: []const u8, start: usize, form: Form) ScanRun {
+    var end = start;
+    while (kanaInertAt(text, end, form)) end += 3;
+    if (end == start) {
+        return .{
+            .end = start,
+            .last_codepoint = 0,
+            .last_offset = start,
+        };
+    }
+    return .{
+        .end = end,
+        .last_codepoint = (@as(u21, text[end - 3] & 0x0f) << 12) |
+            (@as(u21, text[end - 2] & 0x3f) << 6) |
+            (text[end - 1] & 0x3f),
+        .last_offset = end - 3,
+    };
+}
+
 /// True when `codepoint` is inert for `form`: unchanged and unable to compose
 /// with a preceding starter.
 fn latin1Inert(form: Form, codepoint: u21) bool {
@@ -396,13 +443,16 @@ fn normalizeFusedInto(
             index = end;
             continue;
         }
-        if (cjk_lead_simple and text[index] >= 0xe4 and
-            text[index] <= 0xe9)
+        if (cjk_lead_simple and
+            ((text[index] >= 0xe4 and text[index] <= 0xe9) or
+                (compose and text[index] == 0xe3 and
+                    index + 1 < text.len and
+                    text[index + 1] >= 0x81 and text[index + 1] <= 0x83)))
         {
             // CJK prose dominates this scan. Every scalar in the run is a
-            // simple starter, so advance two scalars per check and commit the
-            // scan state once when the run ends. Inert punctuation and
-            // fullwidth forms between ideographs join the run.
+            // simple starter, so advance two ideographs per check and commit
+            // the scan state once when the run ends. Inert punctuation,
+            // fullwidth forms, and kana between ideographs join the run.
             var cursor = index;
             while (true) {
                 while (cursor + 6 <= text.len and
@@ -425,6 +475,13 @@ fn normalizeFusedInto(
                     cursor += 3;
                     continue;
                 }
+                if (compose and cursor < text.len and text[cursor] == 0xe3) {
+                    const run = scanKanaRun(text, cursor, form);
+                    if (run.end > cursor) {
+                        cursor = run.end;
+                        continue;
+                    }
+                }
                 if (!compatibility and cursor + 3 <= text.len and
                     (text[cursor] | 0x0c) == 0xef)
                 {
@@ -441,11 +498,18 @@ fn normalizeFusedInto(
                 }
                 break;
             }
-            starter = null;
-            starter_offset = start;
-            previous_input_class = 0;
-            index = cursor;
-            continue;
+            if (cursor > index) {
+                // Every scalar in the run is three bytes, so the last one
+                // starts at `cursor - 3`. It stays the starter because a
+                // following dakuten composes with a kana.
+                starter = (@as(u21, text[cursor - 3] & 0x0f) << 12) |
+                    (@as(u21, text[cursor - 2] & 0x3f) << 6) |
+                    (text[cursor - 1] & 0x3f);
+                starter_offset = cursor - 3;
+                previous_input_class = 0;
+                index = cursor;
+                continue;
+            }
         }
         // CJK punctuation and fullwidth forms are inert under the canonical
         // forms and start no composition pair, so their blocks skip the table
@@ -2618,6 +2682,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
     const latin1_mode = latin1_mode_by_form[@intFromEnum(form)];
     const latin1_mask = &latin1_inert_by_form[@intFromEnum(form)];
     const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
+    const kana_run = form == .nfc or form == .nfkc;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
     var index: usize = ascii_end;
@@ -2658,8 +2723,11 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
             index = end;
             continue;
         }
-        if (cjk_lead_simple and text[index] >= 0xe4 and
-            text[index] <= 0xe9)
+        if (cjk_lead_simple and
+            ((text[index] >= 0xe4 and text[index] <= 0xe9) or
+                (kana_run and text[index] == 0xe3 and
+                    index + 1 < text.len and
+                    text[index + 1] >= 0x81 and text[index + 1] <= 0x83)))
         {
             const canonical = form == .nfc or form == .nfd;
             var cursor = index;
@@ -2684,6 +2752,13 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     cursor += 3;
                     continue;
                 }
+                if (kana_run and cursor < text.len and text[cursor] == 0xe3) {
+                    const run = scanKanaRun(text, cursor, form);
+                    if (run.end > cursor) {
+                        cursor = run.end;
+                        continue;
+                    }
+                }
                 // Inert CJK punctuation and fullwidth forms between
                 // ideographs join the run.
                 if (canonical and cursor + 3 <= text.len and
@@ -2707,10 +2782,14 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                 }
                 break;
             }
-            starter = null;
-            previous_input_class = 0;
-            index = cursor;
-            continue;
+            if (cursor > index) {
+                starter = (@as(u21, text[cursor - 3] & 0x0f) << 12) |
+                    (@as(u21, text[cursor - 2] & 0x3f) << 6) |
+                    (text[cursor - 1] & 0x3f);
+                previous_input_class = 0;
+                index = cursor;
+                continue;
+            }
         }
         // CJK punctuation and fullwidth forms are inert under the canonical
         // forms, so the scan skips them without a decoder or table probe,
@@ -2804,6 +2883,7 @@ fn spanQuickCheckYesImpl(
     const latin1_mode = latin1_mode_by_form[@intFromEnum(form)];
     const latin1_mask = &latin1_inert_by_form[@intFromEnum(form)];
     const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
+    const kana_run = form == .nfc or form == .nfkc;
     var starter_offset: usize = if (ascii_end > 0) ascii_end - 1 else 0;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
@@ -2846,35 +2926,53 @@ fn spanQuickCheckYesImpl(
             index = end;
             continue;
         }
-        if (cjk_lead_simple and text[index] >= 0xe4 and
-            text[index] <= 0xe9)
+        if (cjk_lead_simple and
+            ((text[index] >= 0xe4 and text[index] <= 0xe9) or
+                (kana_run and text[index] == 0xe3 and
+                    index + 1 < text.len and
+                    text[index + 1] >= 0x81 and text[index + 1] <= 0x83)))
         {
             var cursor = index;
-            while (cursor + 6 <= text.len and
-                text[cursor] >= 0xe4 and text[cursor] <= 0xe9 and
-                text[cursor + 3] >= 0xe4 and text[cursor + 3] <= 0xe9 and
-                ((text[cursor + 1] | text[cursor + 2] |
-                    text[cursor + 4] | text[cursor + 5]) & 0xc0) == 0x80)
-            {
-                cursor += 6;
-            }
-            if (cursor < text.len and text[cursor] >= 0xe4 and
-                text[cursor] <= 0xe9)
-            {
-                if (cursor + 3 > text.len or
-                    text[cursor + 1] & 0xc0 != 0x80 or
-                    text[cursor + 2] & 0xc0 != 0x80)
+            while (true) {
+                while (cursor + 6 <= text.len and
+                    text[cursor] >= 0xe4 and text[cursor] <= 0xe9 and
+                    text[cursor + 3] >= 0xe4 and text[cursor + 3] <= 0xe9 and
+                    ((text[cursor + 1] | text[cursor + 2] |
+                        text[cursor + 4] | text[cursor + 5]) & 0xc0) == 0x80)
                 {
-                    if (validating) return error.InvalidUtf8;
-                    return text.len;
+                    cursor += 6;
                 }
-                cursor += 3;
+                if (cursor < text.len and text[cursor] >= 0xe4 and
+                    text[cursor] <= 0xe9)
+                {
+                    if (cursor + 3 > text.len or
+                        text[cursor + 1] & 0xc0 != 0x80 or
+                        text[cursor + 2] & 0xc0 != 0x80)
+                    {
+                        if (validating) return error.InvalidUtf8;
+                        return text.len;
+                    }
+                    cursor += 3;
+                    continue;
+                }
+                if (kana_run and cursor < text.len and text[cursor] == 0xe3) {
+                    const run = scanKanaRun(text, cursor, form);
+                    if (run.end > cursor) {
+                        cursor = run.end;
+                        continue;
+                    }
+                }
+                break;
             }
-            starter = null;
-            starter_offset = start;
-            previous_input_class = 0;
-            index = cursor;
-            continue;
+            if (cursor > index) {
+                starter = (@as(u21, text[cursor - 3] & 0x0f) << 12) |
+                    (@as(u21, text[cursor - 2] & 0x3f) << 6) |
+                    (text[cursor - 1] & 0x3f);
+                starter_offset = cursor - 3;
+                previous_input_class = 0;
+                index = cursor;
+                continue;
+            }
         }
         const decoded = scalar.decodeValidatingPacked(text, index);
         if (decoded == scalar.packed_invalid) {
