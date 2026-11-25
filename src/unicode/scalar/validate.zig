@@ -175,6 +175,11 @@ inline fn windowValid(text: []const u8, offset: usize) bool {
         (next < @as(V, @splat(0xa0)));
     const surrogate = (bytes == @as(V, @splat(0xed))) &
         (next >= @as(V, @splat(0xa0)));
+    // Windows without four-byte leads skip the F0/F4 range checks; CJK prose
+    // is entirely three-byte sequences.
+    if (lead4_only == 0) {
+        return !@reduce(.Or, bad_lead | overlong3 | surrogate);
+    }
     const overlong4 = (bytes == @as(V, @splat(0xf0))) &
         (next < @as(V, @splat(0x90)));
     const too_large = (bytes == @as(V, @splat(0xf4))) &
@@ -298,6 +303,49 @@ test "vector validation accepts long two-byte text" {
         buffer[100] = bad;
         try testing.expect(!isValid(buffer[0 .. length + 1]));
     }
+}
+
+test "vector validation accepts long three-byte text" {
+    const testing = std.testing;
+    var buffer: [320]u8 = undefined;
+    const cjk = "\u{4e16}";
+    var length: usize = 0;
+    while (length + 3 <= 300) : (length += 3) {
+        @memcpy(buffer[length..][0..3], cjk);
+    }
+    try testing.expect(isValid(buffer[0..length]));
+    try testing.expect(std.unicode.utf8ValidateSlice(buffer[0..length]));
+
+    // A surrogate and an overlong three-byte sequence must fail even though
+    // the window has no four-byte lead.
+    const at = 99;
+    buffer[at] = 0xed;
+    buffer[at + 1] = 0xa0;
+    buffer[at + 2] = 0x80;
+    try testing.expect(!isValid(buffer[0..length]));
+    try testing.expect(!std.unicode.utf8ValidateSlice(buffer[0..length]));
+
+    buffer[at] = 0xe0;
+    buffer[at + 1] = 0x80;
+    buffer[at + 2] = 0x80;
+    try testing.expect(!isValid(buffer[0..length]));
+    try testing.expect(!std.unicode.utf8ValidateSlice(buffer[0..length]));
+
+    // The lowest valid three-byte scalar must pass.
+    buffer[at] = 0xe0;
+    buffer[at + 1] = 0xa0;
+    buffer[at + 2] = 0x80;
+    try testing.expect(isValid(buffer[0..length]));
+    try testing.expect(std.unicode.utf8ValidateSlice(buffer[0..length]));
+
+    // A trailing four-byte scalar keeps the general path working alongside
+    // the three-byte windows.
+    buffer[length] = 0xf0;
+    buffer[length + 1] = 0x9f;
+    buffer[length + 2] = 0x98;
+    buffer[length + 3] = 0x80;
+    try testing.expect(isValid(buffer[0 .. length + 4]));
+    try testing.expect(std.unicode.utf8ValidateSlice(buffer[0 .. length + 4]));
 }
 
 test "vector validation rejects leads crossing the tail boundary" {
