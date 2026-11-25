@@ -1065,6 +1065,132 @@ fn normalizeFusedInto(
                     text[stable_start..segment_start],
                 );
             }
+            // Accent-heavy Latin text is a non-decomposing starter followed
+            // by one or two simple combining marks. The whole segment is a
+            // short chain of direct compositions then, so skip the generic
+            // segment machinery.
+            if (compose and form == .nfc and
+                segment_start == starter_offset and
+                previous_input_class == 0 and
+                current_class != 0 and
+                starter != null and
+                codepoint >= 0x300 and
+                codepoint < mark_decomposition_limit and
+                !mark_has_decomposition[codepoint - 0x300])
+            {
+                const starter_cp = starter.?;
+                if (!decomposition.hasCanonical(starter_cp) and
+                    !continuesSegment(starter_cp, compatibility))
+                {
+                    var out_cps: [3]u21 = undefined;
+                    var count: usize = 0;
+                    var end = index;
+                    var handled = false;
+                    if (end < text.len) {
+                        const decoded2 = scalar.decodeValidatingPacked(
+                            text,
+                            end,
+                        );
+                        if (decoded2 != scalar.packed_invalid) {
+                            const mark2 = scalar.packedCodepoint(decoded2);
+                            if (mark2 >= 0x300 and
+                                mark2 < mark_decomposition_limit and
+                                !mark_has_decomposition[mark2 - 0x300])
+                            {
+                                const class2 = combining_class.forCodepoint(
+                                    mark2,
+                                );
+                                const after2 = end +
+                                    scalar.packedLength(decoded2);
+                                if (class2 != 0 and nextStartsSegment(
+                                    text,
+                                    after2,
+                                    compatibility,
+                                )) {
+                                    const first: u21 = if (current_class <= class2)
+                                        codepoint
+                                    else
+                                        mark2;
+                                    const second: u21 = if (current_class <= class2)
+                                        mark2
+                                    else
+                                        codepoint;
+                                    const first_class: u8 = if (current_class <= class2)
+                                        current_class
+                                    else
+                                        class2;
+                                    const second_class: u8 = if (current_class <= class2)
+                                        class2
+                                    else
+                                        current_class;
+                                    var composed = starter_cp;
+                                    var first_composed = false;
+                                    if (composePair(starter_cp, first)) |value| {
+                                        composed = value;
+                                        first_composed = true;
+                                    }
+                                    var second_composed = false;
+                                    const blocking_class: u8 = if (first_composed)
+                                        0
+                                    else
+                                        first_class;
+                                    if (blocking_class == 0 or
+                                        blocking_class < second_class)
+                                    {
+                                        if (composePair(composed, second)) |value| {
+                                            composed = value;
+                                            second_composed = true;
+                                        }
+                                    }
+                                    if (first_composed) {
+                                        out_cps[0] = composed;
+                                        count = 1;
+                                        if (!second_composed) {
+                                            out_cps[1] = second;
+                                            count = 2;
+                                        }
+                                    } else {
+                                        out_cps[0] = composed;
+                                        out_cps[1] = first;
+                                        count = 2;
+                                        if (!second_composed) {
+                                            out_cps[2] = second;
+                                            count = 3;
+                                        }
+                                    }
+                                    end = after2;
+                                    handled = true;
+                                }
+                            }
+                        }
+                    }
+                    if (!handled and
+                        nextStartsSegment(text, end, compatibility))
+                    {
+                        // The edit condition already proved the pair
+                        // composes, but keep a fallback for safety.
+                        if (composePair(starter_cp, codepoint)) |value| {
+                            out_cps[0] = value;
+                            count = 1;
+                            handled = true;
+                        }
+                    }
+                    if (handled) {
+                        var encoded: [12]u8 = undefined;
+                        var len: usize = 0;
+                        for (out_cps[0..count]) |value| {
+                            len += encodeScalarInto(&encoded, len, value);
+                        }
+                        try appendBytes(allocator, output, encoded[0..len]);
+                        stable_start = end;
+                        index = end;
+                        starter = null;
+                        starter_offset = end;
+                        previous_input_class = 0;
+                        continue;
+                    }
+                }
+            }
             // A starter that no following scalar continues is its own
             // segment, so it can skip the generic segment machinery.
             if (segment_start == start and
@@ -4155,6 +4281,35 @@ test "NFC performs canonical ordering composition and Hangul composition" {
     // Voiced kana compose from the unvoiced syllable and a sound mark.
     try expectNormalized("\u{30ab}\u{3099}", "\u{30ac}");
     try expectNormalized("\u{304b}\u{3099}", "\u{304c}");
+}
+
+test "NFC composes one and two simple marks after a starter" {
+    // Single composing marks.
+    try expectNormalized("e\u{0301}", "\u{00e9}");
+    try expectNormalized("e\u{0323}", "\u{1eb9}");
+    // Two marks that reorder before composing.
+    try expectNormalized("e\u{0301}\u{0323}", "\u{1eb9}\u{0301}");
+    try expectNormalized("e\u{0323}\u{0301}", "\u{1eb9}\u{0301}");
+    try expectNormalized("o\u{0301}\u{0323}", "\u{1ecd}\u{0301}");
+    try expectNormalized("o\u{0323}\u{0301}", "\u{1ecd}\u{0301}");
+    // Chained composition through two marks.
+    try expectNormalized("e\u{0302}\u{0301}", "\u{1ebf}");
+    try expectNormalized("a\u{0308}\u{0304}", "\u{01df}");
+    // The lower-class mark does not compose, so it is emitted and the
+    // higher-class mark composes with the starter instead.
+    try expectNormalized("e\u{0301}\u{0334}", "\u{00e9}\u{0334}");
+    try expectNormalized("e\u{0334}\u{0301}", "\u{00e9}\u{0334}");
+    // Equal classes keep their order; the second mark cannot compose.
+    try expectNormalized("e\u{0301}\u{0300}", "\u{00e9}\u{0300}");
+    try expectNormalized("e\u{0301}\u{0302}", "\u{00e9}\u{0302}");
+    // A Latin-1 starter without a canonical decomposition composes too.
+    try expectNormalized("\u{00f8}\u{0301}", "\u{01ff}");
+    // Marks that do not compose with the starter stay put and unchanged.
+    try expectNormalized("\u{00df}\u{0301}", "\u{00df}\u{0301}");
+    // A starter with a canonical decomposition must decompose before the
+    // marks are ordered, even though it looks like a plain pair.
+    try expectFormNormalized("\u{00e9}\u{0323}", "\u{1eb9}\u{0301}", .nfc);
+    try expectFormNormalized("\u{00e9}\u{0301}", "\u{00e9}\u{0301}", .nfc);
 }
 
 test "Hangul jamo runs compose directly" {
