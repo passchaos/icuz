@@ -232,6 +232,47 @@ fn convertInner(
     // separate UTF-8 validation scan.
     var cursor: usize = 0;
     while (cursor < domain.len) {
+        const first = domain[cursor];
+        // Greek and Cyrillic labels are entirely two-byte sequences. Those
+        // leads can never be overlong or a surrogate, so a run decodes
+        // without the general length ladder.
+        if (first >= 0xc2 and first <= 0xdf and cursor + 2 <= domain.len) {
+            while (cursor + 2 <= domain.len) {
+                const lead = domain[cursor];
+                if (lead < 0xc2 or lead > 0xdf) break;
+                const second = domain[cursor + 1];
+                if (second & 0xc0 != 0x80) return error.InvalidUtf8;
+                codepoints.appendAssumeCapacity(
+                    (@as(u21, lead & 0x1f) << 6) | (second & 0x3f),
+                );
+                cursor += 2;
+            }
+            continue;
+        }
+        // Three-byte runs cover the CJK and Indic labels; the overlong and
+        // surrogate checks are the same ones the general decoder applies.
+        if (first >= 0xe0 and first < 0xf0 and cursor + 3 <= domain.len) {
+            while (cursor + 3 <= domain.len) {
+                const lead = domain[cursor];
+                if (lead < 0xe0 or lead >= 0xf0) break;
+                const second = domain[cursor + 1];
+                const third = domain[cursor + 2];
+                if (((second | third) & 0xc0) != 0x80) {
+                    return error.InvalidUtf8;
+                }
+                const codepoint = (@as(u21, lead & 0x0f) << 12) |
+                    (@as(u21, second & 0x3f) << 6) |
+                    (third & 0x3f);
+                if (codepoint < 0x800 or
+                    (codepoint & 0xf800) == 0xd800)
+                {
+                    return error.InvalidUtf8;
+                }
+                codepoints.appendAssumeCapacity(codepoint);
+                cursor += 3;
+            }
+            continue;
+        }
         const decoded = scalar.decodeValidatingPacked(domain, cursor);
         if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
         codepoints.appendAssumeCapacity(scalar.packedCodepoint(decoded));
