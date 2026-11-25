@@ -463,14 +463,18 @@ pub fn resolve(
         const start = cursor;
         const first = text[cursor];
         if (first < 0x80) {
-            scalars[count] = .{
-                .codepoint = first,
-                .byte_start = cursor,
-                .byte_len = 1,
-            };
-            classes[count] = property_data.class(first);
-            count += 1;
-            cursor += 1;
+            // ASCII runs dominate mixed paragraphs; a tight run loop avoids
+            // re-dispatching through the scalar loop for every byte.
+            while (cursor < text.len and text[cursor] < 0x80) : (cursor += 1) {
+                const byte = text[cursor];
+                scalars[count] = .{
+                    .codepoint = byte,
+                    .byte_start = cursor,
+                    .byte_len = 1,
+                };
+                classes[count] = property_data.class(byte);
+                count += 1;
+            }
             continue;
         }
         all_ascii = false;
