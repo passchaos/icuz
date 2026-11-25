@@ -14,6 +14,7 @@ const script = @import("script/root.zig");
 const script_extensions = @import("script_extensions/root.zig");
 const set_mod = @import("set.zig");
 const bidi_paragraph = @import("bidi/paragraph.zig");
+const bidi_data = @import("bidi/data.zig");
 
 const blob = @embedFile("spoof/confusables_data.bin");
 const conformance = @embedFile("spoof/conformance.bin");
@@ -900,15 +901,42 @@ fn bidiSkeletonImpl(
     return bidiSkeletonInner(allocator, text, direction);
 }
 
-/// True when a left-to-right paragraph reorders to itself: every byte is
-/// ASCII and none is Bidi_Mirrored.
-fn isAsciiUnmirrored(text: []const u8) bool {
-    for (text) |byte| {
-        if (byte >= 0x80) return false;
-        switch (byte) {
-            '(', ')', '<', '>', '[', ']', '{', '}' => return false,
+/// True when a left-to-right paragraph reorders to itself: no right-to-left
+/// strong scalar, no explicit embedding control, and no mirrored scalar.
+/// Invalid UTF-8 reports false so the full path surfaces the error.
+fn reordersToItself(text: []const u8) bool {
+    var cursor: usize = 0;
+    while (cursor < text.len) {
+        const first = text[cursor];
+        if (first < 0x80) {
+            // ASCII has no RTL strong or explicit control class.
+            switch (first) {
+                '(', ')', '<', '>', '[', ']', '{', '}' => return false,
+                else => {},
+            }
+            cursor += 1;
+            continue;
+        }
+        const decoded = scalar.decodeValidatingPacked(text, cursor);
+        if (decoded == scalar.packed_invalid) return false;
+        const codepoint = scalar.packedCodepoint(decoded);
+        switch (bidi_data.class(codepoint)) {
+            .r,
+            .al,
+            .lre,
+            .lro,
+            .rle,
+            .rlo,
+            .pdf,
+            .lri,
+            .rli,
+            .fsi,
+            .pdi,
+            => return false,
             else => {},
         }
+        if (bidi_data.mirrored(codepoint) != codepoint) return false;
+        cursor += scalar.packedLength(decoded);
     }
     return true;
 }
@@ -918,9 +946,10 @@ fn bidiSkeletonInner(
     text: []const u8,
     direction: bidi_paragraph.BaseDirection,
 ) Error![]u8 {
-    // Plain ASCII in an LTR paragraph reorders to itself, so the bidi pass
-    // and the mirroring copy can be skipped.
-    if (direction == .ltr and isAsciiUnmirrored(text)) {
+    // A left-to-right paragraph without RTL strong scalars, explicit
+    // controls, or mirrored scalars reorders to itself, so the bidi pass and
+    // the mirroring copy can be skipped.
+    if (direction == .ltr and reordersToItself(text)) {
         return skeletonAlloc(allocator, text);
     }
     var paragraph = try bidi_paragraph.resolve(allocator, text, direction);
@@ -962,6 +991,47 @@ pub fn areConfusable(
     try skeletonCodepointsInto(allocator, first, &skeleton_a);
     try skeletonCodepointsInto(allocator, second, &skeleton_b);
     return std.mem.eql(u21, skeleton_a.items, skeleton_b.items);
+}
+
+test "plain LTR bidi skeletons match the reordered path" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const cases = [_][]const u8{
+        "paypal",
+        "p\u{0430}ypal",
+        "\u{0391}\u{0392}\u{0393}",
+        "\u{0410}\u{0412}\u{0421}",
+        "l",
+        "1",
+        "O",
+        "0",
+        "rn",
+        "m",
+        "scope",
+        "g\u{043e}\u{043e}gle",
+        "micros\u{043e}ft",
+        "fi",
+        "fl",
+        "1 -- 2",
+        "1,2",
+        "a b c",
+        "\u{041f}\u{0440}\u{0438}\u{0432}\u{0435}\u{0442}",
+        "\u{03b1}\u{03b2}\u{03b3} 123",
+    };
+    for (cases) |text| {
+        const fast = try bidiSkeletonAlloc(allocator, text, .ltr);
+        defer allocator.free(fast);
+        var paragraph = try bidi_paragraph.resolve(allocator, text, .ltr);
+        defer paragraph.deinit();
+        const reordered = try paragraph.reorderAlloc(allocator, text, .{
+            .mirroring = true,
+            .keep_base_combining = true,
+        });
+        defer allocator.free(reordered);
+        const full = try skeletonAlloc(allocator, reordered);
+        defer allocator.free(full);
+        try testing.expectEqualStrings(full, fast);
+    }
 }
 
 test "confusable skeletons" {
