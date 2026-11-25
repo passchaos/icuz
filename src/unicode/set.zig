@@ -1236,38 +1236,65 @@ pub const Set = struct {
             self.ranges.items.len + other.ranges.items.len,
         );
 
-        // Merge join: walk both sorted lists and emit the parts of each
-        // self range not covered by the current other range. The endpoints
-        // are widened to u32 so the inner loop's +/- arithmetic does not
-        // re-mask a 21-bit value on every step.
+        // Merge join over both sorted lists. Most self ranges never meet a
+        // cut range, so those are copied in bulk; only the ranges that
+        // overlap the current cut range take the per-range split path. The
+        // endpoints are widened to u32 so the inner loop's +/- arithmetic
+        // does not re-mask a 21-bit value on every step.
         const self_ranges = self.ranges.items;
         const other_ranges = other.ranges.items;
         var left: usize = 0;
         var right: usize = 0;
-        while (left < self_ranges.len) : (left += 1) {
-            var current_first: u32 = self_ranges[left].first;
-            const current_last: u32 = self_ranges[left].last;
-            while (right < other_ranges.len) {
-                const cut_last: u32 = other_ranges[right].last;
-                if (cut_last >= current_first) break;
+        while (left < self_ranges.len) {
+            while (right < other_ranges.len and
+                other_ranges[right].last < self_ranges[left].first)
+            {
                 right += 1;
             }
+            if (right == other_ranges.len) {
+                // No remaining cut range can touch any remaining self range.
+                result.appendSliceAssumeCapacity(self_ranges[left..]);
+                break;
+            }
+            const cut_first: u32 = other_ranges[right].first;
+            const run_start = left;
+            while (left < self_ranges.len and
+                self_ranges[left].last < cut_first)
+            {
+                left += 1;
+            }
+            if (left > run_start) {
+                result.appendSliceAssumeCapacity(self_ranges[run_start..left]);
+            }
+            if (left == self_ranges.len) break;
+            // Copying ranges may have moved past the current cut range.
+            while (right < other_ranges.len and
+                other_ranges[right].last < self_ranges[left].first)
+            {
+                right += 1;
+            }
+            if (right == other_ranges.len) {
+                result.appendSliceAssumeCapacity(self_ranges[left..]);
+                break;
+            }
+            var current_first: u32 = self_ranges[left].first;
+            const current_last: u32 = self_ranges[left].last;
             var removed = false;
             while (right < other_ranges.len) {
-                const cut_first: u32 = other_ranges[right].first;
-                if (cut_first > current_last) break;
-                const cut_last: u32 = other_ranges[right].last;
-                if (cut_first > current_first) {
+                const overlap_first: u32 = other_ranges[right].first;
+                if (overlap_first > current_last) break;
+                const overlap_last: u32 = other_ranges[right].last;
+                if (overlap_first > current_first) {
                     result.appendAssumeCapacity(.{
                         .first = @intCast(current_first),
-                        .last = @intCast(cut_first - 1),
+                        .last = @intCast(overlap_first - 1),
                     });
                 }
-                if (cut_last >= current_last) {
+                if (overlap_last >= current_last) {
                     removed = true;
                     break;
                 }
-                current_first = cut_last + 1;
+                current_first = overlap_last + 1;
                 right += 1;
             }
             if (!removed and current_first <= current_last) {
@@ -1276,6 +1303,7 @@ pub const Set = struct {
                     .last = @intCast(current_last),
                 });
             }
+            left += 1;
         }
 
         self.ranges.deinit(self.allocator);
