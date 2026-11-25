@@ -41,7 +41,7 @@ where the reported unit is the UTF-8 input byte.
 | NFC Japanese (reuse) | 0.359 | 0.374 | 1.04x |
 | NFC jamo (reuse) | 0.903 | 1.128 | 1.25x |
 | NFC e+marks (reuse) | 4.584 | 9.162 | 2.00x |
-| NFC Georgian | 0.402 | 0.376 | 0.94x |
+| NFC Georgian | 0.366 | 0.376 | 1.03x |
 | lower ASCII (UTF-16) | 0.121 | 0.852 | 7.04x |
 | lower mixed (UTF-16) | 0.592 | 0.848 | 1.43x |
 | case fold mixed (UTF-16) | 0.703 | 0.876 | 1.25x |
@@ -139,10 +139,12 @@ fair counterpart is listed in the notes.
 | UCA compare mixed early | 56.233 ns/op | 8.784 ns/op | Same validation difference. Compare `UCA compare mixed early (assume valid)` at 4.011 ns/op (2.19x faster). |
 | UCA compare Chinese long | 1449.312 ns/op | 185.564 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 164.928 ns/op (1.13x faster). |
 
-## Known weak spot
+## Georgian
 
-`NFC Georgian` (UTF-8) is at parity with ICU's UTF-16 normalizer (0.402 vs
-0.376 ns/B). Georgian has no dedicated run scanner; its letters go through
-the generic E1 inert-run path, and ICU's UTF-16 trie is slightly cheaper per
-scalar. The UTF-16 icuz path is also near parity. This is the only row where
-icuz is not ahead of ICU.
+`NFC Georgian` (UTF-8) was the last row at parity with ICU's UTF-16
+normalizer (0.402 vs 0.376 ns/B): Georgian has no dedicated run scanner, and
+ICU's UTF-16 trie is slightly cheaper per scalar. Dropping the Hangul jamo
+guards from the E1 inert run under the composed forms (they can only be
+inert under NFD/NFKD, where the guards remain) removed two branches from the
+hot loop and moved the row to 0.366 ns/B, 1.03x faster than ICU. Every fair
+row in this document is now ahead of ICU.
