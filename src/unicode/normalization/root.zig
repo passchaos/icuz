@@ -518,6 +518,30 @@ fn normalizeFusedInto(
             const codepoint = (@as(u21, 0x0f) << 12) |
                 (@as(u21, text[index + 1] & 0x3f) << 6) |
                 (text[index + 2] & 0x3f);
+            // The fullwidth ASCII range maps by a fixed offset, and the
+            // result is a starter, so it skips the segment predicates.
+            if (codepoint >= 0xff01 and codepoint <= 0xff5e and
+                nextIsStarterOrEnd(text, index + 3))
+            {
+                if (!changed) {
+                    try output.ensureTotalCapacityPrecise(allocator, text.len);
+                    changed = true;
+                }
+                if (index > stable_start) {
+                    try appendBytes(
+                        allocator,
+                        output,
+                        text[stable_start..index],
+                    );
+                }
+                try engine.sink.appendOne(codepoint - 0xfee0);
+                stable_start = index + 3;
+                index += 3;
+                starter = null;
+                starter_offset = index;
+                previous_input_class = 0;
+                continue;
+            }
             if (fullwidth_compatibility_decomposition[codepoint - 0xff00]) |components| {
                 if (components.len == 1 and
                     !continuesSegment(codepoint, compatibility) and
@@ -599,6 +623,31 @@ fn normalizeFusedInto(
                 previous_input_class = 0;
                 continue;
             }
+        }
+        if (compatibility and previous_input_class == 0 and
+            text[index] == 0xe3 and index + 3 <= text.len and
+            text[index + 1] == 0x80 and text[index + 2] == 0x80 and
+            nextIsStarterOrEnd(text, index + 3))
+        {
+            // U+3000 decomposes to a space under the compatibility forms.
+            if (!changed) {
+                try output.ensureTotalCapacityPrecise(allocator, text.len);
+                changed = true;
+            }
+            if (index > stable_start) {
+                try appendBytes(
+                    allocator,
+                    output,
+                    text[stable_start..index],
+                );
+            }
+            try engine.sink.appendOne(' ');
+            stable_start = index + 3;
+            index += 3;
+            starter = null;
+            starter_offset = index;
+            previous_input_class = 0;
+            continue;
         }
         if ((cjk_lead_simple and
             ((text[index] >= 0xe4 and text[index] <= 0xe9) or
@@ -3892,6 +3941,20 @@ test "NFKC and NFKD apply compatibility mappings" {
     try expectFormNormalized("\u{00c5}", "A\u{030a}", .nfkd);
     try expectFormNormalized("\u{1ea4}", "A\u{0302}\u{0301}", .nfkd);
     try expectFormNormalized("\u{ff21}", "A", .nfkc);
+}
+
+test "compatibility forms decompose fullwidth runs and ideographic space" {
+    try expectFormNormalized("\u{ff21}\u{ff22}\u{ff23}", "ABC", .nfkc);
+    try expectFormNormalized("\u{ff01}\u{ff0c}\u{ff1f}", "!,?", .nfkc);
+    try expectFormNormalized("\u{3000}", " ", .nfkc);
+    try expectFormNormalized("\u{3000}\u{3000}", "  ", .nfkc);
+    // A following combining mark keeps the composition path.
+    try expectFormNormalized("\u{ff21}\u{0301}", "\u{00c1}", .nfkc);
+    try expectFormNormalized("\u{3000}\u{0301}", " \u{0301}", .nfkc);
+    // The decomposed forms take the same fixed-offset path.
+    try expectFormNormalized("\u{ff21}\u{ff22}\u{ff23}", "ABC", .nfkd);
+    try expectFormNormalized("\u{3000}", " ", .nfkd);
+    try expectFormNormalized("\u{3000}\u{0301}", " \u{0301}", .nfkd);
 }
 
 test "segments keep composed, mark-leading, and non-CJK scalars" {
