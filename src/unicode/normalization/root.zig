@@ -2866,26 +2866,31 @@ fn quickCheckUtf16(
 
 /// Incremental normalizer for chunked UTF-8 input.
 ///
-/// Each `feed` chunk must be valid UTF-8 and end on a code-point boundary. The
-/// normalizer holds only the unstable suffix (one starter, its marks, and any
-/// Hangul composition chain), so memory does not grow with the total input.
+/// Each `feed` chunk must be valid UTF-8 and end on a code-point boundary.
+/// Input is buffered verbatim and normalized in batches: when the buffer
+/// reaches `flush_threshold`, the trailing segment (which a later chunk may
+/// continue) is located by a short backward scan and everything before it is
+/// normalized. Memory therefore stays bounded by the threshold plus one
+/// segment, and the per-byte feed path is a validation plus a copy.
 pub const Normalizer = struct {
     allocator: std.mem.Allocator,
     form: Form,
-    /// Raw UTF-8 bytes buffered since the last batch normalization.
-    /// Everything before `last_segment_start` belongs to complete segments;
-    /// the tail is the current segment, which a later mark may continue.
+    /// Raw UTF-8 bytes buffered since the last batch normalization. The first
+    /// scalar always starts a segment, so the buffer is a whole number of
+    /// segments and a safe prefix of it can be flushed at any segment start.
     pending: std.ArrayList(u8),
-    last_segment_start: usize,
 
     const flush_threshold = 4096;
+    /// How many trailing scalars the flush scan inspects for a segment start
+    /// before leaving the buffer for a later chunk. Real mark sequences are
+    /// far shorter, so the scan is normally one or two scalars.
+    const flush_scan_scalars = 64;
 
     pub fn init(allocator: std.mem.Allocator, form: Form) Normalizer {
         return .{
             .allocator = allocator,
             .form = form,
             .pending = .empty,
-            .last_segment_start = 0,
         };
     }
 
@@ -2898,83 +2903,15 @@ pub const Normalizer = struct {
         text: []const u8,
         output: *std.ArrayList(u8),
     ) Error!void {
-        if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
         if (text.len == 0) return;
-        if (scalar.validate.asciiOnly(text)) {
-            // ASCII cannot continue a segment, so the buffered tail is
-            // complete and the chunk passes through verbatim. The final
-            // scalar stays buffered because a mark in the next chunk may
-            // compose with it.
-            try self.flushPending(output);
-            if (text.len > 1) {
-                try output.appendSlice(
-                    self.allocator,
-                    text[0 .. text.len - 1],
-                );
-            }
-            try self.pending.append(self.allocator, text[text.len - 1]);
-            self.last_segment_start = 0;
-            return;
-        }
-        // One capacity reservation covers every byte in the chunk, so the
-        // hot loop appends without a per-scalar capacity check.
-        try self.pending.ensureUnusedCapacity(self.allocator, text.len);
-        var index: usize = 0;
-        while (index < text.len) {
-            const decoded = scalar.decodeValid(text, index) orelse
-                return error.InvalidUtf8;
-            const next = decoded.next;
-            if (self.pending.items.len == 0) {
-                self.last_segment_start = 0;
-                self.pending.appendSliceAssumeCapacity(text[index..next]);
-                index = next;
-                continue;
-            }
-            if (continuesSegment(
-                decoded.codepoint,
-                self.form == .nfkc or self.form == .nfkd,
-            )) {
-                self.pending.appendSliceAssumeCapacity(text[index..next]);
-                index = next;
-                continue;
-            }
-            self.last_segment_start = self.pending.items.len;
-            self.pending.appendSliceAssumeCapacity(text[index..next]);
-            index = next;
-            if (self.last_segment_start >= flush_threshold) {
-                try self.flushComplete(output);
-            }
+        if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
+        try self.pending.appendSlice(self.allocator, text);
+        if (self.pending.items.len >= flush_threshold) {
+            try self.flushComplete(output);
         }
     }
 
     pub fn finish(self: *Normalizer, output: *std.ArrayList(u8)) Error!void {
-        try self.flushPending(output);
-    }
-
-    /// Normalize and emit every complete segment, keeping the current one.
-    fn flushComplete(
-        self: *Normalizer,
-        output: *std.ArrayList(u8),
-    ) Error!void {
-        const complete = self.pending.items[0..self.last_segment_start];
-        if (complete.len == 0) return;
-        _ = try normalizeFormInto(self.allocator, complete, self.form, output);
-
-        const tail_len = self.pending.items.len - self.last_segment_start;
-        std.mem.copyForwards(
-            u8,
-            self.pending.items[0..tail_len],
-            self.pending.items[self.last_segment_start..],
-        );
-        self.pending.shrinkRetainingCapacity(tail_len);
-        self.last_segment_start = 0;
-    }
-
-    /// Normalize and emit the whole buffer.
-    fn flushPending(
-        self: *Normalizer,
-        output: *std.ArrayList(u8),
-    ) Error!void {
         if (self.pending.items.len == 0) return;
         _ = try normalizeFormInto(
             self.allocator,
@@ -2983,7 +2920,38 @@ pub const Normalizer = struct {
             output,
         );
         self.pending.clearRetainingCapacity();
-        self.last_segment_start = 0;
+    }
+
+    /// Normalize and emit every complete segment, keeping the last one.
+    fn flushComplete(
+        self: *Normalizer,
+        output: *std.ArrayList(u8),
+    ) Error!void {
+        const items = self.pending.items;
+        const compatibility = self.form == .nfkc or self.form == .nfkd;
+        // Scan backward for the start of the last segment. Every scalar after
+        // it continues that segment, so everything before it is complete and
+        // normalizes independently of the tail.
+        var start = items.len;
+        var scanned: usize = 0;
+        while (start > 0 and scanned < flush_scan_scalars) : (scanned += 1) {
+            start -= 1;
+            while (start > 0 and (items[start] & 0xc0) == 0x80) start -= 1;
+            const decoded = scalar.decodeValid(items, start) orelse
+                return error.InvalidUtf8;
+            if (continuesSegment(decoded.codepoint, compatibility)) continue;
+            if (start == 0) return;
+            _ = try normalizeFormInto(
+                self.allocator,
+                items[0..start],
+                self.form,
+                output,
+            );
+            const tail_len = items.len - start;
+            std.mem.copyForwards(u8, items[0..tail_len], items[start..]);
+            self.pending.shrinkRetainingCapacity(tail_len);
+            return;
+        }
     }
 };
 
@@ -4799,6 +4767,48 @@ test "streaming normalizer matches one-shot normalization" {
             defer if (expected) |owned| allocator.free(owned);
             try std.testing.expectEqualStrings(
                 expected orelse input,
+                output.items,
+            );
+        }
+    }
+}
+
+test "streaming normalizer flushes complete segments in batches" {
+    const allocator = std.testing.allocator;
+    // Long enough that feeding crosses the internal flush threshold many
+    // times, with marks and jamo that must never be split across a flush.
+    const unit = "abc e\u{0301}\u{0323} \u{4e16}\u{754c} " ++
+        "\u{05e9}\u{05dc}\u{05d5}\u{05dd} \u{0645}\u{0631}\u{062d}\u{0628}\u{0627} " ++
+        "\u{1100}\u{1161}\u{11a8} \u{1f469}\u{200d}\u{1f4bb} ";
+    var input = std.ArrayList(u8).empty;
+    defer input.deinit(allocator);
+    while (input.items.len < 5 * 4096) {
+        try input.appendSlice(allocator, unit);
+    }
+    const chunk_sizes = [_]usize{ 1, 2, 3, 5, 7, 13, 64, 255, 4096, 4097 };
+    const forms = [_]Form{ .nfc, .nfd, .nfkc, .nfkd };
+    for (forms) |form| {
+        const expected = try normalizeFormAlloc(allocator, input.items, form);
+        defer if (expected) |owned| allocator.free(owned);
+        for (chunk_sizes) |chunk| {
+            var normalizer = Normalizer.init(allocator, form);
+            defer normalizer.deinit();
+            var output = std.ArrayList(u8).empty;
+            defer output.deinit(allocator);
+            var offset: usize = 0;
+            while (offset < input.items.len) {
+                var end = @min(offset + chunk, input.items.len);
+                while (end < input.items.len and
+                    (input.items[end] & 0xc0) == 0x80)
+                {
+                    end += 1;
+                }
+                try normalizer.feed(input.items[offset..end], &output);
+                offset = end;
+            }
+            try normalizer.finish(&output);
+            try std.testing.expectEqualStrings(
+                expected orelse input.items,
                 output.items,
             );
         }
