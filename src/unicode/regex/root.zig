@@ -64,8 +64,10 @@ pub const Regex = struct {
     pattern_text: []u8,
     /// Lowered regexz program when the pattern fits its exact subset. The
     /// lowering is deferred until the first matcher is created so compiling a
-    /// pattern does not pay for the second program.
-    backend: ?regexz_backend.Program = null,
+    /// pattern does not pay for the second program. The program is heap
+    /// allocated: inlining its several kilobytes would make every compile
+    /// clear that payload.
+    backend: ?*regexz_backend.Program = null,
     backend_lock: std.atomic.Mutex = .unlocked,
     backend_ready: std.atomic.Value(bool) = .init(false),
 
@@ -129,15 +131,20 @@ pub const Regex = struct {
         parsed.arena.deinit();
         allocator.free(parsed.names);
 
-        return .{
-            .allocator = allocator,
-            .program = program,
-            .sets = sets,
-            .names = names,
-            .group_count = parsed.group_count,
-            .flags = flags,
-            .pattern_text = pattern_text,
-        };
+        // Assign the fields directly: a struct literal zeroes the multi-
+        // kilobyte optional regexz backend payload on every compile.
+        var result: Regex = undefined;
+        result.allocator = allocator;
+        result.program = program;
+        result.sets = sets;
+        result.names = names;
+        result.group_count = parsed.group_count;
+        result.flags = flags;
+        result.pattern_text = pattern_text;
+        result.backend = null;
+        result.backend_lock = .unlocked;
+        result.backend_ready = .init(false);
+        return result;
     }
 
     /// Lower the regexz backend on first use.
@@ -149,7 +156,7 @@ pub const Regex = struct {
         self: *const Regex,
     ) Error!?*const regexz_backend.Program {
         if (self.backend_ready.load(.acquire)) {
-            return if (self.backend) |*program| program else null;
+            return self.backend;
         }
         const mutable = @constCast(self);
         while (!mutable.backend_lock.tryLock()) std.atomic.spinLoopHint();
@@ -167,17 +174,27 @@ pub const Regex = struct {
                 error.InvalidPattern => return null,
             };
             defer parsed.deinit(mutable.allocator);
-            mutable.backend = try regexz_backend.lower(
-                mutable.allocator,
-                &parsed,
-            );
+            if (try regexz_backend.lower(mutable.allocator, &parsed)) |value| {
+                var program = value;
+                const owned = mutable.allocator.create(
+                    regexz_backend.Program,
+                ) catch |err| {
+                    program.deinit();
+                    return err;
+                };
+                owned.* = program;
+                mutable.backend = owned;
+            }
             mutable.backend_ready.store(true, .release);
         }
-        return if (mutable.backend) |*program| program else null;
+        return mutable.backend;
     }
 
     pub fn deinit(self: *Regex) void {
-        if (self.backend) |*backend| backend.deinit();
+        if (self.backend) |backend| {
+            backend.deinit();
+            self.allocator.destroy(backend);
+        }
         self.program.deinit(self.allocator);
         for (self.sets) |*set| set.deinit();
         self.allocator.free(self.sets);
