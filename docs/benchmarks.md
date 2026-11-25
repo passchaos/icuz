@@ -57,7 +57,7 @@ where the reported unit is the UTF-8 input byte.
 | grapheme mixed | 2.121 | 7.336 | 3.46x |
 | word ASCII | 1.556 | 6.193 | 3.98x |
 | word mixed | 4.072 | 8.346 | 2.05x |
-| word Thai dictionary | 10.145 | 20.060 | 1.98x |
+| word Thai dictionary | 7.760 | 20.060 | 2.58x |
 | word CJK dictionary | 14.076 | 37.783 | 2.68x |
 | line break mixed | 2.501 | 3.366 | 1.35x |
 | line break ASCII | 2.727 | 4.277 | 1.57x |
