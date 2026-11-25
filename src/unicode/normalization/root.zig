@@ -1047,7 +1047,7 @@ fn normalizeFusedInto(
                     // Additional) reads a direct inertness table.
                     if (run_end + 2 >= text.len) break;
                     const second = text[run_end + 1];
-                    if ((second & 0xfc) == 0x84) break;
+                    if (jamo_run and (second & 0xfc) == 0x84) break;
                     const third = text[run_end + 2];
                     if (((second | third) & 0xc0) != 0x80) break;
                     const low: u12 = @intCast(
@@ -1065,7 +1065,8 @@ fn normalizeFusedInto(
                         const c0 = text[run_end + 2];
                         const b1 = text[run_end + 4];
                         const c1 = text[run_end + 5];
-                        if ((b0 & 0xfc) == 0x84 or (b1 & 0xfc) == 0x84) break;
+                        if (jamo_run and
+                            ((b0 & 0xfc) == 0x84 or (b1 & 0xfc) == 0x84)) break;
                         if (((b0 | c0 | b1 | c1) & 0xc0) != 0x80) break;
                         const low0: u12 = @intCast(
                             (@as(u32, b0 & 0x3f) << 6) | (c0 & 0x3f),
@@ -3908,7 +3909,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     // keep their dedicated scanner.
                     if (run_end + 2 >= text.len) break;
                     const second = text[run_end + 1];
-                    if ((second & 0xfc) == 0x84) break;
+                    if (jamo_run and (second & 0xfc) == 0x84) break;
                     const third = text[run_end + 2];
                     if (((second | third) & 0xc0) != 0x80) break;
                     const low: u12 = @intCast(
@@ -3924,7 +3925,8 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                         const c0 = text[run_end + 2];
                         const b1 = text[run_end + 4];
                         const c1 = text[run_end + 5];
-                        if ((b0 & 0xfc) == 0x84 or (b1 & 0xfc) == 0x84) break;
+                        if (jamo_run and
+                            ((b0 & 0xfc) == 0x84 or (b1 & 0xfc) == 0x84)) break;
                         if (((b0 | c0 | b1 | c1) & 0xc0) != 0x80) break;
                         const low0: u12 = @intCast(
                             (@as(u32, b0 & 0x3f) << 6) | (c0 & 0x3f),
