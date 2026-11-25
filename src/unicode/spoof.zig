@@ -900,11 +900,29 @@ fn bidiSkeletonImpl(
     return bidiSkeletonInner(allocator, text, direction);
 }
 
+/// True when a left-to-right paragraph reorders to itself: every byte is
+/// ASCII and none is Bidi_Mirrored.
+fn isAsciiUnmirrored(text: []const u8) bool {
+    for (text) |byte| {
+        if (byte >= 0x80) return false;
+        switch (byte) {
+            '(', ')', '<', '>', '[', ']', '{', '}' => return false,
+            else => {},
+        }
+    }
+    return true;
+}
+
 fn bidiSkeletonInner(
     allocator: std.mem.Allocator,
     text: []const u8,
     direction: bidi_paragraph.BaseDirection,
 ) Error![]u8 {
+    // Plain ASCII in an LTR paragraph reorders to itself, so the bidi pass
+    // and the mirroring copy can be skipped.
+    if (direction == .ltr and isAsciiUnmirrored(text)) {
+        return skeletonAlloc(allocator, text);
+    }
     var paragraph = try bidi_paragraph.resolve(allocator, text, direction);
     defer paragraph.deinit();
     const reordered = try paragraph.reorderAlloc(allocator, text, .{
