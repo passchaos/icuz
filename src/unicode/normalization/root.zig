@@ -3260,8 +3260,22 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
         const codepoint = scalar.packedCodepoint(decoded);
         index += scalar.packedLength(decoded);
         if (inert.isInert(codepoint, form)) {
-            starter = codepoint;
+            // Skip consecutive inert scalars in one pass; the dedicated CJK,
+            // kana, Hangul, and fullwidth scanners keep their own runs.
+            var run_end = index;
+            var run_codepoint = codepoint;
+            while (run_end < text.len) {
+                if (text[run_end] >= 0xe1 and text[run_end] <= 0xef) break;
+                const next_decoded = scalar.decodeValidatingPacked(text, run_end);
+                if (next_decoded == scalar.packed_invalid) break;
+                const next = scalar.packedCodepoint(next_decoded);
+                if (next < 0x80 or !inert.isInert(next, form)) break;
+                run_codepoint = next;
+                run_end += scalar.packedLength(next_decoded);
+            }
+            starter = run_codepoint;
             previous_input_class = 0;
+            index = run_end;
             continue;
         }
         const quick_check = data.quickCheck(codepoint, form);
@@ -3452,9 +3466,23 @@ fn spanQuickCheckYesImpl(
         const codepoint = scalar.packedCodepoint(decoded);
         index += scalar.packedLength(decoded);
         if (codepoint >= 0x80 and inert.isInert(codepoint, form)) {
-            starter = codepoint;
-            starter_offset = start;
+            var run_end = index;
+            var run_codepoint = codepoint;
+            var run_offset = start;
+            while (run_end < text.len) {
+                if (text[run_end] >= 0xe1 and text[run_end] <= 0xef) break;
+                const next_decoded = scalar.decodeValidatingPacked(text, run_end);
+                if (next_decoded == scalar.packed_invalid) break;
+                const next = scalar.packedCodepoint(next_decoded);
+                if (next < 0x80 or !inert.isInert(next, form)) break;
+                run_offset = run_end;
+                run_codepoint = next;
+                run_end += scalar.packedLength(next_decoded);
+            }
+            starter = run_codepoint;
+            starter_offset = run_offset;
             previous_input_class = 0;
+            index = run_end;
             continue;
         }
         const quick_check = data.quickCheck(codepoint, form);
