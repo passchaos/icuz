@@ -3566,8 +3566,50 @@ fn appendImplicitSortKey(
     const items = output.items.ptr;
     var index: usize = 0;
     if (all_han) {
-        // The pre-scan already classified every scalar, so the widenable
-        // constant-stride loop runs without range tests or run bookkeeping.
+        // The pre-scan already classified every scalar, so the constant-stride
+        // loop runs without range tests or run bookkeeping. Eight scalars at
+        // a time: the two weights per scalar interleave through one shuffle
+        // each, which the scalar loop paid a store per weight for.
+        const lanes = 8;
+        const Vec = @Vector(lanes, u32);
+        const interleave_low = comptime blk: {
+            var mask: [lanes]i32 = undefined;
+            for (0..lanes / 2) |pair| {
+                mask[pair * 2] = @intCast(pair);
+                mask[pair * 2 + 1] = ~@as(i32, @intCast(pair));
+            }
+            break :blk mask;
+        };
+        const interleave_high = comptime blk: {
+            var mask: [lanes]i32 = undefined;
+            for (0..lanes / 2) |pair| {
+                mask[pair * 2] = @intCast(lanes / 2 + pair);
+                mask[pair * 2 + 1] = ~@as(i32, @intCast(lanes / 2 + pair));
+            }
+            break :blk mask;
+        };
+        while (index + lanes <= count) : (index += lanes) {
+            const wide: Vec = codepoints[index..][0..lanes].*;
+            const first: Vec = (wide >> @as(Vec, @splat(15))) +
+                @as(Vec, @splat(0xFB40));
+            const second: Vec = (wide & @as(Vec, @splat(0x7fff))) |
+                @as(Vec, @splat(0x8000));
+            const high_primary = first << @as(Vec, @splat(12));
+            const high_secondary = second << @as(Vec, @splat(12));
+            items[length..][0..lanes].* = @shuffle(
+                u32,
+                high_primary,
+                high_secondary,
+                interleave_low,
+            );
+            items[length + lanes ..][0..lanes].* = @shuffle(
+                u32,
+                high_primary,
+                high_secondary,
+                interleave_high,
+            );
+            length += lanes * 2;
+        }
         while (index < count) : (index += 1) {
             const codepoint: u32 = codepoints[index];
             items[length] = (0xFB40 + (codepoint >> 15)) << 12;
