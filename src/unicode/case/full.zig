@@ -257,7 +257,8 @@ fn titleAsciiAlloc(
 ) error{OutOfMemory}![]u8 {
     const output = try allocator.alloc(u8, text.len);
     errdefer allocator.free(output);
-    var segments = word.segments(text) catch unreachable;
+    // `decodeAlloc` above already validated the text.
+    var segments = word.assumeValid(text);
     var emitted: usize = 0;
     while (segments.next()) |segment| {
         const start = segment.byte_start;
