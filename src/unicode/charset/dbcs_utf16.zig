@@ -69,7 +69,7 @@ pub fn dbcsToUtf16Into(
 }
 
 pub fn utf16ToDbcsInto(
-    comptime encode: fn (u21, *[4]u8) ?u8,
+    comptime encode: fn (u21, *[4]u8) u8,
     comptime endian: std.builtin.Endian,
     allocator: std.mem.Allocator,
     input: []const u8,
@@ -96,7 +96,8 @@ pub fn utf16ToDbcsInto(
             return false;
         }
         var buffer: [4]u8 = undefined;
-        const length = @call(.always_inline, encode, .{ codepoint, &buffer }) orelse return false;
+        const length = @call(.always_inline, encode, .{ codepoint, &buffer });
+        if (length == 0) return false;
         switch (length) {
             1 => spare[written] = buffer[0],
             2 => {

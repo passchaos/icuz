@@ -118,14 +118,14 @@ fn gbNext(input: []const u8, index: *usize, comptime gbk: bool) DecodeResult {
 }
 
 /// Encode one scalar for the GBK fast path. Returns the byte count (1 or
-/// 2), or null when the scalar needs the generic encoder (unmappable or
-/// the E5E5 special case).
-pub fn gbkEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
+/// 2), or 0 when the scalar needs the generic encoder (unmappable or the
+/// E5E5 special case).
+pub fn gbkEncodeFast(codepoint: u21, out: *[4]u8) u8 {
     if (codepoint < 0x80) {
         out[0] = @intCast(codepoint);
         return 1;
     }
-    if (codepoint == 0xE5E5) return null;
+    if (codepoint == 0xE5E5) return 0;
     if (codepoint == 0x20AC) {
         out[0] = 0x80;
         return 1;
@@ -135,14 +135,14 @@ pub fn gbkEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
         tables.gb18030_reverse,
         &tables.gb18030_reverse_pages,
         codepoint,
-    ) orelse return null;
+    ) orelse return 0;
     out[0] = @truncate(code >> 8);
     out[1] = @truncate(code);
     return 2;
 }
 
-/// Encode one scalar for the Big5 fast path.
-pub fn big5EncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
+/// Encode one scalar for the Big5 fast path. Returns 0 when unmappable.
+pub fn big5EncodeFast(codepoint: u21, out: *[4]u8) u8 {
     if (codepoint < 0x80) {
         out[0] = @intCast(codepoint);
         return 1;
@@ -159,14 +159,14 @@ pub fn big5EncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
         tables.big5_reverse,
         &tables.big5_reverse_pages,
         codepoint,
-    ) orelse return null;
+    ) orelse return 0;
     out[0] = @truncate(code >> 8);
     out[1] = @truncate(code);
     return 2;
 }
 
-/// Encode one scalar for the EUC-KR fast path.
-pub fn eucKrEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
+/// Encode one scalar for the EUC-KR fast path. Returns 0 when unmappable.
+pub fn eucKrEncodeFast(codepoint: u21, out: *[4]u8) u8 {
     if (codepoint < 0x80) {
         out[0] = @intCast(codepoint);
         return 1;
@@ -176,29 +176,36 @@ pub fn eucKrEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
         tables.euc_kr_reverse,
         &tables.euc_kr_reverse_pages,
         codepoint,
-    ) orelse return null;
+    ) orelse return 0;
     out[0] = @truncate(code >> 8);
     out[1] = @truncate(code);
     return 2;
 }
 
-/// Encode one scalar for the Shift_JIS fast path.
-pub fn shiftJisEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
-    if (codepoint < 0x80 or codepoint == 0x80) {
-        out[0] = @intCast(codepoint);
-        return 1;
-    }
-    if (codepoint == 0x00A5) {
-        out[0] = 0x5C;
-        return 1;
-    }
-    if (codepoint == 0x203E) {
-        out[0] = 0x7E;
-        return 1;
-    }
-    if (codepoint >= 0xFF61 and codepoint <= 0xFF9F) {
-        out[0] = @intCast(0xA1 + codepoint - 0xFF61);
-        return 1;
+/// Encode one scalar for the Shift_JIS fast path. Returns 0 when unmappable.
+pub fn shiftJisEncodeFast(codepoint: u21, out: *[4]u8) u8 {
+    // Japanese prose is overwhelmingly kana and CJK above U+2FFF, where
+    // halfwidth katakana is the only single-byte exception. Testing that
+    // range first keeps the three below-U+3000 special cases off the common
+    // path.
+    if (codepoint >= 0x3000) {
+        if (codepoint >= 0xFF61 and codepoint <= 0xFF9F) {
+            out[0] = @intCast(0xA1 + codepoint - 0xFF61);
+            return 1;
+        }
+    } else {
+        if (codepoint < 0x80 or codepoint == 0x80) {
+            out[0] = @intCast(codepoint);
+            return 1;
+        }
+        if (codepoint == 0x00A5) {
+            out[0] = 0x5C;
+            return 1;
+        }
+        if (codepoint == 0x203E) {
+            out[0] = 0x7E;
+            return 1;
+        }
     }
     const target: u21 = if (codepoint == 0x2212) 0xFF0D else codepoint;
     const code = tables.reverseLookupCached(
@@ -206,14 +213,14 @@ pub fn shiftJisEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
         tables.shift_jis_reverse,
         &tables.shift_jis_reverse_pages,
         target,
-    ) orelse return null;
+    ) orelse return 0;
     out[0] = @truncate(code >> 8);
     out[1] = @truncate(code);
     return 2;
 }
 
-/// Encode one scalar for the EUC-JP fast path.
-pub fn eucJpEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
+/// Encode one scalar for the EUC-JP fast path. Returns 0 when unmappable.
+pub fn eucJpEncodeFast(codepoint: u21, out: *[4]u8) u8 {
     if (codepoint < 0x80) {
         out[0] = @intCast(codepoint);
         return 1;
@@ -253,7 +260,7 @@ pub fn eucJpEncodeFast(codepoint: u21, out: *[4]u8) ?u8 {
         out[2] = @truncate(code);
         return 3;
     }
-    return null;
+    return 0;
 }
 
 pub fn gbkEncode(codepoint: u21, out: []u8) EncodeResult {
@@ -336,11 +343,11 @@ pub fn big5Encode(codepoint: u21, out: []u8) EncodeResult {
     };
     const code = special orelse
         tables.reverseLookupCached(
-        &big5_reverse_cache,
-        tables.big5_reverse,
-        &tables.big5_reverse_pages,
-        codepoint,
-    ) orelse
+            &big5_reverse_cache,
+            tables.big5_reverse,
+            &tables.big5_reverse_pages,
+            codepoint,
+        ) orelse
         return .unmappable;
     out[0] = @truncate(code >> 8);
     out[1] = @truncate(code);

@@ -1382,7 +1382,7 @@ fn writeReplacementFor(
 /// Fast path for well-formed UTF-8 text that a DBCS encoder can map.
 /// Returns null when the input needs the generic error handling.
 fn convertUtf8ToDbcsFast(
-    comptime encode: fn (u21, *[4]u8) ?u8,
+    comptime encode: fn (u21, *[4]u8) u8,
     allocator: std.mem.Allocator,
     input: []const u8,
 ) error{OutOfMemory}!?[]u8 {
@@ -1401,40 +1401,47 @@ fn convertUtf8ToDbcsFast(
                 index += 1;
                 continue;
             }
-            var codepoint: u21 = undefined;
-            if (first >= 0xC2 and first <= 0xDF) {
-                if (index + 2 > input.len) break :blk false;
-                const second = input[index + 1];
-                if (second < 0x80 or second > 0xBF) break :blk false;
-                codepoint = (@as(u21, first & 0x1F) << 6) |
-                    (second & 0x3F);
-                index += 2;
-            } else if (first >= 0xE0 and first <= 0xEF) {
-                if (index + 3 > input.len) break :blk false;
-                const second = input[index + 1];
-                const third = input[index + 2];
-                // One OR covers both continuation checks: the pair is valid
-                // only when both bytes have the 10xxxxxx shape.
-                if (((second | third) & 0xC0) != 0x80) break :blk false;
-                codepoint = (@as(u21, first & 0x0F) << 12) |
-                    (@as(u21, second & 0x3F) << 6) |
-                    (third & 0x3F);
-                if (codepoint < 0x800 or
-                    (codepoint >= 0xD800 and codepoint <= 0xDFFF))
-                {
-                    break :blk false;
+            // Each branch yields an immutable codepoint so the value stays in
+            // a register instead of a `var` stack slot.
+            const codepoint: u21 = decode: {
+                if (first < 0xE0) {
+                    if (first < 0xC2 or index + 2 > input.len) {
+                        break :blk false;
+                    }
+                    const second = input[index + 1];
+                    if (second < 0x80 or second > 0xBF) break :blk false;
+                    index += 2;
+                    break :decode (@as(u21, first & 0x1F) << 6) |
+                        (second & 0x3F);
                 }
-                index += 3;
-            } else {
+                if (first < 0xF0) {
+                    if (index + 3 > input.len) break :blk false;
+                    const second = input[index + 1];
+                    const third = input[index + 2];
+                    // One OR covers both continuation checks: the pair is
+                    // valid only when both bytes have the 10xxxxxx shape.
+                    if (((second | third) & 0xC0) != 0x80) break :blk false;
+                    const value = (@as(u21, first & 0x0F) << 12) |
+                        (@as(u21, second & 0x3F) << 6) |
+                        (third & 0x3F);
+                    if (value < 0x800 or
+                        (value >= 0xD800 and value <= 0xDFFF))
+                    {
+                        break :blk false;
+                    }
+                    index += 3;
+                    break :decode value;
+                }
                 break :blk false;
-            }
+            };
             // The reserved slack always leaves four writable bytes here, so
             // the encoder stores straight into the output and the length
             // switch and its byte copies disappear.
             const length = @call(.always_inline, encode, .{
                 codepoint,
                 spare[written..][0..4],
-            }) orelse break :blk false;
+            });
+            if (length == 0) break :blk false;
             written += length;
         }
         output.items.len = written;
