@@ -299,7 +299,6 @@ fn mapAlloc(
     allocator: std.mem.Allocator,
     text: []const u8,
 ) error{ InvalidUtf8, OutOfMemory }![]u8 {
-    if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
     // Both mappings send ASCII A-Z to lowercase and leave the rest unchanged;
     // ASCII is already NFC, so the whole pipeline collapses to a byte loop.
     if (isAscii(text)) {
