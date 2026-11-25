@@ -988,6 +988,10 @@ fn normalizeFusedInto(
             var run_end = index;
             var run_codepoint = codepoint;
             var run_offset = start;
+            // Class of the trailing run of simple marks, or zero when the
+            // last included scalar is inert. The starter stays the last
+            // inert scalar so a following mark orders against it correctly.
+            var mark_chain: u8 = 0;
             while (run_end < text.len) {
                 // Let the CJK, kana, Hangul, and fullwidth paths keep their
                 // dedicated run scanners. E1 (Georgian, Myanmar, Ethiopic)
@@ -1055,6 +1059,7 @@ fn normalizeFusedInto(
                         (@as(u32, text[run_end - 2] & 0x3f) << 6) |
                             (text[run_end - 1] & 0x3f),
                     )));
+                    mark_chain = 0;
                     continue;
                 }
                 if (lead < 0xe0) {
@@ -1067,6 +1072,7 @@ fn normalizeFusedInto(
                     run_offset = run_end;
                     run_codepoint = (@as(u21, lead & 0x1f) << 6) |
                         (second & 0x3f);
+                    mark_chain = 0;
                     run_end += 2;
                     continue;
                 }
@@ -1079,9 +1085,22 @@ fn normalizeFusedInto(
                     const offset = (@as(u32, second & 0x3f) << 6) |
                         (third & 0x3f);
                     const low: u11 = @intCast(offset - 0x800);
-                    if (!inert.e0Inert(low, form)) break;
-                    run_offset = run_end;
-                    run_codepoint = 0x800 + @as(u21, low);
+                    if (inert.e0Inert(low, form)) {
+                        run_offset = run_end;
+                        run_codepoint = 0x800 + @as(u21, low);
+                        mark_chain = 0;
+                        run_end += 3;
+                        continue;
+                    }
+                    // A simple mark neither decomposes nor composes, so it
+                    // can join the run verbatim as long as the marks stay in
+                    // canonical order. The starter remains the last inert
+                    // scalar, and `mark_chain` records the trailing class.
+                    const mark: u21 = 0x800 + @as(u21, low);
+                    if (data.quickCheck(mark, form) != .yes) break;
+                    const mark_class = combining_class.forCodepoint(mark);
+                    if (mark_class == 0 or mark_class < mark_chain) break;
+                    mark_chain = mark_class;
                     run_end += 3;
                     continue;
                 }
@@ -1091,11 +1110,12 @@ fn normalizeFusedInto(
                 if (!inert.isInert(next, form)) break;
                 run_offset = run_end;
                 run_codepoint = next;
+                mark_chain = 0;
                 run_end += scalar.packedLength(next_decoded);
             }
             starter = run_codepoint;
             starter_offset = run_offset;
-            previous_input_class = 0;
+            previous_input_class = mark_chain;
             index = run_end;
             continue;
         }
@@ -3575,6 +3595,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
             // kana, Hangul, and fullwidth scanners keep their own runs.
             var run_end = index;
             var run_codepoint = codepoint;
+            var mark_chain: u8 = 0;
             while (run_end < text.len) {
                 const lead = text[run_end];
                 if (lead >= 0xe3 and lead <= 0xef) break;
@@ -3586,6 +3607,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     if (!inert.twoByteInert(lead, second, form)) break;
                     run_codepoint = (@as(u21, lead & 0x1f) << 6) |
                         (second & 0x3f);
+                    mark_chain = 0;
                     run_end += 2;
                     continue;
                 }
@@ -3597,8 +3619,21 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     const offset = (@as(u32, second & 0x3f) << 6) |
                         (third & 0x3f);
                     const low: u11 = @intCast(offset - 0x800);
-                    if (!inert.e0Inert(low, form)) break;
-                    run_codepoint = 0x800 + @as(u21, low);
+                    if (inert.e0Inert(low, form)) {
+                        run_codepoint = 0x800 + @as(u21, low);
+                        mark_chain = 0;
+                        run_end += 3;
+                        continue;
+                    }
+                    // A simple mark neither decomposes nor composes, and a
+                    // non-decreasing class needs no reordering, so the text
+                    // stays normalized; the trailing class is kept for the
+                    // next scalar's order check.
+                    const mark: u21 = 0x800 + @as(u21, low);
+                    if (data.quickCheck(mark, form) != .yes) break;
+                    const mark_class = combining_class.forCodepoint(mark);
+                    if (mark_class == 0 or mark_class < mark_chain) break;
+                    mark_chain = mark_class;
                     run_end += 3;
                     continue;
                 }
@@ -3651,6 +3686,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                         (@as(u32, text[run_end - 2] & 0x3f) << 6) |
                             (text[run_end - 1] & 0x3f),
                     )));
+                    mark_chain = 0;
                     continue;
                 }
                 const next_decoded = scalar.decodeValidatingPacked(text, run_end);
@@ -3658,10 +3694,11 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                 const next = scalar.packedCodepoint(next_decoded);
                 if (!inert.isInert(next, form)) break;
                 run_codepoint = next;
+                mark_chain = 0;
                 run_end += scalar.packedLength(next_decoded);
             }
             starter = run_codepoint;
-            previous_input_class = 0;
+            previous_input_class = mark_chain;
             index = run_end;
             continue;
         }
@@ -4466,6 +4503,35 @@ test "inert runs cover E1 and E2 blocks" {
         "საქართველო ქართული",
         "საქართველო ქართული",
         .nfd,
+    );
+}
+
+test "Indic and Thai marks stay in inert runs" {
+    // A virama neither decomposes nor composes, so the whole cluster stays in
+    // one inert run instead of bouncing through the main dispatch.
+    try expectNormalized(
+        "\u{0915}\u{094d}\u{0937}\u{093f}",
+        "\u{0915}\u{094d}\u{0937}\u{093f}",
+    );
+    try expectNormalized(
+        "\u{0b95}\u{0bcd}\u{0bb7}",
+        "\u{0b95}\u{0bcd}\u{0bb7}",
+    );
+    try expectNormalized("\u{0915}\u{094d}", "\u{0915}\u{094d}");
+    // A lower-class mark after a higher-class one must leave the run and
+    // reorder against it.
+    try expectNormalized(
+        "\u{0e01}\u{0e48}\u{0e38}",
+        "\u{0e01}\u{0e38}\u{0e48}",
+    );
+    try expectNormalized(
+        "\u{0e01}\u{0e48}\u{0e38}\u{0e01}",
+        "\u{0e01}\u{0e38}\u{0e48}\u{0e01}",
+    );
+    // The nukta reorders before the virama and does not recompose with ka.
+    try expectNormalized(
+        "\u{0915}\u{094d}\u{093c}",
+        "\u{0915}\u{093c}\u{094d}",
     );
 }
 
