@@ -1217,6 +1217,47 @@ fn normalizeFusedInto(
                         run_codepoint = 0x800 + @as(u21, low);
                         mark_chain = 0;
                         run_end += 3;
+                        while (true) {
+                            while (run_end + 2 < text.len) {
+                                if (text[run_end] != 0xe0) break;
+                                const next_second = text[run_end + 1];
+                                const next_third = text[run_end + 2];
+                                if (next_second < 0xa0 or
+                                    (next_third & 0xc0) != 0x80) break;
+                                const next_offset =
+                                    (@as(u32, next_second & 0x3f) << 6) |
+                                    (next_third & 0x3f);
+                                const next_low: u11 = @intCast(
+                                    next_offset - 0x800,
+                                );
+                                if (!inert.e0Inert(next_low, form)) break;
+                                run_offset = run_end;
+                                run_codepoint = 0x800 + @as(u21, next_low);
+                                run_end += 3;
+                            }
+                            if (run_end + 4 <= text.len and
+                                text[run_end] == ' ' and
+                                text[run_end + 1] == 0xe0)
+                            {
+                                const next_second = text[run_end + 2];
+                                const next_third = text[run_end + 3];
+                                if (next_second < 0xa0 or
+                                    (next_third & 0xc0) != 0x80) break;
+                                const next_offset =
+                                    (@as(u32, next_second & 0x3f) << 6) |
+                                    (next_third & 0x3f);
+                                const next_low: u11 = @intCast(
+                                    next_offset - 0x800,
+                                );
+                                if (!inert.e0Inert(next_low, form)) break;
+                                run_offset = run_end + 1;
+                                run_codepoint = 0x800 + @as(u21, next_low);
+                                mark_chain = 0;
+                                run_end += 4;
+                                continue;
+                            }
+                            break;
+                        }
                         continue;
                     }
                     // A simple mark neither decomposes nor composes, so it
@@ -4003,6 +4044,45 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                         run_codepoint = 0x800 + @as(u21, low);
                         mark_chain = 0;
                         run_end += 3;
+                        while (true) {
+                            while (run_end + 2 < text.len) {
+                                if (text[run_end] != 0xe0) break;
+                                const next_second = text[run_end + 1];
+                                const next_third = text[run_end + 2];
+                                if (next_second < 0xa0 or
+                                    (next_third & 0xc0) != 0x80) break;
+                                const next_offset =
+                                    (@as(u32, next_second & 0x3f) << 6) |
+                                    (next_third & 0x3f);
+                                const next_low: u11 = @intCast(
+                                    next_offset - 0x800,
+                                );
+                                if (!inert.e0Inert(next_low, form)) break;
+                                run_codepoint = 0x800 + @as(u21, next_low);
+                                run_end += 3;
+                            }
+                            if (run_end + 4 <= text.len and
+                                text[run_end] == ' ' and
+                                text[run_end + 1] == 0xe0)
+                            {
+                                const next_second = text[run_end + 2];
+                                const next_third = text[run_end + 3];
+                                if (next_second < 0xa0 or
+                                    (next_third & 0xc0) != 0x80) break;
+                                const next_offset =
+                                    (@as(u32, next_second & 0x3f) << 6) |
+                                    (next_third & 0x3f);
+                                const next_low: u11 = @intCast(
+                                    next_offset - 0x800,
+                                );
+                                if (!inert.e0Inert(next_low, form)) break;
+                                run_codepoint = 0x800 + @as(u21, next_low);
+                                mark_chain = 0;
+                                run_end += 4;
+                                continue;
+                            }
+                            break;
+                        }
                         continue;
                     }
                     // A simple mark neither decomposes nor composes, and a
