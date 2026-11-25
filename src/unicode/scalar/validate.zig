@@ -97,20 +97,6 @@ inline fn windowValid(text: []const u8, offset: usize) bool {
         return true;
     }
 
-    const after: @Vector(1, u8) = @bitCast(text[offset + vector_len ..][0..1].*);
-
-    const next = @shuffle(
-        u8,
-        bytes,
-        after,
-        blk: {
-            var mask: [vector_len]i32 = undefined;
-            for (0..vector_len - 1) |lane| mask[lane] = @intCast(lane + 1);
-            mask[vector_len - 1] = ~@as(i32, 0);
-            break :blk mask;
-        },
-    );
-
     const mask_c0: V = @splat(0xc0);
     const mask_e0: V = @splat(0xe0);
     const mask_f0: V = @splat(0xf0);
@@ -131,25 +117,57 @@ inline fn windowValid(text: []const u8, offset: usize) bool {
     // bool vectors instead costs a lane permute per distance.
     const lead234: u32 = @bitCast(lead2 | lead3 | lead4);
     const lead34: u32 = @bitCast(lead3 | lead4);
-    const lead4_only: u32 = @bitCast(lead4);
-    var expected: u32 = (lead234 << 1) | (lead34 << 2) | (lead4_only << 3);
     // Lanes 0..2 still depend on the three bytes before the window.
     const carry1 = text[offset - 1];
     const carry2 = text[offset - 2];
     const carry3 = text[offset - 3];
+
+    // Accented Latin and every two-byte script fill most windows with ASCII
+    // and two-byte sequences. Those windows need no lookahead shuffle and
+    // none of the three- and four-byte range checks, so they take a compact
+    // branch of their own.
+    if (lead34 == 0) {
+        var expected: u32 = lead234 << 1;
+        if (carry1 >= 0xc2 and carry1 <= 0xf4) expected |= 1;
+        if (carry2 >= 0xe0 and carry2 <= 0xf4) expected |= 1;
+        if (carry3 >= 0xf0 and carry3 <= 0xf4) expected |= 1;
+        if (carry1 >= 0xe0 and carry1 <= 0xf4) expected |= 2;
+        if (carry2 >= 0xf0 and carry2 <= 0xf4) expected |= 2;
+        if (carry1 >= 0xf0 and carry1 <= 0xf4) expected |= 4;
+        if (@as(u32, @bitCast(is_cont)) != expected) return false;
+        // C0 and C1 encode overlongs, and F5..FF exceed U+10FFFF or are not
+        // leads at all.
+        const bad_lead = (bytes == @as(V, @splat(0xc0))) |
+            (bytes == @as(V, @splat(0xc1))) |
+            (bytes >= @as(V, @splat(0xf5)));
+        return !@reduce(.Or, bad_lead);
+    }
+
+    const after: @Vector(1, u8) = @bitCast(text[offset + vector_len ..][0..1].*);
+    const next = @shuffle(
+        u8,
+        bytes,
+        after,
+        blk: {
+            var mask: [vector_len]i32 = undefined;
+            for (0..vector_len - 1) |lane| mask[lane] = @intCast(lane + 1);
+            mask[vector_len - 1] = ~@as(i32, 0);
+            break :blk mask;
+        },
+    );
+
+    const lead4_only: u32 = @bitCast(lead4);
+    var expected: u32 = (lead234 << 1) | (lead34 << 2) | (lead4_only << 3);
     if (carry1 >= 0xc2 and carry1 <= 0xf4) expected |= 1;
     if (carry2 >= 0xe0 and carry2 <= 0xf4) expected |= 1;
     if (carry3 >= 0xf0 and carry3 <= 0xf4) expected |= 1;
     if (carry1 >= 0xe0 and carry1 <= 0xf4) expected |= 2;
     if (carry2 >= 0xf0 and carry2 <= 0xf4) expected |= 2;
     if (carry1 >= 0xf0 and carry1 <= 0xf4) expected |= 4;
-    const cont_mask: u32 = @bitCast(is_cont);
-    if (cont_mask != expected) return false;
+    if (@as(u32, @bitCast(is_cont)) != expected) return false;
 
-    // C0 and C1 encode overlongs, and F5..FF exceed U+10FFFF or are not
-    // leads at all. Only the second byte of a sequence needs a range check:
-    // E0 below A0, ED at A0 or above, F0 below 90, and F4 at 90 or above are
-    // invalid.
+    // Only the second byte of a sequence needs a range check: E0 below A0,
+    // ED at A0 or above, F0 below 90, and F4 at 90 or above are invalid.
     const bad_lead = (bytes == @as(V, @splat(0xc0))) |
         (bytes == @as(V, @splat(0xc1))) |
         (bytes >= @as(V, @splat(0xf5)));
@@ -252,6 +270,33 @@ test "vector validation matches the scalar validator" {
                 }
             }
         }
+    }
+}
+
+test "vector validation accepts long two-byte text" {
+    const testing = std.testing;
+    var buffer: [512]u8 = undefined;
+    // A mix of ASCII and two-byte sequences drives the window scan's
+    // two-byte-only branch.
+    const unit = "a\u{00e9}\u{00f6}\u{00fc} b\u{00e5}";
+    var length: usize = 0;
+    while (length + unit.len <= buffer.len) {
+        @memcpy(buffer[length..][0..unit.len], unit);
+        length += unit.len;
+    }
+    try testing.expect(isValid(buffer[0..length]));
+    try testing.expect(std.unicode.utf8ValidateSlice(buffer[0..length]));
+
+    // A truncated sequence at the end must fail.
+    buffer[length] = 0xc3;
+    try testing.expect(!isValid(buffer[0 .. length + 1]));
+
+    // Overlong two-byte leads and non-lead high bytes must fail inside the
+    // window scan as well.
+    buffer[length] = 'a';
+    for ([_]u8{ 0xc0, 0xc1, 0xf8, 0xff }) |bad| {
+        buffer[100] = bad;
+        try testing.expect(!isValid(buffer[0 .. length + 1]));
     }
 }
 
