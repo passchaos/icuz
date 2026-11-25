@@ -13,8 +13,9 @@ nanoseconds per input byte (or per operation) for the same operations.
   each row reports the minimum across rounds. Minimum-of-N is used because
   shared-machine load swings individual runs by 10-30%.
 - Snapshot: the numbers below were collected at commit `20d21cc`
-  (2026-11-26), with the Georgian row refreshed at `37c0931`. Re-run the
-  commands under "Reproduce" to refresh them.
+  (2026-11-26), with the Georgian row refreshed at `37c0931` and the
+  collation contract rows at `0de0c61`. Re-run the commands under
+  "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Swedish,
   German, Greek, Russian, and the conformance corpora.
@@ -143,9 +144,9 @@ fair counterpart is listed in the notes.
 | case fold mixed | 1.406 ns/B | 0.893 ns/B | icuz allocates the output; ICU writes into a caller buffer. Compare `case fold mixed (UTF-16)` at 0.709 ns/B (1.26x faster). |
 | lower mixed | 1.338 ns/B | 0.863 ns/B | Same allocation difference. Compare `lower mixed (UTF-16)` at 0.595 ns/B (1.45x faster). |
 | NFC jamo | 1.147 ns/B | 1.158 ns/B | Same allocation difference. Compare `NFC jamo (reuse)` at 0.975 ns/B (1.19x faster). |
-| UCA compare mixed | 58.107 ns/op | 48.419 ns/op | icuz validates UTF-8 input (ICU takes UTF-16, which needs no validation). Compare `UCA compare mixed (assume valid)` at 35.379 ns/op (1.37x faster). |
-| UCA compare mixed early | 54.880 ns/op | 8.812 ns/op | Same validation difference. Compare `UCA compare mixed early (assume valid)` at 4.011 ns/op (2.20x faster). |
-| UCA compare Chinese long | 1455.359 ns/op | 184.845 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 164.903 ns/op (1.12x faster). |
+| UCA compare mixed | 56.643 ns/op | 48.793 ns/op | icuz validates UTF-8 input (ICU takes UTF-16, which needs no validation). Compare `UCA compare mixed (assume valid)` at 35.379 ns/op (1.37x faster). |
+| UCA compare mixed early | 50.302 ns/op | 8.780 ns/op | Same validation difference. Compare `UCA compare mixed early (assume valid)` at 4.011 ns/op (2.20x faster). |
+| UCA compare Chinese long | 1319.426 ns/op | 187.232 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 164.903 ns/op (1.12x faster). |
 
 ## Georgian
 
