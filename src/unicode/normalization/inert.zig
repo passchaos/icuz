@@ -141,6 +141,29 @@ pub inline fn isInert(codepoint: u21, form: data.Form) bool {
         (@as(u8, 1) << @intCast(codepoint & 7)) != 0;
 }
 
+/// Flat inertness bitmap for the BMP, indexed by UTF-16 unit. UTF-16 scans
+/// test a unit with one load instead of the page slot plus mask pair.
+const bmp_masks: [4][1024]u64 = blk: {
+    @setEvalBranchQuota(1_000_000);
+    var table: [4][1024]u64 = [_][1024]u64{[_]u64{0} ** 1024} ** 4;
+    for (0..4) |form_index| {
+        const form: data.Form = @enumFromInt(form_index);
+        for (0..0x10000) |unit| {
+            if (isInert(@intCast(unit), form)) {
+                table[form_index][unit >> 6] |=
+                    @as(u64, 1) << @intCast(unit & 63);
+            }
+        }
+    }
+    break :blk table;
+};
+
+/// `isInert` for a BMP UTF-16 unit. Surrogates are decoded before this test.
+pub inline fn bmpInert(unit: u16, form: data.Form) bool {
+    return (bmp_masks[@intFromEnum(form)][unit >> 6] >>
+        @intCast(unit & 63)) & 1 != 0;
+}
+
 /// `isInert` for a validated two-byte sequence whose lead is 0xC2..0xDF.
 pub inline fn twoByteInert(lead: u8, second: u8, form: data.Form) bool {
     const row = lead - 0xc2;

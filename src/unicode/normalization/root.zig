@@ -2369,8 +2369,8 @@ fn normalizeFusedUtf16Into(
                     run_end += utf16.packedLength(next_decoded);
                     continue;
                 }
+                if (!inert.bmpInert(next_unit, form)) break;
                 const next: u21 = next_unit;
-                if (!inert.isInert(next, form)) break;
                 run_offset = run_end;
                 run_codepoint = next;
                 run_end += 1;
