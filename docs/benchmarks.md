@@ -110,7 +110,12 @@ where the reported unit is the UTF-8 input byte.
 | case-insensitive find | 0.732 us/scan | 1487.755 us/scan | 2032.45x |
 | required literal miss | 0.206 us/scan | 303023.997 us/scan | 1470990.28x |
 | literal matches | 5.801 ns/op | 20.137 ns/op | 3.47x |
-| compile literal | 1028.648 ns/op | 1298.909 ns/op | 1.26x |
+| compile literal | 333.221 ns/op | 1298.909 ns/op | 3.90x |
+| compile class | 701.649 ns/op | 3103.677 ns/op | 4.42x |
+| compile alternation | 492.783 ns/op | 1606.047 ns/op | 3.26x |
+| compile lookbehind | 519.542 ns/op | 1783.589 ns/op | 3.43x |
+| compile word boundary | 477.192 ns/op | 1471.432 ns/op | 3.08x |
+| compile word class | 810.124 ns/op | 4784.516 ns/op | 5.91x |
 
 ### Transliteration, shaping, spoofing, IDNA, formatting
 
