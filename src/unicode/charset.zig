@@ -2228,6 +2228,50 @@ fn utf16ToDbcsIntoFast(
     };
 }
 
+/// Fused UTF-16-to-GBK fast path. The generic converter encodes into a stack
+/// buffer and copies through a length switch per unit; GBK prose is BMP and
+/// mostly ASCII or two-byte codes, so encode straight into the output and
+/// pair adjacent ASCII units.
+fn gbkFromUtf16Into(
+    comptime endian: std.builtin.Endian,
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    output: *std.ArrayList(u8),
+) error{OutOfMemory}!bool {
+    // A BMP unit becomes at most two GBK bytes.
+    try output.ensureUnusedCapacity(allocator, input.len + 8);
+    const spare = output.unusedCapacitySlice();
+    var index: usize = 0;
+    var written: usize = 0;
+    while (index + 2 <= input.len) {
+        const unit = std.mem.readInt(u16, input[index..][0..2], endian);
+        index += 2;
+        if (unit < 0x80) {
+            if (index + 2 <= input.len) {
+                const next = std.mem.readInt(u16, input[index..][0..2], endian);
+                if (next < 0x80) {
+                    const pair: u16 = unit | (next << 8);
+                    std.mem.writeInt(u16, spare[written..][0..2], pair, .little);
+                    written += 2;
+                    index += 2;
+                    continue;
+                }
+            }
+            spare[written] = @intCast(unit);
+            written += 1;
+            continue;
+        }
+        // GBK has no supplementary mappings, so any surrogate is unmappable.
+        if (unit >= 0xD800 and unit <= 0xDFFF) return false;
+        const length = cjk.gbkEncodeFast(unit, spare[written..][0..4]);
+        if (length == 0) return false;
+        written += length;
+    }
+    if (index < input.len) return false;
+    output.items.len += written;
+    return true;
+}
+
 fn utf16ToDbcsIntoFastEndian(
     comptime endian: std.builtin.Endian,
     allocator: std.mem.Allocator,
@@ -2236,7 +2280,7 @@ fn utf16ToDbcsIntoFastEndian(
     output: *std.ArrayList(u8),
 ) error{OutOfMemory}!bool {
     return switch (to) {
-        .gbk => dbcs_utf16.utf16ToDbcsInto(cjk.gbkEncodeFast, endian, allocator, input, output),
+        .gbk => gbkFromUtf16Into(endian, allocator, input, output),
         .gb18030 => dbcs_utf16.utf16ToDbcsInto(cjk.gbkEncodeFast, endian, allocator, input, output),
         .big5 => dbcs_utf16.utf16ToDbcsInto(cjk.big5EncodeFast, endian, allocator, input, output),
         .euc_jp => dbcs_utf16.utf16ToDbcsInto(cjk.eucJpEncodeFast, endian, allocator, input, output),
