@@ -957,11 +957,26 @@ fn normalizeFusedInto(
             while (run_end < text.len) {
                 // Let the CJK, kana, Hangul, and fullwidth paths keep their
                 // dedicated run scanners.
-                if (text[run_end] >= 0xe1 and text[run_end] <= 0xef) break;
+                const lead = text[run_end];
+                if (lead >= 0xe1 and lead <= 0xef) break;
+                if (lead < 0x80) break;
+                if (lead < 0xe0) {
+                    // Two-byte scalars are common in Semitic prose and test
+                    // inertness with one table load.
+                    if (lead < 0xc2 or run_end + 1 >= text.len) break;
+                    const second = text[run_end + 1];
+                    if ((second & 0xc0) != 0x80) break;
+                    if (!inert.twoByteInert(lead, second, form)) break;
+                    run_offset = run_end;
+                    run_codepoint = (@as(u21, lead & 0x1f) << 6) |
+                        (second & 0x3f);
+                    run_end += 2;
+                    continue;
+                }
                 const next_decoded = scalar.decodeValidatingPacked(text, run_end);
                 if (next_decoded == scalar.packed_invalid) break;
                 const next = scalar.packedCodepoint(next_decoded);
-                if (next < 0x80 or !inert.isInert(next, form)) break;
+                if (!inert.isInert(next, form)) break;
                 run_offset = run_end;
                 run_codepoint = next;
                 run_end += scalar.packedLength(next_decoded);
@@ -3265,11 +3280,23 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
             var run_end = index;
             var run_codepoint = codepoint;
             while (run_end < text.len) {
-                if (text[run_end] >= 0xe1 and text[run_end] <= 0xef) break;
+                const lead = text[run_end];
+                if (lead >= 0xe1 and lead <= 0xef) break;
+                if (lead < 0x80) break;
+                if (lead < 0xe0) {
+                    if (lead < 0xc2 or run_end + 1 >= text.len) break;
+                    const second = text[run_end + 1];
+                    if ((second & 0xc0) != 0x80) break;
+                    if (!inert.twoByteInert(lead, second, form)) break;
+                    run_codepoint = (@as(u21, lead & 0x1f) << 6) |
+                        (second & 0x3f);
+                    run_end += 2;
+                    continue;
+                }
                 const next_decoded = scalar.decodeValidatingPacked(text, run_end);
                 if (next_decoded == scalar.packed_invalid) break;
                 const next = scalar.packedCodepoint(next_decoded);
-                if (next < 0x80 or !inert.isInert(next, form)) break;
+                if (!inert.isInert(next, form)) break;
                 run_codepoint = next;
                 run_end += scalar.packedLength(next_decoded);
             }
@@ -3470,11 +3497,24 @@ fn spanQuickCheckYesImpl(
             var run_codepoint = codepoint;
             var run_offset = start;
             while (run_end < text.len) {
-                if (text[run_end] >= 0xe1 and text[run_end] <= 0xef) break;
+                const lead = text[run_end];
+                if (lead >= 0xe1 and lead <= 0xef) break;
+                if (lead < 0x80) break;
+                if (lead < 0xe0) {
+                    if (lead < 0xc2 or run_end + 1 >= text.len) break;
+                    const second = text[run_end + 1];
+                    if ((second & 0xc0) != 0x80) break;
+                    if (!inert.twoByteInert(lead, second, form)) break;
+                    run_offset = run_end;
+                    run_codepoint = (@as(u21, lead & 0x1f) << 6) |
+                        (second & 0x3f);
+                    run_end += 2;
+                    continue;
+                }
                 const next_decoded = scalar.decodeValidatingPacked(text, run_end);
                 if (next_decoded == scalar.packed_invalid) break;
                 const next = scalar.packedCodepoint(next_decoded);
-                if (next < 0x80 or !inert.isInert(next, form)) break;
+                if (!inert.isInert(next, form)) break;
                 run_offset = run_end;
                 run_codepoint = next;
                 run_end += scalar.packedLength(next_decoded);

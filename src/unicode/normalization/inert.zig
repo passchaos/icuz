@@ -107,6 +107,29 @@ fn buildMasks() [masks_len]u8 {
 const slots = buildSlots();
 const masks = buildMasks();
 
+/// Inertness of two-byte scalars (U+0080..U+07FF), indexed by lead byte minus
+/// 0xC2 and the low six bits of the second byte. Hebrew, Arabic, and other
+/// two-byte prose can then test inertness with a single load.
+const two_byte_masks: [4][30]u64 = blk: {
+    @setEvalBranchQuota(400_000);
+    var table: [4][30]u64 = [_][30]u64{[_]u64{0} ** 30} ** 4;
+    for (0..4) |form_index| {
+        const form: data.Form = @enumFromInt(form_index);
+        for (0xc2..0xe0) |lead| {
+            for (0x80..0xc0) |second| {
+                const codepoint: u21 = @intCast(
+                    (@as(u21, lead & 0x1f) << 6) | (second & 0x3f),
+                );
+                if (isInert(codepoint, form)) {
+                    table[form_index][lead - 0xc2] |=
+                        @as(u64, 1) << @intCast(second & 0x3f);
+                }
+            }
+        }
+    }
+    break :blk table;
+};
+
 /// True when `form` leaves the scalar unchanged and it cannot compose with a
 /// previous starter, so a normalization scan can treat it as a plain starter.
 pub inline fn isInert(codepoint: u21, form: data.Form) bool {
@@ -116,6 +139,13 @@ pub inline fn isInert(codepoint: u21, form: data.Form) bool {
     const base = @as(usize, slot) * 32;
     return masks[base + ((codepoint & 0xff) >> 3)] &
         (@as(u8, 1) << @intCast(codepoint & 7)) != 0;
+}
+
+/// `isInert` for a validated two-byte sequence whose lead is 0xC2..0xDF.
+pub inline fn twoByteInert(lead: u8, second: u8, form: data.Form) bool {
+    const row = lead - 0xc2;
+    return (two_byte_masks[@intFromEnum(form)][row] >>
+        @intCast(second & 0x3f)) & 1 != 0;
 }
 
 test "inert tables follow each normalization form" {
