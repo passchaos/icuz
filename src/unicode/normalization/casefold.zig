@@ -109,6 +109,29 @@ fn buildRemovalCoverage(
     return covered;
 }
 
+/// Mapping record for each two-byte scalar (U+0080..U+07FF), indexed by lead
+/// byte minus 0xC2 and the low six bits of the second byte. Greek, Cyrillic,
+/// and other two-byte prose then maps with one table load.
+fn buildTwoByteMap(
+    comptime blob: []const u8,
+    comptime mapping_count: u32,
+    comptime mapping_offset: u32,
+) [30][64]u16 {
+    @setEvalBranchQuota(400_000);
+    var map: [30][64]u16 = [_][64]u16{[_]u16{0xffff} ** 64} ** 30;
+    for (0..mapping_count) |record| {
+        const codepoint = readU32(
+            blob,
+            mapping_offset + record * mapping_record_len,
+        );
+        if (codepoint < 0x80 or codepoint >= 0x800) continue;
+        const lead: usize = @intCast((0xc0 | (codepoint >> 6)) - 0xc2);
+        const second: usize = @intCast(codepoint & 0x3f);
+        map[lead][second] = @intCast(record);
+    }
+    return map;
+}
+
 const Table = struct {
     blob: []const u8,
     mapping_count: u32,
@@ -118,6 +141,7 @@ const Table = struct {
     removal_offset: u32,
     pool_offset: u32,
     mapping: MappingIndex,
+    two_byte_map: [30][64]u16,
     removal_pages: [page_count + 1]u16,
     removal_covered: [page_count]bool,
 
@@ -173,6 +197,11 @@ const Table = struct {
                 readU32(blob, 8),
                 readU32(blob, 20),
             ),
+            .two_byte_map = buildTwoByteMap(
+                blob,
+                readU32(blob, 8),
+                readU32(blob, 20),
+            ),
             .removal_pages = buildRemovalPages(
                 blob,
                 readU32(blob, 12),
@@ -203,6 +232,11 @@ const Table = struct {
             }
         }
         if (!self.removal_covered[page]) return null;
+        return if (self.removalMatches(codepoint, page)) .remove else null;
+    }
+
+    /// True when `codepoint` falls inside a default-ignorable removal range.
+    fn removalMatches(self: *const Table, codepoint: u21, page: usize) bool {
         var low: usize = self.removal_pages[page];
         // The range that ends past this page may start inside it, so include
         // one record beyond the page boundary.
@@ -218,15 +252,10 @@ const Table = struct {
                 high = middle;
             }
         }
-        if (low < removal_end) {
-            const record = self.removal_offset + low * removal_record_len;
-            if (readU32(self.blob, record) <= codepoint and
-                codepoint <= readU32(self.blob, record + 4))
-            {
-                return .remove;
-            }
-        }
-        return null;
+        if (low >= removal_end) return false;
+        const record = self.removal_offset + low * removal_record_len;
+        return readU32(self.blob, record) <= codepoint and
+            codepoint <= readU32(self.blob, record + 4);
     }
 
     fn targetCodepoint(self: *const Table, offset: u32, index: usize) u21 {
@@ -306,6 +335,64 @@ fn mapAlloc(
             index = end;
             pending = index;
             continue;
+        }
+        if (text[index] < 0xe0) {
+            const lead = text[index];
+            if (lead >= 0xc2 and index + 1 < text.len) {
+                const second = text[index + 1];
+                if ((second & 0xc0) == 0x80) {
+                    const record_index = table.two_byte_map[lead - 0xc2][
+                        @intCast(second & 0x3f)
+                    ];
+                    if (record_index != 0xffff) {
+                        if (pending < index) {
+                            try output.appendSlice(
+                                allocator,
+                                text[pending..index],
+                            );
+                        }
+                        index += 2;
+                        const record = table.mapping_offset +
+                            @as(usize, record_index) * mapping_record_len;
+                        const target_offset = readU32(table.blob, record + 4);
+                        const target_length = readU16(table.blob, record + 8);
+                        for (0..target_length) |target_index| {
+                            if (output.unusedCapacitySlice().len < 4) {
+                                try output.ensureUnusedCapacity(allocator, 4);
+                            }
+                            const dest = output.unusedCapacitySlice();
+                            const written = scalar.encodeUtf8(
+                                dest,
+                                table.targetCodepoint(
+                                    target_offset,
+                                    target_index,
+                                ),
+                            );
+                            output.items.len += written;
+                        }
+                        pending = index;
+                        continue;
+                    }
+                    const codepoint = (@as(u21, lead & 0x1f) << 6) |
+                        (second & 0x3f);
+                    const page: usize = @intCast(codepoint >> 8);
+                    if (table.removal_covered[page] and
+                        table.removalMatches(codepoint, page))
+                    {
+                        if (pending < index) {
+                            try output.appendSlice(
+                                allocator,
+                                text[pending..index],
+                            );
+                        }
+                        index += 2;
+                        pending = index;
+                        continue;
+                    }
+                    index += 2;
+                    continue;
+                }
+            }
         }
         // CJK ideographs occupy pages with no mapping or removal records and
         // cannot be overlong, so their three bytes validate with two checks.
