@@ -130,6 +130,14 @@ pub const Iterator = struct {
                     continue;
                 }
             }
+            // WB999 breaks between two Other-class scalars, and no rule
+            // between WB3 and WB16 mentions Other, so CJK, emoji, Indic, and
+            // symbol pairs end the segment without the rule chain.
+            if (previous_properties.class == .other and
+                current_properties.class == .other)
+            {
+                break;
+            }
             if (breaksAt(
                 self.text,
                 end,
