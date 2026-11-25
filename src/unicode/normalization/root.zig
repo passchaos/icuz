@@ -104,29 +104,39 @@ inline fn isInertCjkPunctuation(unit: u21) bool {
         (unit >= 0xff00 and unit <= 0xffef);
 }
 
+/// Bitmaps of the Hiragana/Katakana scalars that `form` leaves unchanged and
+/// that cannot compose with a preceding starter, indexed by the second byte
+/// (0x81..0x83) and the low six bits of the third.
+const kana_inert_masks: [4][3]u64 = blk: {
+    @setEvalBranchQuota(200_000);
+    var masks: [4][3]u64 = [_][3]u64{[_]u64{0} ** 3} ** 4;
+    for (0..4) |form_index| {
+        const form: Form = @enumFromInt(form_index);
+        for (0x3040..0x3100) |codepoint| {
+            const value: u21 = @intCast(codepoint);
+            if (data.quickCheck(value, form) != .yes) continue;
+            if (combining_class.forCodepoint(value) != 0) continue;
+            const row = ((codepoint >> 6) & 0x3) - 1;
+            const bit = codepoint & 0x3f;
+            masks[form_index][row] |= @as(u64, 1) << @intCast(bit);
+        }
+    }
+    break :blk masks;
+};
+
 /// True when the three bytes at `offset` encode a Hiragana or Katakana
 /// scalar that `form` leaves unchanged and that cannot compose with a
-/// preceding starter. The decomposed forms split the dakuten kana, so only
-/// the composed forms have inert kana runs.
+/// preceding starter. The decomposed forms split the dakuten kana, so their
+/// runs stop at those scalars.
 inline fn kanaInertAt(text: []const u8, offset: usize, form: Form) bool {
     if (offset + 3 > text.len or text[offset] != 0xe3) return false;
     const second = text[offset + 1];
     if (second < 0x81 or second > 0x83) return false;
     const third = text[offset + 2];
     if (third & 0xc0 != 0x80) return false;
-    if (second == 0x82) {
-        // U+3099/U+309A are combining marks; the compatibility forms also
-        // decompose the spacing marks U+309B, U+309C, and U+309F.
-        if (third == 0x99 or third == 0x9a) return false;
-        if (form == .nfkc and
-            (third == 0x9b or third == 0x9c or third == 0x9f))
-        {
-            return false;
-        }
-    }
-    // U+30FF decomposes under the compatibility forms.
-    if (form == .nfkc and second == 0x83 and third == 0xbf) return false;
-    return true;
+    const row = second - 0x81;
+    return (kana_inert_masks[@intFromEnum(form)][row] >>
+        @intCast(third & 0x3f)) & 1 != 0;
 }
 
 /// Scan a run of Hiragana/Katakana scalars that `form` leaves unchanged.
@@ -149,6 +159,39 @@ inline fn scanKanaRun(text: []const u8, start: usize, form: Form) ScanRun {
             (text[end - 1] & 0x3f),
         .last_offset = end - 3,
     };
+}
+
+/// Canonical decomposition of a Hiragana/Katakana scalar that splits into a
+/// base scalar and a dakuten or handakuten mark.
+const KanaDecomposition = struct {
+    base: u16 = 0,
+    mark: u16 = 0,
+};
+
+const kana_decompositions: [0xc0]KanaDecomposition = blk: {
+    @setEvalBranchQuota(200_000);
+    var table: [0xc0]KanaDecomposition = [_]KanaDecomposition{.{}} ** 0xc0;
+    for (0x3040..0x3100) |codepoint| {
+        const mapping = decomposition.forCodepoint(@intCast(codepoint)) orelse
+            continue;
+        if (mapping.len != 2) continue;
+        if (mapping[1] != 0x3099 and mapping[1] != 0x309a) continue;
+        table[codepoint - 0x3040] = .{
+            .base = @intCast(mapping[0]),
+            .mark = @intCast(mapping[1]),
+        };
+    }
+    break :blk table;
+};
+
+/// True when the scalar at `offset` ends the current mark sequence: the text
+/// ends, the scalar is ASCII, or its combining class is zero.
+fn nextIsStarterOrEnd(text: []const u8, offset: usize) bool {
+    if (offset >= text.len) return true;
+    if (text[offset] < 0x80) return true;
+    const decoded = scalar.decodeValidatingPacked(text, offset);
+    if (decoded == scalar.packed_invalid) return true;
+    return combining_class.forCodepoint(scalar.packedCodepoint(decoded)) == 0;
 }
 
 /// True when a precomposed Hangul syllable, or an unassigned scalar in the
@@ -559,9 +602,7 @@ fn normalizeFusedInto(
         }
         if ((cjk_lead_simple and
             ((text[index] >= 0xe4 and text[index] <= 0xe9) or
-                (compose and text[index] == 0xe3 and
-                    index + 1 < text.len and
-                    text[index + 1] >= 0x81 and text[index + 1] <= 0x83))) or
+                kanaInertAt(text, index, form))) or
             (!compatibility and text[index] == 0xef and
                 index + 1 < text.len and
                 text[index + 1] >= 0xbc and text[index + 1] <= 0xbf))
@@ -592,7 +633,7 @@ fn normalizeFusedInto(
                     cursor += 3;
                     continue;
                 }
-                if (compose and cursor < text.len and text[cursor] == 0xe3) {
+                if (cursor < text.len and text[cursor] == 0xe3) {
                     const run = scanKanaRun(text, cursor, form);
                     if (run.end > cursor) {
                         cursor = run.end;
@@ -639,6 +680,47 @@ fn normalizeFusedInto(
                 previous_input_class = 0;
                 index = run.end;
                 continue;
+            }
+        }
+        if (form == .nfd and previous_input_class == 0 and
+            text[index] == 0xe3 and index + 3 <= text.len and
+            (text[index + 1] & 0xc0) == 0x80 and
+            (text[index + 2] & 0xc0) == 0x80)
+        {
+            // A voiced or semi-voiced kana starts its own segment, and its
+            // canonical decomposition is a base scalar plus a sound mark.
+            // Emit that pair directly when no combining mark follows, which
+            // would otherwise reorder against the mark.
+            const codepoint = (@as(u21, text[index] & 0x0f) << 12) |
+                (@as(u21, text[index + 1] & 0x3f) << 6) |
+                (text[index + 2] & 0x3f);
+            if (codepoint >= 0x3040 and codepoint <= 0x30ff) {
+                const entry = kana_decompositions[codepoint - 0x3040];
+                if (entry.mark != 0 and
+                    nextIsStarterOrEnd(text, index + 3))
+                {
+                    if (!changed) {
+                        try output.ensureTotalCapacityPrecise(
+                            allocator,
+                            text.len,
+                        );
+                        changed = true;
+                    }
+                    if (index > stable_start) {
+                        try appendBytes(
+                            allocator,
+                            output,
+                            text[stable_start..index],
+                        );
+                    }
+                    try engine.sink.appendKana(entry.base, entry.mark);
+                    stable_start = index + 3;
+                    index += 3;
+                    starter = null;
+                    starter_offset = index;
+                    previous_input_class = 0;
+                    continue;
+                }
             }
         }
         // CJK punctuation and fullwidth forms are inert under the canonical
@@ -1171,6 +1253,30 @@ const Utf8Sink = struct {
             dest[offset + 1] = @intCast(0x80 | ((part >> 6) & 0x3f));
             dest[offset + 2] = @intCast(0x80 | (part & 0x3f));
         }
+        self.list.items.len += needed;
+    }
+
+    fn appendKana(
+        self: *Utf8Sink,
+        base: u21,
+        mark: u21,
+    ) error{OutOfMemory}!void {
+        // A decomposed kana is a three-byte base scalar plus a three-byte
+        // sound mark, so the size is fixed.
+        const needed = 6;
+        if (self.list.unusedCapacitySlice().len < needed) {
+            try self.list.ensureTotalCapacityPrecise(
+                self.allocator,
+                self.list.items.len + needed,
+            );
+        }
+        const dest = self.list.unusedCapacitySlice();
+        dest[0] = @intCast(0xe0 | (base >> 12));
+        dest[1] = @intCast(0x80 | ((base >> 6) & 0x3f));
+        dest[2] = @intCast(0x80 | (base & 0x3f));
+        dest[3] = @intCast(0xe0 | (mark >> 12));
+        dest[4] = @intCast(0x80 | ((mark >> 6) & 0x3f));
+        dest[5] = @intCast(0x80 | (mark & 0x3f));
         self.list.items.len += needed;
     }
 
@@ -2835,7 +2941,6 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
     const latin1_mode = latin1_mode_by_form[@intFromEnum(form)];
     const latin1_mask = &latin1_inert_by_form[@intFromEnum(form)];
     const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
-    const kana_run = form == .nfc or form == .nfkc;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
     var previous_input_class: u8 = 0;
     var index: usize = ascii_end;
@@ -2879,9 +2984,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
         const canonical = form == .nfc or form == .nfd;
         if ((cjk_lead_simple and
             ((text[index] >= 0xe4 and text[index] <= 0xe9) or
-                (kana_run and text[index] == 0xe3 and
-                    index + 1 < text.len and
-                    text[index + 1] >= 0x81 and text[index + 1] <= 0x83))) or
+                kanaInertAt(text, index, form))) or
             (canonical and text[index] == 0xef and
                 index + 1 < text.len and
                 text[index + 1] >= 0xbc and text[index + 1] <= 0xbf))
@@ -2908,7 +3011,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     cursor += 3;
                     continue;
                 }
-                if (kana_run and cursor < text.len and text[cursor] == 0xe3) {
+                if (cursor < text.len and text[cursor] == 0xe3) {
                     const run = scanKanaRun(text, cursor, form);
                     if (run.end > cursor) {
                         cursor = run.end;
@@ -2947,7 +3050,9 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                 continue;
             }
         }
-        if (kana_run and text[index] >= 0xea and text[index] <= 0xed) {
+        if ((form == .nfc or form == .nfkc) and
+            text[index] >= 0xea and text[index] <= 0xed)
+        {
             const run = scanHangulRun(text, index);
             if (run.end > index) {
                 starter = run.last_codepoint;
@@ -3048,7 +3153,6 @@ fn spanQuickCheckYesImpl(
     const latin1_mode = latin1_mode_by_form[@intFromEnum(form)];
     const latin1_mask = &latin1_inert_by_form[@intFromEnum(form)];
     const jamo_run = jamo_run_inert_by_form[@intFromEnum(form)];
-    const kana_run = form == .nfc or form == .nfkc;
     const canonical = form == .nfc or form == .nfd;
     var starter_offset: usize = if (ascii_end > 0) ascii_end - 1 else 0;
     var starter: ?u21 = if (ascii_end > 0) text[ascii_end - 1] else null;
@@ -3094,9 +3198,7 @@ fn spanQuickCheckYesImpl(
         }
         if ((cjk_lead_simple and
             ((text[index] >= 0xe4 and text[index] <= 0xe9) or
-                (kana_run and text[index] == 0xe3 and
-                    index + 1 < text.len and
-                    text[index + 1] >= 0x81 and text[index + 1] <= 0x83))) or
+                kanaInertAt(text, index, form))) or
             (canonical and text[index] == 0xef and
                 index + 1 < text.len and
                 text[index + 1] >= 0xbc and text[index + 1] <= 0xbf))
@@ -3124,7 +3226,7 @@ fn spanQuickCheckYesImpl(
                     cursor += 3;
                     continue;
                 }
-                if (kana_run and cursor < text.len and text[cursor] == 0xe3) {
+                if (cursor < text.len and text[cursor] == 0xe3) {
                     const run = scanKanaRun(text, cursor, form);
                     if (run.end > cursor) {
                         cursor = run.end;
@@ -3160,7 +3262,9 @@ fn spanQuickCheckYesImpl(
                 continue;
             }
         }
-        if (kana_run and text[index] >= 0xea and text[index] <= 0xed) {
+        if ((form == .nfc or form == .nfkc) and
+            text[index] >= 0xea and text[index] <= 0xed)
+        {
             const run = scanHangulRun(text, index);
             if (run.end > index) {
                 starter = run.last_codepoint;
