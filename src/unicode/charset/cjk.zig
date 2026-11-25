@@ -189,6 +189,24 @@ pub fn shiftJisEncodeFast(codepoint: u21, out: *[4]u8) u8 {
     // range first keeps the three below-U+3000 special cases off the common
     // path.
     if (codepoint >= 0x3000) {
+        // Hiragana and katakana occupy contiguous JIS X 0208 rows, so their
+        // Shift_JIS codes are linear in the code point (katakana skips one
+        // unassigned cell at U+30E0). The generic reverse lookup is reserved
+        // for kanji and punctuation.
+        if (codepoint >= 0x3041 and codepoint <= 0x3093) {
+            const code: u16 = 0x829F + @as(u16, @intCast(codepoint - 0x3041));
+            out[0] = @truncate(code >> 8);
+            out[1] = @truncate(code);
+            return 2;
+        }
+        if (codepoint >= 0x30A1 and codepoint <= 0x30F6) {
+            const code: u16 = 0x8340 +
+                @as(u16, @intCast(codepoint - 0x30A1)) +
+                @as(u16, @intFromBool(codepoint >= 0x30E0));
+            out[0] = @truncate(code >> 8);
+            out[1] = @truncate(code);
+            return 2;
+        }
         if (codepoint >= 0xFF61 and codepoint <= 0xFF9F) {
             out[0] = @intCast(0xA1 + codepoint - 0xFF61);
             return 1;
@@ -224,6 +242,20 @@ pub fn eucJpEncodeFast(codepoint: u21, out: *[4]u8) u8 {
     if (codepoint < 0x80) {
         out[0] = @intCast(codepoint);
         return 1;
+    }
+    // Hiragana and katakana occupy contiguous JIS X 0208 rows, so their
+    // EUC-JP codes are linear in the code point.
+    if (codepoint >= 0x3041 and codepoint <= 0x3093) {
+        const code: u16 = 0xA4A1 + @as(u16, @intCast(codepoint - 0x3041));
+        out[0] = @truncate(code >> 8);
+        out[1] = @truncate(code);
+        return 2;
+    }
+    if (codepoint >= 0x30A1 and codepoint <= 0x30F6) {
+        const code: u16 = 0xA5A1 + @as(u16, @intCast(codepoint - 0x30A1));
+        out[0] = @truncate(code >> 8);
+        out[1] = @truncate(code);
+        return 2;
     }
     if (codepoint == 0x00A5) {
         out[0] = 0x5C;
