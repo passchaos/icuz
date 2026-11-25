@@ -114,12 +114,13 @@ pub fn decodeInto(
     while (index < input.len) {
         if (ascii_runs and input[index] < 0x80) {
             var end = index;
-            while (end + 32 <= input.len) {
-                const chunk: @Vector(32, u8) = input[end..][0..32].*;
-                if (@reduce(.Or, chunk >= @as(@Vector(32, u8), @splat(0x80)))) {
-                    break;
-                }
-                end += 32;
+            // Real prose interleaves short ASCII runs with accented scalars,
+            // so eight-byte words keep the scan cheap for both short and long
+            // runs.
+            while (end + 8 <= input.len) {
+                const word = std.mem.readInt(u64, input[end..][0..8], .little);
+                if (word & 0x8080_8080_8080_8080 != 0) break;
+                end += 8;
             }
             while (end < input.len and input[end] < 0x80) end += 1;
             const count = end - index;
