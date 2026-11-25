@@ -1401,6 +1401,49 @@ fn convertUtf8ToDbcsFast(
                 index += 1;
                 continue;
             }
+            // Two adjacent three-byte sequences cover CJK prose, which
+            // dominates DBCS conversion. Validate and decode them together so
+            // the bounds, lead, and continuation tests amortize.
+            if (first >= 0xE0 and first < 0xF0 and index + 6 <= input.len) {
+                const fourth = input[index + 3];
+                if (fourth >= 0xE0 and fourth < 0xF0) {
+                    const second = input[index + 1];
+                    const third = input[index + 2];
+                    const fifth = input[index + 4];
+                    const sixth = input[index + 5];
+                    if (((second | third | fifth | sixth) & 0xC0) == 0x80) {
+                        const first_value =
+                            (@as(u21, first & 0x0F) << 12) |
+                            (@as(u21, second & 0x3F) << 6) |
+                            (third & 0x3F);
+                        const second_value =
+                            (@as(u21, fourth & 0x0F) << 12) |
+                            (@as(u21, fifth & 0x3F) << 6) |
+                            (sixth & 0x3F);
+                        if (first_value >= 0x800 and second_value >= 0x800 and
+                            (first_value & 0xF800) != 0xD800 and
+                            (second_value & 0xF800) != 0xD800)
+                        {
+                            const first_length = @call(.always_inline, encode, .{
+                                first_value,
+                                spare[written..][0..4],
+                            });
+                            if (first_length != 0) {
+                                const second_length = @call(.always_inline, encode, .{
+                                    second_value,
+                                    spare[written + first_length ..][0..4],
+                                });
+                                if (second_length != 0) {
+                                    written += first_length + second_length;
+                                    index += 6;
+                                    continue;
+                                }
+                            }
+                            break :blk false;
+                        }
+                    }
+                }
+            }
             // Each branch yields an immutable codepoint so the value stays in
             // a register instead of a `var` stack slot.
             const codepoint: u21 = decode: {
