@@ -3458,12 +3458,9 @@ fn appendLatinSortKey(
     strength: Strength,
 ) error{OutOfMemory}!bool {
     if (!latin_elements.usable) return false;
-    var all_ascii = true;
-    for (codepoints) |codepoint| {
-        if (codepoint >= latin_limit) return false;
-        if (codepoint >= 0x80) all_ascii = false;
-    }
-
+    // The normalizer below rejects non-Latin scalars, so only the ASCII
+    // question needs a scan of its own.
+    const all_ascii = allAsciiCodepoints(codepoints);
     if (all_ascii and ascii_usable) {
         try appendAsciiSortKey(allocator, output, codepoints, strength);
         return true;
@@ -3475,20 +3472,16 @@ fn appendLatinSortKey(
     else
         normalizeNfdLatinInto(&buffer, codepoints) orelse return false;
 
-    // `L`/`l` + U+00B7 is a root contraction; use the general path for it.
-    for (source, 0..) |codepoint, index| {
-        if ((codepoint == 'L' or codepoint == 'l') and
-            index + 1 < source.len and source[index + 1] == 0xb7)
-        {
-            return false;
-        }
-    }
-
-    if (try appendLatinLevels(allocator, output, source, strength)) {
-        if (strength == .identical) {
-            try appendIdenticalLevel(allocator, output, codepoints);
-        }
-        return true;
+    switch (try appendLatinLevels(allocator, output, source, strength)) {
+        .written => {
+            if (strength == .identical) {
+                try appendIdenticalLevel(allocator, output, codepoints);
+            }
+            return true;
+        },
+        // `L`/`l` + U+00B7 is a root contraction; use the general path.
+        .contraction => return false,
+        .overflow => {},
     }
     try output.ensureTotalCapacity(allocator, source.len * 9 + 8);
     try appendLatinLevel(allocator, output, source, .primary);
@@ -4050,15 +4043,25 @@ fn appendIdenticalLevel(
     try output.append(allocator, 0);
 }
 
-/// Emit all requested levels from one pass over the source. Returns false
-/// when the stack level buffers overflow, so the caller can use the
-/// multi-pass path.
+/// Outcome of the fused Latin level emission.
+const LatinLevelsOutcome = enum {
+    written,
+    /// A stack level buffer filled; the caller can retry multi-pass.
+    overflow,
+    /// The source contains a root contraction the level table cannot
+    /// represent; the caller must use the general path.
+    contraction,
+};
+
+/// Emit all requested levels from one pass over the source. Also rejects the
+/// `L`/`l` + U+00B7 root contraction, which the fused loop would otherwise
+/// mis-weight, so the caller does not need a separate scan for it.
 fn appendLatinLevels(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u32),
     source: []const u21,
     strength: Strength,
-) error{OutOfMemory}!bool {
+) error{OutOfMemory}!LatinLevelsOutcome {
     var primary: [1024]u32 = undefined;
     var secondary: [1024]u32 = undefined;
     var tertiary: [1024]u32 = undefined;
@@ -4067,20 +4070,25 @@ fn appendLatinLevels(
     var tertiary_len: usize = 0;
     const need_secondary = strength != .primary;
     const need_tertiary = strength != .primary and strength != .secondary;
-    for (source) |codepoint| {
+    for (source, 0..) |codepoint, index| {
+        if ((codepoint == 'L' or codepoint == 'l') and
+            index + 1 < source.len and source[index + 1] == 0xb7)
+        {
+            return .contraction;
+        }
         for (latinEntryElements(codepoint)) |element| {
             if (element.primary != 0) {
-                if (primary_len == primary.len) return false;
+                if (primary_len == primary.len) return .overflow;
                 primary[primary_len] = element.primary;
                 primary_len += 1;
             }
             if (need_secondary and element.secondary != 0) {
-                if (secondary_len == secondary.len) return false;
+                if (secondary_len == secondary.len) return .overflow;
                 secondary[secondary_len] = element.secondary;
                 secondary_len += 1;
             }
             if (need_tertiary and element.tertiary != 0) {
-                if (tertiary_len == tertiary.len) return false;
+                if (tertiary_len == tertiary.len) return .overflow;
                 tertiary[tertiary_len] = element.tertiary;
                 tertiary_len += 1;
             }
@@ -4103,7 +4111,7 @@ fn appendLatinLevels(
         output.appendAssumeCapacity(0);
     }
     if (separator) output.appendAssumeCapacity(0);
-    return true;
+    return .written;
 }
 
 fn appendLatinLevel(
