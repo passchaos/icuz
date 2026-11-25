@@ -3775,7 +3775,7 @@ fn sortMarksWithClasses(codepoints: []u21, classes: []u8) void {
 }
 
 /// Composition using precomputed combining classes.
-fn composeSliceWithClasses(items: []u21, classes: []const u8) usize {
+inline fn composeSliceWithClasses(items: []u21, classes: []const u8) usize {
     std.debug.assert(items.len == classes.len);
     if (items.len < 2) return items.len;
     var output_len: usize = 1;
