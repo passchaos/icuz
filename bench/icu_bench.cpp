@@ -117,6 +117,11 @@ int main() {
     }();
     const std::string mixed_text =
         "Hello, 世界! café naïve Straße 😀👩‍💻 e\u0301\u0323 שלום مرحبا क्षि 각 text.\n";
+    const std::string georgian_text = [] {
+        std::string s;
+        for (int i = 0; i < 8; i++) s += "საქართველო ქართული ენა ";
+        return s;
+    }();
     const std::string thai_text = [] {
         std::string s;
         for (int i = 0; i < 8; i++) s += "ภาษาไทย ";
@@ -196,6 +201,7 @@ int main() {
         {"chinese_collation_long", chinese_collation_long_text, {}},
         {"accents", accents_text, {}},
         {"russian", russian_text, {}},
+        {"georgian", georgian_text, {}},
     };
     for (auto& text : texts) text.u16 = to_u16(text.utf8);
 
@@ -412,7 +418,7 @@ int main() {
     {
         UErrorCode status = U_ZERO_ERROR;
         const UNormalizer2* nfc = unorm2_getNFCInstance(&status);
-        for (int index : {0, 1, 12, 8, 9, 10}) {
+        for (int index : {0, 1, 12, 8, 9, 10, 17}) {
             const auto& u16 = texts[index].u16;
             std::vector<UChar> out(u16.size() * 3 + 32);
             std::string label = std::string("NFC ") + texts[index].name;

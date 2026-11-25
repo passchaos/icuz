@@ -2463,6 +2463,8 @@ pub fn main() !void {
     benchNormalization("NFC ASCII", ascii_runtime, allocator, false);
     benchNormalization("isNormalized Chinese", chinese_runtime, allocator, true);
     benchNormalization("NFC Chinese", chinese_runtime, allocator, false);
+    benchNormalization("isNormalized Georgian", georgian_runtime, allocator, true);
+    benchNormalization("NFC Georgian", georgian_runtime, allocator, false);
     benchNormalization("NFC mixed", mixed_runtime, allocator, false);
     benchNormalizationInto("NFC mixed (reuse)", mixed_runtime, allocator);
     benchNormalizationInto("NFC Chinese (reuse)", chinese_runtime, allocator);

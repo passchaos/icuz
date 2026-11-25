@@ -197,6 +197,33 @@ pub inline fn e0Inert(low: u11, form: data.Form) bool {
         @intCast(low & 0x3f)) & 1 != 0;
 }
 
+/// Inertness of three-byte scalars with lead 0xE1 (U+1000..U+1FFF), indexed
+/// by the twelve-bit offset from U+1000. This covers Georgian, Myanmar,
+/// Ethiopic, and the Latin Extended Additional block. Hangul jamo share the
+/// lead byte but are rejected by the scanner before this table is read.
+const e1_masks: [4][64]u64 = blk: {
+    @setEvalBranchQuota(1_000_000);
+    var table: [4][64]u64 = [_][64]u64{[_]u64{0} ** 64} ** 4;
+    for (0..4) |form_index| {
+        const form: data.Form = @enumFromInt(form_index);
+        for (0x1000..0x2000) |codepoint| {
+            if (isInert(@intCast(codepoint), form)) {
+                const low = codepoint - 0x1000;
+                table[form_index][low >> 6] |=
+                    @as(u64, 1) << @intCast(low & 0x3f);
+            }
+        }
+    }
+    break :blk table;
+};
+
+/// `isInert` for a validated three-byte sequence with lead 0xE1 and
+/// `low` = (second & 0x3F) << 6 | (third & 0x3F).
+pub inline fn e1Inert(low: u12, form: data.Form) bool {
+    return (e1_masks[@intFromEnum(form)][low >> 6] >>
+        @intCast(low & 0x3f)) & 1 != 0;
+}
+
 test "inert tables follow each normalization form" {
     const testing = @import("std").testing;
     inline for ([_]data.Form{ .nfc, .nfd, .nfkc, .nfkd }) |form| {

@@ -999,8 +999,63 @@ fn normalizeFusedInto(
                 if (lead >= 0xe3 and lead <= 0xef) break;
                 if (lead < 0x80) break;
                 if (lead == 0xe1) {
-                    if (run_end + 1 >= text.len) break;
-                    if ((text[run_end + 1] & 0xfc) == 0x84) break;
+                    // Hangul jamo keep their dedicated scanner; the rest of
+                    // the block (Georgian, Myanmar, Ethiopic, Latin Extended
+                    // Additional) reads a direct inertness table.
+                    if (run_end + 2 >= text.len) break;
+                    const second = text[run_end + 1];
+                    if ((second & 0xfc) == 0x84) break;
+                    const third = text[run_end + 2];
+                    if (((second | third) & 0xc0) != 0x80) break;
+                    const low: u12 = @intCast(
+                        (@as(u32, second & 0x3f) << 6) | (third & 0x3f),
+                    );
+                    if (!inert.e1Inert(low, form)) break;
+                    run_offset = run_end;
+                    run_codepoint = 0x1000 + @as(u21, low);
+                    run_end += 3;
+                    // Georgian and Ethiopic words run several scalars, so
+                    // test two at a time once the run is confirmed.
+                    while (run_end + 6 <= text.len) {
+                        const s0 = text[run_end];
+                        const s1 = text[run_end + 3];
+                        if (s0 != 0xe1 or s1 != 0xe1) break;
+                        const b0 = text[run_end + 1];
+                        const c0 = text[run_end + 2];
+                        const b1 = text[run_end + 4];
+                        const c1 = text[run_end + 5];
+                        if ((b0 & 0xfc) == 0x84 or (b1 & 0xfc) == 0x84) break;
+                        if (((b0 | c0 | b1 | c1) & 0xc0) != 0x80) break;
+                        const low0: u12 = @intCast(
+                            (@as(u32, b0 & 0x3f) << 6) | (c0 & 0x3f),
+                        );
+                        const low1: u12 = @intCast(
+                            (@as(u32, b1 & 0x3f) << 6) | (c1 & 0x3f),
+                        );
+                        if (!inert.e1Inert(low0, form) or
+                            !inert.e1Inert(low1, form)) break;
+                        run_end += 6;
+                        run_offset = run_end - 3;
+                        run_codepoint = 0x1000 + @as(u21, low1);
+                    }
+                    // Georgian and Ethiopic phrases separate words with a
+                    // space; bridge one space to the next inert E1 scalar so
+                    // the phrase stays in a single run.
+                    while (run_end + 4 <= text.len and text[run_end] == ' ') {
+                        if (text[run_end + 1] != 0xe1) break;
+                        const b = text[run_end + 2];
+                        const c = text[run_end + 3];
+                        if ((b & 0xfc) == 0x84) break;
+                        if (((b | c) & 0xc0) != 0x80) break;
+                        const next_low: u12 = @intCast(
+                            (@as(u32, b & 0x3f) << 6) | (c & 0x3f),
+                        );
+                        if (!inert.e1Inert(next_low, form)) break;
+                        run_end += 4;
+                        run_offset = run_end - 3;
+                        run_codepoint = 0x1000 + @as(u21, next_low);
+                    }
+                    continue;
                 }
                 if (lead < 0xe0) {
                     // Two-byte scalars are common in Semitic prose and test
@@ -2520,10 +2575,9 @@ fn normalizeFusedUtf16Into(
         if (codepoint >= 0x80 and inert.isInert(codepoint, form)) {
             // Consecutive inert scalars need no per-unit dispatch. The last
             // one stays the starter for a following mark, and ASCII ends the
-            // run so the ASCII path keeps handling it.
+            // run so the ASCII path keeps handling it. The run state is
+            // decoded once after the loop so the hot scan only advances.
             var run_end = index;
-            var run_codepoint = codepoint;
-            var run_offset = start;
             while (run_end < units.len) {
                 const next_unit = units[run_end];
                 if (next_unit < 0x80) break;
@@ -2532,16 +2586,24 @@ fn normalizeFusedUtf16Into(
                     if (next_decoded == utf16.packed_invalid) break;
                     const next = utf16.packedCodepoint(next_decoded);
                     if (!inert.isInert(next, form)) break;
-                    run_offset = run_end;
-                    run_codepoint = next;
                     run_end += utf16.packedLength(next_decoded);
                     continue;
                 }
                 if (!inert.bmpInert(next_unit, form)) break;
-                const next: u21 = next_unit;
-                run_offset = run_end;
-                run_codepoint = next;
                 run_end += 1;
+            }
+            var run_codepoint = codepoint;
+            var run_offset = start;
+            if (run_end > index) {
+                const last_unit = units[run_end - 1];
+                if (last_unit >= 0xdc00 and last_unit <= 0xdfff) {
+                    const last = utf16.decodePacked(units, run_end - 2);
+                    run_codepoint = utf16.packedCodepoint(last);
+                    run_offset = run_end - 2;
+                } else {
+                    run_codepoint = last_unit;
+                    run_offset = run_end - 1;
+                }
             }
             starter = run_codepoint;
             starter_offset = run_offset;
@@ -3515,7 +3577,7 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
             var run_codepoint = codepoint;
             while (run_end < text.len) {
                 const lead = text[run_end];
-                if (lead >= 0xe1 and lead <= 0xef) break;
+                if (lead >= 0xe3 and lead <= 0xef) break;
                 if (lead < 0x80) break;
                 if (lead < 0xe0) {
                     if (lead < 0xc2 or run_end + 1 >= text.len) break;
@@ -3538,6 +3600,57 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     if (!inert.e0Inert(low, form)) break;
                     run_codepoint = 0x800 + @as(u21, low);
                     run_end += 3;
+                    continue;
+                }
+                if (lead == 0xe1) {
+                    // Georgian, Myanmar, Ethiopic, and Latin Extended
+                    // Additional read a direct inertness table; Hangul jamo
+                    // keep their dedicated scanner.
+                    if (run_end + 2 >= text.len) break;
+                    const second = text[run_end + 1];
+                    if ((second & 0xfc) == 0x84) break;
+                    const third = text[run_end + 2];
+                    if (((second | third) & 0xc0) != 0x80) break;
+                    const low: u12 = @intCast(
+                        (@as(u32, second & 0x3f) << 6) | (third & 0x3f),
+                    );
+                    if (!inert.e1Inert(low, form)) break;
+                    run_codepoint = 0x1000 + @as(u21, low);
+                    run_end += 3;
+                    while (run_end + 6 <= text.len) {
+                        const s0 = text[run_end];
+                        const s1 = text[run_end + 3];
+                        if (s0 != 0xe1 or s1 != 0xe1) break;
+                        const b0 = text[run_end + 1];
+                        const c0 = text[run_end + 2];
+                        const b1 = text[run_end + 4];
+                        const c1 = text[run_end + 5];
+                        if ((b0 & 0xfc) == 0x84 or (b1 & 0xfc) == 0x84) break;
+                        if (((b0 | c0 | b1 | c1) & 0xc0) != 0x80) break;
+                        const low0: u12 = @intCast(
+                            (@as(u32, b0 & 0x3f) << 6) | (c0 & 0x3f),
+                        );
+                        const low1: u12 = @intCast(
+                            (@as(u32, b1 & 0x3f) << 6) | (c1 & 0x3f),
+                        );
+                        if (!inert.e1Inert(low0, form) or
+                            !inert.e1Inert(low1, form)) break;
+                        run_end += 6;
+                        run_codepoint = 0x1000 + @as(u21, low1);
+                    }
+                    while (run_end + 4 <= text.len and text[run_end] == ' ') {
+                        if (text[run_end + 1] != 0xe1) break;
+                        const b = text[run_end + 2];
+                        const c = text[run_end + 3];
+                        if ((b & 0xfc) == 0x84) break;
+                        if (((b | c) & 0xc0) != 0x80) break;
+                        const next_low: u12 = @intCast(
+                            (@as(u32, b & 0x3f) << 6) | (c & 0x3f),
+                        );
+                        if (!inert.e1Inert(next_low, form)) break;
+                        run_end += 4;
+                        run_codepoint = 0x1000 + @as(u21, next_low);
+                    }
                     continue;
                 }
                 const next_decoded = scalar.decodeValidatingPacked(text, run_end);
@@ -4340,6 +4453,20 @@ test "inert runs cover E1 and E2 blocks" {
     try expectNormalized("\u{2002}", "\u{2002}");
     try expectFormNormalized("\u{2002}", " ", .nfkc);
     try expectNormalized("\u{200d}", "\u{200d}");
+    // Spaced Georgian and Ethiopic phrases stay in one run through the word
+    // bridge, and the bridge must reject a non-E1 scalar after the space.
+    try expectNormalized(
+        "საქართველო ქართული ენა",
+        "საქართველო ქართული ენა",
+    );
+    try expectNormalized("საქართველო hello", "საქართველო hello");
+    try expectNormalized("ሰላም ኢትዮጵያ", "ሰላም ኢትዮጵያ");
+    try expectNormalized("\u{10d0}\u{0301}", "\u{10d0}\u{0301}");
+    try expectFormNormalized(
+        "საქართველო ქართული",
+        "საქართველო ქართული",
+        .nfd,
+    );
 }
 
 test "Hangul jamo runs compose directly" {
