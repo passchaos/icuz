@@ -1215,7 +1215,9 @@ fn normalizeFusedInto(
                 !mark_has_decomposition[codepoint - 0x300])
             {
                 const starter_cp = starter.?;
-                if (!decomposition.hasCanonical(starter_cp) and
+                // ASCII starters never decompose; skip the table probe.
+                if ((starter_cp < 0x80 or
+                    !decomposition.hasCanonical(starter_cp)) and
                     !continuesSegment(starter_cp, compatibility))
                 {
                     var out_cps: [3]u21 = undefined;
@@ -2464,7 +2466,8 @@ noinline fn tryAccentSegment16(
     mark_class: u8,
     sink: *Utf16Sink,
 ) error{OutOfMemory}!?usize {
-    if (decomposition.hasCanonical(starter_cp) or
+    if ((starter_cp >= 0x80 and
+        decomposition.hasCanonical(starter_cp)) or
         continuesSegment(starter_cp, compatibility))
     {
         return null;
