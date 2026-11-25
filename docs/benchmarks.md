@@ -13,7 +13,8 @@ nanoseconds per input byte (or per operation) for the same operations.
   each row reports the minimum across rounds. Minimum-of-N is used because
   shared-machine load swings individual runs by 10-30%.
 - Snapshot: the numbers below were collected at commit `20d21cc`
-  (2026-11-26). Re-run the commands under "Reproduce" to refresh them.
+  (2026-11-26), with the Georgian row refreshed at `37c0931`. Re-run the
+  commands under "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Swedish,
   German, Greek, Russian, and the conformance corpora.
@@ -43,7 +44,7 @@ where the reported unit is the UTF-8 input byte.
 | NFC Japanese (reuse) | 0.325 | 0.374 | 1.15x |
 | NFC jamo (reuse) | 0.975 | 1.158 | 1.19x |
 | NFC e+marks (reuse) | 4.454 | 9.133 | 2.05x |
-| NFC Georgian | 0.376 | 0.384 | 1.02x |
+| NFC Georgian | 0.239 | 0.379 | 1.59x |
 | lower ASCII (UTF-16) | 0.113 | 0.852 | 7.54x |
 | lower mixed (UTF-16) | 0.595 | 0.863 | 1.45x |
 | case fold mixed (UTF-16) | 0.709 | 0.893 | 1.26x |
@@ -153,6 +154,9 @@ normalizer: Georgian has no dedicated run scanner, and ICU's UTF-16 trie is
 slightly cheaper per scalar. Dropping the Hangul jamo guards from the E1
 inert run under the composed forms (they can only be inert under NFD/NFKD,
 where the guards remain) removed two branches from the hot loop, and the
-ASCII accent-starter shortcut trimmed the segment path further. The row now
-sits at 0.376 ns/B against ICU's 0.384 (1.02x). Every fair row in this
-document is ahead of ICU.
+ASCII accent-starter shortcut trimmed the segment path further. The run now
+reads two scalars with one 64-bit load, consumes an odd trailing scalar in
+place, and bridges spaces without returning to the main dispatch, so a whole
+Georgian or Ethiopic phrase stays in one loop; `isNormalized` uses the same
+scan. The row now sits at 0.239 ns/B against ICU's 0.379 (1.59x). Every fair
+row in this document is ahead of ICU.
