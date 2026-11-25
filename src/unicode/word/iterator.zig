@@ -309,6 +309,53 @@ pub const DictionaryIterator = struct {
     }
 };
 
+const class_count = @typeInfo(Class).@"enum".fields.len;
+
+/// Adjacent ASCII break decisions that do not look past the pair:
+/// 0 = no break, 1 = break, 2 = the mid-letter/number rules need a
+/// neighbour. Built from the same predicates the rule chain uses.
+const ascii_pair_decision_neighbors = 2;
+const ascii_pair_decisions = blk: {
+    @setEvalBranchQuota(100_000);
+    const count = @typeInfo(Class).@"enum".fields.len;
+    var table = [_]u8{ascii_pair_decision_neighbors} ** (count * count);
+    for (0..count) |previous_value| {
+        for (0..count) |current_value| {
+            const previous: Class = @enumFromInt(previous_value);
+            const current: Class = @enumFromInt(current_value);
+            table[previous_value * count + current_value] = decide: {
+                // WB3–WB3d.
+                if (previous == .cr and current == .lf) break :decide 0;
+                if (isNewline(previous) or isNewline(current)) break :decide 1;
+                if (previous == .wseg_space and
+                    current == .wseg_space) break :decide 0;
+                // WB5.
+                if (isAhLetter(previous) and
+                    isAhLetter(current)) break :decide 0;
+                if (isLetterMid(previous) or isNumericMid(previous) or
+                    isLetterMid(current) or isNumericMid(current))
+                {
+                    break :decide ascii_pair_decision_neighbors;
+                }
+                // WB8–WB10.
+                if (previous == .numeric and
+                    current == .numeric) break :decide 0;
+                if (isAhLetter(previous) and
+                    current == .numeric) break :decide 0;
+                if (previous == .numeric and
+                    isAhLetter(current)) break :decide 0;
+                // WB13a / WB13b.
+                if (isExtendNumLetLeft(previous) and
+                    current == .extend_num_let) break :decide 0;
+                if (previous == .extend_num_let and
+                    isExtendNumLetRight(current)) break :decide 0;
+                break :decide 1;
+            };
+        }
+    }
+    break :blk table;
+};
+
 fn asciiBreaksAt(text: []const u8, offset: usize) ?bool {
     const current_byte = text[offset];
     const previous_byte = text[offset - 1];
@@ -316,6 +363,11 @@ fn asciiBreaksAt(text: []const u8, offset: usize) ?bool {
 
     const previous = asciiClass(previous_byte);
     const current = asciiClass(current_byte);
+    const decision = ascii_pair_decisions[
+        @as(usize, @intFromEnum(previous)) * class_count +
+            @intFromEnum(current)
+    ];
+    if (decision != ascii_pair_decision_neighbors) return decision == 1;
     // WB3–WB3d. No ASCII scalar has WB=Extend/Format/ZWJ, so WB4 needs no
     // special handling in this path.
     if (previous == .cr and current == .lf) return false;
