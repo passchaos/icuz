@@ -2872,20 +2872,27 @@ fn quickCheckUtf16(
 pub const Normalizer = struct {
     allocator: std.mem.Allocator,
     form: Form,
+    /// Scalars of the current segment, which a later mark may continue.
     pending: std.ArrayList(u21),
+    /// Scalars of complete segments, normalized lazily in one batch.
+    stable: std.ArrayList(u21),
     normalized: std.ArrayList(u21),
+
+    const stable_flush_threshold = 4096;
 
     pub fn init(allocator: std.mem.Allocator, form: Form) Normalizer {
         return .{
             .allocator = allocator,
             .form = form,
             .pending = .empty,
+            .stable = .empty,
             .normalized = .empty,
         };
     }
 
     pub fn deinit(self: *Normalizer) void {
         self.pending.deinit(self.allocator);
+        self.stable.deinit(self.allocator);
         self.normalized.deinit(self.allocator);
     }
 
@@ -2895,14 +2902,44 @@ pub const Normalizer = struct {
         output: *std.ArrayList(u8),
     ) Error!void {
         if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
-        var iterator = std.unicode.Utf8Iterator{ .bytes = text, .i = 0 };
-        while (iterator.nextCodepoint()) |codepoint| {
-            try self.process(codepoint, output);
+        if (text.len == 0) return;
+        if (scalar.validate.asciiOnly(text)) {
+            // ASCII cannot continue a segment, so the pending one is
+            // complete. Every chunk scalar but the last is also complete; the
+            // last stays pending because a mark in the next chunk may compose
+            // with it.
+            if (self.pending.items.len != 0) {
+                try self.stable.appendSlice(
+                    self.allocator,
+                    self.pending.items,
+                );
+                self.pending.clearRetainingCapacity();
+            }
+            try self.flushStable(output);
+            if (text.len > 1) {
+                try output.appendSlice(
+                    self.allocator,
+                    text[0 .. text.len - 1],
+                );
+            }
+            try self.pending.append(self.allocator, text[text.len - 1]);
+            return;
+        }
+        var index: usize = 0;
+        while (index < text.len) {
+            const decoded = scalar.decodeValid(text, index) orelse
+                return error.InvalidUtf8;
+            index = decoded.next;
+            try self.process(decoded.codepoint, output);
         }
     }
 
     pub fn finish(self: *Normalizer, output: *std.ArrayList(u8)) Error!void {
-        try self.flush(output);
+        if (self.pending.items.len != 0) {
+            try self.stable.appendSlice(self.allocator, self.pending.items);
+            self.pending.clearRetainingCapacity();
+        }
+        try self.flushStable(output);
     }
 
     fn process(
@@ -2920,56 +2957,41 @@ pub const Normalizer = struct {
             return;
         }
 
-        if ((self.form == .nfd or self.form == .nfkd) or
-            !self.pendingCanComposeWith(codepoint))
-        {
-            try self.flush(output);
-        }
+        // The new scalar starts its own segment, so the pending one is
+        // complete and can wait for the next batch normalization.
+        try self.stable.appendSlice(self.allocator, self.pending.items);
+        self.pending.clearRetainingCapacity();
         try self.pending.append(self.allocator, codepoint);
-    }
-
-    fn pendingCanComposeWith(self: *Normalizer, codepoint: u21) bool {
-        if (self.form == .nfd or self.form == .nfkd) return false;
-
-        var base: ?u21 = null;
-        for (self.pending.items) |item| {
-            if (combining_class.forCodepoint(item) != 0) continue;
-            if (base == null) {
-                base = item;
-            } else if (composeHangul(base.?, item)) |composed| {
-                base = composed;
-            } else {
-                base = item;
-            }
+        if (self.stable.items.len >= stable_flush_threshold) {
+            try self.flushStable(output);
         }
-        if (base == null) return false;
-        return composeHangul(base.?, codepoint) != null;
     }
 
-    fn flush(
+    fn flushStable(
         self: *Normalizer,
         output: *std.ArrayList(u8),
     ) Error!void {
-        if (self.pending.items.len == 0) return;
+        if (self.stable.items.len == 0) return;
 
         self.normalized.clearRetainingCapacity();
         try normalizeCodepointsInto(
             self.allocator,
-            self.pending.items,
+            self.stable.items,
             self.form,
             &self.normalized,
         );
 
-        var encoded: [4]u8 = undefined;
         try output.ensureUnusedCapacity(
             self.allocator,
             self.normalized.items.len * 4,
         );
+        const dest = output.unusedCapacitySlice();
+        var written: usize = 0;
         for (self.normalized.items) |codepoint| {
-            const len = scalar.encodeUtf8(&encoded, codepoint);
-            try output.appendSlice(self.allocator, encoded[0..len]);
+            written += scalar.encodeUtf8(dest[written..], codepoint);
         }
-        self.pending.clearRetainingCapacity();
+        output.items.len += written;
+        self.stable.clearRetainingCapacity();
     }
 };
 
