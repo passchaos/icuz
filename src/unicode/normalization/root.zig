@@ -933,11 +933,45 @@ fn normalizeFusedInto(
                 }
                 // A composed syllable is always U+AC00..U+D7A3, so it
                 // encodes to exactly three bytes; write them in place.
-                const slot = try output.addManyAsSlice(allocator, 3);
-                slot[0] = @intCast(0xe0 | (composed >> 12));
-                slot[1] = @intCast(0x80 | ((composed >> 6) & 0x3f));
-                slot[2] = @intCast(0x80 | (composed & 0x3f));
-                index = syllable_end;
+                // Decomposed Korean often arrives as repeated L V (T) groups
+                // separated by a space, so keep composing after short ASCII
+                // spans instead of re-entering the dispatch cascade.
+                var cursor = syllable_end;
+                var syllable = composed;
+                while (true) {
+                    const slot = try output.addManyAsSlice(allocator, 3);
+                    slot[0] = @intCast(0xe0 | (syllable >> 12));
+                    slot[1] = @intCast(0x80 | ((syllable >> 6) & 0x3f));
+                    slot[2] = @intCast(0x80 | (syllable & 0x3f));
+                    var probe = cursor;
+                    while (probe < text.len and probe - cursor < 2 and
+                        text[probe] < 0x80)
+                    {
+                        probe += 1;
+                    }
+                    if (probe + 3 > text.len or text[probe] != 0xe1) break;
+                    const second = text[probe + 1];
+                    const third = text[probe + 2];
+                    if (second & 0xfc != 0x84 or third & 0xc0 != 0x80) break;
+                    const l: u21 = 0x1000 +
+                        (@as(u21, second & 0x3f) << 6) + (third & 0x3f);
+                    const next = hangulSyllableAt(
+                        text,
+                        l,
+                        probe + 3,
+                        &syllable_end,
+                    ) orelse break;
+                    if (probe > cursor) {
+                        try appendBytes(
+                            allocator,
+                            output,
+                            text[cursor..probe],
+                        );
+                    }
+                    syllable = next;
+                    cursor = syllable_end;
+                }
+                index = cursor;
                 stable_start = index;
                 starter = null;
                 starter_offset = index;
@@ -4142,6 +4176,28 @@ test "Hangul jamo runs compose directly" {
     // A lone L jamo and an L followed by another V start fresh.
     try expectNormalized("\u{1100}", "\u{1100}");
     try expectNormalized("\u{1100}\u{1161}\u{1161}", "\u{ac00}\u{1161}");
+    // Repeated jamo groups compose across short ASCII spans, and a span
+    // that opens a new segment still breaks the run.
+    try expectNormalized(
+        "\u{1100}\u{1161}\u{11a8} \u{1100}\u{1161}\u{11a8}",
+        "\u{ac01} \u{ac01}",
+    );
+    try expectNormalized(
+        "\u{1100}\u{1161},\u{1100}\u{1161}",
+        "\u{ac00},\u{ac00}",
+    );
+    try expectNormalized(
+        "\u{1100}\u{1161}abc\u{1100}\u{1161}",
+        "\u{ac00}abc\u{ac00}",
+    );
+    try expectNormalized(
+        "\u{1100}\u{1161}\u{11a8}a\u{0301}",
+        "\u{ac01}\u{00e1}",
+    );
+    try expectNormalized(
+        "\u{1100}\u{1161}\u{11a8} \u{1100}\u{1161}\u{0301}",
+        "\u{ac01} \u{ac00}\u{0301}",
+    );
     // NFD still decomposes syllables back to jamo.
     try expectFormNormalized(
         "\u{ac01}",
