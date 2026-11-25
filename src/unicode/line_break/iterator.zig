@@ -162,6 +162,24 @@ pub const Iterator = struct {
                             continue;
                         }
                     }
+                    // LB28 joins a letter to a preceding letter or number.
+                    // The scanners consume word runs, so only letter-class
+                    // bytes such as `_`, `@`, and `=` arrive here.
+                    if (rules.isAsciiSettledLetter(byte) and
+                        rules.asciiLetterSettled(&self.state))
+                    {
+                        const raw = properties(byte);
+                        self.state.consume(raw.class, .{
+                            .codepoint = byte,
+                            .properties = raw,
+                            .class = raw.class,
+                            .start = self.cursor,
+                            .next = self.cursor + 1,
+                        });
+                        self.cursor += 1;
+                        self.simple_ascii = false;
+                        continue;
+                    }
                 }
                 // LB7 forbids a break before a space, so an ASCII space run
                 // can be consumed without consulting the rule engine. A

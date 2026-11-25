@@ -649,6 +649,30 @@ pub inline fn isWordClass(class: BreakClass) bool {
         class == .numeric;
 }
 
+/// ASCII bytes with the alphabetic class that the word scanners leave to the
+/// rule engine (`_`, `@`, and `=`).
+const ascii_settled_letters = blk: {
+    var table = [_]bool{false} ** 256;
+    for (0..128) |byte| {
+        if (ascii_word_bytes[byte]) continue;
+        table[byte] = property_data.lookup(@intCast(byte)).class == .alphabetic;
+    }
+    break :blk table;
+};
+
+pub inline fn isAsciiSettledLetter(byte: u8) bool {
+    return ascii_settled_letters[byte];
+}
+
+/// True when LB28 settles the boundary before an ASCII letter as prohibited:
+/// letters and numbers join a following letter. `decide`'s ASCII fast path
+/// returns the same verdict for these left classes.
+pub fn asciiLetterSettled(state: *const StreamState) bool {
+    return state.last.class == .alphabetic or
+        state.last.class == .hebrew_letter or
+        state.last.class == .numeric;
+}
+
 /// History entries for ASCII word bytes, materialized at compile time. The
 /// run scanners build up to three of these per word, and the class and
 /// property lookups cost more than one struct load.
