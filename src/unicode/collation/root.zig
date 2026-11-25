@@ -2669,14 +2669,18 @@ fn appendElementsSlow(
     // Without an explicit entry there is no contraction to extend, so the
     // discontiguous-mark scan below cannot change the result.
     const first_entry = pageStart(first);
-    if (first_entry >= entry_count or entryAt(first_entry).first != first) {
+    if (first_entry >= entry_count) {
+        try appendImplicit(allocator, ces, first, reorder);
+        return 1;
+    }
+    const single_entry = entryAt(first_entry);
+    if (single_entry.first != first) {
         try appendImplicit(allocator, ces, first, reorder);
         return 1;
     }
     // A unique one-scalar entry cannot be extended by a following mark, so
     // emoji and other sparse supplementary scalars skip the contraction
     // machinery entirely.
-    const single_entry = entryAt(first_entry);
     if (single_entry.len == 1 and
         (first_entry + 1 >= entry_count or
             entryAt(first_entry + 1).first != first))
