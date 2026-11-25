@@ -20,6 +20,73 @@ const Match = union(enum) {
     remove,
 };
 
+const page_count = 0x1100;
+/// Pages with at least one mapping record. Both tables stay below this, and
+/// the comptime builder rejects data that outgrows the table.
+const max_mapping_pages = 64;
+
+const MappingIndex = struct {
+    /// Direct-table slot of the page, or 0xFFFF when it has no mappings.
+    slots: [page_count]u16,
+    /// Mapping record for each low byte of a mapped page, or 0xFFFF.
+    direct: [max_mapping_pages][256]u16,
+};
+
+/// A page-direct index turns the per-scalar mapping lookup into two loads.
+fn buildMappingIndex(
+    comptime blob: []const u8,
+    comptime mapping_count: u32,
+    comptime mapping_offset: u32,
+) MappingIndex {
+    @setEvalBranchQuota(400_000);
+    var index = MappingIndex{
+        .slots = [_]u16{0xffff} ** page_count,
+        .direct = [_][256]u16{[_]u16{0xffff} ** 256} ** max_mapping_pages,
+    };
+    var next_slot: u16 = 0;
+    for (0..mapping_count) |record| {
+        const codepoint = readU32(
+            blob,
+            mapping_offset + record * mapping_record_len,
+        );
+        const page: usize = @intCast(codepoint >> 8);
+        if (index.slots[page] == 0xffff) {
+            if (next_slot == max_mapping_pages) {
+                @compileError("NFKC_Casefold mapping pages outgrew the index");
+            }
+            index.slots[page] = next_slot;
+            next_slot += 1;
+        }
+        index.direct[index.slots[page]][@intCast(codepoint & 0xff)] =
+            @intCast(record);
+    }
+    return index;
+}
+
+/// First removal record whose last codepoint is at or above each page base.
+fn buildRemovalPages(
+    comptime blob: []const u8,
+    comptime removal_count: u32,
+    comptime removal_offset: u32,
+) [page_count + 1]u16 {
+    @setEvalBranchQuota(200_000);
+    var pages: [page_count + 1]u16 = undefined;
+    var record: usize = 0;
+    for (0..page_count + 1) |page| {
+        const base: u32 = @intCast(page << 8);
+        while (record < removal_count and
+            readU32(
+                blob,
+                removal_offset + record * removal_record_len + 4,
+            ) < base)
+        {
+            record += 1;
+        }
+        pages[page] = @intCast(record);
+    }
+    return pages;
+}
+
 const Table = struct {
     blob: []const u8,
     mapping_count: u32,
@@ -28,6 +95,8 @@ const Table = struct {
     mapping_offset: u32,
     removal_offset: u32,
     pool_offset: u32,
+    mapping: MappingIndex,
+    removal_pages: [page_count + 1]u16,
 
     fn init(comptime blob: []const u8) Table {
         comptime {
@@ -52,6 +121,21 @@ const Table = struct {
             {
                 @compileError("invalid NFKC_Casefold data lengths");
             }
+            // Mapping targets are encoded without a validity check, so
+            // reject malformed pool entries here.
+            @setEvalBranchQuota(200_000);
+            for (0..pool_count) |index| {
+                const target = std.mem.readInt(
+                    u32,
+                    blob[pool_offset + index * 4 ..][0..4],
+                    .little,
+                );
+                if (target > 0x10ffff or
+                    (target >= 0xd800 and target <= 0xdfff))
+                {
+                    @compileError("invalid NFKC_Casefold mapping target");
+                }
+            }
         }
         return .{
             .blob = blob,
@@ -61,33 +145,41 @@ const Table = struct {
             .mapping_offset = readU32(blob, 20),
             .removal_offset = readU32(blob, 24),
             .pool_offset = readU32(blob, 28),
+            .mapping = buildMappingIndex(
+                blob,
+                readU32(blob, 8),
+                readU32(blob, 20),
+            ),
+            .removal_pages = buildRemovalPages(
+                blob,
+                readU32(blob, 12),
+                readU32(blob, 24),
+            ),
         };
     }
 
     fn lookup(self: *const Table, codepoint: u21) ?Match {
-        var low: usize = 0;
-        var high: usize = self.mapping_count;
-        while (low < high) {
-            const middle = low + (high - low) / 2;
-            const record = self.mapping_offset + middle * mapping_record_len;
-            const candidate = readU32(self.blob, record);
-            if (candidate < codepoint) {
-                low = middle + 1;
-            } else {
-                high = middle;
-            }
-        }
-        if (low < self.mapping_count) {
-            const record = self.mapping_offset + low * mapping_record_len;
-            if (readU32(self.blob, record) == codepoint) {
+        const page: usize = @intCast(codepoint >> 8);
+        const slot = self.mapping.slots[page];
+        if (slot != 0xffff) {
+            const record_index = self.mapping.direct[slot][
+                @intCast(codepoint & 0xff)
+            ];
+            if (record_index != 0xffff) {
+                const record = self.mapping_offset +
+                    @as(usize, record_index) * mapping_record_len;
                 return .{ .target = .{
                     .offset = readU32(self.blob, record + 4),
                     .length = readU16(self.blob, record + 8),
                 } };
             }
         }
-        low = 0;
-        high = self.removal_count;
+        var low: usize = self.removal_pages[page];
+        // The range that ends past this page may start inside it, so include
+        // one record beyond the page boundary.
+        var removal_end: usize = self.removal_pages[page + 1];
+        if (removal_end < self.removal_count) removal_end += 1;
+        var high = removal_end;
         while (low < high) {
             const middle = low + (high - low) / 2;
             const record = self.removal_offset + middle * removal_record_len;
@@ -97,7 +189,7 @@ const Table = struct {
                 high = middle;
             }
         }
-        if (low < self.removal_count) {
+        if (low < removal_end) {
             const record = self.removal_offset + low * removal_record_len;
             if (readU32(self.blob, record) <= codepoint and
                 codepoint <= readU32(self.blob, record + 4))
@@ -106,6 +198,22 @@ const Table = struct {
             }
         }
         return null;
+    }
+
+    /// True when no mapping or removal record can affect `codepoint`'s page,
+    /// so the scalar passes through unchanged.
+    fn pageEmpty(self: *const Table, codepoint: u21) bool {
+        const page: usize = @intCast(codepoint >> 8);
+        if (self.mapping.slots[page] != 0xffff) return false;
+        const removal = self.removal_pages[page];
+        if (removal < self.removal_count) {
+            // A range that begins before this page can still cover it.
+            const record = self.removal_offset + removal * removal_record_len;
+            const first = readU32(self.blob, record);
+            const page_end: u32 = @intCast((page << 8) | 0xff);
+            if (first <= page_end) return false;
+        }
+        return true;
     }
 
     fn targetCodepoint(self: *const Table, offset: u32, index: usize) u21 {
@@ -159,49 +267,95 @@ fn mapAlloc(
         return output;
     }
 
-    var mapped = std.ArrayList(u21).empty;
-    defer mapped.deinit(allocator);
-    try mapped.ensureTotalCapacity(allocator, text.len);
+    var output = std.ArrayList(u8).empty;
+    defer output.deinit(allocator);
+    try output.ensureTotalCapacity(allocator, text.len);
+    // Bytes between `pending` and the current position pass through verbatim
+    // and are copied in bulk, so scripts with no mappings cost one copy.
+    var pending: usize = 0;
     var index: usize = 0;
     while (index < text.len) {
-        const length = std.unicode.utf8ByteSequenceLength(text[index]) catch
-            return error.InvalidUtf8;
-        const codepoint = std.unicode.utf8Decode(text[index..][0..length]) catch
-            return error.InvalidUtf8;
+        // ASCII maps to lowercase and never appears in either table, so a
+        // run can be copied and lowered in one pass.
+        if (text[index] < 0x80) {
+            if (pending < index) {
+                try output.appendSlice(allocator, text[pending..index]);
+            }
+            var end = index + 1;
+            while (end < text.len and text[end] < 0x80) end += 1;
+            const dest = try output.addManyAsSlice(allocator, end - index);
+            for (text[index..end], dest) |byte, *slot| {
+                slot.* = if (byte >= 'A' and byte <= 'Z')
+                    byte + ('a' - 'A')
+                else
+                    byte;
+            }
+            index = end;
+            pending = index;
+            continue;
+        }
+        // CJK ideographs occupy pages with no mapping or removal records and
+        // cannot be overlong, so their three bytes validate with two checks.
+        if (text[index] >= 0xe4 and text[index] <= 0xe9) {
+            if (index + 3 > text.len or
+                (text[index + 1] & 0xc0) != 0x80 or
+                (text[index + 2] & 0xc0) != 0x80)
+            {
+                return error.InvalidUtf8;
+            }
+            index += 3;
+            continue;
+        }
+        const decoded = scalar.decodeValidatingPacked(text, index);
+        if (decoded == scalar.packed_invalid) return error.InvalidUtf8;
+        const codepoint = scalar.packedCodepoint(decoded);
+        const length = scalar.packedLength(decoded);
+        // Pages without mapping or removal records pass through verbatim,
+        // which covers scripts such as Han with no case mappings.
+        if (table.pageEmpty(codepoint)) {
+            index += length;
+            continue;
+        }
+        if (pending < index) {
+            try output.appendSlice(allocator, text[pending..index]);
+        }
         index += length;
         if (table.lookup(codepoint)) |match| switch (match) {
             .remove => {},
             .target => |target| {
                 for (0..target.length) |offset| {
-                    try mapped.append(
-                        allocator,
+                    var encoded: [4]u8 = undefined;
+                    const encoded_len = scalar.encodeUtf8(
+                        &encoded,
                         table.targetCodepoint(target.offset, offset),
                     );
+                    try output.appendSlice(allocator, encoded[0..encoded_len]);
                 }
             },
         } else {
-            try mapped.append(allocator, codepoint);
+            try output.appendSlice(allocator, text[index - length ..][0..length]);
         }
+        pending = index;
+    }
+    if (pending < text.len) {
+        try output.appendSlice(allocator, text[pending..]);
     }
 
-    const nfc_owned = try normalization.normalizeCodepointsAlloc(
+    // The per-scalar mappings can compose across boundaries, so the result
+    // still needs an NFC pass. Most mapped prose is already NFC, and the
+    // scan avoids the second buffer and rewrite in that case.
+    if (normalization.isNormalizedAssumeValid(output.items)) {
+        return output.toOwnedSlice(allocator);
+    }
+    var normalized = std.ArrayList(u8).empty;
+    defer normalized.deinit(allocator);
+    _ = try normalization.normalizeFormInto(
         allocator,
-        mapped.items,
+        output.items,
         .nfc,
+        &normalized,
     );
-    defer if (nfc_owned) |owned| allocator.free(owned);
-    const result = nfc_owned orelse mapped.items;
-
-    var output = std.ArrayList(u8).empty;
-    errdefer output.deinit(allocator);
-    try output.ensureTotalCapacity(allocator, result.len * 2);
-    var buffer: [4]u8 = undefined;
-    for (result) |codepoint| {
-        const length = std.unicode.utf8Encode(codepoint, &buffer) catch
-            return error.InvalidUtf8;
-        try output.appendSlice(allocator, buffer[0..length]);
-    }
-    return output.toOwnedSlice(allocator);
+    return normalized.toOwnedSlice(allocator);
 }
 
 fn isAscii(text: []const u8) bool {
