@@ -283,12 +283,46 @@ const Parser = struct {
             self.skipIgnored();
             const byte = self.peek() orelse break;
             if (byte == '|' or byte == ')') break;
+            // Plain literal runs become one node instead of one node per
+            // scalar, which keeps the AST and the element array small.
+            if (!self.flags.comments) {
+                if (try self.parseLiteralRun()) |run| {
+                    try nodes.append(self.allocator, run);
+                    continue;
+                }
+            }
             try nodes.append(self.allocator, try self.parseQuantified());
         }
 
         if (nodes.items.len == 0) return self.emptyNode();
         if (nodes.items.len == 1) return nodes.items[0];
         return self.node(.{ .concat = try self.dupeNodes(nodes.items) });
+    }
+
+    /// Consume a run of plain literal scalars into one node, stopping before
+    /// a metacharacter or a scalar that a quantifier binds to. Returns null
+    /// when the next atom is not a plain literal.
+    fn parseLiteralRun(self: *Parser) Error!?*Node {
+        const start = self.index;
+        var end = start;
+        while (end < self.pattern.len) {
+            const byte = self.pattern[end];
+            if (!isLiteralByte(byte)) break;
+            const length = std.unicode.utf8ByteSequenceLength(byte) catch break;
+            if (end + length > self.pattern.len) break;
+            _ = std.unicode.utf8Decode(self.pattern[end..][0..length]) catch break;
+            const next = end + length;
+            if (next < self.pattern.len and isQuantifierByte(self.pattern[next])) {
+                break;
+            }
+            end = next;
+        }
+        if (end == start) return null;
+        self.index = end;
+        return try self.node(.{ .literal = .{
+            .text = self.pattern[start..end],
+            .case_insensitive = self.flags.case_insensitive,
+        } });
     }
 
     fn parseQuantified(self: *Parser) Error!*Node {
@@ -1376,6 +1410,19 @@ const word_property_mask: u64 =
 
 const word_bits_words = 0x110000 / 64;
 const word_range_limit = 1024;
+
+/// True when `byte` starts a plain literal scalar rather than a
+/// metacharacter construct. `]` and `}` are literals outside their contexts.
+fn isLiteralByte(byte: u8) bool {
+    return switch (byte) {
+        '(', ')', '[', '.', '^', '$', '\\', '*', '+', '?', '{', '|' => false,
+        else => true,
+    };
+}
+
+fn isQuantifierByte(byte: u8) bool {
+    return byte == '*' or byte == '+' or byte == '?' or byte == '{';
+}
 
 const WordTable = struct {
     ranges: [word_range_limit]set_mod.Range = undefined,
