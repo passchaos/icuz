@@ -117,6 +117,8 @@ fn buildTwoByteMap(
     comptime blob: []const u8,
     comptime mapping_count: u32,
     comptime mapping_offset: u32,
+    comptime removal_count: u32,
+    comptime removal_offset: u32,
 ) [30][64]u16 {
     @setEvalBranchQuota(400_000);
     var map: [30][64]u16 = [_][64]u16{[_]u16{0xffff} ** 64} ** 30;
@@ -129,6 +131,25 @@ fn buildTwoByteMap(
         const lead: usize = @intCast((0xc0 | (codepoint >> 6)) - 0xc2);
         const second: usize = @intCast(codepoint & 0x3f);
         map[lead][second] = @intCast(record);
+    }
+    // Default-ignorable scalars in the two-byte range get their own marker,
+    // so the hot path needs no removal-table lookup.
+    for (0..removal_count) |record| {
+        const first = readU32(
+            blob,
+            removal_offset + record * removal_record_len,
+        );
+        const last = readU32(
+            blob,
+            removal_offset + record * removal_record_len + 4,
+        );
+        var codepoint: u32 = @max(first, 0x80);
+        while (codepoint <= last and codepoint < 0x800) : (codepoint += 1) {
+            const lead: usize = @intCast((0xc0 | (codepoint >> 6)) - 0xc2);
+            const second: usize = @intCast(codepoint & 0x3f);
+            // A mapping takes precedence, matching the lookup order.
+            if (map[lead][second] == 0xffff) map[lead][second] = 0xfffe;
+        }
     }
     return map;
 }
@@ -202,6 +223,8 @@ const Table = struct {
                 blob,
                 readU32(blob, 8),
                 readU32(blob, 20),
+                readU32(blob, 12),
+                readU32(blob, 24),
             ),
             .removal_pages = buildRemovalPages(
                 blob,
@@ -347,6 +370,17 @@ fn mapAlloc(
                     const record_index = table.two_byte_map[lead - 0xc2][
                         @intCast(second & 0x3f)
                     ];
+                    if (record_index == 0xfffe) {
+                        if (pending < index) {
+                            try output.appendSlice(
+                                allocator,
+                                text[pending..index],
+                            );
+                        }
+                        index += 2;
+                        pending = index;
+                        continue;
+                    }
                     if (record_index != 0xffff) {
                         if (pending < index) {
                             try output.appendSlice(
@@ -377,22 +411,6 @@ fn mapAlloc(
                             );
                             output.items.len += written;
                         }
-                        pending = index;
-                        continue;
-                    }
-                    const codepoint = (@as(u21, lead & 0x1f) << 6) |
-                        (second & 0x3f);
-                    const page: usize = @intCast(codepoint >> 8);
-                    if (table.removal_covered[page] and
-                        table.removalMatches(codepoint, page))
-                    {
-                        if (pending < index) {
-                            try output.appendSlice(
-                                allocator,
-                                text[pending..index],
-                            );
-                        }
-                        index += 2;
                         pending = index;
                         continue;
                     }
