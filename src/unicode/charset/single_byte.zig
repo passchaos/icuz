@@ -258,6 +258,18 @@ pub fn encodeInto(
                 }
                 end += 32;
             }
+            // Locate the first high-bit byte directly: short accented-prose
+            // runs would otherwise pay the byte-at-a-time tail after the
+            // vector test already found the boundary in the same word.
+            while (end + 8 <= input.len) {
+                const word = std.mem.readInt(u64, input[end..][0..8], .little);
+                const high = word & 0x8080_8080_8080_8080;
+                if (high != 0) {
+                    end += @ctz(high) / 8;
+                    break;
+                }
+                end += 8;
+            }
             while (end < input.len and input[end] < 0x80) end += 1;
             const count = end - index;
             @memcpy(spare[written..][0..count], input[index..][0..count]);
