@@ -480,11 +480,22 @@ fn encodeUtf8(
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
     try output.ensureTotalCapacity(allocator, codepoints.len * 4);
+    const spare = output.unusedCapacitySlice();
+    var written: usize = 0;
     for (codepoints) |codepoint| {
-        const spare = output.unusedCapacitySlice();
-        const length = scalar.encodeUtf8(spare[0..4], codepoint);
-        output.items.len += length;
+        // Shaped Arabic is overwhelmingly three-byte presentation forms, so
+        // one 32-bit store replaces the generic encoder's three byte stores.
+        if (codepoint >= 0x800 and codepoint < 0x10000) {
+            const bytes: u32 = (@as(u32, 0xE0 | (codepoint >> 12))) |
+                (@as(u32, 0x80 | ((codepoint >> 6) & 0x3F)) << 8) |
+                (@as(u32, 0x80 | (codepoint & 0x3F)) << 16);
+            std.mem.writeInt(u32, spare[written..][0..4], bytes, .little);
+            written += 3;
+        } else {
+            written += scalar.encodeUtf8(spare[written..][0..4], codepoint);
+        }
     }
+    output.items.len = written;
     return output.toOwnedSlice(allocator);
 }
 
