@@ -137,7 +137,7 @@ fair counterpart is listed in the notes.
 | NFC jamo | 1.188 ns/B | 1.128 ns/B | Same allocation difference. Compare `NFC jamo (reuse)` at 0.903 ns/B (1.25x faster). |
 | UCA compare mixed | 59.457 ns/op | 49.011 ns/op | icuz validates UTF-8 input (ICU takes UTF-16, which needs no validation). Compare `UCA compare mixed (assume valid)` at 35.379 ns/op (1.39x faster). |
 | UCA compare mixed early | 56.233 ns/op | 8.784 ns/op | Same validation difference. Compare `UCA compare mixed early (assume valid)` at 4.011 ns/op (2.19x faster). |
-| UCA compare Chinese long | 1603.842 ns/op | 186.242 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 164.839 ns/op (1.13x faster). |
+| UCA compare Chinese long | 1449.312 ns/op | 185.564 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 164.928 ns/op (1.13x faster). |
 
 ## Known weak spot
 
