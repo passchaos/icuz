@@ -2287,6 +2287,9 @@ fn filteredTableCoreAlloc(
 
     var output = std.ArrayList(u8).empty;
     errdefer output.deinit(allocator);
+    // Filtered output rarely exceeds the decoded length by much; reserving it
+    // once keeps the per-run appends from growing the list repeatedly.
+    try output.ensureTotalCapacity(allocator, codepoints.items.len * 2 + 16);
     // Code-point buffers reused across filtered runs.
     var scratch: [2]std.ArrayList(u21) = .{ .empty, .empty };
     defer {
