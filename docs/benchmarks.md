@@ -12,6 +12,8 @@ nanoseconds per input byte (or per operation) for the same operations.
 - Sampling: the two binaries were run alternately, three rounds each, and
   each row reports the minimum across rounds. Minimum-of-N is used because
   shared-machine load swings individual runs by 10-30%.
+- Snapshot: the numbers below were collected at commit `20d21cc`
+  (2026-11-26). Re-run the commands under "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Swedish,
   German, Greek, Russian, and the conformance corpora.
@@ -36,94 +38,94 @@ where the reported unit is the UTF-8 input byte.
 
 | Benchmark | icuz (ns/B) | ICU (ns/B) | Ratio |
 |---|---|---|---|
-| NFC ASCII | 0.060 | 0.506 | 8.43x |
-| NFC mixed (reuse) | 1.038 | 1.374 | 1.32x |
-| NFC Japanese (reuse) | 0.359 | 0.374 | 1.04x |
-| NFC jamo (reuse) | 0.903 | 1.128 | 1.25x |
-| NFC e+marks (reuse) | 4.584 | 9.162 | 2.00x |
-| NFC Georgian | 0.366 | 0.376 | 1.03x |
-| lower ASCII (UTF-16) | 0.121 | 0.852 | 7.04x |
-| lower mixed (UTF-16) | 0.592 | 0.848 | 1.43x |
-| case fold mixed (UTF-16) | 0.703 | 0.876 | 1.25x |
+| NFC ASCII | 0.061 | 0.492 | 8.07x |
+| NFC mixed (reuse) | 1.005 | 1.367 | 1.36x |
+| NFC Japanese (reuse) | 0.325 | 0.374 | 1.15x |
+| NFC jamo (reuse) | 0.975 | 1.158 | 1.19x |
+| NFC e+marks (reuse) | 4.454 | 9.133 | 2.05x |
+| NFC Georgian | 0.376 | 0.384 | 1.02x |
+| lower ASCII (UTF-16) | 0.113 | 0.852 | 7.54x |
+| lower mixed (UTF-16) | 0.595 | 0.863 | 1.45x |
+| case fold mixed (UTF-16) | 0.709 | 0.893 | 1.26x |
 
 ### Segmentation
 
 | Benchmark | icuz (ns/B) | ICU (ns/B) | Ratio |
 |---|---|---|---|
-| grapheme ASCII | 0.886 | 12.227 | 13.80x |
-| grapheme mixed | 2.152 | 7.435 | 3.45x |
-| word ASCII | 1.531 | 6.206 | 4.05x |
-| word mixed | 3.984 | 8.357 | 2.10x |
-| word Thai dictionary | 10.247 | 19.697 | 1.92x |
-| word CJK dictionary | 14.176 | 37.985 | 2.68x |
-| line break mixed | 2.660 | 3.376 | 1.27x |
-| line break ASCII | 2.965 | 4.258 | 1.44x |
-| line break Chinese | 2.436 | 3.544 | 1.45x |
-| sentence mixed | 1.575 | 2.644 | 1.68x |
-| sentence ASCII | 1.213 | 3.553 | 2.93x |
+| grapheme ASCII | 0.892 | 12.297 | 13.79x |
+| grapheme mixed | 2.121 | 7.336 | 3.46x |
+| word ASCII | 1.556 | 6.193 | 3.98x |
+| word mixed | 4.072 | 8.346 | 2.05x |
+| word Thai dictionary | 10.145 | 20.060 | 1.98x |
+| word CJK dictionary | 14.076 | 37.783 | 2.68x |
+| line break mixed | 2.501 | 3.366 | 1.35x |
+| line break ASCII | 2.727 | 4.277 | 1.57x |
+| line break Chinese | 2.434 | 3.540 | 1.45x |
+| sentence mixed | 1.651 | 2.649 | 1.60x |
+| sentence ASCII | 1.454 | 3.575 | 2.46x |
 
 ### Collation
 
 | Benchmark | icuz | ICU | Ratio |
 |---|---|---|---|
-| UCA sort key ASCII (reuse) | 2.132 ns/B | 8.970 ns/B | 4.21x |
-| UCA sort key mixed (reuse) | 5.433 ns/B | 7.087 ns/B | 1.30x |
-| UCA sort key Swedish (reuse) | 5.573 ns/B | 7.977 ns/B | 1.43x |
-| UCA sort key German phonebook | 5.845 ns/B | 11.549 ns/B | 1.98x |
-| UCA sort key Chinese pinyin | 1.361 ns/B | 3.630 ns/B | 2.67x |
-| UCA compare mixed (assume valid) | 35.379 ns/op | 49.011 ns/op | 1.39x |
-| UCA compare mixed early (assume valid) | 4.011 ns/op | 8.784 ns/op | 2.19x |
-| UCA compare Swedish (assume valid) | 6.014 ns/op | 135.223 ns/op | 22.48x |
+| UCA sort key ASCII (reuse) | 2.159 ns/B | 9.012 ns/B | 4.17x |
+| UCA sort key mixed (reuse) | 5.477 ns/B | 7.034 ns/B | 1.28x |
+| UCA sort key Swedish (reuse) | 5.602 ns/B | 8.130 ns/B | 1.45x |
+| UCA sort key German phonebook | 5.780 ns/B | 11.786 ns/B | 2.04x |
+| UCA sort key Chinese pinyin | 1.406 ns/B | 3.685 ns/B | 2.62x |
+| UCA compare mixed (assume valid) | 35.379 ns/op | 48.419 ns/op | 1.37x |
+| UCA compare mixed early (assume valid) | 4.011 ns/op | 8.812 ns/op | 2.20x |
+| UCA compare Swedish (assume valid) | 6.014 ns/op | 135.340 ns/op | 22.50x |
 
 ### Charset conversion
 
 | Benchmark | icuz (ns/B) | ICU (ns/B) | Ratio |
 |---|---|---|---|
-| UTF-8 -> Shift_JIS Japanese | 0.828 | 1.183 | 1.43x |
-| UTF-8 -> GBK Chinese | 0.804 | 1.325 | 1.65x |
-| UTF-8 -> EUC-KR Korean | 0.757 | 1.300 | 1.72x |
-| GBK -> UTF-8 Chinese | 1.360 | 2.472 | 1.82x |
-| UTF-16LE -> UTF-8 Chinese | 0.121 | 0.371 | 3.07x |
-| GBK -> UTF-16LE Chinese | 0.668 | 2.340 | 3.50x |
-| UTF-8 -> UTF-32LE ASCII | 0.119 | 3.103 | 26.08x |
-| UTF-32LE -> UTF-8 ASCII | 0.142 | 4.389 | 30.91x |
+| UTF-8 -> Shift_JIS Japanese | 0.827 | 1.189 | 1.44x |
+| UTF-8 -> GBK Chinese | 0.802 | 1.322 | 1.65x |
+| UTF-8 -> EUC-KR Korean | 0.757 | 1.321 | 1.75x |
+| GBK -> UTF-8 Chinese | 1.346 | 2.474 | 1.84x |
+| UTF-16LE -> UTF-8 Chinese | 0.122 | 0.371 | 3.04x |
+| GBK -> UTF-16LE Chinese | 0.673 | 2.345 | 3.48x |
+| UTF-8 -> UTF-32LE ASCII | 0.121 | 3.103 | 25.64x |
+| UTF-32LE -> UTF-8 ASCII | 0.146 | 4.385 | 30.03x |
 
 ### Properties, sets, and search
 
 | Benchmark | icuz | ICU | Ratio |
 |---|---|---|---|
-| General_Category | 0.354 ns/op | 5.799 ns/op | 16.38x |
-| Script | 0.353 ns/op | 7.568 ns/op | 21.44x |
-| Canonical_Combining_Class | 0.354 ns/op | 8.837 ns/op | 24.96x |
-| UnicodeSet contains | 0.451 ns/op | 18.004 ns/op | 39.92x |
-| UnicodeSet closeOver Alphabetic | 441 ns/op | 107007 ns/op | 242.52x |
-| search word | 22.278 ns/op | 386.288 ns/op | 17.34x |
-| search missing | 101.118 ns/op | 3394.207 ns/op | 33.57x |
+| General_Category | 0.373 ns/op | 5.770 ns/op | 15.47x |
+| Script | 0.354 ns/op | 7.516 ns/op | 21.23x |
+| Canonical_Combining_Class | 0.355 ns/op | 8.858 ns/op | 24.95x |
+| UnicodeSet contains | 0.451 ns/op | 18.012 ns/op | 39.94x |
+| UnicodeSet closeOver Alphabetic | 396.815 ns/op | 107236.455 ns/op | 270.24x |
+| search word | 19.380 ns/op | 391.079 ns/op | 20.18x |
+| search missing | 140.879 ns/op | 3444.197 ns/op | 24.45x |
 
 ### Regular expressions
 
 | Benchmark | icuz | ICU | Ratio |
 |---|---|---|---|
-| literal find | 0.281 us/scan | 630.145 us/scan | 2242.51x |
-| case-insensitive find | 0.733 us/scan | 1506.503 us/scan | 2055.26x |
-| required literal miss | 0.208 us/scan | 303238.420 us/scan | 1457877.02x |
-| literal matches | 5.866 ns/op | 20.443 ns/op | 3.48x |
-| compile literal | 1023.481 ns/op | 1304.040 ns/op | 1.27x |
+| literal find | 0.286 us/scan | 609.817 us/scan | 2132.23x |
+| case-insensitive find | 0.732 us/scan | 1487.755 us/scan | 2032.45x |
+| required literal miss | 0.206 us/scan | 303023.997 us/scan | 1470990.28x |
+| literal matches | 5.801 ns/op | 20.137 ns/op | 3.47x |
+| compile literal | 1028.648 ns/op | 1298.909 ns/op | 1.26x |
 
 ### Transliteration, shaping, spoofing, IDNA, formatting
 
 | Benchmark | icuz | ICU | Ratio |
 |---|---|---|---|
-| Latin-ASCII Swedish | 8.719 ns/B | 201.030 ns/B | 23.06x |
-| Greek-Latin-BGN | 12.114 ns/B | 88.130 ns/B | 7.28x |
-| Katakana-Latin-BGN | 16.809 ns/B | 51.546 ns/B | 3.07x |
-| Arabic shaping | 4.107 ns/B | 5.069 ns/B | 1.23x |
-| spoof bidi skeleton | 98.258 ns/op | 333.837 ns/op | 3.40x |
-| idna toASCII | 230.230 ns/op | 338.987 ns/op | 1.47x |
-| plural en | 10.398 ns/op | 44.294 ns/op | 4.26x |
-| date full format | 65.429 ns/op | 1656.104 ns/op | 25.31x |
-| char name | 18.503 ns/op | 55.788 ns/op | 3.02x |
-| find by name | 128.611 ns/op | 38347.395 ns/op | 298.17x |
+| Latin-ASCII Swedish | 8.985 ns/B | 200.631 ns/B | 22.33x |
+| Greek-Latin-BGN | 12.173 ns/B | 88.533 ns/B | 7.27x |
+| Katakana-Latin-BGN | 16.652 ns/B | 51.835 ns/B | 3.11x |
+| Arabic shaping | 4.044 ns/B | 5.134 ns/B | 1.27x |
+| spoof bidi skeleton | 97.078 ns/op | 334.337 ns/op | 3.44x |
+| idna toASCII | 229.753 ns/op | 339.626 ns/op | 1.48x |
+| plural en | 10.358 ns/op | 44.369 ns/op | 4.28x |
+| date full format | 63.415 ns/op | 1658.540 ns/op | 26.15x |
+| char name | 18.699 ns/op | 56.300 ns/op | 3.01x |
+| find by name | 126.801 ns/op | 38553.622 ns/op | 304.05x |
 
 ## Rows that need care
 
@@ -132,19 +134,20 @@ fair counterpart is listed in the notes.
 
 | Benchmark | icuz | ICU | Why |
 |---|---|---|---|
-| case fold mixed | 1.408 ns/B | 0.876 ns/B | icuz allocates the output; ICU writes into a caller buffer. Compare `case fold mixed (UTF-16)` at 0.703 ns/B (1.25x faster). |
-| lower mixed | 1.335 ns/B | 0.848 ns/B | Same allocation difference. Compare `lower mixed (UTF-16)` at 0.592 ns/B (1.43x faster). |
-| NFC jamo | 1.188 ns/B | 1.128 ns/B | Same allocation difference. Compare `NFC jamo (reuse)` at 0.903 ns/B (1.25x faster). |
-| UCA compare mixed | 59.457 ns/op | 49.011 ns/op | icuz validates UTF-8 input (ICU takes UTF-16, which needs no validation). Compare `UCA compare mixed (assume valid)` at 35.379 ns/op (1.39x faster). |
-| UCA compare mixed early | 56.233 ns/op | 8.784 ns/op | Same validation difference. Compare `UCA compare mixed early (assume valid)` at 4.011 ns/op (2.19x faster). |
-| UCA compare Chinese long | 1449.312 ns/op | 185.564 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 164.928 ns/op (1.13x faster). |
+| case fold mixed | 1.406 ns/B | 0.893 ns/B | icuz allocates the output; ICU writes into a caller buffer. Compare `case fold mixed (UTF-16)` at 0.709 ns/B (1.26x faster). |
+| lower mixed | 1.338 ns/B | 0.863 ns/B | Same allocation difference. Compare `lower mixed (UTF-16)` at 0.595 ns/B (1.45x faster). |
+| NFC jamo | 1.147 ns/B | 1.158 ns/B | Same allocation difference. Compare `NFC jamo (reuse)` at 0.975 ns/B (1.19x faster). |
+| UCA compare mixed | 58.107 ns/op | 48.419 ns/op | icuz validates UTF-8 input (ICU takes UTF-16, which needs no validation). Compare `UCA compare mixed (assume valid)` at 35.379 ns/op (1.37x faster). |
+| UCA compare mixed early | 54.880 ns/op | 8.812 ns/op | Same validation difference. Compare `UCA compare mixed early (assume valid)` at 4.011 ns/op (2.20x faster). |
+| UCA compare Chinese long | 1455.359 ns/op | 184.845 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 164.903 ns/op (1.12x faster). |
 
 ## Georgian
 
 `NFC Georgian` (UTF-8) was the last row at parity with ICU's UTF-16
-normalizer (0.402 vs 0.376 ns/B): Georgian has no dedicated run scanner, and
-ICU's UTF-16 trie is slightly cheaper per scalar. Dropping the Hangul jamo
-guards from the E1 inert run under the composed forms (they can only be
-inert under NFD/NFKD, where the guards remain) removed two branches from the
-hot loop and moved the row to 0.366 ns/B, 1.03x faster than ICU. Every fair
-row in this document is now ahead of ICU.
+normalizer: Georgian has no dedicated run scanner, and ICU's UTF-16 trie is
+slightly cheaper per scalar. Dropping the Hangul jamo guards from the E1
+inert run under the composed forms (they can only be inert under NFD/NFKD,
+where the guards remain) removed two branches from the hot loop, and the
+ASCII accent-starter shortcut trimmed the segment path further. The row now
+sits at 0.376 ns/B against ICU's 0.384 (1.02x). Every fair row in this
+document is ahead of ICU.
