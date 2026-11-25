@@ -2148,6 +2148,55 @@ fn dbcsToUtf16IntoFast(
     };
 }
 
+/// Fused GBK-to-UTF-16 fast path. The generic converter dispatches through a
+/// decoder function and a result union per scalar; GBK prose is dominated by
+/// two-byte syllables, so decoding inline and pairing adjacent units avoids
+/// both.
+fn gbkToUtf16Into(
+    comptime endian: std.builtin.Endian,
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    output: *std.ArrayList(u8),
+) error{OutOfMemory}!bool {
+    // Every GBK scalar is BMP, so one unit per input byte bounds the output.
+    try output.ensureUnusedCapacity(allocator, input.len * 2 + 8);
+    const spare = output.unusedCapacitySlice();
+    var index: usize = 0;
+    var written: usize = 0;
+    while (index < input.len) {
+        const codepoint = cjk.gbkNextFast(input, &index) orelse return false;
+        if (codepoint >= 0xD800 and codepoint <= 0xDFFF) return false;
+        if (index < input.len) {
+            const retry_at = index;
+            if (cjk.gbkNextFast(input, &index)) |second| {
+                if (second < 0xD800 or second > 0xDFFF) {
+                    const units: u32 = if (endian == .little)
+                        (@as(u32, @intCast(codepoint)) |
+                            (@as(u32, @intCast(second)) << 16))
+                    else
+                        ((@as(u32, @intCast(codepoint)) << 16) |
+                            @as(u32, @intCast(second)));
+                    std.mem.writeInt(u32, spare[written..][0..4], units, endian);
+                    written += 4;
+                    continue;
+                }
+                index = retry_at;
+            } else {
+                return false;
+            }
+        }
+        std.mem.writeInt(
+            u16,
+            spare[written..][0..2],
+            @intCast(codepoint),
+            endian,
+        );
+        written += 2;
+    }
+    output.items.len += written;
+    return true;
+}
+
 fn dbcsToUtf16IntoFastEndian(
     comptime endian: std.builtin.Endian,
     allocator: std.mem.Allocator,
@@ -2156,7 +2205,7 @@ fn dbcsToUtf16IntoFastEndian(
     output: *std.ArrayList(u8),
 ) error{OutOfMemory}!bool {
     return switch (from) {
-        .gbk => dbcs_utf16.dbcsToUtf16Into(cjk.gbkNext, endian, allocator, input, output),
+        .gbk => gbkToUtf16Into(endian, allocator, input, output),
         .gb18030 => dbcs_utf16.dbcsToUtf16Into(cjk.gb18030Next, endian, allocator, input, output),
         .big5 => dbcs_utf16.dbcsToUtf16Into(cjk.big5Next, endian, allocator, input, output),
         .euc_jp => dbcs_utf16.dbcsToUtf16Into(cjk.eucJpNext, endian, allocator, input, output),
