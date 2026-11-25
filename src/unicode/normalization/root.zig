@@ -2627,11 +2627,13 @@ fn normalizeFusedUtf16Into(
         }
 
         if (codepoint >= 0x80 and inert.isInert(codepoint, form)) {
-            // Consecutive inert scalars need no per-unit dispatch. The last
-            // one stays the starter for a following mark, and ASCII ends the
-            // run so the ASCII path keeps handling it. The run state is
-            // decoded once after the loop so the hot scan only advances.
+            // Consecutive inert scalars need no per-unit dispatch. Simple
+            // marks (niqqud, harakat, viramas) join the run too; the last
+            // inert scalar stays the starter and `mark_chain` records the
+            // trailing class so a following mark orders against it.
             var run_end = index;
+            var mark_chain: u8 = 0;
+            var last_inert_end = index;
             while (run_end < units.len) {
                 const next_unit = units[run_end];
                 if (next_unit < 0x80) break;
@@ -2639,29 +2641,51 @@ fn normalizeFusedUtf16Into(
                     const next_decoded = utf16.decodePacked(units, run_end);
                     if (next_decoded == utf16.packed_invalid) break;
                     const next = utf16.packedCodepoint(next_decoded);
-                    if (!inert.isInert(next, form)) break;
+                    if (inert.isInert(next, form)) {
+                        run_end += utf16.packedLength(next_decoded);
+                        last_inert_end = run_end;
+                        continue;
+                    }
+                    if (data.quickCheck(next, form) != .yes) break;
+                    const mark_class = combining_class.forCodepoint(next);
+                    if (last_inert_end != run_end and
+                        mark_class < mark_chain) break;
+                    mark_chain = mark_class;
                     run_end += utf16.packedLength(next_decoded);
                     continue;
                 }
-                if (!inert.bmpInert(next_unit, form)) break;
+                if (inert.bmpInert(next_unit, form)) {
+                    run_end += 1;
+                    last_inert_end = run_end;
+                    continue;
+                }
+                const next: u21 = next_unit;
+                if (data.quickCheck(next, form) != .yes) break;
+                const mark_class = combining_class.forCodepoint(next);
+                if (last_inert_end != run_end and mark_class < mark_chain) break;
+                mark_chain = mark_class;
                 run_end += 1;
             }
+            // The last inert scalar ends at `last_inert_end`; decode it once.
             var run_codepoint = codepoint;
             var run_offset = start;
-            if (run_end > index) {
-                const last_unit = units[run_end - 1];
-                if (last_unit >= 0xdc00 and last_unit <= 0xdfff) {
-                    const last = utf16.decodePacked(units, run_end - 2);
-                    run_codepoint = utf16.packedCodepoint(last);
-                    run_offset = run_end - 2;
+            if (last_inert_end > index) {
+                const tail_unit = units[last_inert_end - 1];
+                if (tail_unit >= 0xdc00 and tail_unit <= 0xdfff) {
+                    const pair = utf16.decodePacked(units, last_inert_end - 2);
+                    run_codepoint = utf16.packedCodepoint(pair);
+                    run_offset = last_inert_end - 2;
                 } else {
-                    run_codepoint = last_unit;
-                    run_offset = run_end - 1;
+                    run_codepoint = tail_unit;
+                    run_offset = last_inert_end - 1;
                 }
             }
             starter = run_codepoint;
             starter_offset = run_offset;
-            previous_input_class = 0;
+            previous_input_class = if (last_inert_end == run_end)
+                0
+            else
+                mark_chain;
             index = run_end;
             continue;
         }
@@ -2903,6 +2927,8 @@ pub fn isNormalizedUtf16(
         if (inert.isInert(codepoint, form)) {
             var run_end = cursor;
             var run_codepoint = codepoint;
+            var mark_chain: u8 = 0;
+            var last_inert_end = cursor;
             while (run_end < units.len) {
                 const next_unit = units[run_end];
                 if (next_unit < 0x80) break;
@@ -2910,18 +2936,38 @@ pub fn isNormalizedUtf16(
                     const next_decoded = utf16.decodePacked(units, run_end);
                     if (next_decoded == utf16.packed_invalid) break;
                     const next = utf16.packedCodepoint(next_decoded);
-                    if (!inert.isInert(next, form)) break;
-                    run_codepoint = next;
+                    if (inert.isInert(next, form)) {
+                        run_codepoint = next;
+                        run_end += utf16.packedLength(next_decoded);
+                        last_inert_end = run_end;
+                        continue;
+                    }
+                    if (data.quickCheck(next, form) != .yes) break;
+                    const mark_class = combining_class.forCodepoint(next);
+                    if (last_inert_end != run_end and
+                        mark_class < mark_chain) break;
+                    mark_chain = mark_class;
                     run_end += utf16.packedLength(next_decoded);
                     continue;
                 }
                 const next: u21 = next_unit;
-                if (!inert.isInert(next, form)) break;
-                run_codepoint = next;
+                if (inert.isInert(next, form)) {
+                    run_codepoint = next;
+                    run_end += 1;
+                    last_inert_end = run_end;
+                    continue;
+                }
+                if (data.quickCheck(next, form) != .yes) break;
+                const mark_class = combining_class.forCodepoint(next);
+                if (last_inert_end != run_end and mark_class < mark_chain) break;
+                mark_chain = mark_class;
                 run_end += 1;
             }
             starter = run_codepoint;
-            previous_input_class = 0;
+            previous_input_class = if (last_inert_end == run_end)
+                0
+            else
+                mark_chain;
             cursor = run_end;
             continue;
         }
@@ -5018,6 +5064,14 @@ test "UTF-16 normalization matches the UTF-8 path" {
         "\u{0915}\u{094d}\u{0937}\u{093f}",
         "\u{fb01}\u{212b}\u{1e9b}\u{0323}",
         "e\u{0301}\u{0323} " ** 8,
+        // Vocalized Semitic and reordering mark sequences exercise the
+        // inert-run mark absorption in the UTF-16 scanner.
+        "\u{05e9}\u{05b8}\u{05c1}\u{05dc}\u{05d5}\u{05b9}\u{05dd} \u{05e2}\u{05d5}\u{05b9}\u{05dc}\u{05b8}\u{05dd}",
+        "\u{0645}\u{064f}\u{062d}\u{064e}\u{0645}\u{0651}\u{064e}\u{062f}\u{064c} \u{0631}\u{064e}\u{0633}\u{064f}\u{0648}\u{0644}\u{064f}",
+        "\u{05d1}\u{05b8}\u{05b0}",
+        "\u{0e01}\u{0e48}\u{0e38}",
+        "\u{0627}\u{0654}",
+        "\u{05d0} \u{0301}",
     };
     const forms = [_]Form{ .nfc, .nfd, .nfkc, .nfkd };
     for (forms) |form| {
