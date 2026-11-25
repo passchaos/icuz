@@ -288,6 +288,39 @@ pub fn isRunCodepoint(language: Language, codepoint: u21) bool {
     return languageForCodepoint(codepoint) == language;
 }
 
+/// Thai occupies U+0E00..U+0E7F, so three UTF-8 bytes identify a run scalar
+/// without decoding: the lead and second byte select a mask of third bytes
+/// that `isRunCodepoint` accepts. Computed from the real property tables, so
+/// the block's unassigned and Common-script scalars stay excluded.
+const thai_run_masks: [2]u64 = blk: {
+    var masks = [2]u64{ 0, 0 };
+    for (0..2) |second_index| {
+        const second: u8 = 0xb8 + @as(u8, @intCast(second_index));
+        for (0..64) |third_index| {
+            const third: u8 = 0x80 + @as(u8, @intCast(third_index));
+            const codepoint: u21 = (@as(u21, second & 0x3f) << 6) |
+                @as(u21, third & 0x3f);
+            if (isRunCodepoint(.thai, codepoint)) {
+                masks[second_index] |= @as(u64, 1) << @intCast(third_index);
+            }
+        }
+    }
+    break :blk masks;
+};
+
+/// True when the scalar at `offset` belongs to the Thai dictionary run,
+/// judged from its three UTF-8 bytes.
+pub inline fn thaiRunScalar(text: []const u8, offset: usize) bool {
+    if (offset + 3 > text.len) return false;
+    if (text[offset] != 0xe0) return false;
+    const second = text[offset + 1];
+    if (second != 0xb8 and second != 0xb9) return false;
+    const third = text[offset + 2];
+    if (third < 0x80 or third > 0xbf) return false;
+    return (thai_run_masks[second - 0xb8] >>
+        @as(u6, @intCast(third - 0x80))) & 1 != 0;
+}
+
 /// All dictionary words starting at `start` and ending at or before `end`, in
 /// increasing length order. A single trie walk replaces one lookup per prefix
 /// length.

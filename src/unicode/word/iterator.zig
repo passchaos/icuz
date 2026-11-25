@@ -272,6 +272,16 @@ pub const DictionaryIterator = struct {
             while (run_end < self.text.len and
                 codepoint_count < dictionary.max_run_codepoints)
             {
+                // Thai prose dominates dictionary traffic; its contiguous
+                // block lets three bytes settle the run test without a
+                // decode and two property lookups.
+                if (language == .thai and
+                    dictionary.thaiRunScalar(self.text, run_end))
+                {
+                    run_end += 3;
+                    codepoint_count += 1;
+                    continue;
+                }
                 const decoded = decode(self.text, run_end) orelse break;
                 if (!dictionary.isRunCodepoint(
                     language,
