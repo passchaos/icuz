@@ -64,7 +64,7 @@ pub const Iterator = struct {
         const first_packed = scalar.decodeValidPacked(self.text, start);
         const first_codepoint = scalar.packedCodepoint(first_packed);
         var end = start + scalar.packedLength(first_packed);
-        const first_properties = properties(first_codepoint);
+        const first_properties = rules.propertiesAssumeValid(first_codepoint);
         var previous_codepoint = first_codepoint;
         var previous_start = start;
         var previous_properties = first_properties;
@@ -89,7 +89,7 @@ pub const Iterator = struct {
                 }
                 previous_codepoint = self.text[end - 1];
                 previous_start = end - 1;
-                previous_properties = properties(self.text[end - 1]);
+                previous_properties = rules.propertiesAssumeValid(self.text[end - 1]);
                 continue;
             }
             var current_codepoint: u21 = undefined;
@@ -105,7 +105,7 @@ pub const Iterator = struct {
                 current_codepoint = scalar.packedCodepoint(current_packed);
                 current_next = end + scalar.packedLength(current_packed);
             }
-            const current_properties = properties(current_codepoint);
+            const current_properties = rules.propertiesAssumeValid(current_codepoint);
             // WB5, WB8-WB10, WB13, and WB13a/WB13b prohibit every anchor
             // pair except Katakana × letter/number and ExtendNumLet ×
             // ExtendNumLet, so word runs skip the rule engine. General_
@@ -302,7 +302,7 @@ pub const DictionaryIterator = struct {
         var cursor = start;
         while (cursor < end) {
             const decoded = decode(self.text, cursor) orelse break;
-            if (properties(decoded.codepoint).word_anchor) {
+            if (rules.propertiesAssumeValid(decoded.codepoint).word_anchor) {
                 is_word = true;
                 break;
             }

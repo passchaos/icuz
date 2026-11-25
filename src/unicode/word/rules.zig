@@ -84,6 +84,11 @@ pub fn properties(codepoint: u21) Properties {
         .word_anchor = false,
         .letter = false,
     };
+    return propertiesAssumeValid(codepoint);
+}
+
+/// Property lookup for a scalar the caller's decoder already proved valid.
+pub inline fn propertiesAssumeValid(codepoint: u21) Properties {
     const page = @as(usize, codepoint) >> 8;
     const slot = readU16(header.index_offset + page * 2);
     const value = data[
