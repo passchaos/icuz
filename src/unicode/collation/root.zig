@@ -3696,14 +3696,6 @@ fn appendTailoredLatinSortKey(
     var buffer: [1024]u21 = undefined;
     const source = normalizeNfdLatinInto(&buffer, codepoints) orelse return false;
 
-    // `L`/`l` + U+00B7 is a root contraction; the general path handles it.
-    for (source, 0..) |codepoint, index| {
-        if ((codepoint == 'L' or codepoint == 'l') and
-            index + 1 < source.len and source[index + 1] == 0xb7)
-        {
-            return false;
-        }
-    }
 
     var stack_ces: [512]LatinElement = undefined;
     var ces = ElementBuffer(LatinElement).init(allocator, &stack_ces);
@@ -3881,7 +3873,9 @@ fn appendLatinCesLevel(
 }
 
 /// NFD for Latin-script code points into a fixed buffer, without allocating.
-/// Returns null when the buffer is too small.
+/// Returns null when the buffer is too small or the result would contain the
+/// `L`/`l` + U+00B7 root contraction, which the fused level tables cannot
+/// represent.
 fn allAsciiCodepoints(codepoints: []const u21) bool {
     for (codepoints) |codepoint| {
         if (codepoint >= 0x80) return false;
@@ -3953,6 +3947,13 @@ fn normalizeNfdLatinInto(
                 length += 1;
                 pending = null;
             }
+            // U+0387 decomposes to U+00B7, so a decomposed middle dot can
+            // form the root contraction too.
+            if (entry.parts[0] == 0xb7 and length > 0 and
+                (buffer[length - 1] == 'L' or buffer[length - 1] == 'l'))
+            {
+                return null;
+            }
             if (length + entry.len > buffer.len) return null;
             @memcpy(buffer[length..][0..entry.len], entry.parts[0..entry.len]);
             length += entry.len;
@@ -3987,6 +3988,14 @@ fn normalizeNfdLatinInto(
                     if (length == buffer.len) return null;
                     buffer[length] = previous;
                     length += 1;
+                }
+                // `L`/`l` immediately followed by U+00B7 is a root
+                // contraction the Latin level tables cannot represent.
+                // Rejecting it here saves a separate scan of the result.
+                if (part == 0xb7 and length > 0 and
+                    (buffer[length - 1] == 'L' or buffer[length - 1] == 'l'))
+                {
+                    return null;
                 }
                 pending = part;
             } else {
@@ -5480,6 +5489,19 @@ test "contractions are longer than their first code point" {
     defer allocator.free(separate);
     try testing.expect(contraction.len > 0);
     try testing.expect(separate.len > contraction.len);
+}
+
+test "decomposed middle dot keeps the contraction under a tailoring" {
+    const testing = @import("std").testing;
+    const allocator = testing.allocator;
+    const options = Options{ .locale = "sv" };
+    // U+0387 canonically decomposes to U+00B7, so both inputs normalize to
+    // the same contraction and must produce identical sort keys.
+    const direct = try sortKeyAlloc(allocator, "l\u{00b7}", options);
+    defer allocator.free(direct);
+    const decomposed = try sortKeyAlloc(allocator, "l\u{0387}", options);
+    defer allocator.free(decomposed);
+    try testing.expectEqualSlices(u32, direct, decomposed);
 }
 
 test "shifted variable weighting" {
