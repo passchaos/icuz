@@ -366,9 +366,43 @@ pub const Set = struct {
     }
 
     pub fn count(self: Set) u32 {
-        var total: u32 = 0;
-        for (self.ranges.items) |range| {
-            total += @as(u32, range.last) - @as(u32, range.first) + 1;
+        const ranges = self.ranges.items;
+        // Each range is two u32 lanes, so eight ranges reduce per step.
+        comptime {
+            if (@sizeOf(Range) != 8 or @offsetOf(Range, "first") != 0 or
+                @offsetOf(Range, "last") != 4)
+            {
+                @compileError("Range layout changed");
+            }
+        }
+        const lanes = 8;
+        const Vec = @Vector(lanes, u32);
+        const first_mask = comptime blk: {
+            var mask: [lanes]i32 = undefined;
+            for (0..lanes) |lane| mask[lane] = @intCast(lane * 2);
+            break :blk mask;
+        };
+        const last_mask = comptime blk: {
+            var mask: [lanes]i32 = undefined;
+            for (0..lanes) |lane| mask[lane] = @intCast(lane * 2 + 1);
+            break :blk mask;
+        };
+        var index: usize = 0;
+        var sum: Vec = @splat(0);
+        while (index + lanes <= ranges.len) : (index += lanes) {
+            const words: []const u32 = std.mem.bytesAsSlice(
+                u32,
+                std.mem.sliceAsBytes(ranges[index..][0..lanes]),
+            );
+            const chunk: @Vector(lanes * 2, u32) = words[0 .. lanes * 2].*;
+            const first = @shuffle(u32, chunk, undefined, first_mask);
+            const last = @shuffle(u32, chunk, undefined, last_mask);
+            sum += last - first + @as(Vec, @splat(1));
+        }
+        var total: u32 = @reduce(.Add, sum);
+        while (index < ranges.len) : (index += 1) {
+            total += @as(u32, ranges[index].last) -
+                @as(u32, ranges[index].first) + 1;
         }
         return total;
     }
