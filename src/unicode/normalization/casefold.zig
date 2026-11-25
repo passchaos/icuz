@@ -326,7 +326,19 @@ fn mapAlloc(
     // ASCII is already NFC, so the whole pipeline collapses to a byte loop.
     if (isAscii(text)) {
         const output = try allocator.alloc(u8, text.len);
-        for (text, 0..) |byte, index| {
+        var index: usize = 0;
+        const upper_a: @Vector(32, u8) = @splat('A');
+        const upper_z: @Vector(32, u8) = @splat('Z');
+        const lower_delta: @Vector(32, u8) = @splat('a' - 'A');
+        const zero: @Vector(32, u8) = @splat(0);
+        while (index + 32 <= text.len) : (index += 32) {
+            const chunk: @Vector(32, u8) = text[index..][0..32].*;
+            const upper = (chunk >= upper_a) & (chunk <= upper_z);
+            output[index..][0..32].* =
+                chunk + @select(u8, upper, lower_delta, zero);
+        }
+        while (index < text.len) : (index += 1) {
+            const byte = text[index];
             output[index] = if (byte >= 'A' and byte <= 'Z') byte + 32 else byte;
         }
         return output;
@@ -507,8 +519,13 @@ fn mapAlloc(
 }
 
 fn isAscii(text: []const u8) bool {
-    for (text) |byte| {
-        if (byte >= 0x80) return false;
+    var index: usize = 0;
+    while (index + 32 <= text.len) : (index += 32) {
+        const chunk: @Vector(32, u8) = text[index..][0..32].*;
+        if (@reduce(.Or, chunk) & 0x80 != 0) return false;
+    }
+    while (index < text.len) : (index += 1) {
+        if (text[index] >= 0x80) return false;
     }
     return true;
 }
