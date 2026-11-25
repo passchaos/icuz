@@ -257,7 +257,7 @@ fn titleAsciiAlloc(
 ) error{OutOfMemory}![]u8 {
     const output = try allocator.alloc(u8, text.len);
     errdefer allocator.free(output);
-    // `decodeAlloc` above already validated the text.
+    // ASCII text is trivially valid; the iterator would only re-scan it.
     var segments = word.assumeValid(text);
     var emitted: usize = 0;
     while (segments.next()) |segment| {
@@ -392,7 +392,9 @@ fn titleAlloc(
     var output = try std.ArrayList(u8).initCapacity(allocator, text.len);
     errdefer output.deinit(allocator);
 
-    var segments = word.segments(text) catch unreachable;
+    const root_locale = options.locale == .root;
+    // `decodeAlloc` above already validated the text.
+    var segments = word.assumeValid(text);
     var emitted: usize = 0;
     var decoded_index: usize = 0;
     while (segments.next()) |segment| {
@@ -431,7 +433,20 @@ fn titleAlloc(
             for (start..end) |index| {
                 const codepoint = decoded.codepoints.items[index];
                 const before = output.items.len;
-                if (first_cased != null and index == first_cased.?) {
+                const is_first = first_cased != null and
+                    index == first_cased.?;
+                if (codepoint < 0x80 and root_locale) {
+                    // Root ASCII has no SpecialCasing records, so the simple
+                    // mapping applies without the record-bitmap probe.
+                    try appendCodepoint(
+                        allocator,
+                        &output,
+                        if (is_first)
+                            simpleTitleFast(codepoint)
+                        else
+                            simpleLowerFast(codepoint),
+                    );
+                } else if (is_first) {
                     if (lookup(
                         codepoint,
                         .title,
