@@ -2872,27 +2872,27 @@ fn quickCheckUtf16(
 pub const Normalizer = struct {
     allocator: std.mem.Allocator,
     form: Form,
-    /// Scalars of the current segment, which a later mark may continue.
+    /// Scalars buffered since the last batch normalization. Everything
+    /// before `last_segment_start` belongs to complete segments; the tail is
+    /// the current segment, which a later mark may continue.
     pending: std.ArrayList(u21),
-    /// Scalars of complete segments, normalized lazily in one batch.
-    stable: std.ArrayList(u21),
+    last_segment_start: usize,
     normalized: std.ArrayList(u21),
 
-    const stable_flush_threshold = 4096;
+    const flush_threshold = 4096;
 
     pub fn init(allocator: std.mem.Allocator, form: Form) Normalizer {
         return .{
             .allocator = allocator,
             .form = form,
             .pending = .empty,
-            .stable = .empty,
+            .last_segment_start = 0,
             .normalized = .empty,
         };
     }
 
     pub fn deinit(self: *Normalizer) void {
         self.pending.deinit(self.allocator);
-        self.stable.deinit(self.allocator);
         self.normalized.deinit(self.allocator);
     }
 
@@ -2904,18 +2904,11 @@ pub const Normalizer = struct {
         if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
         if (text.len == 0) return;
         if (scalar.validate.asciiOnly(text)) {
-            // ASCII cannot continue a segment, so the pending one is
-            // complete. Every chunk scalar but the last is also complete; the
-            // last stays pending because a mark in the next chunk may compose
-            // with it.
-            if (self.pending.items.len != 0) {
-                try self.stable.appendSlice(
-                    self.allocator,
-                    self.pending.items,
-                );
-                self.pending.clearRetainingCapacity();
-            }
-            try self.flushStable(output);
+            // ASCII cannot continue a segment, so the buffered tail is
+            // complete and the chunk passes through verbatim. The final
+            // scalar stays buffered because a mark in the next chunk may
+            // compose with it.
+            try self.flushPending(output);
             if (text.len > 1) {
                 try output.appendSlice(
                     self.allocator,
@@ -2923,6 +2916,7 @@ pub const Normalizer = struct {
                 );
             }
             try self.pending.append(self.allocator, text[text.len - 1]);
+            self.last_segment_start = 0;
             return;
         }
         var index: usize = 0;
@@ -2935,11 +2929,7 @@ pub const Normalizer = struct {
     }
 
     pub fn finish(self: *Normalizer, output: *std.ArrayList(u8)) Error!void {
-        if (self.pending.items.len != 0) {
-            try self.stable.appendSlice(self.allocator, self.pending.items);
-            self.pending.clearRetainingCapacity();
-        }
-        try self.flushStable(output);
+        try self.flushPending(output);
     }
 
     fn process(
@@ -2947,40 +2937,70 @@ pub const Normalizer = struct {
         codepoint: u21,
         output: *std.ArrayList(u8),
     ) Error!void {
-        if (self.pending.items.len == 0 or
-            continuesSegment(
-                codepoint,
-                self.form == .nfkc or self.form == .nfkd,
-            ))
-        {
+        if (self.pending.items.len == 0) {
+            self.last_segment_start = 0;
+            try self.pending.append(self.allocator, codepoint);
+            return;
+        }
+        if (continuesSegment(
+            codepoint,
+            self.form == .nfkc or self.form == .nfkd,
+        )) {
             try self.pending.append(self.allocator, codepoint);
             return;
         }
 
-        // The new scalar starts its own segment, so the pending one is
+        // The new scalar starts its own segment; everything before it is
         // complete and can wait for the next batch normalization.
-        try self.stable.appendSlice(self.allocator, self.pending.items);
-        self.pending.clearRetainingCapacity();
+        self.last_segment_start = self.pending.items.len;
         try self.pending.append(self.allocator, codepoint);
-        if (self.stable.items.len >= stable_flush_threshold) {
-            try self.flushStable(output);
+        if (self.last_segment_start >= flush_threshold) {
+            try self.flushComplete(output);
         }
     }
 
-    fn flushStable(
+    /// Normalize and emit every complete segment, keeping the current one.
+    fn flushComplete(
         self: *Normalizer,
         output: *std.ArrayList(u8),
     ) Error!void {
-        if (self.stable.items.len == 0) return;
+        const complete = self.pending.items[0..self.last_segment_start];
+        if (complete.len == 0) return;
+        try self.normalizeAndAppend(complete, output);
 
+        const tail_len = self.pending.items.len - self.last_segment_start;
+        std.mem.copyForwards(
+            u21,
+            self.pending.items[0..tail_len],
+            self.pending.items[self.last_segment_start..],
+        );
+        self.pending.shrinkRetainingCapacity(tail_len);
+        self.last_segment_start = 0;
+    }
+
+    /// Normalize and emit the whole buffer.
+    fn flushPending(
+        self: *Normalizer,
+        output: *std.ArrayList(u8),
+    ) Error!void {
+        if (self.pending.items.len == 0) return;
+        try self.normalizeAndAppend(self.pending.items, output);
+        self.pending.clearRetainingCapacity();
+        self.last_segment_start = 0;
+    }
+
+    fn normalizeAndAppend(
+        self: *Normalizer,
+        codepoints: []const u21,
+        output: *std.ArrayList(u8),
+    ) Error!void {
         self.normalized.clearRetainingCapacity();
         try normalizeCodepointsInto(
             self.allocator,
-            self.stable.items,
+            codepoints,
             self.form,
             &self.normalized,
         );
-
         try output.ensureUnusedCapacity(
             self.allocator,
             self.normalized.items.len * 4,
@@ -2991,7 +3011,6 @@ pub const Normalizer = struct {
             written += scalar.encodeUtf8(dest[written..], codepoint);
         }
         output.items.len += written;
-        self.stable.clearRetainingCapacity();
     }
 };
 
