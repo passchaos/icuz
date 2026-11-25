@@ -353,6 +353,7 @@ fn matchesAndPrefix(
     return count;
 }
 
+// Candidate buffers per lookahead word (ICU's PossibleWord count).
 const possible_word_count = 20;
 
 /// ICU's PossibleWord: the dictionary candidates at one text position, in
