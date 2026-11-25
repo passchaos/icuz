@@ -2872,12 +2872,11 @@ fn quickCheckUtf16(
 pub const Normalizer = struct {
     allocator: std.mem.Allocator,
     form: Form,
-    /// Scalars buffered since the last batch normalization. Everything
-    /// before `last_segment_start` belongs to complete segments; the tail is
-    /// the current segment, which a later mark may continue.
-    pending: std.ArrayList(u21),
+    /// Raw UTF-8 bytes buffered since the last batch normalization.
+    /// Everything before `last_segment_start` belongs to complete segments;
+    /// the tail is the current segment, which a later mark may continue.
+    pending: std.ArrayList(u8),
     last_segment_start: usize,
-    normalized: std.ArrayList(u21),
 
     const flush_threshold = 4096;
 
@@ -2887,13 +2886,11 @@ pub const Normalizer = struct {
             .form = form,
             .pending = .empty,
             .last_segment_start = 0,
-            .normalized = .empty,
         };
     }
 
     pub fn deinit(self: *Normalizer) void {
         self.pending.deinit(self.allocator);
-        self.normalized.deinit(self.allocator);
     }
 
     pub fn feed(
@@ -2919,29 +2916,31 @@ pub const Normalizer = struct {
             self.last_segment_start = 0;
             return;
         }
-        // One capacity reservation covers every scalar in the chunk, so the
+        // One capacity reservation covers every byte in the chunk, so the
         // hot loop appends without a per-scalar capacity check.
         try self.pending.ensureUnusedCapacity(self.allocator, text.len);
         var index: usize = 0;
         while (index < text.len) {
             const decoded = scalar.decodeValid(text, index) orelse
                 return error.InvalidUtf8;
-            index = decoded.next;
-            const codepoint = decoded.codepoint;
+            const next = decoded.next;
             if (self.pending.items.len == 0) {
                 self.last_segment_start = 0;
-                self.pending.appendAssumeCapacity(codepoint);
+                self.pending.appendSliceAssumeCapacity(text[index..next]);
+                index = next;
                 continue;
             }
             if (continuesSegment(
-                codepoint,
+                decoded.codepoint,
                 self.form == .nfkc or self.form == .nfkd,
             )) {
-                self.pending.appendAssumeCapacity(codepoint);
+                self.pending.appendSliceAssumeCapacity(text[index..next]);
+                index = next;
                 continue;
             }
             self.last_segment_start = self.pending.items.len;
-            self.pending.appendAssumeCapacity(codepoint);
+            self.pending.appendSliceAssumeCapacity(text[index..next]);
+            index = next;
             if (self.last_segment_start >= flush_threshold) {
                 try self.flushComplete(output);
             }
@@ -2959,11 +2958,11 @@ pub const Normalizer = struct {
     ) Error!void {
         const complete = self.pending.items[0..self.last_segment_start];
         if (complete.len == 0) return;
-        try self.normalizeAndAppend(complete, output);
+        _ = try normalizeFormInto(self.allocator, complete, self.form, output);
 
         const tail_len = self.pending.items.len - self.last_segment_start;
         std.mem.copyForwards(
-            u21,
+            u8,
             self.pending.items[0..tail_len],
             self.pending.items[self.last_segment_start..],
         );
@@ -2977,33 +2976,14 @@ pub const Normalizer = struct {
         output: *std.ArrayList(u8),
     ) Error!void {
         if (self.pending.items.len == 0) return;
-        try self.normalizeAndAppend(self.pending.items, output);
+        _ = try normalizeFormInto(
+            self.allocator,
+            self.pending.items,
+            self.form,
+            output,
+        );
         self.pending.clearRetainingCapacity();
         self.last_segment_start = 0;
-    }
-
-    fn normalizeAndAppend(
-        self: *Normalizer,
-        codepoints: []const u21,
-        output: *std.ArrayList(u8),
-    ) Error!void {
-        self.normalized.clearRetainingCapacity();
-        try normalizeCodepointsInto(
-            self.allocator,
-            codepoints,
-            self.form,
-            &self.normalized,
-        );
-        try output.ensureUnusedCapacity(
-            self.allocator,
-            self.normalized.items.len * 4,
-        );
-        const dest = output.unusedCapacitySlice();
-        var written: usize = 0;
-        for (self.normalized.items) |codepoint| {
-            written += scalar.encodeUtf8(dest[written..], codepoint);
-        }
-        output.items.len += written;
     }
 };
 
