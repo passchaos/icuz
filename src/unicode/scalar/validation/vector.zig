@@ -113,7 +113,10 @@ pub fn isValid(text: []const u8) bool {
     // Below this length the scalar prefix and tail would cover most of the
     // text, so the scalar checker is cheaper.
     if (text.len < vector_len + 1) {
-        return asciiOnly(text) or scalarValid(text);
+        if (text.len < 8 or text[0] >= 0x80) return scalarValid(text);
+        const prefix = scalar.asciiSpan(text);
+        if (prefix == text.len) return true;
+        return scalarValid(text[prefix..]);
     }
     return scan(text);
 }
@@ -123,7 +126,7 @@ pub fn isValid(text: []const u8) bool {
 noinline fn scan(text: []const u8) bool {
     // Catch an invalid initial byte before entering the window loop. The
     // first window starts at zero, so no scalar prefix needs revalidation.
-    if (text[0] >= 0x80 and sequenceLen(text, 0) == null) return false;
+    if (text[0] >= 0x80 and sequenceLen(text, 0) == 0) return false;
     var offset: usize = 0;
     var carry: u32 = 0;
     while (offset + vector_len + 1 <= text.len) : (offset += vector_len) {

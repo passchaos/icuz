@@ -72,11 +72,15 @@ inline fn load(text: []const u8, offset: usize) V {
 
 inline fn errors(text: []const u8, offset: usize, bytes: V) V {
     const prev1 = load(text, offset - 1);
+    const prev2 = load(text, offset - 2);
+    const prev3 = load(text, offset - 3);
+    return errorsWithPrevious(bytes, prev1, prev2, prev3);
+}
+
+inline fn errorsWithPrevious(bytes: V, prev1: V, prev2: V, prev3: V) V {
     const special = lookup(previous_high, prev1 >> @splat(4)) &
         lookup(previous_low, prev1 & @as(V, @splat(15))) &
         lookup(current_high, bytes >> @splat(4));
-    const prev2 = load(text, offset - 2);
-    const prev3 = load(text, offset - 3);
     const required = (prev2 >= @as(V, @splat(0xe0))) |
         (prev3 >= @as(V, @splat(0xf0)));
     return special ^ @select(u8, required, @as(V, @splat(0x80)), @as(V, @splat(0)));
@@ -86,17 +90,57 @@ inline fn clean(value: V) bool {
     return @reduce(.And, value == @as(V, @splat(0)));
 }
 
-/// Caller selects this path only for inputs of at least 128 bytes.
-pub noinline fn isValid(text: []const u8) bool {
-    var offset: usize = 0;
-    if (text[0] < 0x80) {
+/// Check 16-32 bytes with one lookup window. Three ASCII padding bytes make
+/// lookbehind readable. Trailing ASCII padding detects incomplete scalars;
+/// a full 32-byte input instead needs the independent tail-completeness check.
+pub noinline fn isValidShort(text: []const u8) bool {
+    if (text.len == 32) {
+        const bytes = load(text, 0);
+        const half = @shuffle(u8, @as(V, @splat(0)), bytes, blk: {
+            var mask: [32]i32 = undefined;
+            for (0..16) |i| {
+                mask[i] = @intCast(i);
+                mask[16 + i] = ~@as(i32, @intCast(i));
+            }
+            break :blk mask;
+        });
+        const e = errorsWithPrevious(bytes, previous(1, bytes, half), previous(2, bytes, half), previous(3, bytes, half));
+        return clean(e) and completeTail(text);
+    }
+    var padded = [_]u8{0} ** 35;
+    @memcpy(padded[3..][0..text.len], text);
+    if (!clean(errors(&padded, 3, load(&padded, 3)))) return false;
+    return true;
+}
+
+// Both 128-bit lanes share the same carried half; three lane alignments
+// then produce the preceding bytes without loads before the input slice.
+inline fn previous(comptime count: u5, bytes: V, half: V) V {
+    return asm ("vpalignr %[amount], %[half], %[bytes], %[result]"
+        : [result] "=x" (-> V),
+        : [amount] "i" (@as(u8, 16 - count)),
+          [half] "x" (half),
+          [bytes] "x" (bytes),
+    );
+}
+
+/// Caller selects this path only for inputs of at least 35 bytes. A nonzero
+/// prefix is the length of the first scalar already validated by the caller;
+/// zero means that the first byte is ASCII and its run is still to be scanned.
+pub noinline fn isValid(text: []const u8, prefix: usize) bool {
+    var offset = prefix;
+    if (offset == 0) {
         offset = scalar.asciiSpan(text);
         if (offset == text.len) return true;
     }
     // At least three validated prefix bytes make the lookbehind loads
     // readable. One three- or four-byte scalar is enough; an ASCII prefix
     // is consumed just once, even if the first non-ASCII byte is near EOF.
-    while (offset < 3) offset += scalar.sequenceLen(text, offset) orelse return false;
+    while (offset < 3) {
+        const length = scalar.sequenceLen(text, offset);
+        if (length == 0) return false;
+        offset += length;
+    }
 
     while (offset + 64 <= text.len) : (offset += 64) {
         const a = load(text, offset);
@@ -114,11 +158,13 @@ pub noinline fn isValid(text: []const u8) bool {
         if (!clean(errors(text, final, load(text, final)))) return false;
     }
 
-    // Pair checks cannot inspect a lead that is the last byte, or determine
-    // that a final continuation belongs to a truncated scalar. Check that
-    // last scalar independently, with no padded or out-of-slice loads.
-    var tail = text.len - 1;
-    var back: usize = 0;
-    while (text[tail] & 0xc0 == 0x80 and back < 3) : (back += 1) tail -= 1;
-    return scalar.scalarValid(text[tail..]);
+    // Pair checks have rejected all invalid adjacent-byte combinations.
+    // Only leads that need more bytes than remain at EOF can be incomplete.
+    return completeTail(text);
+}
+
+inline fn completeTail(text: []const u8) bool {
+    return text[text.len - 1] < 0xc0 and
+        text[text.len - 2] < 0xe0 and
+        text[text.len - 3] < 0xf0;
 }

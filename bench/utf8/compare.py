@@ -25,6 +25,27 @@ def corpora():
     yield "invalid-first", b"\xff" + text[1:], False
     yield "invalid-last", text[:-1] + b"\xff", False
     yield "truncated-last", text + b"\xf0\x9f\x98", False
+    # The original phrase rows start at 36-106 bytes. Include the actual
+    # short-input path and ASCII runs on either side of a multibyte scalar.
+    for name, piece in pieces.items():
+        scalars = piece.decode()
+        for minimum in (1, 8, 16, 24, 31):
+            prefix = ""
+            for scalar in scalars * 32:
+                prefix += scalar
+                if len(prefix.encode()) >= minimum:
+                    break
+            yield f"tiny-{name}-{minimum}", prefix.encode(), True
+    yield "tiny-ascii-prefix", b"a" * 29 + "世".encode(), True
+    yield "tiny-ascii-suffix", "世".encode() + b"a" * 29, True
+    yield "tiny-ascii-infix", "é".encode() + b"a" * 28 + "ö".encode(), True
+    yield "latin-ascii-leading", b"hello " + pieces["latin"], True
+    yield "mixed-latin-leading", "é".encode() + pieces["mixed"], True
+    yield "mixed-emoji-leading", "😀".encode() + pieces["mixed"], True
+    for first in (0x80, 0xc0, 0xc1, 0xf5):
+        yield f"reject-first-{first:02x}", bytes([first]) + b"a" * 127, False
+    for first in (0x80, 0xc0, 0xc1, 0xf5, 0xff):
+        yield f"reject-short-{first:02x}", bytes([first]) + b"a" * 31, False
 
 
 def run(binary, files, cpu):
@@ -87,6 +108,7 @@ def main():
                     *sorted((source_root / "src/unicode/scalar/validation").glob("*.zig"))]
     evidence = {"cpu": args.cpu, "rounds": args.rounds, "trials": 5,
                 "bytes_per_trial": 16 * 1024 * 1024,
+                "early_reject_min_rounds": 2_000_000,
                 "platform": platform.platform(), "versions": sorted(set(versions)),
                 "binaries": binaries,
                 "binary_sha256": {name: hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -94,6 +116,11 @@ def main():
                 "source_sha256": {str(path.relative_to(source_root)):
                                   hashlib.sha256(path.read_bytes()).hexdigest()
                                   for path in source_paths},
+                "harness_sha256": {str(path.relative_to(source_root)):
+                                   hashlib.sha256(path.read_bytes()).hexdigest()
+                                   for path in [Path(__file__).resolve(),
+                                                Path(__file__).resolve().with_name("bench.zig"),
+                                                Path(__file__).resolve().with_name("simdutf.cpp")]},
                 "inputs": {name: {"bytes": len(text), "valid": valid,
                                    "sha256": hashlib.sha256(text).hexdigest()}
                            for name, text, valid in cases}, "samples": samples}

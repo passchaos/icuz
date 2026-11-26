@@ -5,6 +5,10 @@ across the microbenchmark suites in `bench/bench.zig` and
 `bench/icu_bench.cpp`. Both suites process identical inputs and report
 nanoseconds per input byte (or per operation) for the same operations.
 
+The latest validation profile compares short and medium inputs with
+simdutf 9.5.0 and refreshes validating collation against ICU 78.3 in
+[`performance/utf8-short-validation-2026-11-26.md`](performance/utf8-short-validation-2026-11-26.md).
+
 The UTF-8 validation and corrected long Chinese comparison profile in
 [`performance/utf8-validation-2026-11-26.md`](performance/utf8-validation-2026-11-26.md)
 adds simdutf 9.0.0 and ICU 78.3 comparisons. The former long Chinese ICU

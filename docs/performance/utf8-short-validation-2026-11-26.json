@@ -1,0 +1,3492 @@
+{
+  "cpu": 2,
+  "rounds": 3,
+  "trials": 5,
+  "bytes_per_trial": 16777216,
+  "early_reject_min_rounds": 2000000,
+  "platform": "Linux-6.8.0-151-generic-x86_64-with-glibc2.39",
+  "versions": [
+    "simdutf 9.5.0 (haswell)"
+  ],
+  "binaries": {
+    "icuz": "/home/passchaos/project-z/icuz/zig-out/bin/icuz-utf8-bench",
+    "simdutf": "/tmp/icuz-simdutf-9.5.0-bench",
+    "baseline": "/tmp/icuz-utf8-d9d4ecd"
+  },
+  "binary_sha256": {
+    "icuz": "6b441bb9e3f58a588fe2959f9b23f34026b53eb529ca85b9e50d3a630dad3cb3",
+    "simdutf": "965cd847c97c7d1aaf718bfbbb6868b21d5869b19110fd37cb6790f27ec6ffb4",
+    "baseline": "12d91f2c3003cedcfc56860b6a0c1f3976739110121bbb4bf52347363fc3bf69"
+  },
+  "source_sha256": {
+    "src/unicode/scalar/validate.zig": "5073c8d3d0b84aba57d41bcb2ea19c23d00e9730c1725a1de2d82f351bbcbf29",
+    "src/unicode/scalar/validation/avx2.zig": "17fc7621c4573be17a5de32544d64f0e771951d0cb40b29590c3cbb4a467f8d6",
+    "src/unicode/scalar/validation/scalar.zig": "3d5f0b8cc5d7e42fc68365162bec7c82e124f53f0f8fa64d45e76ff1dc361afb",
+    "src/unicode/scalar/validation/tests.zig": "67d7e7959873824b897bcf80530d1916f9edd382280f3e4dcc010bc47c4ca143",
+    "src/unicode/scalar/validation/vector.zig": "9425b39b8896ff6ed9b0a08fc6655de6b9850a1eac9d91834a1613e81d318822"
+  },
+  "harness_sha256": {
+    "bench/utf8/compare.py": "e987122f8cf659c8957c3a09cd8d7ee9a834309dd287922a179742d3f66fd7e5",
+    "bench/utf8/bench.zig": "2155e90654c06d2f8d48ad75ac6c5da293b7ff1bd0ae92975cb92c05b470a6e7",
+    "bench/utf8/simdutf.cpp": "fc998761edc674bcc43a4c1831e0f97b8422fe6b316c7f044d73a45c1e3e1875"
+  },
+  "inputs": {
+    "ascii-32": {
+      "bytes": 56,
+      "valid": true,
+      "sha256": "bff7973f9c24dd5096dbffaa9ef8978ac4fe0321ee6573c12c7e7a1de6a56fea"
+    },
+    "ascii-128": {
+      "bytes": 168,
+      "valid": true,
+      "sha256": "ec4478da5f200daf669a8e3028fc8850f2ffeb4009b6191b76c884d57b0afa4b"
+    },
+    "ascii-4096": {
+      "bytes": 4144,
+      "valid": true,
+      "sha256": "ca294895a6ecc38abe166f6e7f77b7731c2726573f452b2e145c292c2d5a0f3a"
+    },
+    "latin-32": {
+      "bytes": 52,
+      "valid": true,
+      "sha256": "5f60756737a2bbdce57ac5fa451ac7e31ae51c18b0cb8257694d8c281ba1c26d"
+    },
+    "latin-128": {
+      "bytes": 156,
+      "valid": true,
+      "sha256": "bc939d04e9d580831923d3ee54d0a7d556a53e530c82c85004c630cee7318256"
+    },
+    "latin-4096": {
+      "bytes": 4108,
+      "valid": true,
+      "sha256": "c70f846985befeee33be972bfbf6879e017761e531b0881aad537c86b4b0c8a0"
+    },
+    "chinese-32": {
+      "bytes": 36,
+      "valid": true,
+      "sha256": "37dfa23f72945064c3a9b43e82fc3e650eeb5ab9ab171c24ecd1aeda3027c752"
+    },
+    "chinese-128": {
+      "bytes": 144,
+      "valid": true,
+      "sha256": "78dff5e2a2b623d483666273652c62046d8d3f299542e481270d7adc6e08c033"
+    },
+    "chinese-4096": {
+      "bytes": 4104,
+      "valid": true,
+      "sha256": "f691255b9ca8da10dcd951466fd5e7f342cb898e2c0958394db0dd6d8e5b5aa7"
+    },
+    "mixed-32": {
+      "bytes": 106,
+      "valid": true,
+      "sha256": "3751fc760949781ecacba495455150428efc0331794eff29d2449f244b499faf"
+    },
+    "mixed-128": {
+      "bytes": 212,
+      "valid": true,
+      "sha256": "5d7df78571bdaf4d33c30a9d1c8349114d4e94140a5a4c6f721ee9b2bfbd271d"
+    },
+    "mixed-4096": {
+      "bytes": 4134,
+      "valid": true,
+      "sha256": "55b3974224ff60248cdead3fcc84cab955dce038999e77c5655449898768ea83"
+    },
+    "emoji-32": {
+      "bytes": 48,
+      "valid": true,
+      "sha256": "5068c78388a70a3c0b4102b3a8cc89dee3a25d4060387d458e1570560134f630"
+    },
+    "emoji-128": {
+      "bytes": 144,
+      "valid": true,
+      "sha256": "8e0d3dcec6598f7653e81684ceb4edebebc67e20204a7cef08d8d9cbe757436f"
+    },
+    "emoji-4096": {
+      "bytes": 4104,
+      "valid": true,
+      "sha256": "02f8faaee0871c53e7eee84039f7198d495669f2a0820e03a817afe2fc17701b"
+    },
+    "invalid-first": {
+      "bytes": 4240,
+      "valid": false,
+      "sha256": "31c3df70c12537eefe5726e94c2a51cf76cd923cbc919de5f60d734894fb195d"
+    },
+    "invalid-last": {
+      "bytes": 4240,
+      "valid": false,
+      "sha256": "90f977a0101ec619eda6038d7cbdf541bcd6adc9a28c09b35a39c81ea3c27d96"
+    },
+    "truncated-last": {
+      "bytes": 4243,
+      "valid": false,
+      "sha256": "03954d7ec47a7762eddb21ae1683c16ddfb5d092f99f5466a3bf4fb504a113df"
+    },
+    "tiny-ascii-1": {
+      "bytes": 1,
+      "valid": true,
+      "sha256": "e632b7095b0bf32c260fa4c539e9fd7b852d0de454e9be26f24d0d6f91d069d3"
+    },
+    "tiny-ascii-8": {
+      "bytes": 8,
+      "valid": true,
+      "sha256": "10ae0f24c936bc39be215f80c343c6e870f640fd56b0aeb842c3cd49a4e6dfa3"
+    },
+    "tiny-ascii-16": {
+      "bytes": 16,
+      "valid": true,
+      "sha256": "1b0b70a113cd4065b095bae73fba840f3b93912e89dd535f7f795912e9b307d6"
+    },
+    "tiny-ascii-24": {
+      "bytes": 24,
+      "valid": true,
+      "sha256": "cebf42910d175773a31cd23fc7c08eaddba11c267105e51688728efd6152f798"
+    },
+    "tiny-ascii-31": {
+      "bytes": 31,
+      "valid": true,
+      "sha256": "ce32c090e5e13b6e5967e71e0d0025ca61fb6bcd54502221e354535ee7504fbe"
+    },
+    "tiny-latin-1": {
+      "bytes": 2,
+      "valid": true,
+      "sha256": "0a94dc9d420d1142d6b71de60f9bf7e2f345a4d62c9f141b091539769ddf3075"
+    },
+    "tiny-latin-8": {
+      "bytes": 9,
+      "valid": true,
+      "sha256": "0fa43a2297185775f95f863b143627e3a1b793591e6c2b832a346dfd68a9be0b"
+    },
+    "tiny-latin-16": {
+      "bytes": 16,
+      "valid": true,
+      "sha256": "ededc6b5d19ab605c24df724f77b90bebffe27f306b6383958af21559cc08ee5"
+    },
+    "tiny-latin-24": {
+      "bytes": 24,
+      "valid": true,
+      "sha256": "7a3a5059298e4598b15b13c98929f44b4dd949bb5b6e02d3e04b36d298e4b30c"
+    },
+    "tiny-latin-31": {
+      "bytes": 31,
+      "valid": true,
+      "sha256": "689844130634e8cfdf28ed5e6ec79bea75cbc7c424e4952232676899e403c2c1"
+    },
+    "tiny-chinese-1": {
+      "bytes": 3,
+      "valid": true,
+      "sha256": "a0c7716669b5ded0d8051abfc232b828d489f7d889b2928eefcf43f0b8f495d6"
+    },
+    "tiny-chinese-8": {
+      "bytes": 9,
+      "valid": true,
+      "sha256": "96e881ab04f9702dfccdc06a84e8ac8fdecd9689b33ef579233473ecc5f4fca9"
+    },
+    "tiny-chinese-16": {
+      "bytes": 18,
+      "valid": true,
+      "sha256": "f0e087911f74ade83b9fda2072b1ee4791e4363ac36328694bcb971e420580d1"
+    },
+    "tiny-chinese-24": {
+      "bytes": 24,
+      "valid": true,
+      "sha256": "2befcef880cd8192fe0c64248b2f99a20d5486990e4dc89b934d86f3e7b4577d"
+    },
+    "tiny-chinese-31": {
+      "bytes": 33,
+      "valid": true,
+      "sha256": "78000a46ce12e33b54d5fd431816be5d664e965f28d423566c2c4264144f1555"
+    },
+    "tiny-mixed-1": {
+      "bytes": 1,
+      "valid": true,
+      "sha256": "44bd7ae60f478fae1061e11a7739f4b94d1daf917982d33b6fc8a01a63f89c21"
+    },
+    "tiny-mixed-8": {
+      "bytes": 9,
+      "valid": true,
+      "sha256": "74e447a17bb60dca2d7a1d166e179403a49297683c0049e6c4abc690be5c9e79"
+    },
+    "tiny-mixed-16": {
+      "bytes": 16,
+      "valid": true,
+      "sha256": "8379deaa8d9065d0a68778182206b246f6cf1e455175799697560417aa9da133"
+    },
+    "tiny-mixed-24": {
+      "bytes": 24,
+      "valid": true,
+      "sha256": "f5049b01f716ba905e06f75f2d03a73aa7c8c0df462ce4463beb30d6e845e03e"
+    },
+    "tiny-mixed-31": {
+      "bytes": 31,
+      "valid": true,
+      "sha256": "300b6872011e5d7e4349460355566484e95026b77374d01fa333497b887cfc9e"
+    },
+    "tiny-emoji-1": {
+      "bytes": 4,
+      "valid": true,
+      "sha256": "f0443a342c5ef54783a111b51ba56c938e474c32324d90c3a60c9c8e3a37e2d9"
+    },
+    "tiny-emoji-8": {
+      "bytes": 8,
+      "valid": true,
+      "sha256": "013e12d54a9d778a2650c7ba8299353b445ef2bb12df4919a775da9ef03406a6"
+    },
+    "tiny-emoji-16": {
+      "bytes": 16,
+      "valid": true,
+      "sha256": "b43c93446c3c13dd7fa1dcecac24302c72684cf5fa4dacb83aab787bac6cf78a"
+    },
+    "tiny-emoji-24": {
+      "bytes": 24,
+      "valid": true,
+      "sha256": "eb64cc86534803728c5cd674e8ac69c31d9926ea27ac449a3df8d5a54221130d"
+    },
+    "tiny-emoji-31": {
+      "bytes": 32,
+      "valid": true,
+      "sha256": "88bae5eaa541ed5df706988ebea3fad696716f45b3ae1dfb22556efbd9c87025"
+    },
+    "tiny-ascii-prefix": {
+      "bytes": 32,
+      "valid": true,
+      "sha256": "0e91c04d68df1e4b615085902fdbae9ecc7bf26c8ea396426ad041207276d7b7"
+    },
+    "tiny-ascii-suffix": {
+      "bytes": 32,
+      "valid": true,
+      "sha256": "27b5f4ac83f4dcdc866475ecbdeef6fb51d5b9365251253a29e19081e0f1c62c"
+    },
+    "tiny-ascii-infix": {
+      "bytes": 32,
+      "valid": true,
+      "sha256": "ea2059daf265be33463ba930b2a4b63e27671aaf14ebda6873301af2728abc1f"
+    },
+    "latin-ascii-leading": {
+      "bytes": 58,
+      "valid": true,
+      "sha256": "68274376ce072a26cbe0b34effc3960eca70fc9d390b0d05e6492b45ad84a9fd"
+    },
+    "mixed-latin-leading": {
+      "bytes": 108,
+      "valid": true,
+      "sha256": "b9fad3515237a3f9ffb6d93f403a2a540e306d89cc0e655558eeaa7f8ddd3a74"
+    },
+    "mixed-emoji-leading": {
+      "bytes": 110,
+      "valid": true,
+      "sha256": "0daae53c058197506333d78c186bc1801401bc2598c964c5e2b93ca94f0a8b74"
+    },
+    "reject-first-80": {
+      "bytes": 128,
+      "valid": false,
+      "sha256": "9895be7ff275f2c9e9c3a843f6cc3210a52d8365bf3854ed45ea5642e6fe7f50"
+    },
+    "reject-first-c0": {
+      "bytes": 128,
+      "valid": false,
+      "sha256": "6251bc2f7cd06f66da00cf97a69dda24dde1593aa0787cc35665ba97c730c7e3"
+    },
+    "reject-first-c1": {
+      "bytes": 128,
+      "valid": false,
+      "sha256": "9d7d3a7842f152f890eee0142ef3840e07ec936aa142c5a321c32d4f0c8c712c"
+    },
+    "reject-first-f5": {
+      "bytes": 128,
+      "valid": false,
+      "sha256": "8063d90b120c907e693f8484cf391942daee127aa5927fd6335118fcf4da1faa"
+    },
+    "reject-short-80": {
+      "bytes": 32,
+      "valid": false,
+      "sha256": "f4c0e708ed1705655918e2ced0415d58c25db96b016f9d12e153966a18c91404"
+    },
+    "reject-short-c0": {
+      "bytes": 32,
+      "valid": false,
+      "sha256": "60ba88c3af996eb9aa82e1d725de12bd49eff9b609abca060133645386650b01"
+    },
+    "reject-short-c1": {
+      "bytes": 32,
+      "valid": false,
+      "sha256": "1806d031dae829ce146d9e4af81640303334b4132d30f546e648d84a30849f7b"
+    },
+    "reject-short-f5": {
+      "bytes": 32,
+      "valid": false,
+      "sha256": "bbf85b9dbca3cc7a98e430ae78a836c86baa5a8ee1df2126434c8d5e162317f0"
+    },
+    "reject-short-ff": {
+      "bytes": 32,
+      "valid": false,
+      "sha256": "b9ff5a6f77826d1009ec5d1f03134c0fb755d5b0cd3541ba172d0c3798aaaeb4"
+    }
+  },
+  "samples": {
+    "icuz": [
+      {
+        "ascii-32": {
+          "bytes": 56,
+          "ns_op": 3.171806,
+          "ns_byte": 0.056639,
+          "count": 1497965
+        },
+        "ascii-128": {
+          "bytes": 168,
+          "ns_op": 3.361892,
+          "ns_byte": 0.020011,
+          "count": 499320
+        },
+        "ascii-4096": {
+          "bytes": 4144,
+          "ns_op": 31.609437,
+          "ns_byte": 0.007628,
+          "count": 20240
+        },
+        "latin-32": {
+          "bytes": 52,
+          "ns_op": 5.563399,
+          "ns_byte": 0.106988,
+          "count": 1613190
+        },
+        "latin-128": {
+          "bytes": 156,
+          "ns_op": 11.536291,
+          "ns_byte": 0.073951,
+          "count": 537730
+        },
+        "latin-4096": {
+          "bytes": 4108,
+          "ns_op": 226.378795,
+          "ns_byte": 0.055107,
+          "count": 20420
+        },
+        "chinese-32": {
+          "bytes": 36,
+          "ns_op": 5.062506,
+          "ns_byte": 0.140625,
+          "count": 2330165
+        },
+        "chinese-128": {
+          "bytes": 144,
+          "ns_op": 10.924331,
+          "ns_byte": 0.075863,
+          "count": 582540
+        },
+        "chinese-4096": {
+          "bytes": 4104,
+          "ns_op": 218.382339,
+          "ns_byte": 0.053212,
+          "count": 20440
+        },
+        "mixed-32": {
+          "bytes": 106,
+          "ns_op": 9.643999,
+          "ns_byte": 0.090981,
+          "count": 791375
+        },
+        "mixed-128": {
+          "bytes": 212,
+          "ns_op": 16.609487,
+          "ns_byte": 0.078347,
+          "count": 395685
+        },
+        "mixed-4096": {
+          "bytes": 4134,
+          "ns_op": 219.600789,
+          "ns_byte": 0.053121,
+          "count": 20290
+        },
+        "emoji-32": {
+          "bytes": 48,
+          "ns_op": 6.300093,
+          "ns_byte": 0.131252,
+          "count": 1747625
+        },
+        "emoji-128": {
+          "bytes": 144,
+          "ns_op": 11.353547,
+          "ns_byte": 0.078844,
+          "count": 582540
+        },
+        "emoji-4096": {
+          "bytes": 4104,
+          "ns_op": 206.907779,
+          "ns_byte": 0.050416,
+          "count": 20440
+        },
+        "invalid-first": {
+          "bytes": 4240,
+          "ns_op": 0.677099,
+          "ns_byte": 0.00016,
+          "count": 0
+        },
+        "invalid-last": {
+          "bytes": 4240,
+          "ns_op": 226.17088,
+          "ns_byte": 0.053342,
+          "count": 0
+        },
+        "truncated-last": {
+          "bytes": 4243,
+          "ns_op": 225.93045,
+          "ns_byte": 0.053248,
+          "count": 0
+        },
+        "tiny-ascii-1": {
+          "bytes": 1,
+          "ns_op": 1.064787,
+          "ns_byte": 1.064787,
+          "count": 83886080
+        },
+        "tiny-ascii-8": {
+          "bytes": 8,
+          "ns_op": 1.003971,
+          "ns_byte": 0.125496,
+          "count": 10485760
+        },
+        "tiny-ascii-16": {
+          "bytes": 16,
+          "ns_op": 1.257443,
+          "ns_byte": 0.07859,
+          "count": 5242880
+        },
+        "tiny-ascii-24": {
+          "bytes": 24,
+          "ns_op": 1.505908,
+          "ns_byte": 0.062746,
+          "count": 3495250
+        },
+        "tiny-ascii-31": {
+          "bytes": 31,
+          "ns_op": 1.63182,
+          "ns_byte": 0.052639,
+          "count": 2706000
+        },
+        "tiny-latin-1": {
+          "bytes": 2,
+          "ns_op": 1.964658,
+          "ns_byte": 0.982329,
+          "count": 41943040
+        },
+        "tiny-latin-8": {
+          "bytes": 9,
+          "ns_op": 4.544202,
+          "ns_byte": 0.504911,
+          "count": 9320675
+        },
+        "tiny-latin-16": {
+          "bytes": 16,
+          "ns_op": 6.679268,
+          "ns_byte": 0.417454,
+          "count": 5242880
+        },
+        "tiny-latin-24": {
+          "bytes": 24,
+          "ns_op": 14.752119,
+          "ns_byte": 0.614672,
+          "count": 3495250
+        },
+        "tiny-latin-31": {
+          "bytes": 31,
+          "ns_op": 13.947336,
+          "ns_byte": 0.449914,
+          "count": 2706000
+        },
+        "tiny-chinese-1": {
+          "bytes": 3,
+          "ns_op": 2.404003,
+          "ns_byte": 0.801334,
+          "count": 27962025
+        },
+        "tiny-chinese-8": {
+          "bytes": 9,
+          "ns_op": 5.584184,
+          "ns_byte": 0.620465,
+          "count": 9320675
+        },
+        "tiny-chinese-16": {
+          "bytes": 18,
+          "ns_op": 9.768789,
+          "ns_byte": 0.542711,
+          "count": 4660335
+        },
+        "tiny-chinese-24": {
+          "bytes": 24,
+          "ns_op": 14.702054,
+          "ns_byte": 0.612586,
+          "count": 3495250
+        },
+        "tiny-chinese-31": {
+          "bytes": 33,
+          "ns_op": 9.527537,
+          "ns_byte": 0.288713,
+          "count": 2542000
+        },
+        "tiny-mixed-1": {
+          "bytes": 1,
+          "ns_op": 1.083151,
+          "ns_byte": 1.083151,
+          "count": 83886080
+        },
+        "tiny-mixed-8": {
+          "bytes": 9,
+          "ns_op": 2.415179,
+          "ns_byte": 0.268353,
+          "count": 9320675
+        },
+        "tiny-mixed-16": {
+          "bytes": 16,
+          "ns_op": 5.02723,
+          "ns_byte": 0.314202,
+          "count": 5242880
+        },
+        "tiny-mixed-24": {
+          "bytes": 24,
+          "ns_op": 7.717578,
+          "ns_byte": 0.321566,
+          "count": 3495250
+        },
+        "tiny-mixed-31": {
+          "bytes": 31,
+          "ns_op": 10.447831,
+          "ns_byte": 0.337027,
+          "count": 2706000
+        },
+        "tiny-emoji-1": {
+          "bytes": 4,
+          "ns_op": 2.760427,
+          "ns_byte": 0.690107,
+          "count": 20971520
+        },
+        "tiny-emoji-8": {
+          "bytes": 8,
+          "ns_op": 5.069471,
+          "ns_byte": 0.633684,
+          "count": 10485760
+        },
+        "tiny-emoji-16": {
+          "bytes": 16,
+          "ns_op": 8.596701,
+          "ns_byte": 0.537294,
+          "count": 5242880
+        },
+        "tiny-emoji-24": {
+          "bytes": 24,
+          "ns_op": 14.773288,
+          "ns_byte": 0.615554,
+          "count": 3495250
+        },
+        "tiny-emoji-31": {
+          "bytes": 32,
+          "ns_op": 3.705061,
+          "ns_byte": 0.115783,
+          "count": 2621440
+        },
+        "tiny-ascii-prefix": {
+          "bytes": 32,
+          "ns_op": 2.648046,
+          "ns_byte": 0.082751,
+          "count": 2621440
+        },
+        "tiny-ascii-suffix": {
+          "bytes": 32,
+          "ns_op": 3.734179,
+          "ns_byte": 0.116693,
+          "count": 2621440
+        },
+        "tiny-ascii-infix": {
+          "bytes": 32,
+          "ns_op": 3.365774,
+          "ns_byte": 0.10518,
+          "count": 2621440
+        },
+        "latin-ascii-leading": {
+          "bytes": 58,
+          "ns_op": 5.969695,
+          "ns_byte": 0.102926,
+          "count": 1446310
+        },
+        "mixed-latin-leading": {
+          "bytes": 108,
+          "ns_op": 9.401805,
+          "ns_byte": 0.087054,
+          "count": 776720
+        },
+        "mixed-emoji-leading": {
+          "bytes": 110,
+          "ns_op": 10.330003,
+          "ns_byte": 0.093909,
+          "count": 762600
+        },
+        "reject-first-80": {
+          "bytes": 128,
+          "ns_op": 0.738579,
+          "ns_byte": 0.00577,
+          "count": 0
+        },
+        "reject-first-c0": {
+          "bytes": 128,
+          "ns_op": 0.761992,
+          "ns_byte": 0.005953,
+          "count": 0
+        },
+        "reject-first-c1": {
+          "bytes": 128,
+          "ns_op": 0.783039,
+          "ns_byte": 0.006117,
+          "count": 0
+        },
+        "reject-first-f5": {
+          "bytes": 128,
+          "ns_op": 0.800553,
+          "ns_byte": 0.006254,
+          "count": 0
+        },
+        "reject-short-80": {
+          "bytes": 32,
+          "ns_op": 1.165795,
+          "ns_byte": 0.036431,
+          "count": 0
+        },
+        "reject-short-c0": {
+          "bytes": 32,
+          "ns_op": 1.166555,
+          "ns_byte": 0.036455,
+          "count": 0
+        },
+        "reject-short-c1": {
+          "bytes": 32,
+          "ns_op": 1.191309,
+          "ns_byte": 0.037228,
+          "count": 0
+        },
+        "reject-short-f5": {
+          "bytes": 32,
+          "ns_op": 1.056987,
+          "ns_byte": 0.033031,
+          "count": 0
+        },
+        "reject-short-ff": {
+          "bytes": 32,
+          "ns_op": 1.197207,
+          "ns_byte": 0.037413,
+          "count": 0
+        }
+      },
+      {
+        "ascii-32": {
+          "bytes": 56,
+          "ns_op": 3.006709,
+          "ns_byte": 0.053691,
+          "count": 1497965
+        },
+        "ascii-128": {
+          "bytes": 168,
+          "ns_op": 3.25733,
+          "ns_byte": 0.019389,
+          "count": 499320
+        },
+        "ascii-4096": {
+          "bytes": 4144,
+          "ns_op": 30.825099,
+          "ns_byte": 0.007438,
+          "count": 20240
+        },
+        "latin-32": {
+          "bytes": 52,
+          "ns_op": 5.410851,
+          "ns_byte": 0.104055,
+          "count": 1613190
+        },
+        "latin-128": {
+          "bytes": 156,
+          "ns_op": 11.251316,
+          "ns_byte": 0.072124,
+          "count": 537730
+        },
+        "latin-4096": {
+          "bytes": 4108,
+          "ns_op": 225.938051,
+          "ns_byte": 0.055,
+          "count": 20420
+        },
+        "chinese-32": {
+          "bytes": 36,
+          "ns_op": 5.06727,
+          "ns_byte": 0.140757,
+          "count": 2330165
+        },
+        "chinese-128": {
+          "bytes": 144,
+          "ns_op": 10.926065,
+          "ns_byte": 0.075875,
+          "count": 582540
+        },
+        "chinese-4096": {
+          "bytes": 4104,
+          "ns_op": 223.094912,
+          "ns_byte": 0.05436,
+          "count": 20440
+        },
+        "mixed-32": {
+          "bytes": 106,
+          "ns_op": 9.571745,
+          "ns_byte": 0.090299,
+          "count": 791375
+        },
+        "mixed-128": {
+          "bytes": 212,
+          "ns_op": 16.557274,
+          "ns_byte": 0.0781,
+          "count": 395685
+        },
+        "mixed-4096": {
+          "bytes": 4134,
+          "ns_op": 220.905126,
+          "ns_byte": 0.053436,
+          "count": 20290
+        },
+        "emoji-32": {
+          "bytes": 48,
+          "ns_op": 6.290102,
+          "ns_byte": 0.131044,
+          "count": 1747625
+        },
+        "emoji-128": {
+          "bytes": 144,
+          "ns_op": 11.378652,
+          "ns_byte": 0.079018,
+          "count": 582540
+        },
+        "emoji-4096": {
+          "bytes": 4104,
+          "ns_op": 208.007339,
+          "ns_byte": 0.050684,
+          "count": 20440
+        },
+        "invalid-first": {
+          "bytes": 4240,
+          "ns_op": 0.669157,
+          "ns_byte": 0.000158,
+          "count": 0
+        },
+        "invalid-last": {
+          "bytes": 4240,
+          "ns_op": 226.08089,
+          "ns_byte": 0.053321,
+          "count": 0
+        },
+        "truncated-last": {
+          "bytes": 4243,
+          "ns_op": 225.916034,
+          "ns_byte": 0.053244,
+          "count": 0
+        },
+        "tiny-ascii-1": {
+          "bytes": 1,
+          "ns_op": 1.062871,
+          "ns_byte": 1.062871,
+          "count": 83886080
+        },
+        "tiny-ascii-8": {
+          "bytes": 8,
+          "ns_op": 1.00401,
+          "ns_byte": 0.125501,
+          "count": 10485760
+        },
+        "tiny-ascii-16": {
+          "bytes": 16,
+          "ns_op": 1.254936,
+          "ns_byte": 0.078434,
+          "count": 5242880
+        },
+        "tiny-ascii-24": {
+          "bytes": 24,
+          "ns_op": 1.505821,
+          "ns_byte": 0.062743,
+          "count": 3495250
+        },
+        "tiny-ascii-31": {
+          "bytes": 31,
+          "ns_op": 1.632291,
+          "ns_byte": 0.052655,
+          "count": 2706000
+        },
+        "tiny-latin-1": {
+          "bytes": 2,
+          "ns_op": 1.960752,
+          "ns_byte": 0.980376,
+          "count": 41943040
+        },
+        "tiny-latin-8": {
+          "bytes": 9,
+          "ns_op": 4.491122,
+          "ns_byte": 0.499014,
+          "count": 9320675
+        },
+        "tiny-latin-16": {
+          "bytes": 16,
+          "ns_op": 6.649395,
+          "ns_byte": 0.415587,
+          "count": 5242880
+        },
+        "tiny-latin-24": {
+          "bytes": 24,
+          "ns_op": 12.451019,
+          "ns_byte": 0.518792,
+          "count": 3495250
+        },
+        "tiny-latin-31": {
+          "bytes": 31,
+          "ns_op": 12.462554,
+          "ns_byte": 0.402018,
+          "count": 2706000
+        },
+        "tiny-chinese-1": {
+          "bytes": 3,
+          "ns_op": 2.396567,
+          "ns_byte": 0.798856,
+          "count": 27962025
+        },
+        "tiny-chinese-8": {
+          "bytes": 9,
+          "ns_op": 5.553851,
+          "ns_byte": 0.617095,
+          "count": 9320675
+        },
+        "tiny-chinese-16": {
+          "bytes": 18,
+          "ns_op": 9.777042,
+          "ns_byte": 0.543169,
+          "count": 4660335
+        },
+        "tiny-chinese-24": {
+          "bytes": 24,
+          "ns_op": 12.457053,
+          "ns_byte": 0.519044,
+          "count": 3495250
+        },
+        "tiny-chinese-31": {
+          "bytes": 33,
+          "ns_op": 9.518098,
+          "ns_byte": 0.288427,
+          "count": 2542000
+        },
+        "tiny-mixed-1": {
+          "bytes": 1,
+          "ns_op": 1.083571,
+          "ns_byte": 1.083571,
+          "count": 83886080
+        },
+        "tiny-mixed-8": {
+          "bytes": 9,
+          "ns_op": 2.385941,
+          "ns_byte": 0.265105,
+          "count": 9320675
+        },
+        "tiny-mixed-16": {
+          "bytes": 16,
+          "ns_op": 5.00457,
+          "ns_byte": 0.312786,
+          "count": 5242880
+        },
+        "tiny-mixed-24": {
+          "bytes": 24,
+          "ns_op": 7.764313,
+          "ns_byte": 0.323513,
+          "count": 3495250
+        },
+        "tiny-mixed-31": {
+          "bytes": 31,
+          "ns_op": 10.182352,
+          "ns_byte": 0.328463,
+          "count": 2706000
+        },
+        "tiny-emoji-1": {
+          "bytes": 4,
+          "ns_op": 2.762689,
+          "ns_byte": 0.690672,
+          "count": 20971520
+        },
+        "tiny-emoji-8": {
+          "bytes": 8,
+          "ns_op": 5.069004,
+          "ns_byte": 0.633626,
+          "count": 10485760
+        },
+        "tiny-emoji-16": {
+          "bytes": 16,
+          "ns_op": 8.639914,
+          "ns_byte": 0.539995,
+          "count": 5242880
+        },
+        "tiny-emoji-24": {
+          "bytes": 24,
+          "ns_op": 12.437734,
+          "ns_byte": 0.518239,
+          "count": 3495250
+        },
+        "tiny-emoji-31": {
+          "bytes": 32,
+          "ns_op": 3.092463,
+          "ns_byte": 0.096639,
+          "count": 2621440
+        },
+        "tiny-ascii-prefix": {
+          "bytes": 32,
+          "ns_op": 2.438681,
+          "ns_byte": 0.076209,
+          "count": 2621440
+        },
+        "tiny-ascii-suffix": {
+          "bytes": 32,
+          "ns_op": 3.081127,
+          "ns_byte": 0.096285,
+          "count": 2621440
+        },
+        "tiny-ascii-infix": {
+          "bytes": 32,
+          "ns_op": 3.080462,
+          "ns_byte": 0.096264,
+          "count": 2621440
+        },
+        "latin-ascii-leading": {
+          "bytes": 58,
+          "ns_op": 5.242227,
+          "ns_byte": 0.090383,
+          "count": 1446310
+        },
+        "mixed-latin-leading": {
+          "bytes": 108,
+          "ns_op": 9.402681,
+          "ns_byte": 0.087062,
+          "count": 776720
+        },
+        "mixed-emoji-leading": {
+          "bytes": 110,
+          "ns_op": 9.388965,
+          "ns_byte": 0.085354,
+          "count": 762600
+        },
+        "reject-first-80": {
+          "bytes": 128,
+          "ns_op": 0.669153,
+          "ns_byte": 0.005228,
+          "count": 0
+        },
+        "reject-first-c0": {
+          "bytes": 128,
+          "ns_op": 0.674402,
+          "ns_byte": 0.005269,
+          "count": 0
+        },
+        "reject-first-c1": {
+          "bytes": 128,
+          "ns_op": 0.66906,
+          "ns_byte": 0.005227,
+          "count": 0
+        },
+        "reject-first-f5": {
+          "bytes": 128,
+          "ns_op": 0.687598,
+          "ns_byte": 0.005372,
+          "count": 0
+        },
+        "reject-short-80": {
+          "bytes": 32,
+          "ns_op": 1.019937,
+          "ns_byte": 0.031873,
+          "count": 0
+        },
+        "reject-short-c0": {
+          "bytes": 32,
+          "ns_op": 1.019228,
+          "ns_byte": 0.031851,
+          "count": 0
+        },
+        "reject-short-c1": {
+          "bytes": 32,
+          "ns_op": 1.018928,
+          "ns_byte": 0.031842,
+          "count": 0
+        },
+        "reject-short-f5": {
+          "bytes": 32,
+          "ns_op": 1.018188,
+          "ns_byte": 0.031818,
+          "count": 0
+        },
+        "reject-short-ff": {
+          "bytes": 32,
+          "ns_op": 1.019728,
+          "ns_byte": 0.031866,
+          "count": 0
+        }
+      },
+      {
+        "ascii-32": {
+          "bytes": 56,
+          "ns_op": 3.018048,
+          "ns_byte": 0.053894,
+          "count": 1497965
+        },
+        "ascii-128": {
+          "bytes": 168,
+          "ns_op": 3.25708,
+          "ns_byte": 0.019387,
+          "count": 499320
+        },
+        "ascii-4096": {
+          "bytes": 4144,
+          "ns_op": 30.838933,
+          "ns_byte": 0.007442,
+          "count": 20240
+        },
+        "latin-32": {
+          "bytes": 52,
+          "ns_op": 5.431552,
+          "ns_byte": 0.104453,
+          "count": 1613190
+        },
+        "latin-128": {
+          "bytes": 156,
+          "ns_op": 11.263934,
+          "ns_byte": 0.072205,
+          "count": 537730
+        },
+        "latin-4096": {
+          "bytes": 4108,
+          "ns_op": 227.724535,
+          "ns_byte": 0.055434,
+          "count": 20420
+        },
+        "chinese-32": {
+          "bytes": 36,
+          "ns_op": 5.061903,
+          "ns_byte": 0.140608,
+          "count": 2330165
+        },
+        "chinese-128": {
+          "bytes": 144,
+          "ns_op": 10.91986,
+          "ns_byte": 0.075832,
+          "count": 582540
+        },
+        "chinese-4096": {
+          "bytes": 4104,
+          "ns_op": 219.191047,
+          "ns_byte": 0.053409,
+          "count": 20440
+        },
+        "mixed-32": {
+          "bytes": 106,
+          "ns_op": 9.658101,
+          "ns_byte": 0.091114,
+          "count": 791375
+        },
+        "mixed-128": {
+          "bytes": 212,
+          "ns_op": 16.548454,
+          "ns_byte": 0.078059,
+          "count": 395685
+        },
+        "mixed-4096": {
+          "bytes": 4134,
+          "ns_op": 220.949236,
+          "ns_byte": 0.053447,
+          "count": 20290
+        },
+        "emoji-32": {
+          "bytes": 48,
+          "ns_op": 6.300041,
+          "ns_byte": 0.131251,
+          "count": 1747625
+        },
+        "emoji-128": {
+          "bytes": 144,
+          "ns_op": 11.362482,
+          "ns_byte": 0.078906,
+          "count": 582540
+        },
+        "emoji-4096": {
+          "bytes": 4104,
+          "ns_op": 212.325098,
+          "ns_byte": 0.051736,
+          "count": 20440
+        },
+        "invalid-first": {
+          "bytes": 4240,
+          "ns_op": 0.676684,
+          "ns_byte": 0.00016,
+          "count": 0
+        },
+        "invalid-last": {
+          "bytes": 4240,
+          "ns_op": 226.708797,
+          "ns_byte": 0.053469,
+          "count": 0
+        },
+        "truncated-last": {
+          "bytes": 4243,
+          "ns_op": 225.837633,
+          "ns_byte": 0.053226,
+          "count": 0
+        },
+        "tiny-ascii-1": {
+          "bytes": 1,
+          "ns_op": 1.094099,
+          "ns_byte": 1.094099,
+          "count": 83886080
+        },
+        "tiny-ascii-8": {
+          "bytes": 8,
+          "ns_op": 1.004393,
+          "ns_byte": 0.125549,
+          "count": 10485760
+        },
+        "tiny-ascii-16": {
+          "bytes": 16,
+          "ns_op": 1.254412,
+          "ns_byte": 0.078401,
+          "count": 5242880
+        },
+        "tiny-ascii-24": {
+          "bytes": 24,
+          "ns_op": 1.505519,
+          "ns_byte": 0.06273,
+          "count": 3495250
+        },
+        "tiny-ascii-31": {
+          "bytes": 31,
+          "ns_op": 1.633123,
+          "ns_byte": 0.052681,
+          "count": 2706000
+        },
+        "tiny-latin-1": {
+          "bytes": 2,
+          "ns_op": 1.940218,
+          "ns_byte": 0.970109,
+          "count": 41943040
+        },
+        "tiny-latin-8": {
+          "bytes": 9,
+          "ns_op": 4.533526,
+          "ns_byte": 0.503725,
+          "count": 9320675
+        },
+        "tiny-latin-16": {
+          "bytes": 16,
+          "ns_op": 6.713922,
+          "ns_byte": 0.41962,
+          "count": 5242880
+        },
+        "tiny-latin-24": {
+          "bytes": 24,
+          "ns_op": 14.745538,
+          "ns_byte": 0.614397,
+          "count": 3495250
+        },
+        "tiny-latin-31": {
+          "bytes": 31,
+          "ns_op": 13.967988,
+          "ns_byte": 0.45058,
+          "count": 2706000
+        },
+        "tiny-chinese-1": {
+          "bytes": 3,
+          "ns_op": 2.405664,
+          "ns_byte": 0.801888,
+          "count": 27962025
+        },
+        "tiny-chinese-8": {
+          "bytes": 9,
+          "ns_op": 5.535733,
+          "ns_byte": 0.615081,
+          "count": 9320675
+        },
+        "tiny-chinese-16": {
+          "bytes": 18,
+          "ns_op": 9.957508,
+          "ns_byte": 0.553195,
+          "count": 4660335
+        },
+        "tiny-chinese-24": {
+          "bytes": 24,
+          "ns_op": 14.718668,
+          "ns_byte": 0.613278,
+          "count": 3495250
+        },
+        "tiny-chinese-31": {
+          "bytes": 33,
+          "ns_op": 9.478969,
+          "ns_byte": 0.287241,
+          "count": 2542000
+        },
+        "tiny-mixed-1": {
+          "bytes": 1,
+          "ns_op": 1.101319,
+          "ns_byte": 1.101319,
+          "count": 83886080
+        },
+        "tiny-mixed-8": {
+          "bytes": 9,
+          "ns_op": 2.434172,
+          "ns_byte": 0.270464,
+          "count": 9320675
+        },
+        "tiny-mixed-16": {
+          "bytes": 16,
+          "ns_op": 5.008971,
+          "ns_byte": 0.313061,
+          "count": 5242880
+        },
+        "tiny-mixed-24": {
+          "bytes": 24,
+          "ns_op": 7.746274,
+          "ns_byte": 0.322761,
+          "count": 3495250
+        },
+        "tiny-mixed-31": {
+          "bytes": 31,
+          "ns_op": 10.491399,
+          "ns_byte": 0.338432,
+          "count": 2706000
+        },
+        "tiny-emoji-1": {
+          "bytes": 4,
+          "ns_op": 2.761611,
+          "ns_byte": 0.690403,
+          "count": 20971520
+        },
+        "tiny-emoji-8": {
+          "bytes": 8,
+          "ns_op": 5.062117,
+          "ns_byte": 0.632765,
+          "count": 10485760
+        },
+        "tiny-emoji-16": {
+          "bytes": 16,
+          "ns_op": 8.642812,
+          "ns_byte": 0.540176,
+          "count": 5242880
+        },
+        "tiny-emoji-24": {
+          "bytes": 24,
+          "ns_op": 14.699999,
+          "ns_byte": 0.6125,
+          "count": 3495250
+        },
+        "tiny-emoji-31": {
+          "bytes": 32,
+          "ns_op": 3.104141,
+          "ns_byte": 0.097004,
+          "count": 2621440
+        },
+        "tiny-ascii-prefix": {
+          "bytes": 32,
+          "ns_op": 2.447525,
+          "ns_byte": 0.076485,
+          "count": 2621440
+        },
+        "tiny-ascii-suffix": {
+          "bytes": 32,
+          "ns_op": 3.090467,
+          "ns_byte": 0.096577,
+          "count": 2621440
+        },
+        "tiny-ascii-infix": {
+          "bytes": 32,
+          "ns_op": 3.082222,
+          "ns_byte": 0.096319,
+          "count": 2621440
+        },
+        "latin-ascii-leading": {
+          "bytes": 58,
+          "ns_op": 5.243613,
+          "ns_byte": 0.090407,
+          "count": 1446310
+        },
+        "mixed-latin-leading": {
+          "bytes": 108,
+          "ns_op": 9.402861,
+          "ns_byte": 0.087064,
+          "count": 776720
+        },
+        "mixed-emoji-leading": {
+          "bytes": 110,
+          "ns_op": 9.419079,
+          "ns_byte": 0.085628,
+          "count": 762600
+        },
+        "reject-first-80": {
+          "bytes": 128,
+          "ns_op": 0.676154,
+          "ns_byte": 0.005282,
+          "count": 0
+        },
+        "reject-first-c0": {
+          "bytes": 128,
+          "ns_op": 0.690124,
+          "ns_byte": 0.005392,
+          "count": 0
+        },
+        "reject-first-c1": {
+          "bytes": 128,
+          "ns_op": 0.669495,
+          "ns_byte": 0.00523,
+          "count": 0
+        },
+        "reject-first-f5": {
+          "bytes": 128,
+          "ns_op": 0.668933,
+          "ns_byte": 0.005226,
+          "count": 0
+        },
+        "reject-short-80": {
+          "bytes": 32,
+          "ns_op": 1.019334,
+          "ns_byte": 0.031854,
+          "count": 0
+        },
+        "reject-short-c0": {
+          "bytes": 32,
+          "ns_op": 1.018524,
+          "ns_byte": 0.031829,
+          "count": 0
+        },
+        "reject-short-c1": {
+          "bytes": 32,
+          "ns_op": 1.02276,
+          "ns_byte": 0.031961,
+          "count": 0
+        },
+        "reject-short-f5": {
+          "bytes": 32,
+          "ns_op": 1.019175,
+          "ns_byte": 0.031849,
+          "count": 0
+        },
+        "reject-short-ff": {
+          "bytes": 32,
+          "ns_op": 1.018854,
+          "ns_byte": 0.031839,
+          "count": 0
+        }
+      }
+    ],
+    "simdutf": [
+      {
+        "ascii-32": {
+          "bytes": 56,
+          "ns_op": 11.366123,
+          "ns_byte": 0.202966,
+          "count": 1497965
+        },
+        "ascii-128": {
+          "bytes": 168,
+          "ns_op": 5.620824,
+          "ns_byte": 0.033457,
+          "count": 499320
+        },
+        "ascii-4096": {
+          "bytes": 4144,
+          "ns_op": 45.07584,
+          "ns_byte": 0.010877,
+          "count": 20240
+        },
+        "latin-32": {
+          "bytes": 52,
+          "ns_op": 17.765995,
+          "ns_byte": 0.341654,
+          "count": 1613190
+        },
+        "latin-128": {
+          "bytes": 156,
+          "ns_op": 16.515528,
+          "ns_byte": 0.105869,
+          "count": 537730
+        },
+        "latin-4096": {
+          "bytes": 4108,
+          "ns_op": 274.419931,
+          "ns_byte": 0.066801,
+          "count": 20420
+        },
+        "chinese-32": {
+          "bytes": 36,
+          "ns_op": 17.898318,
+          "ns_byte": 0.497176,
+          "count": 2330165
+        },
+        "chinese-128": {
+          "bytes": 144,
+          "ns_op": 15.932142,
+          "ns_byte": 0.11064,
+          "count": 582540
+        },
+        "chinese-4096": {
+          "bytes": 4104,
+          "ns_op": 271.90093,
+          "ns_byte": 0.066253,
+          "count": 20440
+        },
+        "mixed-32": {
+          "bytes": 106,
+          "ns_op": 11.773236,
+          "ns_byte": 0.111068,
+          "count": 791375
+        },
+        "mixed-128": {
+          "bytes": 212,
+          "ns_op": 18.411236,
+          "ns_byte": 0.086845,
+          "count": 395685
+        },
+        "mixed-4096": {
+          "bytes": 4134,
+          "ns_op": 265.551996,
+          "ns_byte": 0.064236,
+          "count": 20290
+        },
+        "emoji-32": {
+          "bytes": 48,
+          "ns_op": 17.36115,
+          "ns_byte": 0.361691,
+          "count": 1747625
+        },
+        "emoji-128": {
+          "bytes": 144,
+          "ns_op": 18.031388,
+          "ns_byte": 0.125218,
+          "count": 582540
+        },
+        "emoji-4096": {
+          "bytes": 4104,
+          "ns_op": 265.456213,
+          "ns_byte": 0.064682,
+          "count": 20440
+        },
+        "invalid-first": {
+          "bytes": 4240,
+          "ns_op": 73.091251,
+          "ns_byte": 0.017239,
+          "count": 0
+        },
+        "invalid-last": {
+          "bytes": 4240,
+          "ns_op": 267.617796,
+          "ns_byte": 0.063117,
+          "count": 0
+        },
+        "truncated-last": {
+          "bytes": 4243,
+          "ns_op": 265.333333,
+          "ns_byte": 0.062534,
+          "count": 0
+        },
+        "tiny-ascii-1": {
+          "bytes": 1,
+          "ns_op": 10.045178,
+          "ns_byte": 10.045178,
+          "count": 83886080
+        },
+        "tiny-ascii-8": {
+          "bytes": 8,
+          "ns_op": 10.086364,
+          "ns_byte": 1.260796,
+          "count": 10485760
+        },
+        "tiny-ascii-16": {
+          "bytes": 16,
+          "ns_op": 10.042289,
+          "ns_byte": 0.627643,
+          "count": 5242880
+        },
+        "tiny-ascii-24": {
+          "bytes": 24,
+          "ns_op": 10.952769,
+          "ns_byte": 0.456365,
+          "count": 3495250
+        },
+        "tiny-ascii-31": {
+          "bytes": 31,
+          "ns_op": 10.949106,
+          "ns_byte": 0.353197,
+          "count": 2706000
+        },
+        "tiny-latin-1": {
+          "bytes": 2,
+          "ns_op": 16.017859,
+          "ns_byte": 8.00893,
+          "count": 41943040
+        },
+        "tiny-latin-8": {
+          "bytes": 9,
+          "ns_op": 15.928865,
+          "ns_byte": 1.769874,
+          "count": 9320675
+        },
+        "tiny-latin-16": {
+          "bytes": 16,
+          "ns_op": 15.963834,
+          "ns_byte": 0.99774,
+          "count": 5242880
+        },
+        "tiny-latin-24": {
+          "bytes": 24,
+          "ns_op": 16.41287,
+          "ns_byte": 0.68387,
+          "count": 3495250
+        },
+        "tiny-latin-31": {
+          "bytes": 31,
+          "ns_op": 16.401613,
+          "ns_byte": 0.529084,
+          "count": 2706000
+        },
+        "tiny-chinese-1": {
+          "bytes": 3,
+          "ns_op": 16.015397,
+          "ns_byte": 5.338466,
+          "count": 27962025
+        },
+        "tiny-chinese-8": {
+          "bytes": 9,
+          "ns_op": 15.911782,
+          "ns_byte": 1.767976,
+          "count": 9320675
+        },
+        "tiny-chinese-16": {
+          "bytes": 18,
+          "ns_op": 16.405178,
+          "ns_byte": 0.911399,
+          "count": 4660335
+        },
+        "tiny-chinese-24": {
+          "bytes": 24,
+          "ns_op": 16.476198,
+          "ns_byte": 0.686508,
+          "count": 3495250
+        },
+        "tiny-chinese-31": {
+          "bytes": 33,
+          "ns_op": 17.285692,
+          "ns_byte": 0.523809,
+          "count": 2542000
+        },
+        "tiny-mixed-1": {
+          "bytes": 1,
+          "ns_op": 10.121506,
+          "ns_byte": 10.121506,
+          "count": 83886080
+        },
+        "tiny-mixed-8": {
+          "bytes": 9,
+          "ns_op": 15.929298,
+          "ns_byte": 1.769922,
+          "count": 9320675
+        },
+        "tiny-mixed-16": {
+          "bytes": 16,
+          "ns_op": 15.980474,
+          "ns_byte": 0.99878,
+          "count": 5242880
+        },
+        "tiny-mixed-24": {
+          "bytes": 24,
+          "ns_op": 16.433907,
+          "ns_byte": 0.684746,
+          "count": 3495250
+        },
+        "tiny-mixed-31": {
+          "bytes": 31,
+          "ns_op": 16.45651,
+          "ns_byte": 0.530855,
+          "count": 2706000
+        },
+        "tiny-emoji-1": {
+          "bytes": 4,
+          "ns_op": 16.107395,
+          "ns_byte": 4.026849,
+          "count": 20971520
+        },
+        "tiny-emoji-8": {
+          "bytes": 8,
+          "ns_op": 16.686774,
+          "ns_byte": 2.085847,
+          "count": 10485760
+        },
+        "tiny-emoji-16": {
+          "bytes": 16,
+          "ns_op": 16.92084,
+          "ns_byte": 1.057553,
+          "count": 5242880
+        },
+        "tiny-emoji-24": {
+          "bytes": 24,
+          "ns_op": 16.948906,
+          "ns_byte": 0.706204,
+          "count": 3495250
+        },
+        "tiny-emoji-31": {
+          "bytes": 32,
+          "ns_op": 7.564024,
+          "ns_byte": 0.236376,
+          "count": 2621440
+        },
+        "tiny-ascii-prefix": {
+          "bytes": 32,
+          "ns_op": 8.367208,
+          "ns_byte": 0.261475,
+          "count": 2621440
+        },
+        "tiny-ascii-suffix": {
+          "bytes": 32,
+          "ns_op": 8.851074,
+          "ns_byte": 0.276596,
+          "count": 2621440
+        },
+        "tiny-ascii-infix": {
+          "bytes": 32,
+          "ns_op": 8.594395,
+          "ns_byte": 0.268575,
+          "count": 2621440
+        },
+        "latin-ascii-leading": {
+          "bytes": 58,
+          "ns_op": 17.104884,
+          "ns_byte": 0.294912,
+          "count": 1446310
+        },
+        "mixed-latin-leading": {
+          "bytes": 108,
+          "ns_op": 11.42019,
+          "ns_byte": 0.105743,
+          "count": 776720
+        },
+        "mixed-emoji-leading": {
+          "bytes": 110,
+          "ns_op": 11.096348,
+          "ns_byte": 0.100876,
+          "count": 762600
+        },
+        "reject-first-80": {
+          "bytes": 128,
+          "ns_op": 7.351686,
+          "ns_byte": 0.057435,
+          "count": 0
+        },
+        "reject-first-c0": {
+          "bytes": 128,
+          "ns_op": 6.549347,
+          "ns_byte": 0.051167,
+          "count": 0
+        },
+        "reject-first-c1": {
+          "bytes": 128,
+          "ns_op": 7.746495,
+          "ns_byte": 0.060519,
+          "count": 0
+        },
+        "reject-first-f5": {
+          "bytes": 128,
+          "ns_op": 7.65145,
+          "ns_byte": 0.059777,
+          "count": 0
+        },
+        "reject-short-80": {
+          "bytes": 32,
+          "ns_op": 7.555313,
+          "ns_byte": 0.236104,
+          "count": 0
+        },
+        "reject-short-c0": {
+          "bytes": 32,
+          "ns_op": 7.578024,
+          "ns_byte": 0.236813,
+          "count": 0
+        },
+        "reject-short-c1": {
+          "bytes": 32,
+          "ns_op": 7.584605,
+          "ns_byte": 0.237019,
+          "count": 0
+        },
+        "reject-short-f5": {
+          "bytes": 32,
+          "ns_op": 7.551286,
+          "ns_byte": 0.235978,
+          "count": 0
+        },
+        "reject-short-ff": {
+          "bytes": 32,
+          "ns_op": 7.585172,
+          "ns_byte": 0.237037,
+          "count": 0
+        }
+      },
+      {
+        "ascii-32": {
+          "bytes": 56,
+          "ns_op": 10.555671,
+          "ns_byte": 0.188494,
+          "count": 1497965
+        },
+        "ascii-128": {
+          "bytes": 168,
+          "ns_op": 4.760434,
+          "ns_byte": 0.028336,
+          "count": 499320
+        },
+        "ascii-4096": {
+          "bytes": 4144,
+          "ns_op": 39.550642,
+          "ns_byte": 0.009544,
+          "count": 20240
+        },
+        "latin-32": {
+          "bytes": 52,
+          "ns_op": 16.998735,
+          "ns_byte": 0.326899,
+          "count": 1613190
+        },
+        "latin-128": {
+          "bytes": 156,
+          "ns_op": 14.522437,
+          "ns_byte": 0.093093,
+          "count": 537730
+        },
+        "latin-4096": {
+          "bytes": 4108,
+          "ns_op": 257.095005,
+          "ns_byte": 0.062584,
+          "count": 20420
+        },
+        "chinese-32": {
+          "bytes": 36,
+          "ns_op": 17.238133,
+          "ns_byte": 0.478837,
+          "count": 2330165
+        },
+        "chinese-128": {
+          "bytes": 144,
+          "ns_op": 14.521707,
+          "ns_byte": 0.100845,
+          "count": 582540
+        },
+        "chinese-4096": {
+          "bytes": 4104,
+          "ns_op": 256.940558,
+          "ns_byte": 0.062607,
+          "count": 20440
+        },
+        "mixed-32": {
+          "bytes": 106,
+          "ns_op": 10.7774,
+          "ns_byte": 0.101674,
+          "count": 791375
+        },
+        "mixed-128": {
+          "bytes": 212,
+          "ns_op": 18.380833,
+          "ns_byte": 0.086702,
+          "count": 395685
+        },
+        "mixed-4096": {
+          "bytes": 4134,
+          "ns_op": 256.990389,
+          "ns_byte": 0.062165,
+          "count": 20290
+        },
+        "emoji-32": {
+          "bytes": 48,
+          "ns_op": 16.990819,
+          "ns_byte": 0.353975,
+          "count": 1747625
+        },
+        "emoji-128": {
+          "bytes": 144,
+          "ns_op": 14.534367,
+          "ns_byte": 0.100933,
+          "count": 582540
+        },
+        "emoji-4096": {
+          "bytes": 4104,
+          "ns_op": 257.044031,
+          "ns_byte": 0.062633,
+          "count": 20440
+        },
+        "invalid-first": {
+          "bytes": 4240,
+          "ns_op": 67.603176,
+          "ns_byte": 0.015944,
+          "count": 0
+        },
+        "invalid-last": {
+          "bytes": 4240,
+          "ns_op": 265.077098,
+          "ns_byte": 0.062518,
+          "count": 0
+        },
+        "truncated-last": {
+          "bytes": 4243,
+          "ns_op": 264.967628,
+          "ns_byte": 0.062448,
+          "count": 0
+        },
+        "tiny-ascii-1": {
+          "bytes": 1,
+          "ns_op": 10.056917,
+          "ns_byte": 10.056917,
+          "count": 83886080
+        },
+        "tiny-ascii-8": {
+          "bytes": 8,
+          "ns_op": 10.104765,
+          "ns_byte": 1.263096,
+          "count": 10485760
+        },
+        "tiny-ascii-16": {
+          "bytes": 16,
+          "ns_op": 10.043654,
+          "ns_byte": 0.627728,
+          "count": 5242880
+        },
+        "tiny-ascii-24": {
+          "bytes": 24,
+          "ns_op": 10.968647,
+          "ns_byte": 0.457027,
+          "count": 3495250
+        },
+        "tiny-ascii-31": {
+          "bytes": 31,
+          "ns_op": 10.941687,
+          "ns_byte": 0.352958,
+          "count": 2706000
+        },
+        "tiny-latin-1": {
+          "bytes": 2,
+          "ns_op": 16.014155,
+          "ns_byte": 8.007078,
+          "count": 41943040
+        },
+        "tiny-latin-8": {
+          "bytes": 9,
+          "ns_op": 15.912616,
+          "ns_byte": 1.768068,
+          "count": 9320675
+        },
+        "tiny-latin-16": {
+          "bytes": 16,
+          "ns_op": 15.951057,
+          "ns_byte": 0.996941,
+          "count": 5242880
+        },
+        "tiny-latin-24": {
+          "bytes": 24,
+          "ns_op": 16.399986,
+          "ns_byte": 0.683333,
+          "count": 3495250
+        },
+        "tiny-latin-31": {
+          "bytes": 31,
+          "ns_op": 16.3983,
+          "ns_byte": 0.528977,
+          "count": 2706000
+        },
+        "tiny-chinese-1": {
+          "bytes": 3,
+          "ns_op": 16.030151,
+          "ns_byte": 5.343384,
+          "count": 27962025
+        },
+        "tiny-chinese-8": {
+          "bytes": 9,
+          "ns_op": 15.918624,
+          "ns_byte": 1.768736,
+          "count": 9320675
+        },
+        "tiny-chinese-16": {
+          "bytes": 18,
+          "ns_op": 16.422094,
+          "ns_byte": 0.912339,
+          "count": 4660335
+        },
+        "tiny-chinese-24": {
+          "bytes": 24,
+          "ns_op": 16.431228,
+          "ns_byte": 0.684635,
+          "count": 3495250
+        },
+        "tiny-chinese-31": {
+          "bytes": 33,
+          "ns_op": 17.240002,
+          "ns_byte": 0.522424,
+          "count": 2542000
+        },
+        "tiny-mixed-1": {
+          "bytes": 1,
+          "ns_op": 10.056425,
+          "ns_byte": 10.056425,
+          "count": 83886080
+        },
+        "tiny-mixed-8": {
+          "bytes": 9,
+          "ns_op": 15.931911,
+          "ns_byte": 1.770212,
+          "count": 9320675
+        },
+        "tiny-mixed-16": {
+          "bytes": 16,
+          "ns_op": 15.964073,
+          "ns_byte": 0.997755,
+          "count": 5242880
+        },
+        "tiny-mixed-24": {
+          "bytes": 24,
+          "ns_op": 16.405234,
+          "ns_byte": 0.683551,
+          "count": 3495250
+        },
+        "tiny-mixed-31": {
+          "bytes": 31,
+          "ns_op": 16.399346,
+          "ns_byte": 0.529011,
+          "count": 2706000
+        },
+        "tiny-emoji-1": {
+          "bytes": 4,
+          "ns_op": 16.056458,
+          "ns_byte": 4.014114,
+          "count": 20971520
+        },
+        "tiny-emoji-8": {
+          "bytes": 8,
+          "ns_op": 15.905248,
+          "ns_byte": 1.988156,
+          "count": 10485760
+        },
+        "tiny-emoji-16": {
+          "bytes": 16,
+          "ns_op": 15.951658,
+          "ns_byte": 0.996979,
+          "count": 5242880
+        },
+        "tiny-emoji-24": {
+          "bytes": 24,
+          "ns_op": 16.40945,
+          "ns_byte": 0.683727,
+          "count": 3495250
+        },
+        "tiny-emoji-31": {
+          "bytes": 32,
+          "ns_op": 7.593086,
+          "ns_byte": 0.237284,
+          "count": 2621440
+        },
+        "tiny-ascii-prefix": {
+          "bytes": 32,
+          "ns_op": 7.553556,
+          "ns_byte": 0.236049,
+          "count": 2621440
+        },
+        "tiny-ascii-suffix": {
+          "bytes": 32,
+          "ns_op": 7.549263,
+          "ns_byte": 0.235914,
+          "count": 2621440
+        },
+        "tiny-ascii-infix": {
+          "bytes": 32,
+          "ns_op": 7.5439,
+          "ns_byte": 0.235747,
+          "count": 2621440
+        },
+        "latin-ascii-leading": {
+          "bytes": 58,
+          "ns_op": 17.015166,
+          "ns_byte": 0.293365,
+          "count": 1446310
+        },
+        "mixed-latin-leading": {
+          "bytes": 108,
+          "ns_op": 10.770439,
+          "ns_byte": 0.099726,
+          "count": 776720
+        },
+        "mixed-emoji-leading": {
+          "bytes": 110,
+          "ns_op": 10.784586,
+          "ns_byte": 0.098042,
+          "count": 762600
+        },
+        "reject-first-80": {
+          "bytes": 128,
+          "ns_op": 6.537985,
+          "ns_byte": 0.051078,
+          "count": 0
+        },
+        "reject-first-c0": {
+          "bytes": 128,
+          "ns_op": 6.545189,
+          "ns_byte": 0.051134,
+          "count": 0
+        },
+        "reject-first-c1": {
+          "bytes": 128,
+          "ns_op": 6.561726,
+          "ns_byte": 0.051263,
+          "count": 0
+        },
+        "reject-first-f5": {
+          "bytes": 128,
+          "ns_op": 6.549995,
+          "ns_byte": 0.051172,
+          "count": 0
+        },
+        "reject-short-80": {
+          "bytes": 32,
+          "ns_op": 7.571391,
+          "ns_byte": 0.236606,
+          "count": 0
+        },
+        "reject-short-c0": {
+          "bytes": 32,
+          "ns_op": 7.593193,
+          "ns_byte": 0.237287,
+          "count": 0
+        },
+        "reject-short-c1": {
+          "bytes": 32,
+          "ns_op": 7.563038,
+          "ns_byte": 0.236345,
+          "count": 0
+        },
+        "reject-short-f5": {
+          "bytes": 32,
+          "ns_op": 7.591191,
+          "ns_byte": 0.237225,
+          "count": 0
+        },
+        "reject-short-ff": {
+          "bytes": 32,
+          "ns_op": 7.583457,
+          "ns_byte": 0.236983,
+          "count": 0
+        }
+      },
+      {
+        "ascii-32": {
+          "bytes": 56,
+          "ns_op": 10.553474,
+          "ns_byte": 0.188455,
+          "count": 1497965
+        },
+        "ascii-128": {
+          "bytes": 168,
+          "ns_op": 4.760394,
+          "ns_byte": 0.028336,
+          "count": 499320
+        },
+        "ascii-4096": {
+          "bytes": 4144,
+          "ns_op": 39.231719,
+          "ns_byte": 0.009467,
+          "count": 20240
+        },
+        "latin-32": {
+          "bytes": 52,
+          "ns_op": 16.998131,
+          "ns_byte": 0.326887,
+          "count": 1613190
+        },
+        "latin-128": {
+          "bytes": 156,
+          "ns_op": 14.549904,
+          "ns_byte": 0.093269,
+          "count": 537730
+        },
+        "latin-4096": {
+          "bytes": 4108,
+          "ns_op": 257.019344,
+          "ns_byte": 0.062566,
+          "count": 20420
+        },
+        "chinese-32": {
+          "bytes": 36,
+          "ns_op": 17.241017,
+          "ns_byte": 0.478917,
+          "count": 2330165
+        },
+        "chinese-128": {
+          "bytes": 144,
+          "ns_op": 14.518651,
+          "ns_byte": 0.100824,
+          "count": 582540
+        },
+        "chinese-4096": {
+          "bytes": 4104,
+          "ns_op": 256.939579,
+          "ns_byte": 0.062607,
+          "count": 20440
+        },
+        "mixed-32": {
+          "bytes": 106,
+          "ns_op": 10.791698,
+          "ns_byte": 0.101808,
+          "count": 791375
+        },
+        "mixed-128": {
+          "bytes": 212,
+          "ns_op": 18.394506,
+          "ns_byte": 0.086767,
+          "count": 395685
+        },
+        "mixed-4096": {
+          "bytes": 4134,
+          "ns_op": 257.005914,
+          "ns_byte": 0.062169,
+          "count": 20290
+        },
+        "emoji-32": {
+          "bytes": 48,
+          "ns_op": 16.988625,
+          "ns_byte": 0.35393,
+          "count": 1747625
+        },
+        "emoji-128": {
+          "bytes": 144,
+          "ns_op": 14.534324,
+          "ns_byte": 0.100933,
+          "count": 582540
+        },
+        "emoji-4096": {
+          "bytes": 4104,
+          "ns_op": 257.088307,
+          "ns_byte": 0.062643,
+          "count": 20440
+        },
+        "invalid-first": {
+          "bytes": 4240,
+          "ns_op": 67.6831,
+          "ns_byte": 0.015963,
+          "count": 0
+        },
+        "invalid-last": {
+          "bytes": 4240,
+          "ns_op": 264.955763,
+          "ns_byte": 0.06249,
+          "count": 0
+        },
+        "truncated-last": {
+          "bytes": 4243,
+          "ns_op": 265.098128,
+          "ns_byte": 0.062479,
+          "count": 0
+        },
+        "tiny-ascii-1": {
+          "bytes": 1,
+          "ns_op": 10.063473,
+          "ns_byte": 10.063473,
+          "count": 83886080
+        },
+        "tiny-ascii-8": {
+          "bytes": 8,
+          "ns_op": 10.085564,
+          "ns_byte": 1.260696,
+          "count": 10485760
+        },
+        "tiny-ascii-16": {
+          "bytes": 16,
+          "ns_op": 10.041402,
+          "ns_byte": 0.627588,
+          "count": 5242880
+        },
+        "tiny-ascii-24": {
+          "bytes": 24,
+          "ns_op": 10.953032,
+          "ns_byte": 0.456376,
+          "count": 3495250
+        },
+        "tiny-ascii-31": {
+          "bytes": 31,
+          "ns_op": 10.952696,
+          "ns_byte": 0.353313,
+          "count": 2706000
+        },
+        "tiny-latin-1": {
+          "bytes": 2,
+          "ns_op": 16.034424,
+          "ns_byte": 8.017212,
+          "count": 41943040
+        },
+        "tiny-latin-8": {
+          "bytes": 9,
+          "ns_op": 15.91041,
+          "ns_byte": 1.767823,
+          "count": 9320675
+        },
+        "tiny-latin-16": {
+          "bytes": 16,
+          "ns_op": 15.954247,
+          "ns_byte": 0.99714,
+          "count": 5242880
+        },
+        "tiny-latin-24": {
+          "bytes": 24,
+          "ns_op": 16.404251,
+          "ns_byte": 0.68351,
+          "count": 3495250
+        },
+        "tiny-latin-31": {
+          "bytes": 31,
+          "ns_op": 16.400785,
+          "ns_byte": 0.529058,
+          "count": 2706000
+        },
+        "tiny-chinese-1": {
+          "bytes": 3,
+          "ns_op": 16.017172,
+          "ns_byte": 5.339057,
+          "count": 27962025
+        },
+        "tiny-chinese-8": {
+          "bytes": 9,
+          "ns_op": 15.98299,
+          "ns_byte": 1.775888,
+          "count": 9320675
+        },
+        "tiny-chinese-16": {
+          "bytes": 18,
+          "ns_op": 16.403186,
+          "ns_byte": 0.911288,
+          "count": 4660335
+        },
+        "tiny-chinese-24": {
+          "bytes": 24,
+          "ns_op": 16.403797,
+          "ns_byte": 0.683492,
+          "count": 3495250
+        },
+        "tiny-chinese-31": {
+          "bytes": 33,
+          "ns_op": 17.245299,
+          "ns_byte": 0.522585,
+          "count": 2542000
+        },
+        "tiny-mixed-1": {
+          "bytes": 1,
+          "ns_op": 10.071527,
+          "ns_byte": 10.071527,
+          "count": 83886080
+        },
+        "tiny-mixed-8": {
+          "bytes": 9,
+          "ns_op": 15.938452,
+          "ns_byte": 1.770939,
+          "count": 9320675
+        },
+        "tiny-mixed-16": {
+          "bytes": 16,
+          "ns_op": 15.957284,
+          "ns_byte": 0.99733,
+          "count": 5242880
+        },
+        "tiny-mixed-24": {
+          "bytes": 24,
+          "ns_op": 16.400722,
+          "ns_byte": 0.683363,
+          "count": 3495250
+        },
+        "tiny-mixed-31": {
+          "bytes": 31,
+          "ns_op": 16.409266,
+          "ns_byte": 0.529331,
+          "count": 2706000
+        },
+        "tiny-emoji-1": {
+          "bytes": 4,
+          "ns_op": 16.060912,
+          "ns_byte": 4.015228,
+          "count": 20971520
+        },
+        "tiny-emoji-8": {
+          "bytes": 8,
+          "ns_op": 15.909864,
+          "ns_byte": 1.988733,
+          "count": 10485760
+        },
+        "tiny-emoji-16": {
+          "bytes": 16,
+          "ns_op": 15.954663,
+          "ns_byte": 0.997166,
+          "count": 5242880
+        },
+        "tiny-emoji-24": {
+          "bytes": 24,
+          "ns_op": 16.404832,
+          "ns_byte": 0.683535,
+          "count": 3495250
+        },
+        "tiny-emoji-31": {
+          "bytes": 32,
+          "ns_op": 7.535837,
+          "ns_byte": 0.235495,
+          "count": 2621440
+        },
+        "tiny-ascii-prefix": {
+          "bytes": 32,
+          "ns_op": 7.537302,
+          "ns_byte": 0.235541,
+          "count": 2621440
+        },
+        "tiny-ascii-suffix": {
+          "bytes": 32,
+          "ns_op": 7.555479,
+          "ns_byte": 0.236109,
+          "count": 2621440
+        },
+        "tiny-ascii-infix": {
+          "bytes": 32,
+          "ns_op": 7.571203,
+          "ns_byte": 0.2366,
+          "count": 2621440
+        },
+        "latin-ascii-leading": {
+          "bytes": 58,
+          "ns_op": 16.999976,
+          "ns_byte": 0.293103,
+          "count": 1446310
+        },
+        "mixed-latin-leading": {
+          "bytes": 108,
+          "ns_op": 10.745249,
+          "ns_byte": 0.099493,
+          "count": 776720
+        },
+        "mixed-emoji-leading": {
+          "bytes": 110,
+          "ns_op": 10.739582,
+          "ns_byte": 0.097633,
+          "count": 762600
+        },
+        "reject-first-80": {
+          "bytes": 128,
+          "ns_op": 6.544359,
+          "ns_byte": 0.051128,
+          "count": 0
+        },
+        "reject-first-c0": {
+          "bytes": 128,
+          "ns_op": 6.538204,
+          "ns_byte": 0.05108,
+          "count": 0
+        },
+        "reject-first-c1": {
+          "bytes": 128,
+          "ns_op": 6.548462,
+          "ns_byte": 0.05116,
+          "count": 0
+        },
+        "reject-first-f5": {
+          "bytes": 128,
+          "ns_op": 6.546123,
+          "ns_byte": 0.051142,
+          "count": 0
+        },
+        "reject-short-80": {
+          "bytes": 32,
+          "ns_op": 7.563878,
+          "ns_byte": 0.236371,
+          "count": 0
+        },
+        "reject-short-c0": {
+          "bytes": 32,
+          "ns_op": 7.55942,
+          "ns_byte": 0.236232,
+          "count": 0
+        },
+        "reject-short-c1": {
+          "bytes": 32,
+          "ns_op": 7.565411,
+          "ns_byte": 0.236419,
+          "count": 0
+        },
+        "reject-short-f5": {
+          "bytes": 32,
+          "ns_op": 7.545499,
+          "ns_byte": 0.235797,
+          "count": 0
+        },
+        "reject-short-ff": {
+          "bytes": 32,
+          "ns_op": 7.553269,
+          "ns_byte": 0.23604,
+          "count": 0
+        }
+      }
+    ],
+    "baseline": [
+      {
+        "ascii-32": {
+          "bytes": 56,
+          "ns_op": 3.263838,
+          "ns_byte": 0.058283,
+          "count": 1497965
+        },
+        "ascii-128": {
+          "bytes": 168,
+          "ns_op": 4.078577,
+          "ns_byte": 0.024277,
+          "count": 499320
+        },
+        "ascii-4096": {
+          "bytes": 4144,
+          "ns_op": 34.031621,
+          "ns_byte": 0.008212,
+          "count": 20240
+        },
+        "latin-32": {
+          "bytes": 52,
+          "ns_op": 9.335106,
+          "ns_byte": 0.179521,
+          "count": 1613190
+        },
+        "latin-128": {
+          "bytes": 156,
+          "ns_op": 15.242901,
+          "ns_byte": 0.097711,
+          "count": 537730
+        },
+        "latin-4096": {
+          "bytes": 4108,
+          "ns_op": 230.584721,
+          "ns_byte": 0.056131,
+          "count": 20420
+        },
+        "chinese-32": {
+          "bytes": 36,
+          "ns_op": 10.513833,
+          "ns_byte": 0.292051,
+          "count": 2330165
+        },
+        "chinese-128": {
+          "bytes": 144,
+          "ns_op": 14.796683,
+          "ns_byte": 0.102755,
+          "count": 582540
+        },
+        "chinese-4096": {
+          "bytes": 4104,
+          "ns_op": 223.002935,
+          "ns_byte": 0.054338,
+          "count": 20440
+        },
+        "mixed-32": {
+          "bytes": 106,
+          "ns_op": 15.135404,
+          "ns_byte": 0.142787,
+          "count": 791375
+        },
+        "mixed-128": {
+          "bytes": 212,
+          "ns_op": 17.325891,
+          "ns_byte": 0.081726,
+          "count": 395685
+        },
+        "mixed-4096": {
+          "bytes": 4134,
+          "ns_op": 218.839083,
+          "ns_byte": 0.052936,
+          "count": 20290
+        },
+        "emoji-32": {
+          "bytes": 48,
+          "ns_op": 13.327719,
+          "ns_byte": 0.277661,
+          "count": 1747625
+        },
+        "emoji-128": {
+          "bytes": 144,
+          "ns_op": 15.279886,
+          "ns_byte": 0.10611,
+          "count": 582540
+        },
+        "emoji-4096": {
+          "bytes": 4104,
+          "ns_op": 211.227495,
+          "ns_byte": 0.051469,
+          "count": 20440
+        },
+        "invalid-first": {
+          "bytes": 4240,
+          "ns_op": 2.511293,
+          "ns_byte": 0.000592,
+          "count": 0
+        },
+        "invalid-last": {
+          "bytes": 4240,
+          "ns_op": 227.84909,
+          "ns_byte": 0.053738,
+          "count": 0
+        },
+        "truncated-last": {
+          "bytes": 4243,
+          "ns_op": 226.881386,
+          "ns_byte": 0.053472,
+          "count": 0
+        },
+        "tiny-ascii-1": {
+          "bytes": 1,
+          "ns_op": 1.132655,
+          "ns_byte": 1.132655,
+          "count": 83886080
+        },
+        "tiny-ascii-8": {
+          "bytes": 8,
+          "ns_op": 1.004369,
+          "ns_byte": 0.125546,
+          "count": 10485760
+        },
+        "tiny-ascii-16": {
+          "bytes": 16,
+          "ns_op": 1.254817,
+          "ns_byte": 0.078426,
+          "count": 5242880
+        },
+        "tiny-ascii-24": {
+          "bytes": 24,
+          "ns_op": 1.381834,
+          "ns_byte": 0.057576,
+          "count": 3495250
+        },
+        "tiny-ascii-31": {
+          "bytes": 31,
+          "ns_op": 3.260541,
+          "ns_byte": 0.105179,
+          "count": 2706000
+        },
+        "tiny-latin-1": {
+          "bytes": 2,
+          "ns_op": 2.266434,
+          "ns_byte": 1.133217,
+          "count": 41943040
+        },
+        "tiny-latin-8": {
+          "bytes": 9,
+          "ns_op": 5.855179,
+          "ns_byte": 0.650575,
+          "count": 9320675
+        },
+        "tiny-latin-16": {
+          "bytes": 16,
+          "ns_op": 9.929841,
+          "ns_byte": 0.620615,
+          "count": 5242880
+        },
+        "tiny-latin-24": {
+          "bytes": 24,
+          "ns_op": 16.049396,
+          "ns_byte": 0.668725,
+          "count": 3495250
+        },
+        "tiny-latin-31": {
+          "bytes": 31,
+          "ns_op": 20.112737,
+          "ns_byte": 0.648798,
+          "count": 2706000
+        },
+        "tiny-chinese-1": {
+          "bytes": 3,
+          "ns_op": 3.113666,
+          "ns_byte": 1.037889,
+          "count": 27962025
+        },
+        "tiny-chinese-8": {
+          "bytes": 9,
+          "ns_op": 8.495811,
+          "ns_byte": 0.943979,
+          "count": 9320675
+        },
+        "tiny-chinese-16": {
+          "bytes": 18,
+          "ns_op": 19.394863,
+          "ns_byte": 1.077492,
+          "count": 4660335
+        },
+        "tiny-chinese-24": {
+          "bytes": 24,
+          "ns_op": 27.712792,
+          "ns_byte": 1.1547,
+          "count": 3495250
+        },
+        "tiny-chinese-31": {
+          "bytes": 33,
+          "ns_op": 10.446336,
+          "ns_byte": 0.316556,
+          "count": 2542000
+        },
+        "tiny-mixed-1": {
+          "bytes": 1,
+          "ns_op": 1.130323,
+          "ns_byte": 1.130323,
+          "count": 83886080
+        },
+        "tiny-mixed-8": {
+          "bytes": 9,
+          "ns_op": 6.024802,
+          "ns_byte": 0.669422,
+          "count": 9320675
+        },
+        "tiny-mixed-16": {
+          "bytes": 16,
+          "ns_op": 10.688356,
+          "ns_byte": 0.668022,
+          "count": 5242880
+        },
+        "tiny-mixed-24": {
+          "bytes": 24,
+          "ns_op": 16.682777,
+          "ns_byte": 0.695116,
+          "count": 3495250
+        },
+        "tiny-mixed-31": {
+          "bytes": 31,
+          "ns_op": 20.973718,
+          "ns_byte": 0.676572,
+          "count": 2706000
+        },
+        "tiny-emoji-1": {
+          "bytes": 4,
+          "ns_op": 3.293786,
+          "ns_byte": 0.823446,
+          "count": 20971520
+        },
+        "tiny-emoji-8": {
+          "bytes": 8,
+          "ns_op": 6.316408,
+          "ns_byte": 0.789551,
+          "count": 10485760
+        },
+        "tiny-emoji-16": {
+          "bytes": 16,
+          "ns_op": 12.888606,
+          "ns_byte": 0.805538,
+          "count": 5242880
+        },
+        "tiny-emoji-24": {
+          "bytes": 24,
+          "ns_op": 21.320964,
+          "ns_byte": 0.888374,
+          "count": 3495250
+        },
+        "tiny-emoji-31": {
+          "bytes": 32,
+          "ns_op": 30.477432,
+          "ns_byte": 0.95242,
+          "count": 2621440
+        },
+        "tiny-ascii-prefix": {
+          "bytes": 32,
+          "ns_op": 25.278431,
+          "ns_byte": 0.789951,
+          "count": 2621440
+        },
+        "tiny-ascii-suffix": {
+          "bytes": 32,
+          "ns_op": 26.331018,
+          "ns_byte": 0.822844,
+          "count": 2621440
+        },
+        "tiny-ascii-infix": {
+          "bytes": 32,
+          "ns_op": 19.767199,
+          "ns_byte": 0.617725,
+          "count": 2621440
+        },
+        "latin-ascii-leading": {
+          "bytes": 58,
+          "ns_op": 7.477567,
+          "ns_byte": 0.128924,
+          "count": 1446310
+        },
+        "mixed-latin-leading": {
+          "bytes": 108,
+          "ns_op": 15.743009,
+          "ns_byte": 0.145769,
+          "count": 776720
+        },
+        "mixed-emoji-leading": {
+          "bytes": 110,
+          "ns_op": 17.346512,
+          "ns_byte": 0.157696,
+          "count": 762600
+        },
+        "reject-first-80": {
+          "bytes": 128,
+          "ns_op": 2.172949,
+          "ns_byte": 0.016976,
+          "count": 0
+        },
+        "reject-first-c0": {
+          "bytes": 128,
+          "ns_op": 2.177951,
+          "ns_byte": 0.017015,
+          "count": 0
+        },
+        "reject-first-c1": {
+          "bytes": 128,
+          "ns_op": 2.210985,
+          "ns_byte": 0.017273,
+          "count": 0
+        },
+        "reject-first-f5": {
+          "bytes": 128,
+          "ns_op": 2.510679,
+          "ns_byte": 0.019615,
+          "count": 0
+        },
+        "reject-short-80": {
+          "bytes": 32,
+          "ns_op": 1.632154,
+          "ns_byte": 0.051005,
+          "count": 0
+        },
+        "reject-short-c0": {
+          "bytes": 32,
+          "ns_op": 1.6423,
+          "ns_byte": 0.051322,
+          "count": 0
+        },
+        "reject-short-c1": {
+          "bytes": 32,
+          "ns_op": 1.63159,
+          "ns_byte": 0.050987,
+          "count": 0
+        },
+        "reject-short-f5": {
+          "bytes": 32,
+          "ns_op": 1.883333,
+          "ns_byte": 0.058854,
+          "count": 0
+        },
+        "reject-short-ff": {
+          "bytes": 32,
+          "ns_op": 1.884171,
+          "ns_byte": 0.05888,
+          "count": 0
+        }
+      },
+      {
+        "ascii-32": {
+          "bytes": 56,
+          "ns_op": 3.262857,
+          "ns_byte": 0.058265,
+          "count": 1497965
+        },
+        "ascii-128": {
+          "bytes": 168,
+          "ns_op": 3.758321,
+          "ns_byte": 0.022371,
+          "count": 499320
+        },
+        "ascii-4096": {
+          "bytes": 4144,
+          "ns_op": 31.48913,
+          "ns_byte": 0.007599,
+          "count": 20240
+        },
+        "latin-32": {
+          "bytes": 52,
+          "ns_op": 8.663818,
+          "ns_byte": 0.166612,
+          "count": 1613190
+        },
+        "latin-128": {
+          "bytes": 156,
+          "ns_op": 15.26504,
+          "ns_byte": 0.097853,
+          "count": 537730
+        },
+        "latin-4096": {
+          "bytes": 4108,
+          "ns_op": 230.472821,
+          "ns_byte": 0.056103,
+          "count": 20420
+        },
+        "chinese-32": {
+          "bytes": 36,
+          "ns_op": 10.524673,
+          "ns_byte": 0.292352,
+          "count": 2330165
+        },
+        "chinese-128": {
+          "bytes": 144,
+          "ns_op": 14.813506,
+          "ns_byte": 0.102872,
+          "count": 582540
+        },
+        "chinese-4096": {
+          "bytes": 4104,
+          "ns_op": 223.443982,
+          "ns_byte": 0.054445,
+          "count": 20440
+        },
+        "mixed-32": {
+          "bytes": 106,
+          "ns_op": 15.086154,
+          "ns_byte": 0.142322,
+          "count": 791375
+        },
+        "mixed-128": {
+          "bytes": 212,
+          "ns_op": 17.293087,
+          "ns_byte": 0.081571,
+          "count": 395685
+        },
+        "mixed-4096": {
+          "bytes": 4134,
+          "ns_op": 220.880237,
+          "ns_byte": 0.05343,
+          "count": 20290
+        },
+        "emoji-32": {
+          "bytes": 48,
+          "ns_op": 13.327633,
+          "ns_byte": 0.277659,
+          "count": 1747625
+        },
+        "emoji-128": {
+          "bytes": 144,
+          "ns_op": 15.304666,
+          "ns_byte": 0.106282,
+          "count": 582540
+        },
+        "emoji-4096": {
+          "bytes": 4104,
+          "ns_op": 211.895548,
+          "ns_byte": 0.051631,
+          "count": 20440
+        },
+        "invalid-first": {
+          "bytes": 4240,
+          "ns_op": 2.509776,
+          "ns_byte": 0.000592,
+          "count": 0
+        },
+        "invalid-last": {
+          "bytes": 4240,
+          "ns_op": 225.653943,
+          "ns_byte": 0.05322,
+          "count": 0
+        },
+        "truncated-last": {
+          "bytes": 4243,
+          "ns_op": 226.001012,
+          "ns_byte": 0.053264,
+          "count": 0
+        },
+        "tiny-ascii-1": {
+          "bytes": 1,
+          "ns_op": 1.135191,
+          "ns_byte": 1.135191,
+          "count": 83886080
+        },
+        "tiny-ascii-8": {
+          "bytes": 8,
+          "ns_op": 1.003974,
+          "ns_byte": 0.125497,
+          "count": 10485760
+        },
+        "tiny-ascii-16": {
+          "bytes": 16,
+          "ns_op": 1.25468,
+          "ns_byte": 0.078417,
+          "count": 5242880
+        },
+        "tiny-ascii-24": {
+          "bytes": 24,
+          "ns_op": 1.381001,
+          "ns_byte": 0.057542,
+          "count": 3495250
+        },
+        "tiny-ascii-31": {
+          "bytes": 31,
+          "ns_op": 3.260996,
+          "ns_byte": 0.105193,
+          "count": 2706000
+        },
+        "tiny-latin-1": {
+          "bytes": 2,
+          "ns_op": 2.266812,
+          "ns_byte": 1.133406,
+          "count": 41943040
+        },
+        "tiny-latin-8": {
+          "bytes": 9,
+          "ns_op": 5.852275,
+          "ns_byte": 0.650253,
+          "count": 9320675
+        },
+        "tiny-latin-16": {
+          "bytes": 16,
+          "ns_op": 10.050889,
+          "ns_byte": 0.628181,
+          "count": 5242880
+        },
+        "tiny-latin-24": {
+          "bytes": 24,
+          "ns_op": 16.53361,
+          "ns_byte": 0.6889,
+          "count": 3495250
+        },
+        "tiny-latin-31": {
+          "bytes": 31,
+          "ns_op": 19.979828,
+          "ns_byte": 0.644511,
+          "count": 2706000
+        },
+        "tiny-chinese-1": {
+          "bytes": 3,
+          "ns_op": 3.095696,
+          "ns_byte": 1.031899,
+          "count": 27962025
+        },
+        "tiny-chinese-8": {
+          "bytes": 9,
+          "ns_op": 8.485897,
+          "ns_byte": 0.942877,
+          "count": 9320675
+        },
+        "tiny-chinese-16": {
+          "bytes": 18,
+          "ns_op": 19.419265,
+          "ns_byte": 1.078848,
+          "count": 4660335
+        },
+        "tiny-chinese-24": {
+          "bytes": 24,
+          "ns_op": 27.87611,
+          "ns_byte": 1.161505,
+          "count": 3495250
+        },
+        "tiny-chinese-31": {
+          "bytes": 33,
+          "ns_op": 10.437162,
+          "ns_byte": 0.316278,
+          "count": 2542000
+        },
+        "tiny-mixed-1": {
+          "bytes": 1,
+          "ns_op": 1.134009,
+          "ns_byte": 1.134009,
+          "count": 83886080
+        },
+        "tiny-mixed-8": {
+          "bytes": 9,
+          "ns_op": 6.029296,
+          "ns_byte": 0.669922,
+          "count": 9320675
+        },
+        "tiny-mixed-16": {
+          "bytes": 16,
+          "ns_op": 10.774484,
+          "ns_byte": 0.673405,
+          "count": 5242880
+        },
+        "tiny-mixed-24": {
+          "bytes": 24,
+          "ns_op": 16.408587,
+          "ns_byte": 0.683691,
+          "count": 3495250
+        },
+        "tiny-mixed-31": {
+          "bytes": 31,
+          "ns_op": 20.950759,
+          "ns_byte": 0.675831,
+          "count": 2706000
+        },
+        "tiny-emoji-1": {
+          "bytes": 4,
+          "ns_op": 3.301101,
+          "ns_byte": 0.825275,
+          "count": 20971520
+        },
+        "tiny-emoji-8": {
+          "bytes": 8,
+          "ns_op": 6.31492,
+          "ns_byte": 0.789365,
+          "count": 10485760
+        },
+        "tiny-emoji-16": {
+          "bytes": 16,
+          "ns_op": 12.8294,
+          "ns_byte": 0.801838,
+          "count": 5242880
+        },
+        "tiny-emoji-24": {
+          "bytes": 24,
+          "ns_op": 21.31131,
+          "ns_byte": 0.887971,
+          "count": 3495250
+        },
+        "tiny-emoji-31": {
+          "bytes": 32,
+          "ns_op": 30.413239,
+          "ns_byte": 0.950414,
+          "count": 2621440
+        },
+        "tiny-ascii-prefix": {
+          "bytes": 32,
+          "ns_op": 28.017864,
+          "ns_byte": 0.875558,
+          "count": 2621440
+        },
+        "tiny-ascii-suffix": {
+          "bytes": 32,
+          "ns_op": 26.368752,
+          "ns_byte": 0.824023,
+          "count": 2621440
+        },
+        "tiny-ascii-infix": {
+          "bytes": 32,
+          "ns_op": 17.817425,
+          "ns_byte": 0.556795,
+          "count": 2621440
+        },
+        "latin-ascii-leading": {
+          "bytes": 58,
+          "ns_op": 7.504792,
+          "ns_byte": 0.129393,
+          "count": 1446310
+        },
+        "mixed-latin-leading": {
+          "bytes": 108,
+          "ns_op": 15.865788,
+          "ns_byte": 0.146905,
+          "count": 776720
+        },
+        "mixed-emoji-leading": {
+          "bytes": 110,
+          "ns_op": 17.380822,
+          "ns_byte": 0.158007,
+          "count": 762600
+        },
+        "reject-first-80": {
+          "bytes": 128,
+          "ns_op": 2.178367,
+          "ns_byte": 0.017018,
+          "count": 0
+        },
+        "reject-first-c0": {
+          "bytes": 128,
+          "ns_op": 2.199176,
+          "ns_byte": 0.017181,
+          "count": 0
+        },
+        "reject-first-c1": {
+          "bytes": 128,
+          "ns_op": 2.235017,
+          "ns_byte": 0.017461,
+          "count": 0
+        },
+        "reject-first-f5": {
+          "bytes": 128,
+          "ns_op": 2.510801,
+          "ns_byte": 0.019616,
+          "count": 0
+        },
+        "reject-short-80": {
+          "bytes": 32,
+          "ns_op": 1.631846,
+          "ns_byte": 0.050995,
+          "count": 0
+        },
+        "reject-short-c0": {
+          "bytes": 32,
+          "ns_op": 1.631356,
+          "ns_byte": 0.05098,
+          "count": 0
+        },
+        "reject-short-c1": {
+          "bytes": 32,
+          "ns_op": 1.631178,
+          "ns_byte": 0.050974,
+          "count": 0
+        },
+        "reject-short-f5": {
+          "bytes": 32,
+          "ns_op": 1.882854,
+          "ns_byte": 0.058839,
+          "count": 0
+        },
+        "reject-short-ff": {
+          "bytes": 32,
+          "ns_op": 1.883296,
+          "ns_byte": 0.058853,
+          "count": 0
+        }
+      },
+      {
+        "ascii-32": {
+          "bytes": 56,
+          "ns_op": 3.264369,
+          "ns_byte": 0.058292,
+          "count": 1497965
+        },
+        "ascii-128": {
+          "bytes": 168,
+          "ns_op": 3.758291,
+          "ns_byte": 0.022371,
+          "count": 499320
+        },
+        "ascii-4096": {
+          "bytes": 4144,
+          "ns_op": 31.532856,
+          "ns_byte": 0.007609,
+          "count": 20240
+        },
+        "latin-32": {
+          "bytes": 52,
+          "ns_op": 8.681615,
+          "ns_byte": 0.166954,
+          "count": 1613190
+        },
+        "latin-128": {
+          "bytes": 156,
+          "ns_op": 15.237852,
+          "ns_byte": 0.097679,
+          "count": 537730
+        },
+        "latin-4096": {
+          "bytes": 4108,
+          "ns_op": 230.483105,
+          "ns_byte": 0.056106,
+          "count": 20420
+        },
+        "chinese-32": {
+          "bytes": 36,
+          "ns_op": 10.504812,
+          "ns_byte": 0.2918,
+          "count": 2330165
+        },
+        "chinese-128": {
+          "bytes": 144,
+          "ns_op": 14.877485,
+          "ns_byte": 0.103316,
+          "count": 582540
+        },
+        "chinese-4096": {
+          "bytes": 4104,
+          "ns_op": 224.184932,
+          "ns_byte": 0.054626,
+          "count": 20440
+        },
+        "mixed-32": {
+          "bytes": 106,
+          "ns_op": 15.132023,
+          "ns_byte": 0.142755,
+          "count": 791375
+        },
+        "mixed-128": {
+          "bytes": 212,
+          "ns_op": 17.321051,
+          "ns_byte": 0.081703,
+          "count": 395685
+        },
+        "mixed-4096": {
+          "bytes": 4134,
+          "ns_op": 218.908329,
+          "ns_byte": 0.052953,
+          "count": 20290
+        },
+        "emoji-32": {
+          "bytes": 48,
+          "ns_op": 13.324938,
+          "ns_byte": 0.277603,
+          "count": 1747625
+        },
+        "emoji-128": {
+          "bytes": 144,
+          "ns_op": 15.317472,
+          "ns_byte": 0.106371,
+          "count": 582540
+        },
+        "emoji-4096": {
+          "bytes": 4104,
+          "ns_op": 210.71502,
+          "ns_byte": 0.051344,
+          "count": 20440
+        },
+        "invalid-first": {
+          "bytes": 4240,
+          "ns_op": 2.509937,
+          "ns_byte": 0.000592,
+          "count": 0
+        },
+        "invalid-last": {
+          "bytes": 4240,
+          "ns_op": 226.586957,
+          "ns_byte": 0.05344,
+          "count": 0
+        },
+        "truncated-last": {
+          "bytes": 4243,
+          "ns_op": 225.794638,
+          "ns_byte": 0.053216,
+          "count": 0
+        },
+        "tiny-ascii-1": {
+          "bytes": 1,
+          "ns_op": 1.12955,
+          "ns_byte": 1.12955,
+          "count": 83886080
+        },
+        "tiny-ascii-8": {
+          "bytes": 8,
+          "ns_op": 1.003879,
+          "ns_byte": 0.125485,
+          "count": 10485760
+        },
+        "tiny-ascii-16": {
+          "bytes": 16,
+          "ns_op": 1.25491,
+          "ns_byte": 0.078432,
+          "count": 5242880
+        },
+        "tiny-ascii-24": {
+          "bytes": 24,
+          "ns_op": 1.380873,
+          "ns_byte": 0.057536,
+          "count": 3495250
+        },
+        "tiny-ascii-31": {
+          "bytes": 31,
+          "ns_op": 3.263551,
+          "ns_byte": 0.105276,
+          "count": 2706000
+        },
+        "tiny-latin-1": {
+          "bytes": 2,
+          "ns_op": 2.272083,
+          "ns_byte": 1.136042,
+          "count": 41943040
+        },
+        "tiny-latin-8": {
+          "bytes": 9,
+          "ns_op": 5.922632,
+          "ns_byte": 0.65807,
+          "count": 9320675
+        },
+        "tiny-latin-16": {
+          "bytes": 16,
+          "ns_op": 10.030149,
+          "ns_byte": 0.626884,
+          "count": 5242880
+        },
+        "tiny-latin-24": {
+          "bytes": 24,
+          "ns_op": 15.469978,
+          "ns_byte": 0.644582,
+          "count": 3495250
+        },
+        "tiny-latin-31": {
+          "bytes": 31,
+          "ns_op": 20.29274,
+          "ns_byte": 0.654605,
+          "count": 2706000
+        },
+        "tiny-chinese-1": {
+          "bytes": 3,
+          "ns_op": 3.114835,
+          "ns_byte": 1.038278,
+          "count": 27962025
+        },
+        "tiny-chinese-8": {
+          "bytes": 9,
+          "ns_op": 8.522492,
+          "ns_byte": 0.946944,
+          "count": 9320675
+        },
+        "tiny-chinese-16": {
+          "bytes": 18,
+          "ns_op": 19.342973,
+          "ns_byte": 1.07461,
+          "count": 4660335
+        },
+        "tiny-chinese-24": {
+          "bytes": 24,
+          "ns_op": 27.755095,
+          "ns_byte": 1.156462,
+          "count": 3495250
+        },
+        "tiny-chinese-31": {
+          "bytes": 33,
+          "ns_op": 10.427844,
+          "ns_byte": 0.315995,
+          "count": 2542000
+        },
+        "tiny-mixed-1": {
+          "bytes": 1,
+          "ns_op": 1.13177,
+          "ns_byte": 1.13177,
+          "count": 83886080
+        },
+        "tiny-mixed-8": {
+          "bytes": 9,
+          "ns_op": 6.024586,
+          "ns_byte": 0.669398,
+          "count": 9320675
+        },
+        "tiny-mixed-16": {
+          "bytes": 16,
+          "ns_op": 10.638701,
+          "ns_byte": 0.664919,
+          "count": 5242880
+        },
+        "tiny-mixed-24": {
+          "bytes": 24,
+          "ns_op": 16.530255,
+          "ns_byte": 0.688761,
+          "count": 3495250
+        },
+        "tiny-mixed-31": {
+          "bytes": 31,
+          "ns_op": 20.913315,
+          "ns_byte": 0.674623,
+          "count": 2706000
+        },
+        "tiny-emoji-1": {
+          "bytes": 4,
+          "ns_op": 3.302865,
+          "ns_byte": 0.825716,
+          "count": 20971520
+        },
+        "tiny-emoji-8": {
+          "bytes": 8,
+          "ns_op": 6.293143,
+          "ns_byte": 0.786643,
+          "count": 10485760
+        },
+        "tiny-emoji-16": {
+          "bytes": 16,
+          "ns_op": 12.951935,
+          "ns_byte": 0.809496,
+          "count": 5242880
+        },
+        "tiny-emoji-24": {
+          "bytes": 24,
+          "ns_op": 21.403688,
+          "ns_byte": 0.89182,
+          "count": 3495250
+        },
+        "tiny-emoji-31": {
+          "bytes": 32,
+          "ns_op": 30.741789,
+          "ns_byte": 0.960681,
+          "count": 2621440
+        },
+        "tiny-ascii-prefix": {
+          "bytes": 32,
+          "ns_op": 26.20381,
+          "ns_byte": 0.818869,
+          "count": 2621440
+        },
+        "tiny-ascii-suffix": {
+          "bytes": 32,
+          "ns_op": 19.573427,
+          "ns_byte": 0.61167,
+          "count": 2621440
+        },
+        "tiny-ascii-infix": {
+          "bytes": 32,
+          "ns_op": 19.149977,
+          "ns_byte": 0.598437,
+          "count": 2621440
+        },
+        "latin-ascii-leading": {
+          "bytes": 58,
+          "ns_op": 7.472644,
+          "ns_byte": 0.128839,
+          "count": 1446310
+        },
+        "mixed-latin-leading": {
+          "bytes": 108,
+          "ns_op": 15.794463,
+          "ns_byte": 0.146245,
+          "count": 776720
+        },
+        "mixed-emoji-leading": {
+          "bytes": 110,
+          "ns_op": 17.403973,
+          "ns_byte": 0.158218,
+          "count": 762600
+        },
+        "reject-first-80": {
+          "bytes": 128,
+          "ns_op": 2.206599,
+          "ns_byte": 0.017239,
+          "count": 0
+        },
+        "reject-first-c0": {
+          "bytes": 128,
+          "ns_op": 2.215858,
+          "ns_byte": 0.017311,
+          "count": 0
+        },
+        "reject-first-c1": {
+          "bytes": 128,
+          "ns_op": 2.196097,
+          "ns_byte": 0.017157,
+          "count": 0
+        },
+        "reject-first-f5": {
+          "bytes": 128,
+          "ns_op": 2.510832,
+          "ns_byte": 0.019616,
+          "count": 0
+        },
+        "reject-short-80": {
+          "bytes": 32,
+          "ns_op": 1.655165,
+          "ns_byte": 0.051724,
+          "count": 0
+        },
+        "reject-short-c0": {
+          "bytes": 32,
+          "ns_op": 1.632763,
+          "ns_byte": 0.051024,
+          "count": 0
+        },
+        "reject-short-c1": {
+          "bytes": 32,
+          "ns_op": 1.631257,
+          "ns_byte": 0.050977,
+          "count": 0
+        },
+        "reject-short-f5": {
+          "bytes": 32,
+          "ns_op": 1.890365,
+          "ns_byte": 0.059074,
+          "count": 0
+        },
+        "reject-short-ff": {
+          "bytes": 32,
+          "ns_op": 1.893376,
+          "ns_byte": 0.059168,
+          "count": 0
+        }
+      }
+    ]
+  },
+  "previous_ref": "d9d4ecd",
+  "simdutf_source": {
+    "tag": "v9.5.0",
+    "commit": "9064366fa571fac03bcd28db35af597e97fba842",
+    "files_sha256": {
+      "simdutf.h": "e42ec376d456eb4d35fe5e01186a0b6264e4683da71a406785b251724931d8a4",
+      "simdutf.cpp": "8d887a638b9d1a28f56cea6f2f349175f7b52008764e658de6746deabc16525e"
+    }
+  }
+}

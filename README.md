@@ -624,6 +624,8 @@ without pinning the compiler as well.
 driver sends identical inputs to icuz and simdutf and records raw samples,
 input hashes, and binary hashes. See
 [`docs/performance/utf8-validation-2026-11-26.md`](docs/performance/utf8-validation-2026-11-26.md).
+The expanded short-input profile compares against simdutf 9.5.0 in
+[`docs/performance/utf8-short-validation-2026-11-26.md`](docs/performance/utf8-short-validation-2026-11-26.md).
 
 ## Performance notes
 
@@ -636,10 +638,12 @@ generated-data cache footprint. Public UTF-8 entry points validate with a
 vectorized checker: the portable path carries continuation masks between
 32-byte windows and rejects overlongs, surrogates, and out-of-range scalars in
 the same pass. LLVM builds targeting AVX2 use lookup4 nibble classification
-for longer inputs, with overlapping vector loads and two windows per error
-check. A shared ASCII span scan consumes the prefix once and batches up to
-128 bytes per high-bit check. All paths stay within the input slice, so
-validating `compare` and iterator entry points avoid a scalar-by-scalar pass.
+from 35 bytes onward, with overlapping vector loads and two windows per error
+check. Dense short inputs use one padded lookup window; complete 32-byte
+inputs construct their lookbehind in registers. A shared ASCII span scan
+consumes the prefix once and batches up to 128 bytes per high-bit check;
+short ASCII tails use an overlapping word load. All paths stay within the
+input slice, so validating `compare` and iterator entry points avoid a scalar-by-scalar pass.
 
 Normalization and case mapping also have direct ASCII paths. Pure-ASCII text is
 already normalized in every form and can be checked with a word-at-a-time scan;

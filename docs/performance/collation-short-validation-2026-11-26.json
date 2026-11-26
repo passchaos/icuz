@@ -1,0 +1,52 @@
+{
+  "cpu": 2,
+  "previous_ref": "d9d4ecd",
+  "icu_version": "78.3",
+  "rounds": 3,
+  "trials_per_round": 5,
+  "samples_ns_op": {
+    "mixed": {
+      "previous": [
+        35.322,
+        35.615,
+        41.186
+      ],
+      "icuz": [
+        29.352,
+        27.212,
+        25.757
+      ],
+      "icu": [
+        52.647,
+        51.58,
+        50.979
+      ]
+    },
+    "chinese-long": {
+      "previous": [
+        701.321,
+        697.088,
+        705.969
+      ],
+      "icuz": [
+        699.527,
+        697.46,
+        699.461
+      ],
+      "icu": [
+        1199.598,
+        1199.231,
+        1199.757
+      ]
+    }
+  },
+  "binary_sha256": {
+    "previous": "4cc1a429e00aab1d8a860d306010b15d22460f4f5d4b9e4b34bdbd0f084f16d1",
+    "icuz": "b318783e7dc91a07fed6c9d18567a8c0873a59cde960bee06705f1d0fc655651",
+    "icu": "c37830cdc186985206211afbad32fbf18126ec6ee6cb301b591f27d98eb5b875"
+  },
+  "source_sha256": {
+    "bench/collation.zig": "e3cd9423282c911ac2a8fa29f012161794492039e7fd1fd5a71e3cb3af3f12a0",
+    "bench/icu_bench.cpp": "6baac05f27da64bffaee5c26d1d65f0493ed806a0556ed4eb88b68a092624969"
+  }
+}

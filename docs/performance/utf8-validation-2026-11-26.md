@@ -1,5 +1,9 @@
 # UTF-8 validation and corrected collation comparison, 2026-11-26
 
+This is the historical `d9d4ecd` profile. The
+[expanded short-input profile](utf8-short-validation-2026-11-26.md) records
+the subsequent optimization against the newer simdutf 9.5.0 release.
+
 This profile compares the public validating API with simdutf 9.0.0's
 `validate_utf8`. It also replaces the mismatched long Chinese ICU comparison
 in the historical benchmark document. The original icuz validator was captured

@@ -3,11 +3,12 @@
 const std = @import("std");
 const isValid = @import("../validate.zig").isValid;
 const portable = @import("vector.zig").isValid;
+const scalarValid = @import("scalar.zig").scalarValid;
 
 fn expectSame(text: []const u8) !void {
     const expected = std.unicode.utf8ValidateSlice(text);
     const actual = isValid(text);
-    if (expected != actual or expected != portable(text)) {
+    if (expected != actual or expected != portable(text) or expected != scalarValid(text)) {
         std.debug.print("validation mismatch for {any}\n", .{text});
         return error.TestUnexpectedResult;
     }
@@ -301,16 +302,45 @@ test "vector validation carries valid and invalid sequences at every lane" {
 
 test "vector validation agrees on all scalar encodings across a window" {
     var buffer = [_]u8{'a'} ** 128;
+    var short_buffer = [_]u8{'a'} ** 32;
+    var short_boundary = [_]u8{'a'} ** 32;
+    @memcpy(short_boundary[0..3], "\xe4\xb8\x96");
     @memcpy(buffer[0..3], "\xe4\xb8\x96");
     // The portable first window ends at 32; the lookup first window starts
     // after the initial three-byte scalar and ends at 35. Exercise both
     // boundaries, and every legal four-byte continuation combination.
     for (0..0x110000) |value| {
         if (value >= 0xd800 and value <= 0xdfff) continue;
+        const initial_length = try std.unicode.utf8Encode(@intCast(value), short_buffer[0..4]);
+        try expectSame(&short_buffer);
+        @memset(short_buffer[0..initial_length], 'a');
+        // The register shifts cross a 128-bit lane at byte 16. Each lead
+        // distance needs a valid scalar crossing that lane boundary.
+        for ([_]usize{ 13, 14, 15 }) |offset| {
+            const length = try std.unicode.utf8Encode(@intCast(value), short_boundary[offset..][0..4]);
+            try expectSame(&short_boundary);
+            @memset(short_boundary[offset..][0..length], 'a');
+        }
         for ([_]usize{ 31, 34 }) |offset| {
             const length = try std.unicode.utf8Encode(@intCast(value), buffer[offset..][0..4]);
             try expectSame(&buffer);
             @memset(buffer[offset..][0..length], 'a');
+        }
+    }
+}
+
+test "short register windows reject malformed scalars across lane boundaries" {
+    const bad = [_][]const u8{
+        "\x80",         "\xc0\x80",         "\xc1\xbf",         "\xe0\x9f\xbf",
+        "\xed\xa0\x80", "\xf0\x8f\xbf\xbf", "\xf4\x90\x80\x80", "\xf5\x80\x80\x80",
+        "\xe2\x28\xa1", "\xf1\x80\x80",
+    };
+    for (bad) |sequence| {
+        for ([_]usize{ 13, 14, 15 }) |offset| {
+            var buffer = [_]u8{'a'} ** 32;
+            @memcpy(buffer[0..3], "\xe4\xb8\x96");
+            @memcpy(buffer[offset..][0..sequence.len], sequence);
+            try expectSame(&buffer);
         }
     }
 }
@@ -324,9 +354,10 @@ test "vector validation stays between unreadable guard pages" {
     try std.testing.expectEqual(std.posix.E.SUCCESS, std.posix.errno(std.os.linux.mprotect(memory.ptr + 2 * page, page, .{})));
 
     const endings = [_][]const u8{
-        "a",                "\xc2\x80",     "\xe0\xa0\x80", "\xf4\x8f\xbf\xbf",
-        "\xff",             "\xe0\x9f\x80", "\xed\xa0\x80", "\xf0\x8f\xbf\xbf",
-        "\xf4\x90\x80\x80", "\xc2",         "\xe1\x80",     "\xf1\x80\x80",
+        "a",            "\xc2\x80",      "\xe0\xa0\x80",      "\xf4\x8f\xbf\xbf",
+        "a\xc2\xa9",    "a\xe4\xb8\x96", "a\xf0\x9f\x98\x80", "\xff",
+        "\xe0\x9f\x80", "\xed\xa0\x80",  "\xf0\x8f\xbf\xbf",  "\xf4\x90\x80\x80",
+        "\xc2",         "\xe1\x80",      "\xf1\x80\x80",
     };
     for (0..513) |length| {
         // An end exactly at the unreadable page catches even one-byte
@@ -337,6 +368,9 @@ test "vector validation stays between unreadable guard pages" {
         for (endings) |ending| {
             if (ending.len > length) continue;
             @memset(text, 'a');
+            // Force non-ASCII dispatch beside the end guard as well, so
+            // padded 16-32-byte lookup windows see valid and truncated tails.
+            if (length >= 8) @memcpy(text[0..3], "\xe4\xb8\x96");
             @memcpy(text[length - ending.len ..], ending);
             try expectSame(text);
         }
