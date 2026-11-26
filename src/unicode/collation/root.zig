@@ -987,6 +987,16 @@ pub const Collator = struct {
         // up to eight.
         const window: usize = if (self.tailoring == null) 3 else 8;
         if (window == 3) {
+            // Three ASCII scalars are NFD-inert, and the compile-time table
+            // answers contraction starts without touching the root tables.
+            if (end >= 3 and text[end - 1] < 0x80 and
+                text[end - 2] < 0x80 and text[end - 3] < 0x80 and
+                !ascii_contractions[text[end - 1]] and
+                !ascii_contractions[text[end - 2]] and
+                !ascii_contractions[text[end - 3]])
+            {
+                return true;
+            }
             ensureRootTables();
             if (root_tables_storage.han_pages_clean and
                 hanBoundaryClean(text, end))
