@@ -16,8 +16,9 @@ nanoseconds per input byte (or per operation) for the same operations.
   (2026-11-26), with the Georgian rows refreshed at `37c0931` and
   `87f30ff`, the collation contract rows at `0de0c61`, the IDNA, search,
   plural, shaping, and UTF-16 rows at `4475756`, the UTF-16 script rows at
-  `0599f27` and `5ef913c`, the NFC Japanese row at `250a01c`, and the
-  isNormalized rows at `db7f3e2`. Re-run
+  `0599f27` and `5ef913c`, and the isNormalized rows at `db7f3e2`; the
+  mixed, Japanese, jamo, and e+marks rows were re-measured in the same
+  quiet window. Re-run
   the commands under "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Hebrew,
@@ -45,10 +46,10 @@ where the reported unit is the UTF-8 input byte.
 | Benchmark | icuz (ns/B) | ICU (ns/B) | Ratio |
 |---|---|---|---|
 | NFC ASCII | 0.061 | 0.492 | 8.07x |
-| NFC mixed (reuse) | 1.005 | 1.367 | 1.36x |
-| NFC Japanese (reuse) | 0.409 | 0.370 | 0.90x |
-| NFC jamo (reuse) | 0.975 | 1.158 | 1.19x |
-| NFC e+marks (reuse) | 4.454 | 9.133 | 2.05x |
+| NFC mixed (reuse) | 0.963 | 1.368 | 1.42x |
+| NFC Japanese (reuse) | 0.354 | 0.376 | 1.06x |
+| NFC jamo (reuse) | 0.982 | 1.142 | 1.16x |
+| NFC e+marks (reuse) | 4.421 | 9.102 | 2.06x |
 | NFC Georgian | 0.239 | 0.379 | 1.59x |
 | NFC Georgian (UTF-16) | 0.168 | 0.381 | 2.27x |
 | NFC Hebrew (UTF-16) | 0.515 | 0.559 | 1.09x |
