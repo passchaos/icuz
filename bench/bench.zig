@@ -2470,6 +2470,31 @@ pub fn main() !void {
         georgian_runtime,
         allocator,
     );
+    benchNormalizationUtf16Into(
+        "NFC Hebrew (utf16 reuse)",
+        "\u{05e9}\u{05dc}\u{05d5}\u{05dd} \u{05e2}\u{05d5}\u{05dc}\u{05dd} \u{05d6}\u{05d4} \u{05d8}\u{05e7}\u{05e1}\u{05d8} \u{05e2}\u{05d1}\u{05e8}\u{05d9} \u{05dc}\u{05d1}\u{05d3}\u{05d9}\u{05e7}\u{05d4}. " ** 8,
+        allocator,
+    );
+    benchNormalizationUtf16Into(
+        "NFC Arabic (utf16 reuse)",
+        "\u{0645}\u{0631}\u{062d}\u{0628}\u{0627} \u{0628}\u{0627}\u{0644}\u{0639}\u{0627}\u{0644}\u{0645} \u{0647}\u{0630}\u{0627} \u{0646}\u{0635} \u{0639}\u{0631}\u{0628}\u{064a} \u{0644}\u{0644}\u{0627}\u{062e}\u{062a}\u{0628}\u{0627}\u{0631}. " ** 8,
+        allocator,
+    );
+    benchNormalizationUtf16Into(
+        "NFC Devanagari (utf16 reuse)",
+        "\u{0915}\u{094d}\u{0937}\u{093f} \u{0939}\u{093f}\u{0928}\u{094d}\u{0926}\u{0940} \u{092d}\u{093e}\u{0930}\u{0924} \u{092a}\u{0930}\u{0940}\u{0915}\u{094d}\u{0937}\u{0923} " ** 8,
+        allocator,
+    );
+    benchNormalizationUtf16Into(
+        "NFC Thai (utf16 reuse)",
+        "\u{0e20}\u{0e32}\u{0e29}\u{0e32}\u{0e44}\u{0e17}\u{0e22} " ** 8,
+        allocator,
+    );
+    benchNormalizationUtf16Into(
+        "NFC Amharic (utf16 reuse)",
+        amharic_runtime,
+        allocator,
+    );
     benchNormalization("NFC mixed", mixed_runtime, allocator, false);
     benchNormalizationInto("NFC mixed (reuse)", mixed_runtime, allocator);
     benchNormalizationInto("NFC Chinese (reuse)", chinese_runtime, allocator);

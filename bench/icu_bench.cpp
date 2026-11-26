@@ -127,6 +127,26 @@ int main() {
         for (int i = 0; i < 8; i++) s += "ภาษาไทย ";
         return s;
     }();
+    const std::string hebrew_text = [] {
+        std::string s;
+        for (int i = 0; i < 8; i++) s += "שלום עולם זה טקסט עברי לבדיקה. ";
+        return s;
+    }();
+    const std::string arabic_text = [] {
+        std::string s;
+        for (int i = 0; i < 8; i++) s += "مرحبا بالعالم هذا نص عربي للاختبار. ";
+        return s;
+    }();
+    const std::string devanagari_text = [] {
+        std::string s;
+        for (int i = 0; i < 8; i++) s += "क्षि हिन्दी भारत परीक्षण ";
+        return s;
+    }();
+    const std::string amharic_text = [] {
+        std::string s;
+        for (int i = 0; i < 8; i++) s += "አማርኛ ግዕዝ ፊደል ቋንቋ ";
+        return s;
+    }();
     const std::string cjk_word_text = [] {
         std::string s;
         for (int i = 0; i < 8; i++) s += "中华人民共和国 ";
@@ -202,6 +222,10 @@ int main() {
         {"accents", accents_text, {}},
         {"russian", russian_text, {}},
         {"georgian", georgian_text, {}},
+        {"hebrew", hebrew_text, {}},
+        {"arabic", arabic_text, {}},
+        {"devanagari", devanagari_text, {}},
+        {"amharic", amharic_text, {}},
     };
     for (auto& text : texts) text.u16 = to_u16(text.utf8);
 
@@ -418,7 +442,7 @@ int main() {
     {
         UErrorCode status = U_ZERO_ERROR;
         const UNormalizer2* nfc = unorm2_getNFCInstance(&status);
-        for (int index : {0, 1, 12, 8, 9, 10, 17}) {
+        for (int index : {0, 1, 12, 8, 9, 10, 17, 6, 18, 19, 20, 21}) {
             const auto& u16 = texts[index].u16;
             std::vector<UChar> out(u16.size() * 3 + 32);
             std::string label = std::string("NFC ") + texts[index].name;
