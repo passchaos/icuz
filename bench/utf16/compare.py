@@ -10,11 +10,7 @@ import tempfile
 
 
 def cases():
-    corpus = runpy.run_path(str(Path(__file__).parents[1] / "utf8/compare.py"))["corpora"]
-    for name, text, valid in corpus():
-        if valid and (name.endswith("-4096") or name.endswith("-128") or
-                      name.endswith("-32") or name in ("tiny-emoji-31", "tiny-ascii-31")):
-            yield name, text
+    yield from runpy.run_path(str(Path(__file__).with_name("corpus.py")))["cases"]()
 
 
 def run(binary, paths, cpu):
@@ -47,6 +43,8 @@ def main():
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--interleave-cases", action="store_true",
                         help="Run libraries sequentially for each input to reduce load drift")
+    parser.add_argument("--case", action="append", dest="case_names",
+                        help="Only sample this exact corpus; repeat to select multiple inputs")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.rounds < 1:
@@ -58,6 +56,12 @@ def main():
     if args.reference:
         binaries["reference"] = str(Path(args.reference).resolve())
     inputs = list(cases())
+    if args.case_names:
+        requested = set(args.case_names)
+        unknown = requested - {name for name, _ in inputs}
+        if unknown:
+            parser.error("unknown conversion corpus: " + ", ".join(sorted(unknown)))
+        inputs = [(name, text) for name, text in inputs if name in requested]
     samples = {name: [] for name in binaries}
     versions = []
     with tempfile.TemporaryDirectory(prefix="icuz-utf16-") as directory:
@@ -99,6 +103,7 @@ def main():
                *sorted((root / "src/unicode/scalar").rglob("*.zig")),
                *sorted(Path(__file__).parent.glob("*.*"))]
     data = {"cpu": args.cpu, "rounds": args.rounds, "trials": 5,
+            "selected_cases": args.case_names,
             "interleave_cases": args.interleave_cases,
             "versions": sorted(set(versions)), "bytes_per_trial": 8 * 1024 * 1024,
             "binaries": binaries, "samples": samples,

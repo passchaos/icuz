@@ -9,6 +9,7 @@ test {
     _ = @import("convert/tests/boundaries.zig");
     _ = @import("convert/tests/mixed.zig");
     _ = @import("convert/tests/surrogates.zig");
+    _ = @import("convert/bmp_encode.zig");
 }
 
 test "UTF conversion rejects unpaired surrogates in every classified span" {
@@ -75,6 +76,26 @@ test "UTF conversion stays inside guarded input and exact output buffers" {
         var narrow = std.ArrayList(u8){ .items = bytes[0..0], .capacity = bytes.len };
         try std.testing.expectError(error.InvalidUtf16, conversion.utf16ToUtf8Into(failed.allocator(), units, &narrow));
         try std.testing.expectEqual(@as(usize, 0), narrow.items.len);
+    }
+    // Resume the internal ASCII kernel after a proven thirty-two-unit prefix.
+    // Exercise every later stop position with both slice ends at guard pages.
+    const ascii = @import("convert/ascii_encode.zig");
+    const expected_ascii = [_]u8{'A'} ** 257;
+    for (32..258) |length| {
+        const units: []u16 = @alignCast(std.mem.bytesAsSlice(u16, input[2 * page - length * 2 .. 2 * page]));
+        @memset(units, 'A');
+        const storage = narrow_memory[2 * page - length - 6 .. 2 * page];
+        const bytes = storage[6..];
+        @memcpy(storage[0..6], "prefix");
+        for (32..length + 1) |position| {
+            if (position < length) units[position] = 0x800;
+            @memcpy(bytes[0..32], expected_ascii[0..32]);
+            const count = ascii.after32(units, bytes);
+            try std.testing.expectEqual(position, count);
+            try std.testing.expectEqualSlices(u8, expected_ascii[0..count], bytes[0..count]);
+            try std.testing.expectEqualStrings("prefix", storage[0..6]);
+            if (position < length) units[position] = 'A';
+        }
     }
 }
 

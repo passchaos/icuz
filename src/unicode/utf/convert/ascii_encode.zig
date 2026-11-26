@@ -16,6 +16,10 @@ inline fn store(comptime n: usize, output: []u8, index: usize, v: @Vector(n, u16
 }
 
 noinline fn mixed(comptime n: usize, v: @Vector(n, u16), output: []u8, index: usize) usize {
+    return mixedBody(n, v, output, index);
+}
+
+inline fn mixedBody(comptime n: usize, v: @Vector(n, u16), output: []u8, index: usize) usize {
     const U = @Vector(n, u16);
     const high = v >= @as(U, @splat(0x80));
     var count: usize = 0;
@@ -35,7 +39,16 @@ noinline fn mixed(comptime n: usize, v: @Vector(n, u16), output: []u8, index: us
 }
 
 pub fn prefix(units: []const u16, output: []u8) usize {
-    var index: usize = 0;
+    return prefixFrom(0, units, output);
+}
+
+/// Resume a prefix whose first thirty-two ASCII units are already copied.
+pub fn after32(units: []const u16, output: []u8) usize {
+    return prefixFrom(32, units, output);
+}
+
+inline fn prefixFrom(comptime copied: usize, units: []const u16, output: []u8) usize {
+    var index: usize = copied;
     inline for (.{ 32, 16, 8, 4 }) |n| {
         const U = @Vector(n, u16);
         while (index + n <= units.len) {
@@ -43,7 +56,7 @@ pub fn prefix(units: []const u16, output: []u8) usize {
             if (!@reduce(.And, v < @as(U, @splat(0x80)))) {
                 // An initial mixed window is more efficiently packed as BMP.
                 if (index == 0) return 0;
-                return mixed(n, v, output, index);
+                return if (copied == 0) mixed(n, v, output, index) else mixedBody(n, v, output, index);
             }
             store(n, output, index, v);
             index += n;
@@ -52,7 +65,7 @@ pub fn prefix(units: []const u16, output: []u8) usize {
         if (units.len >= n and units.len - index >= n / 2) {
             const start = units.len - n;
             const v = load(n, units, start);
-            if (!@reduce(.And, v < @as(U, @splat(0x80)))) return mixed(n, v, output, start);
+            if (!@reduce(.And, v < @as(U, @splat(0x80)))) return if (copied == 0) mixed(n, v, output, start) else mixedBody(n, v, output, start);
             store(n, output, start, v);
             return units.len;
         }

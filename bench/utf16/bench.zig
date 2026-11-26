@@ -11,7 +11,7 @@ fn now() u64 {
     return @as(u64, @intCast(ts.sec)) * 1_000_000_000 + @as(u64, @intCast(ts.nsec));
 }
 
-fn bench(comptime to_utf16: bool, comptime reuse: bool, path: []const u8, text: []const u8, units: []const u16, allocator: std.mem.Allocator) !void {
+noinline fn bench(comptime to_utf16: bool, comptime reuse: bool, path: []const u8, text: []const u8, units: []const u16, allocator: std.mem.Allocator) !void {
     const Out = if (to_utf16) u16 else u8;
     var output = std.ArrayList(Out).empty;
     defer output.deinit(allocator);
