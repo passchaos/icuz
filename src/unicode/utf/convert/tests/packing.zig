@@ -1,6 +1,6 @@
 //! Width-pattern differentials against independent std conversion.
 const std = @import("std");
-const conversion = @import("../transcode.zig");
+const conversion = @import("../../transcode.zig");
 const big_endian = @import("builtin").cpu.arch.endian() == .big;
 
 test "UTF conversion handles every sixteen-unit Latin width mask" {
@@ -27,9 +27,9 @@ test "UTF conversion covers all two-byte scalars inside variable-width windows" 
     const a = std.testing.allocator;
     var output = std.ArrayList(u16).empty;
     defer output.deinit(a);
-    try output.ensureTotalCapacity(a, 64);
-    var text = [_]u8{'x'} ** 32;
-    var expected: [32]u16 = undefined;
+    try output.ensureTotalCapacity(a, 256);
+    var text = [_]u8{'x'} ** 128;
+    var expected: [128]u16 = undefined;
     for (0x80..0x800) |value| {
         _ = try std.unicode.utf8Encode(@intCast(value), text[0..4]);
         const count = try std.unicode.utf8ToUtf16Le(&expected, &text);
@@ -81,6 +81,69 @@ test "UTF conversion decodes every variable-width two-byte pattern" {
             try wide.append(a, 0x41);
             try std.testing.expectError(error.InvalidUtf8, conversion.utf8ToUtf16Into(a, &text, &wide));
             try std.testing.expectEqualSlices(u16, &.{0x41}, wide.items);
+        }
+    }
+}
+
+test "UTF conversion decodes every two-byte width pattern across batched windows" {
+    const a = std.testing.allocator;
+    var wide = std.ArrayList(u16).empty;
+    defer wide.deinit(a);
+    try wide.ensureTotalCapacity(a, 512);
+    var text: [512]u8 = undefined;
+    var expected: [201]u16 = undefined;
+    for (0..256) |mask| {
+        var written: usize = 0;
+        var count: usize = 0;
+        for (0..25) |repeat| {
+            for (0..8) |i| {
+                const cp: u21 = if ((mask >> @intCast(i)) & 1 != 0) @intCast(0x80 + (repeat * 197 + i * 37 + mask) % 0x780) else @intCast('A' + i);
+                expected[count] = @intCast(cp);
+                count += 1;
+                written += try std.unicode.utf8Encode(cp, text[written..][0..4]);
+            }
+            if (repeat == 0) {
+                expected[count] = 0xe9;
+                count += 1;
+                written += try std.unicode.utf8Encode(0xe9, text[written..][0..4]);
+            }
+        }
+        wide.clearRetainingCapacity();
+        try conversion.utf8ToUtf16Into(a, text[0..written], &wide);
+        try std.testing.expectEqualSlices(u16, expected[0..count], wide.items);
+        const owned = try conversion.utf8ToUtf16Alloc(a, text[0..written]);
+        defer a.free(owned);
+        try std.testing.expectEqualSlices(u16, expected[0..count], owned);
+    }
+}
+
+test "UTF conversion decodes every sixteen-scalar two-byte width mask" {
+    var text: [160]u8 = undefined;
+    var expected: [97]u16 = undefined;
+    var storage: [160]u16 = undefined;
+    var failed = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
+    for (0..0x10000) |mask| {
+        var written: usize = 0;
+        // Align the variable sixteen-scalar group at byte 32 of a batch.
+        for (0..16) |i| {
+            expected[i] = 0xe9;
+            written += try std.unicode.utf8Encode(0xe9, text[written..][0..4]);
+        }
+        for (0..16) |i| {
+            const cp: u21 = if ((mask >> @intCast(i)) & 1 != 0) @intCast(0x80 + (mask + i * 197) % 0x780) else @intCast(i * 7);
+            expected[16 + i] = @intCast(cp);
+            written += try std.unicode.utf8Encode(cp, text[written..][0..4]);
+        }
+        // This lead can fall on byte 63; it is outside the requested group.
+        expected[32] = 0xe9;
+        written += try std.unicode.utf8Encode(0xe9, text[written..][0..4]);
+        @memset(expected[33..], 'x');
+        @memset(text[written..][0..64], 'x');
+        written += 64;
+        for ([_]usize{ expected.len, storage.len }) |capacity| {
+            var output = std.ArrayList(u16){ .items = storage[0..0], .capacity = capacity };
+            try conversion.utf8ToUtf16Into(failed.allocator(), text[0..written], &output);
+            try std.testing.expectEqualSlices(u16, &expected, output.items);
         }
     }
 }

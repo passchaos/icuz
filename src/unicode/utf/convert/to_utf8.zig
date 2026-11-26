@@ -1,6 +1,7 @@
 //! Native UTF-16 to UTF-8 conversion kernels.
 const blocks = @import("../blocks.zig");
 const bmp = @import("../bmp_pack.zig");
+const ascii = @import("ascii_encode.zig");
 const Error = error{InvalidUtf16};
 
 const Run = struct { consumed: usize, written: usize };
@@ -26,20 +27,18 @@ noinline fn bmpRun(units: []const u16, output: []u8, start: usize) Run {
 }
 
 pub inline fn convert(comptime checked: bool, units: []const u16, output: []u8) Error!usize {
-    var index: usize = 0;
-    if (units.len >= 256 and units[0] < 0x80) {
-        while (index + 32 <= units.len) {
-            const U = @Vector(32, u16);
-            const v = @as(*align(2) const U, @ptrCast(units.ptr + index)).*;
-            if (!@reduce(.And, v < @as(U, @splat(0x80)))) break;
-            const bytes: @Vector(32, u8) = @truncate(v);
-            output[index..][0..32].* = bytes;
-            index += 32;
-        }
-    }
+    const index = if (units.len != 0 and units[0] < 0x80)
+        if (units.len < 256) @call(.always_inline, ascii.prefix, .{ units, output }) else @call(.never_inline, ascii.prefix, .{ units, output })
+    else
+        0;
     if (index == units.len) return index;
-    if (checked and units.len < 256) return @call(.always_inline, general, .{ checked, units, output });
+    if (checked and units.len < 256) return index + try @call(.always_inline, general, .{ checked, units[index..], output[index..] });
     return index + try @call(.never_inline, general, .{ checked, units[index..], output[index..] });
+}
+
+/// The size pass already validated the input and handled the all-ASCII case.
+pub inline fn convertValid(units: []const u16, output: []u8) Error!usize {
+    return @call(.never_inline, general, .{ false, units, output });
 }
 
 fn general(comptime checked: bool, units: []const u16, output: []u8) Error!usize {

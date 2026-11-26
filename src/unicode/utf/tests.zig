@@ -5,7 +5,8 @@ const validation = @import("validate16.zig");
 const big_endian = @import("builtin").cpu.arch.endian() == .big;
 
 test {
-    _ = @import("convert/packing_tests.zig");
+    _ = @import("convert/tests/packing.zig");
+    _ = @import("convert/tests/boundaries.zig");
 }
 
 test "UTF conversion rejects unpaired surrogates in every classified span" {
@@ -40,7 +41,7 @@ test "UTF conversion stays inside guarded input and exact output buffers" {
         try std.testing.expectEqual(std.posix.E.SUCCESS, std.posix.errno(std.os.linux.mprotect(memory.ptr + 2 * page, page, .{})));
     }
     var failed = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
-    const patterns = [_][]const u8{ "A", "é", "世", "😀", "aé世😀" };
+    const patterns = [_][]const u8{ "A", "é", "éx", "世", "😀", "aé世😀" };
     var expected: [512]u16 = undefined;
     for (patterns) |pattern| {
         for (0..258) |length| {

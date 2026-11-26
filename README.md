@@ -637,6 +637,8 @@ compares allocating APIs separately from reused caller buffers against
 simdutf 9.5.0 and ICU 78.3.
 The [variable-width follow-up](docs/performance/utf16-variable-width-2026-11-26.md)
 compares directly with `7f3939c` and interleaves libraries for each corpus.
+The [ASCII and batched-decoding profile](docs/performance/utf16-ascii-batches-2026-11-26.md)
+includes both predecessors and measures the sixteen-scalar Latin decoder.
 
 ## Performance notes
 

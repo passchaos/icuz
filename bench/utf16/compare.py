@@ -39,6 +39,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--icuz", required=True)
     parser.add_argument("--baseline")
+    parser.add_argument("--reference", help="Additional allocating and reusable reference binary")
     parser.add_argument("--baseline-reuse", action="store_true",
                         help="The baseline also provides the reusable-buffer API")
     parser.add_argument("--external", required=True)
@@ -54,6 +55,8 @@ def main():
                 "external": str(Path(args.external).resolve())}
     if args.baseline:
         binaries["baseline"] = str(Path(args.baseline).resolve())
+    if args.reference:
+        binaries["reference"] = str(Path(args.reference).resolve())
     inputs = list(cases())
     samples = {name: [] for name in binaries}
     versions = []
