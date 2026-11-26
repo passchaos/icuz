@@ -14,9 +14,9 @@ nanoseconds per input byte (or per operation) for the same operations.
   shared-machine load swings individual runs by 10-30%.
 - Snapshot: the numbers below were collected at commit `20d21cc`
   (2026-11-26), with the Georgian rows refreshed at `37c0931` and
-  `87f30ff`, the collation contract rows at `0de0c61`, the IDNA rows at
-  `5f95f50`, and the Chinese and UTF-16 compare rows at `a2308c1`. Re-run
-  the commands under "Reproduce" to refresh them.
+  `87f30ff`, the collation contract rows at `0de0c61`, and the IDNA,
+  search, plural, and UTF-16 compare rows at `5f95f50`. Re-run the commands
+  under "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Swedish,
   German, Greek, Russian, and the conformance corpora.
@@ -77,12 +77,12 @@ where the reported unit is the UTF-8 input byte.
 | UCA sort key Swedish (reuse) | 5.602 ns/B | 8.130 ns/B | 1.45x |
 | UCA sort key German phonebook | 5.780 ns/B | 11.786 ns/B | 2.04x |
 | UCA sort key Chinese pinyin | 1.406 ns/B | 3.685 ns/B | 2.62x |
-| UCA compare mixed (assume valid) | 11.025 ns/op | 48.419 ns/op | 4.39x |
+| UCA compare mixed (assume valid) | 10.082 ns/op | 48.239 ns/op | 4.78x |
 | UCA compare mixed early (assume valid) | 3.842 ns/op | 8.812 ns/op | 2.29x |
 | UCA compare Chinese long (assume valid) | 105.576 ns/op | 187.232 ns/op | 1.77x |
 | UCA compare Swedish (assume valid) | 6.014 ns/op | 135.340 ns/op | 22.50x |
-| UCA compare mixed (UTF-16) | 5.093 ns/op | 48.793 ns/op | 9.58x |
-| UCA compare mixed early (UTF-16) | 2.765 ns/op | 8.780 ns/op | 3.18x |
+| UCA compare mixed (UTF-16) | 5.013 ns/op | 48.239 ns/op | 9.62x |
+| UCA compare mixed early (UTF-16) | 2.767 ns/op | 8.614 ns/op | 3.11x |
 
 ### Charset conversion
 
@@ -107,7 +107,7 @@ where the reported unit is the UTF-8 input byte.
 | UnicodeSet contains | 0.451 ns/op | 18.012 ns/op | 39.94x |
 | UnicodeSet closeOver Alphabetic | 396.815 ns/op | 107236.455 ns/op | 270.24x |
 | search word | 19.380 ns/op | 391.079 ns/op | 20.18x |
-| search missing | 140.879 ns/op | 3444.197 ns/op | 24.45x |
+| search missing | 88.952 ns/op | 3361.992 ns/op | 37.80x |
 
 ### Regular expressions
 
@@ -135,7 +135,7 @@ where the reported unit is the UTF-8 input byte.
 | spoof bidi skeleton | 97.078 ns/op | 334.337 ns/op | 3.44x |
 | idna toASCII | 205.561 ns/op | 340.320 ns/op | 1.66x |
 | idna toUnicode | 130.051 ns/op | 191.682 ns/op | 1.47x |
-| plural en | 10.358 ns/op | 44.369 ns/op | 4.28x |
+| plural en | 9.374 ns/op | 43.703 ns/op | 4.66x |
 | date full format | 63.415 ns/op | 1658.540 ns/op | 26.15x |
 | char name | 18.699 ns/op | 56.300 ns/op | 3.01x |
 | find by name | 126.801 ns/op | 38553.622 ns/op | 304.05x |
@@ -151,7 +151,7 @@ with the extra validation pass.
 | case fold mixed | 1.406 ns/B | 0.893 ns/B | icuz allocates the output; ICU writes into a caller buffer. Compare `case fold mixed (UTF-16)` at 0.709 ns/B (1.26x faster). |
 | lower mixed | 1.338 ns/B | 0.863 ns/B | Same allocation difference. Compare `lower mixed (UTF-16)` at 0.595 ns/B (1.45x faster). |
 | NFC jamo | 1.147 ns/B | 1.158 ns/B | Same allocation difference. Compare `NFC jamo (reuse)` at 0.975 ns/B (1.19x faster). |
-| UCA compare mixed | 40.499 ns/op | 48.793 ns/op | icuz validates UTF-8 input (ICU takes UTF-16, which needs no validation) and is still faster. Compare `UCA compare mixed (assume valid)` at 11.025 ns/op (4.39x faster). |
+| UCA compare mixed | 40.365 ns/op | 48.239 ns/op | icuz validates UTF-8 input (ICU takes UTF-16, which needs no validation) and is still faster. Compare `UCA compare mixed (assume valid)` at 10.082 ns/op (4.78x faster). |
 | UCA compare mixed early | 50.412 ns/op | 8.780 ns/op | Same validation difference. Compare `UCA compare mixed early (assume valid)` at 3.842 ns/op (2.29x faster). |
 | UCA compare Chinese long | 1244.502 ns/op | 187.232 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 105.576 ns/op (1.77x faster). |
 
