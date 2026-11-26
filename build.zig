@@ -104,4 +104,27 @@ pub fn build(b: *std.Build) void {
         "Run focused collation microbenchmarks",
     );
     collation_bench_step.dependOn(&run_collation_bench.step);
+    b.step("bench-collation-build", "Build the focused collation benchmark")
+        .dependOn(&b.addInstallArtifact(collation_bench, .{}).step);
+
+    const utf8_bench = b.addExecutable(.{
+        .name = "icuz-utf8-bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/utf8/bench.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .link_libc = true,
+            .imports = &.{.{
+                .name = "validate",
+                .module = b.createModule(.{
+                    .root_source_file = b.path("src/unicode/scalar/validate.zig"),
+                    .target = target,
+                    .optimize = .ReleaseFast,
+                }),
+            }},
+        }),
+    });
+    const install_utf8_bench = b.addInstallArtifact(utf8_bench, .{});
+    b.step("bench-utf8-build", "Build the file-driven UTF-8 validation benchmark")
+        .dependOn(&install_utf8_bench.step);
 }

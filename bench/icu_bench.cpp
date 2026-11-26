@@ -43,6 +43,12 @@ static uint64_t now_ns() {
         static_cast<uint64_t>(ts.tv_nsec);
 }
 
+static const char* row_filter = "";
+
+static bool selected(const char* name) {
+    return row_filter[0] == '\0' || std::strstr(name, row_filter) != nullptr;
+}
+
 static void report_ops(const char* name, int ops, uint64_t ns) {
     const double per_op = static_cast<double>(ns) / ops;
     std::printf("%-32s %8.3f ns/op %9.1f Mops/s\n", name, per_op, 1000.0 / per_op);
@@ -69,6 +75,7 @@ static std::vector<UChar> to_u16(const std::string& text) {
 
 template <typename F>
 static void bench_bytes(const char* name, size_t bytes, int rounds, F body) {
+    if (!selected(name)) return;
     uint64_t best = ~0ull;
     for (int trial = 0; trial < 5; trial++) {
         const uint64_t start = now_ns();
@@ -81,6 +88,7 @@ static void bench_bytes(const char* name, size_t bytes, int rounds, F body) {
 
 template <typename F>
 static void bench_ops(const char* name, int rounds, F body) {
+    if (!selected(name)) return;
     uint64_t best = ~0ull;
     for (int trial = 0; trial < 5; trial++) {
         const uint64_t start = now_ns();
@@ -91,7 +99,8 @@ static void bench_ops(const char* name, int rounds, F body) {
     report_ops(name, rounds, best);
 }
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc > 1) row_filter = argv[1];
     const std::string ascii_text =
         "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. "
         "How vexingly quick daft zebras jump! 0123456789 hello_world@example.com https://example.com/path?q=1\n";
@@ -179,7 +188,8 @@ int main() {
     }();
     const std::string chinese_collation_long_text = [] {
         std::string s;
-        for (int i = 0; i < 32; i++) s += "\u4f60\u597d\u4e16\u754c\u4e2d\u56fd\u6c49\u5b57\u6392\u5e8f\u62fc\u97f3";
+        // bench.zig repeats an eight-phrase corpus 32 times: 256 phrases.
+        for (int i = 0; i < 256; i++) s += "\u4f60\u597d\u4e16\u754c\u4e2d\u56fd\u6c49\u5b57\u6392\u5e8f\u62fc\u97f3";
         return s;
     }();
     const std::string greek_case_text = [] {
@@ -397,7 +407,9 @@ int main() {
             other[other.size() - 3] = static_cast<UChar>('u');
             {
                 std::vector<UChar> long_other = texts[14].u16;
-                long_other[long_other.size() - 3] = static_cast<UChar>('u');
+                // The Zig suite changes the last byte B3 to B4, so the
+                // final scalar changes from U+97F3 to U+97F4.
+                long_other.back() = static_cast<UChar>(0x97f4);
                 bench_ops("UCA compare Chinese long", 2000, [&] {
                     const int32_t result = ucol_strcoll(coll,
                         texts[14].u16.data(),

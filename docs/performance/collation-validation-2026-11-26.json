@@ -1,0 +1,39 @@
+{
+  "cpu": 2,
+  "icu_version": "78.3",
+  "utf8_bytes": 9216,
+  "utf16_units": 3072,
+  "mutation": "last scalar U+97F3 to U+97F4",
+  "input_sha256": [
+    "4753c3152ca9eb30a38cfa9f05eca116cd27423e1f8b0754f39b58b4c40fc08f",
+    "d681a23834659f2b2e72104d05935ec28335d6e0f841eaabfa9924351a335e6f"
+  ],
+  "rounds": 3,
+  "trials_per_round": 5,
+  "samples_ns_op": {
+    "before": [
+      1258.084,
+      1257.625,
+      1258.904
+    ],
+    "icuz": [
+      702.082,
+      702.682,
+      700.985
+    ],
+    "icu": [
+      1199.926,
+      1199.569,
+      1199.815
+    ]
+  },
+  "binary_sha256": {
+    "before": "32ff7221df5b339ec2171129b1f4ab93348495bc80192f74b2a1e1afc675e862",
+    "icuz": "4cc1a429e00aab1d8a860d306010b15d22460f4f5d4b9e4b34bdbd0f084f16d1",
+    "icu": "c37830cdc186985206211afbad32fbf18126ec6ee6cb301b591f27d98eb5b875"
+  },
+  "source_sha256": {
+    "bench/collation.zig": "e3cd9423282c911ac2a8fa29f012161794492039e7fd1fd5a71e3cb3af3f12a0",
+    "bench/icu_bench.cpp": "6baac05f27da64bffaee5c26d1d65f0493ed806a0556ed4eb88b68a092624969"
+  }
+}

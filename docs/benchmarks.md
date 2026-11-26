@@ -5,6 +5,13 @@ across the microbenchmark suites in `bench/bench.zig` and
 `bench/icu_bench.cpp`. Both suites process identical inputs and report
 nanoseconds per input byte (or per operation) for the same operations.
 
+The UTF-8 validation and corrected long Chinese comparison profile in
+[`performance/utf8-validation-2026-11-26.md`](performance/utf8-validation-2026-11-26.md)
+adds simdutf 9.0.0 and ICU 78.3 comparisons. The former long Chinese ICU
+comparison used one eighth of icuz's input and a different mutation; those
+two comparison rows have been withdrawn below and replaced by the matched
+profile. The other tables retain their historical ICU 74.2 measurements.
+
 ## Methodology
 
 - CPU: pinned with `taskset -c 4` (one P-core) for every run.
@@ -99,7 +106,6 @@ where the reported unit is the UTF-8 input byte.
 | UCA sort key Chinese pinyin (UTF-16) | 1.397 ns/B | 3.805 ns/B | 2.72x |
 | UCA compare mixed (assume valid) | 10.082 ns/op | 48.239 ns/op | 4.78x |
 | UCA compare mixed early (assume valid) | 3.842 ns/op | 8.812 ns/op | 2.29x |
-| UCA compare Chinese long (assume valid) | 105.576 ns/op | 187.232 ns/op | 1.77x |
 | UCA compare Swedish (assume valid) | 6.014 ns/op | 135.340 ns/op | 22.50x |
 | UCA compare mixed (UTF-16) | 5.013 ns/op | 48.239 ns/op | 9.62x |
 | UCA compare mixed early (UTF-16) | 2.767 ns/op | 8.614 ns/op | 3.11x |
@@ -174,7 +180,6 @@ with the extra validation pass.
 | NFC jamo | 1.147 ns/B | 1.158 ns/B | Same allocation difference. Compare `NFC jamo (reuse)` at 0.975 ns/B (1.19x faster). |
 | UCA compare mixed | 40.365 ns/op | 48.239 ns/op | icuz validates UTF-8 input (ICU takes UTF-16, which needs no validation) and is still faster. Compare `UCA compare mixed (assume valid)` at 10.082 ns/op (4.78x faster). |
 | UCA compare mixed early | 50.412 ns/op | 8.780 ns/op | Same validation difference. Compare `UCA compare mixed early (assume valid)` at 3.842 ns/op (2.29x faster). |
-| UCA compare Chinese long | 1244.502 ns/op | 187.232 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 105.576 ns/op (1.77x faster). |
 
 ## Georgian
 

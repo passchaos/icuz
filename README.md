@@ -603,6 +603,8 @@ zig build test
 zig build unicode-verify
 zig build bench
 zig build bench-collation
+zig build bench-collation-build
+zig build bench-utf8-build
 ```
 
 `unicode-verify` checks committed blob headers, layouts, hashes, generated
@@ -616,6 +618,12 @@ ns/op for scalar lookups and ns/byte plus MB/s for text pipelines.
 `bench-collation` is the same harness restricted to the collation, case, and
 UTF-8 decode rows, optionally filtered by an exact row name, so a single
 change can be measured and profiled without running the whole suite.
+`bench-collation-build` installs that executable for CPU-pinned measurements
+without pinning the compiler as well.
+`bench-utf8-build` installs a file-driven validation benchmark; its comparison
+driver sends identical inputs to icuz and simdutf and records raw samples,
+input hashes, and binary hashes. See
+[`docs/performance/utf8-validation-2026-11-26.md`](docs/performance/utf8-validation-2026-11-26.md).
 
 ## Performance notes
 
@@ -625,11 +633,13 @@ properties share one `u16` word, while `Canonical_Combining_Class` and the four
 normalization quick-check forms use compact byte tables. ASCII is materialized
 at compile time, so prose lookups avoid both the page indirection and the
 generated-data cache footprint. Public UTF-8 entry points validate with a
-vectorized checker: 32 bytes per step derive the required continuation pattern
-from the three preceding bytes, reject overlongs, surrogates, and out-of-range
-scalars in the same pass, and skip classification entirely for ASCII windows,
-so validating `compare` and iterator entry points no longer walk scalar by
-scalar.
+vectorized checker: the portable path carries continuation masks between
+32-byte windows and rejects overlongs, surrogates, and out-of-range scalars in
+the same pass. LLVM builds targeting AVX2 use lookup4 nibble classification
+for longer inputs, with overlapping vector loads and two windows per error
+check. A shared ASCII span scan consumes the prefix once and batches up to
+128 bytes per high-bit check. All paths stay within the input slice, so
+validating `compare` and iterator entry points avoid a scalar-by-scalar pass.
 
 Normalization and case mapping also have direct ASCII paths. Pure-ASCII text is
 already normalized in every form and can be checked with a word-at-a-time scan;

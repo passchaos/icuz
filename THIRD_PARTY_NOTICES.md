@@ -16,3 +16,14 @@ tables; the shaping conformance fixture and the Normalizer2 boundary table were 
 
 The generator inputs and pinned SHA-256 values are recorded in
 `tools/unicode/verify_committed.py`.
+
+## simdutf
+
+The AVX2 UTF-8 validation nibble tables and lookup4 error classification in
+`src/unicode/scalar/validation/avx2.zig` are adapted from simdutf 9.0.0.
+The implementation is Zig and does not link against simdutf.
+
+- Project: <https://github.com/simdutf/simdutf>
+- Source: `src/generic/utf8_validation/utf8_lookup4_algorithm.h`, tag `v9.0.0`
+- Copyright: 2021 The simdutf authors
+- License: MIT; see `licenses/simdutf-MIT.txt`
