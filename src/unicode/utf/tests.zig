@@ -46,6 +46,8 @@ test "UTF conversion stays inside guarded input and exact output buffers" {
     var failed = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
     const patterns = [_][]const u8{ "A", "é", "éx", "世", "😀", "aé世😀" };
     var expected: [512]u16 = undefined;
+    var prefix_expected: [512]u16 = undefined;
+    const decoder = @import("convert/mixed_decode/root.zig");
     for (patterns) |pattern| {
         for (0..258) |length| {
             const text = input[2 * page - length .. 2 * page];
@@ -61,6 +63,16 @@ test "UTF conversion stays inside guarded input and exact output buffers" {
             try std.testing.expectEqualSlices(u16, expected[0..count], wide.items);
             // Place the exact input and output ends directly before guards.
             const units: []u16 = @alignCast(std.mem.bytesAsSlice(u16, wide_memory[2 * page - count * 2 .. 2 * page]));
+            if (comptime decoder.supported) {
+                if (length >= 64) {
+                    inline for (.{ true, false }) |checked| {
+                        const result = try decoder.run(checked, text, units);
+                        const prefix_count = try std.unicode.utf8ToUtf16Le(&prefix_expected, text[0..result.consumed]);
+                        try std.testing.expectEqual(prefix_count, result.written);
+                        try std.testing.expectEqualSlices(u16, prefix_expected[0..prefix_count], units[0..result.written]);
+                    }
+                }
+            }
             @memcpy(units, expected[0..count]);
             const bytes = narrow_memory[2 * page - length .. 2 * page];
             var narrow = std.ArrayList(u8){ .items = bytes[0..0], .capacity = bytes.len };

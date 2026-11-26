@@ -36,14 +36,7 @@ inline fn decode(bytes: B, entry: tables.Entry, output: []u16, written: usize) u
         output[written..][0..6].* = units[0..6].*;
         return written + 6;
     }
-    if (entry.units == (if (code < 256) @as(u3, 4) else 3)) {
-        const words: W = @bitCast(perm);
-        const cp = (words & @as(W, @splat(0x7f))) |
-            ((words & @as(W, @splat(0x3f00))) >> @splat(2)) |
-            ((words & @as(W, @splat(0x0f0000))) >> @splat(4));
-        const units: [4]u16 = @as(@Vector(4, u16), @intCast(cp));
-        if (code < 256) output[written..][0..4].* = units else output[written..][0..3].* = units[0..3].*;
-    } else {
+    {
         const words: W = @bitCast(perm & control.bits);
         const cp = (words & @as(W, @splat(0xff))) |
             ((words & @as(W, @splat(0xff00))) >> @splat(2)) |
@@ -54,9 +47,10 @@ inline fn decode(bytes: B, entry: tables.Entry, output: []u16, written: usize) u
         const pairs = (high | @as(W, @splat(0xd800))) | ((low | @as(W, @splat(0xdc00))) << @splat(16));
         const encoded = @select(u32, cp >= @as(W, @splat(0x10000)), pairs, cp);
         const units: [8]u16 = @bitCast(shuffle(@bitCast(encoded), control.units_shuffle));
-        output[written..][0..4].* = units[0..4].*;
-        if (entry.units >= 5) output[written + 4] = units[4];
-        if (entry.units == 6) output[written + 5] = units[5];
+        // The loop retains at least sixteen input bytes at this point.
+        // Valid UTF-8 needs at least six UTF-16 units for those bytes;
+        // later groups replace padding without crossing the output slice.
+        output[written..][0..6].* = units[0..6].*;
     }
     return written + entry.units;
 }

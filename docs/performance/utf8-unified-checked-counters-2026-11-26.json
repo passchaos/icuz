@@ -1,0 +1,144 @@
+{
+  "cpu": 2,
+  "iterations": 20000,
+  "rounds": 3,
+  "order": "8faa08a/current, reversed in alternate rounds",
+  "events": [
+    "cpu_core/cycles/u",
+    "cpu_core/instructions/u",
+    "cpu_core/branches/u",
+    "cpu_core/branch-misses/u"
+  ],
+  "profile": "strict checked UTF-8 to native UTF-16 in warmed caller buffers",
+  "binaries": {
+    "8faa08a": "/tmp/icuz-utf8-profile-baseline-final",
+    "current": "/tmp/icuz-utf8-profile-final"
+  },
+  "binary_sha256": {
+    "8faa08a": "5f87adb647a6ffa071f1a7ab468e325b1d811a86037cdf2e984054b868072b19",
+    "current": "a5063fe9fddc19ad2a95bb5d3d45eb3af0d0c240b40625afd3bc91cce568151c"
+  },
+  "harness_sha256": {
+    "bench/utf16/profile/bench.zig": "6632db44015e8347270de1487b9adbb48984abcbca996d083b611b021ab90a80"
+  },
+  "kernel_sha256": {
+    "8faa08a": "c2e42e039d97d66c46e11178385a23b3b02307139846b99b032a1c6c8d613376",
+    "current": "982e6f2a973ec1816d69ee1fa4b76382f649d75e6936e98e6b769ff7f5082378"
+  },
+  "inputs": {
+    "mixed-random-65536": "1983357a70d24ac305a988d2e26cf7bd07464b1789f925e73244b85722e55de8",
+    "mixed-transitions-65536": "c1634c5d378ccc1ade5a7b82e28492785c41e4c0a294e63085103b677e56ac54"
+  },
+  "counts": {
+    "mixed-random-65536": {
+      "8faa08a": [
+        {
+          "cycles": 4275391757,
+          "instructions": 10177996328,
+          "branches": 1424440175,
+          "branch-misses": 66018645
+        },
+        {
+          "cycles": 4277197506,
+          "instructions": 10177396693,
+          "branches": 1424356255,
+          "branch-misses": 66488599
+        },
+        {
+          "cycles": 4295458360,
+          "instructions": 10177589520,
+          "branches": 1424383240,
+          "branch-misses": 67712389
+        }
+      ],
+      "current": [
+        {
+          "cycles": 2696715729,
+          "instructions": 10520067689,
+          "branches": 1069336500,
+          "branch-misses": 3195384
+        },
+        {
+          "cycles": 2712501861,
+          "instructions": 10519943574,
+          "branches": 1069323768,
+          "branch-misses": 3904648
+        },
+        {
+          "cycles": 2699035557,
+          "instructions": 10520266018,
+          "branches": 1069356643,
+          "branch-misses": 3251652
+        }
+      ]
+    },
+    "mixed-transitions-65536": {
+      "8faa08a": [
+        {
+          "cycles": 3790188242,
+          "instructions": 9384842496,
+          "branches": 1254077105,
+          "branch-misses": 55948899
+        },
+        {
+          "cycles": 3794312702,
+          "instructions": 9384825490,
+          "branches": 1254074830,
+          "branch-misses": 56801331
+        },
+        {
+          "cycles": 3828066539,
+          "instructions": 9384843649,
+          "branches": 1254077256,
+          "branch-misses": 57008394
+        }
+      ],
+      "current": [
+        {
+          "cycles": 2413476317,
+          "instructions": 9392133600,
+          "branches": 915230804,
+          "branch-misses": 2686552
+        },
+        {
+          "cycles": 2408196405,
+          "instructions": 9392783048,
+          "branches": 915294088,
+          "branch-misses": 2650244
+        },
+        {
+          "cycles": 2424103824,
+          "instructions": 9392456700,
+          "branches": 915262284,
+          "branch-misses": 2669574
+        }
+      ]
+    }
+  },
+  "raw_csv": {
+    "mixed-random-65536": {
+      "8faa08a": [
+        "# started on Thu Nov 26 21:58:05 2026\n\n4275391757,,cpu_core/cycles/u,1074611000,99.00,,\n10177996328,,cpu_core/instructions/u,1074611000,99.00,,\n1424440175,,cpu_core/branches/u,1074611000,99.00,,\n66018645,,cpu_core/branch-misses/u,1074611000,99.00,,\n",
+        "# started on Thu Nov 26 21:58:07 2026\n\n4277197506,,cpu_core/cycles/u,1075244597,99.00,,\n10177396693,,cpu_core/instructions/u,1075244597,99.00,,\n1424356255,,cpu_core/branches/u,1075244597,99.00,,\n66488599,,cpu_core/branch-misses/u,1075244597,99.00,,\n",
+        "# started on Thu Nov 26 21:58:09 2026\n\n4295458360,,cpu_core/cycles/u,1079256271,99.00,,\n10177589520,,cpu_core/instructions/u,1079256271,99.00,,\n1424383240,,cpu_core/branches/u,1079256271,99.00,,\n67712389,,cpu_core/branch-misses/u,1079256271,99.00,,\n"
+      ],
+      "current": [
+        "# started on Thu Nov 26 21:58:06 2026\n\n2696715729,,cpu_core/cycles/u,678270789,99.00,,\n10520067689,,cpu_core/instructions/u,678270789,99.00,,\n1069336500,,cpu_core/branches/u,678270789,99.00,,\n3195384,,cpu_core/branch-misses/u,678270789,99.00,,\n",
+        "# started on Thu Nov 26 21:58:07 2026\n\n2712501861,,cpu_core/cycles/u,681296363,99.00,,\n10519943574,,cpu_core/instructions/u,681296363,99.00,,\n1069323768,,cpu_core/branches/u,681296363,99.00,,\n3904648,,cpu_core/branch-misses/u,681296363,99.00,,\n",
+        "# started on Thu Nov 26 21:58:10 2026\n\n2699035557,,cpu_core/cycles/u,680494500,99.00,,\n10520266018,,cpu_core/instructions/u,680494500,99.00,,\n1069356643,,cpu_core/branches/u,680494500,99.00,,\n3251652,,cpu_core/branch-misses/u,680494500,99.00,,\n"
+      ]
+    },
+    "mixed-transitions-65536": {
+      "8faa08a": [
+        "# started on Thu Nov 26 21:58:10 2026\n\n3790188242,,cpu_core/cycles/u,952526177,99.00,,\n9384842496,,cpu_core/instructions/u,952526177,99.00,,\n1254077105,,cpu_core/branches/u,952526177,99.00,,\n55948899,,cpu_core/branch-misses/u,952526177,99.00,,\n",
+        "# started on Thu Nov 26 21:58:12 2026\n\n3794312702,,cpu_core/cycles/u,953667219,99.00,,\n9384825490,,cpu_core/instructions/u,953667219,99.00,,\n1254074830,,cpu_core/branches/u,953667219,99.00,,\n56801331,,cpu_core/branch-misses/u,953667219,99.00,,\n",
+        "# started on Thu Nov 26 21:58:13 2026\n\n3828066539,,cpu_core/cycles/u,962212043,99.00,,\n9384843649,,cpu_core/instructions/u,962212043,99.00,,\n1254077256,,cpu_core/branches/u,962212043,99.00,,\n57008394,,cpu_core/branch-misses/u,962212043,99.00,,\n"
+      ],
+      "current": [
+        "# started on Thu Nov 26 21:58:11 2026\n\n2413476317,,cpu_core/cycles/u,606706547,99.00,,\n9392133600,,cpu_core/instructions/u,606706547,99.00,,\n915230804,,cpu_core/branches/u,606706547,99.00,,\n2686552,,cpu_core/branch-misses/u,606706547,99.00,,\n",
+        "# started on Thu Nov 26 21:58:12 2026\n\n2408196405,,cpu_core/cycles/u,605583342,99.00,,\n9392783048,,cpu_core/instructions/u,605583342,99.00,,\n915294088,,cpu_core/branches/u,605583342,99.00,,\n2650244,,cpu_core/branch-misses/u,605583342,99.00,,\n",
+        "# started on Thu Nov 26 21:58:14 2026\n\n2424103824,,cpu_core/cycles/u,609787092,99.00,,\n9392456700,,cpu_core/instructions/u,609787092,99.00,,\n915262284,,cpu_core/branches/u,609787092,99.00,,\n2669574,,cpu_core/branch-misses/u,609787092,99.00,,\n"
+      ]
+    }
+  }
+}

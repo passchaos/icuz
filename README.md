@@ -645,6 +645,8 @@ The [packing profile](docs/performance/utf16-packing-2026-11-26.md)
 measures smaller BMP tables, shared lane-store bounds, and direct surrogate encoding.
 The [sparse-run profile](docs/performance/utf16-sparse-runs-2026-11-26.md)
 adds deterministic irregular inputs through 64 KiB and measures specialized ASCII runs.
+The [unified-window profile](docs/performance/utf8-unified-windows-2026-11-26.md)
+records lower branch-miss counts and shared BMP/supplementary decoding.
 
 ## Performance notes
 
