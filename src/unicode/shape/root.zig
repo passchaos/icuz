@@ -11,6 +11,7 @@
 
 const std = @import("std");
 const tables = @import("tables.zig");
+const compact = @import("compact.zig");
 const scalar = @import("../scalar/root.zig");
 const bidi = @import("../bidi/paragraph.zig");
 const utf16 = @import("../utf16.zig");
@@ -28,8 +29,8 @@ const COMBINE: u16 = SHADDA + CSHADDA;
 const HAMZAFE_CHAR: u21 = 0xfe80;
 const HAMZA06_CHAR: u21 = 0x0621;
 const YEH_HAMZA_CHAR: u21 = 0x0626;
-const LAMALEF_SPACE_SUB: u21 = 0xffff;
-const TASHKEEL_SPACE_SUB: u21 = 0xfffe;
+const LAMALEF_SPACE_SUB = compact.LAMALEF_SPACE_SUB;
+const TASHKEEL_SPACE_SUB = compact.TASHKEEL_SPACE_SUB;
 const NEW_TAIL_CHAR: u21 = 0xfe73;
 const OLD_TAIL_CHAR: u21 = 0x200b;
 const LAM_CHAR: u21 = 0x0644;
@@ -909,7 +910,7 @@ fn handleGeneratedSpaces(
     const lam_resize = options.lam_alef == .resize;
     const tashkeel_resize = options.tashkeel == .resize;
     if (lam_resize or tashkeel_resize) {
-        length = compactMarkers(buffer, lam_resize, tashkeel_resize);
+        length = compact.markers(buffer, lam_resize, tashkeel_resize);
     }
 
     if (options.lam_alef == .near) {
@@ -930,55 +931,6 @@ fn handleGeneratedSpaces(
         moveMarkersToEnd(buffer[0..length], lam_end, tashkeel_end);
     }
     return length;
-}
-
-fn compactMarkers(buffer: []u21, lam: bool, tashkeel: bool) usize {
-    var write: usize = 0;
-    var read: usize = 0;
-    // Markers are rare, so most blocks are copied whole: one vector load,
-    // one marker test, and one vector store per eight scalars.
-    const lanes = 8;
-    const V = @Vector(lanes, u32);
-    const slots: []u32 = std.mem.bytesAsSlice(
-        u32,
-        std.mem.sliceAsBytes(buffer),
-    );
-    const lam_marker: V = @splat(LAMALEF_SPACE_SUB);
-    const tashkeel_marker: V = @splat(TASHKEEL_SPACE_SUB);
-    while (read + lanes <= buffer.len) {
-        const block: V = slots[read..][0..lanes].*;
-        var hit = lam and @reduce(.Or, block == lam_marker);
-        if (!hit and tashkeel) {
-            hit = @reduce(.Or, block == tashkeel_marker);
-        }
-        if (!hit) {
-            slots[write..][0..lanes].* = block;
-            write += lanes;
-            read += lanes;
-            continue;
-        }
-        for (buffer[read..][0..lanes]) |codepoint| {
-            if ((lam and codepoint == LAMALEF_SPACE_SUB) or
-                (tashkeel and codepoint == TASHKEEL_SPACE_SUB))
-            {
-                continue;
-            }
-            buffer[write] = codepoint;
-            write += 1;
-        }
-        read += lanes;
-    }
-    while (read < buffer.len) : (read += 1) {
-        const codepoint = buffer[read];
-        if ((lam and codepoint == LAMALEF_SPACE_SUB) or
-            (tashkeel and codepoint == TASHKEEL_SPACE_SUB))
-        {
-            continue;
-        }
-        buffer[write] = codepoint;
-        write += 1;
-    }
-    return write;
 }
 
 fn replaceMarkers(buffer: []u21, lam: bool, tashkeel: bool) void {
