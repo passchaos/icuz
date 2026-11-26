@@ -15,7 +15,7 @@ nanoseconds per input byte (or per operation) for the same operations.
 - Snapshot: the numbers below were collected at commit `20d21cc`
   (2026-11-26), with the Georgian row refreshed at `37c0931`, the
   collation contract rows at `0de0c61`, the IDNA row at `48c63a2`, and the
-  Chinese compare rows at `cc56631`. Re-run the commands under "Reproduce"
+  Chinese compare rows at `318294d`. Re-run the commands under "Reproduce"
   to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Swedish,
