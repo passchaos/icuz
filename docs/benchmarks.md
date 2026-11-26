@@ -15,9 +15,9 @@ nanoseconds per input byte (or per operation) for the same operations.
 - Snapshot: the numbers below were collected at commit `20d21cc`
   (2026-11-26), with the Georgian rows refreshed at `37c0931` and
   `87f30ff`, the collation contract rows at `0de0c61`, the IDNA, search,
-  plural, shaping, and UTF-16 rows at `4475756`, and the UTF-16 script
-  rows at `0599f27` and `5ef913c`. Re-run the commands under "Reproduce" to
-  refresh them.
+  plural, shaping, and UTF-16 rows at `4475756`, the UTF-16 script rows at
+  `0599f27` and `5ef913c`, and the NFC Japanese row at `250a01c`. Re-run
+  the commands under "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Hebrew,
   Arabic, Devanagari, Amharic, Swedish, German, Greek, Russian, and the
@@ -45,7 +45,7 @@ where the reported unit is the UTF-8 input byte.
 |---|---|---|---|
 | NFC ASCII | 0.061 | 0.492 | 8.07x |
 | NFC mixed (reuse) | 1.005 | 1.367 | 1.36x |
-| NFC Japanese (reuse) | 0.325 | 0.374 | 1.15x |
+| NFC Japanese (reuse) | 0.409 | 0.370 | 0.90x |
 | NFC jamo (reuse) | 0.975 | 1.158 | 1.19x |
 | NFC e+marks (reuse) | 4.454 | 9.133 | 2.05x |
 | NFC Georgian | 0.239 | 0.379 | 1.59x |
