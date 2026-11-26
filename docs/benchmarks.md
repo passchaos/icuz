@@ -15,8 +15,8 @@ nanoseconds per input byte (or per operation) for the same operations.
 - Snapshot: the numbers below were collected at commit `20d21cc`
   (2026-11-26), with the Georgian rows refreshed at `37c0931` and
   `87f30ff`, the collation contract rows at `0de0c61`, the IDNA, search,
-  plural, and UTF-16 compare rows at `5f95f50`, and the UTF-16 script rows
-  at `0599f27`. Re-run the commands under "Reproduce" to refresh them.
+  plural, shaping, and UTF-16 rows at `4475756`, and the UTF-16 script
+  rows at `0599f27`. Re-run the commands under "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Hebrew,
   Arabic, Devanagari, Amharic, Swedish, German, Greek, Russian, and the
@@ -83,6 +83,9 @@ where the reported unit is the UTF-8 input byte.
 | UCA sort key Swedish (reuse) | 5.602 ns/B | 8.130 ns/B | 1.45x |
 | UCA sort key German phonebook | 5.780 ns/B | 11.786 ns/B | 2.04x |
 | UCA sort key Chinese pinyin | 1.406 ns/B | 3.685 ns/B | 2.62x |
+| UCA sort key mixed (UTF-16) | 5.188 ns/B | 7.063 ns/B | 1.36x |
+| UCA sort key Swedish (UTF-16) | 5.201 ns/B | 8.079 ns/B | 1.55x |
+| UCA sort key Chinese pinyin (UTF-16) | 1.397 ns/B | 3.805 ns/B | 2.72x |
 | UCA compare mixed (assume valid) | 10.082 ns/op | 48.239 ns/op | 4.78x |
 | UCA compare mixed early (assume valid) | 3.842 ns/op | 8.812 ns/op | 2.29x |
 | UCA compare Chinese long (assume valid) | 105.576 ns/op | 187.232 ns/op | 1.77x |
@@ -137,7 +140,8 @@ where the reported unit is the UTF-8 input byte.
 | Latin-ASCII Swedish | 8.985 ns/B | 200.631 ns/B | 22.33x |
 | Greek-Latin-BGN | 12.173 ns/B | 88.533 ns/B | 7.27x |
 | Katakana-Latin-BGN | 16.652 ns/B | 51.835 ns/B | 3.11x |
-| Arabic shaping | 4.044 ns/B | 5.134 ns/B | 1.27x |
+| Arabic shaping | 4.079 ns/B | 5.163 ns/B | 1.27x |
+| Arabic shaping (UTF-16) | 3.636 ns/B | 5.163 ns/B | 1.42x |
 | spoof bidi skeleton | 97.078 ns/op | 334.337 ns/op | 3.44x |
 | idna toASCII | 205.561 ns/op | 340.320 ns/op | 1.66x |
 | idna toUnicode | 130.051 ns/op | 191.682 ns/op | 1.47x |
