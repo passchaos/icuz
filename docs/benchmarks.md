@@ -15,7 +15,7 @@ nanoseconds per input byte (or per operation) for the same operations.
 - Snapshot: the numbers below were collected at commit `20d21cc`
   (2026-11-26), with the Georgian row refreshed at `37c0931`, the
   collation contract rows at `0de0c61`, the IDNA row at `48c63a2`, and the
-  Chinese compare rows at `318294d`. Re-run the commands under "Reproduce"
+  Chinese compare rows at `ec2c749`. Re-run the commands under "Reproduce"
   to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Swedish,
@@ -78,7 +78,7 @@ where the reported unit is the UTF-8 input byte.
 | UCA sort key Chinese pinyin | 1.406 ns/B | 3.685 ns/B | 2.62x |
 | UCA compare mixed (assume valid) | 35.379 ns/op | 48.419 ns/op | 1.37x |
 | UCA compare mixed early (assume valid) | 4.011 ns/op | 8.812 ns/op | 2.20x |
-| UCA compare Chinese long (assume valid) | 123.903 ns/op | 187.232 ns/op | 1.51x |
+| UCA compare Chinese long (assume valid) | 118.355 ns/op | 187.232 ns/op | 1.58x |
 | UCA compare Swedish (assume valid) | 6.014 ns/op | 135.340 ns/op | 22.50x |
 
 ### Charset conversion
@@ -148,7 +148,7 @@ fair counterpart is listed in the notes.
 | NFC jamo | 1.147 ns/B | 1.158 ns/B | Same allocation difference. Compare `NFC jamo (reuse)` at 0.975 ns/B (1.19x faster). |
 | UCA compare mixed | 56.643 ns/op | 48.793 ns/op | icuz validates UTF-8 input (ICU takes UTF-16, which needs no validation). Compare `UCA compare mixed (assume valid)` at 35.379 ns/op (1.37x faster). |
 | UCA compare mixed early | 50.302 ns/op | 8.780 ns/op | Same validation difference. Compare `UCA compare mixed early (assume valid)` at 4.011 ns/op (2.20x faster). |
-| UCA compare Chinese long | 1258.185 ns/op | 187.232 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 123.903 ns/op (1.51x faster). |
+| UCA compare Chinese long | 1260.723 ns/op | 187.232 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 118.355 ns/op (1.58x faster). |
 
 ## Georgian
 
