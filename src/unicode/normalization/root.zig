@@ -2691,20 +2691,46 @@ noinline fn semiticRunEnd16(
     }
 }
 
-/// Scan a UTF-16 run of inert E0-block scalars (Indic, Thai, Lao, Tibetan,
-/// Myanmar, ...), bridging one space between words. Simple marks stop the run
-/// so the generic path keeps their ordering state.
+/// Result of an E0-block UTF-16 run scan.
+const E0Run16 = struct {
+    /// Offset one past the run.
+    end: usize,
+    /// Offset one past the last inert scalar; marks may follow it.
+    last_inert_end: usize,
+    /// Combining class of the trailing simple marks, or zero.
+    chain: u8,
+};
+
+/// Scan a UTF-16 run of E0-block scalars (Indic, Thai, Lao, Tibetan,
+/// Myanmar, ...), bridging one space between words and joining simple marks
+/// in canonical order. Kept out of line so the main dispatch stays small.
 noinline fn e0RunEnd16(
     units: []const u16,
     start: usize,
     comptime form: Form,
-) usize {
+) E0Run16 {
     var end = start;
+    var last_inert_end = start;
+    var chain: u8 = 0;
     while (true) {
         while (end < units.len and units[end] >= 0x800 and
-            units[end] <= 0xfff and
-            inert.e0Class(@intCast(units[end] - 0x800), form) == 0)
+            units[end] <= 0xfff)
         {
+            const entry = inert.e0Class(@intCast(units[end] - 0x800), form);
+            if (entry == 0) {
+                end += 1;
+                last_inert_end = end;
+                chain = 0;
+                continue;
+            }
+            if (entry == 0xff or entry < chain) {
+                return .{
+                    .end = end,
+                    .last_inert_end = last_inert_end,
+                    .chain = chain,
+                };
+            }
+            chain = entry;
             end += 1;
         }
         if (end + 1 < units.len and units[end] == ' ' and
@@ -2712,9 +2738,15 @@ noinline fn e0RunEnd16(
             inert.e0Class(@intCast(units[end + 1] - 0x800), form) == 0)
         {
             end += 2;
+            last_inert_end = end;
+            chain = 0;
             continue;
         }
-        return end;
+        return .{
+            .end = end,
+            .last_inert_end = last_inert_end,
+            .chain = chain,
+        };
     }
 }
 
@@ -2981,11 +3013,14 @@ fn normalizeFusedUtf16Into(
             if (unit >= 0x800 and unit <= 0x137f) {
                 if (unit <= 0xfff) {
                     if (inert.e0Class(@intCast(unit - 0x800), form) == 0) {
-                        const end = e0RunEnd16(units, index, form);
-                        starter = units[end - 1];
-                        starter_offset = end - 1;
-                        previous_input_class = 0;
-                        index = end;
+                        const run = e0RunEnd16(units, index, form);
+                        starter = units[run.last_inert_end - 1];
+                        starter_offset = run.last_inert_end - 1;
+                        previous_input_class = if (run.last_inert_end == run.end)
+                            0
+                        else
+                            run.chain;
+                        index = run.end;
                         continue;
                     }
                 } else if (unit >= 0x1200 and ethiopicLetter16(unit)) {
