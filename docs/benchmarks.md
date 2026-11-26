@@ -18,7 +18,8 @@ nanoseconds per input byte (or per operation) for the same operations.
   plural, shaping, and UTF-16 rows at `4475756`, the UTF-16 script rows at
   `0599f27` and `5ef913c`, and the isNormalized rows at `db7f3e2`; the
   mixed, Japanese, jamo, and e+marks rows were re-measured in the same
-  quiet window. Re-run
+  quiet window, and the UTF-16 isNormalized rows share that session's ICU
+  numbers. Re-run
   the commands under "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Hebrew,
@@ -62,6 +63,8 @@ where the reported unit is the UTF-8 input byte.
 | isNormalized mixed | 0.416 | 0.794 | 1.91x |
 | isNormalized Chinese | 0.241 | 0.470 | 1.95x |
 | isNormalized Georgian | 0.231 | 0.347 | 1.50x |
+| isNormalized mixed (UTF-16) | 0.344 | 0.794 | 2.31x |
+| isNormalized Chinese (UTF-16) | 0.151 | 0.470 | 3.11x |
 | lower ASCII (UTF-16) | 0.113 | 0.852 | 7.54x |
 | lower mixed (UTF-16) | 0.595 | 0.863 | 1.45x |
 | case fold mixed (UTF-16) | 0.709 | 0.893 | 1.26x |
