@@ -1328,6 +1328,22 @@ pub const Collator = struct {
         end: usize,
     ) bool {
         const window: usize = if (self.tailoring == null) 3 else 8;
+        if (window == 3) {
+            if (end >= 3 and text[end - 1] < 0x80 and
+                text[end - 2] < 0x80 and text[end - 3] < 0x80 and
+                !ascii_contractions[text[end - 1]] and
+                !ascii_contractions[text[end - 2]] and
+                !ascii_contractions[text[end - 3]])
+            {
+                return true;
+            }
+            ensureRootTables();
+            if (root_tables_storage.han_pages_clean and
+                hanBoundaryClean16(text, end))
+            {
+                return true;
+            }
+        }
         var cursor = end;
         var checked: usize = 0;
         while (cursor > 0 and checked < window) : (checked += 1) {
@@ -4261,6 +4277,16 @@ inline fn hanBoundaryClean(text: []const u8, end: usize) bool {
             return false;
         }
         cursor = start;
+    }
+    return true;
+}
+
+/// UTF-16 counterpart of `hanBoundaryClean`: three BMP units in
+/// U+4E00..U+9FFF need no decode, decomposition, or contraction check.
+inline fn hanBoundaryClean16(text: []const u16, end: usize) bool {
+    if (end < 3) return false;
+    for (text[end - 3 .. end]) |unit| {
+        if (unit < 0x4e00 or unit > 0x9fff) return false;
     }
     return true;
 }
