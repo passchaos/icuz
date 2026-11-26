@@ -14,12 +14,13 @@ nanoseconds per input byte (or per operation) for the same operations.
   shared-machine load swings individual runs by 10-30%.
 - Snapshot: the numbers below were collected at commit `20d21cc`
   (2026-11-26), with the Georgian rows refreshed at `37c0931` and
-  `87f30ff`, the collation contract rows at `0de0c61`, and the IDNA,
-  search, plural, and UTF-16 compare rows at `5f95f50`. Re-run the commands
-  under "Reproduce" to refresh them.
+  `87f30ff`, the collation contract rows at `0de0c61`, the IDNA, search,
+  plural, and UTF-16 compare rows at `5f95f50`, and the UTF-16 script rows
+  at `0599f27`. Re-run the commands under "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
-  Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Swedish,
-  German, Greek, Russian, and the conformance corpora.
+  Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Hebrew,
+  Arabic, Devanagari, Amharic, Swedish, German, Greek, Russian, and the
+  conformance corpora.
 - Code layout matters: inlined hot loops can move by ±10-20% between builds
   with identical source, so treat differences below ~10% as noise.
 
@@ -47,7 +48,12 @@ where the reported unit is the UTF-8 input byte.
 | NFC jamo (reuse) | 0.975 | 1.158 | 1.19x |
 | NFC e+marks (reuse) | 4.454 | 9.133 | 2.05x |
 | NFC Georgian | 0.239 | 0.379 | 1.59x |
-| NFC Georgian (UTF-16) | 0.216 | 0.387 | 1.79x |
+| NFC Georgian (UTF-16) | 0.168 | 0.381 | 2.27x |
+| NFC Hebrew (UTF-16) | 0.515 | 0.559 | 1.09x |
+| NFC Arabic (UTF-16) | 0.495 | 0.522 | 1.05x |
+| NFC Devanagari (UTF-16) | 0.262 | 0.503 | 1.92x |
+| NFC Thai (UTF-16) | 0.300 | 0.521 | 1.74x |
+| NFC Amharic (UTF-16) | 0.220 | 0.517 | 2.35x |
 | lower ASCII (UTF-16) | 0.113 | 0.852 | 7.54x |
 | lower mixed (UTF-16) | 0.595 | 0.863 | 1.45x |
 | case fold mixed (UTF-16) | 0.709 | 0.893 | 1.26x |
@@ -169,5 +175,14 @@ Georgian or Ethiopic phrase stays in one loop; `isNormalized` uses the same
 scan. The UTF-16 normalizer got the same treatment as a direct range scan
 over the Mkhedruli block, with U+10FC left on the generic path because the
 compatibility forms decompose it. The UTF-8 row now sits at 0.239 ns/B
-against ICU's 0.379 (1.59x), and the UTF-16 row at 0.216 against 0.387
-(1.79x). Every fair row in this document is ahead of ICU.
+against ICU's 0.379 (1.59x), and the UTF-16 row at 0.168 against 0.381
+(2.27x). Every fair row in this document is ahead of ICU.
+
+## Other scripts (UTF-16)
+
+The UTF-16 normalizer scans Hebrew/Arabic, E0-block (Indic, Thai, Myanmar,
+...), and Ethiopic runs directly, bridging spaces between words; the E0 scan
+also joins simple marks in canonical order so viramas and vowel signs do not
+return to the dispatch. Hebrew and Arabic beat ICU by 1.05-1.09x; the
+mark-heavy blocks do better because ICU's trie pays per unit where the run
+scans a phrase at a time: Devanagari 1.92x, Thai 1.74x, and Amharic 2.35x.
