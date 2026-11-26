@@ -2852,6 +2852,34 @@ fn normalizeFusedUtf16Into(
             }
         }
 
+        // Georgian letters are inert starters with no combining marks, so a
+        // run of them can skip the inert-run bookkeeping. A space between two
+        // letters bridges the words so a phrase stays in one run. U+10FC
+        // decomposes under the compatibility forms and stays generic.
+        if (unit >= 0x10a0 and unit <= 0x10ff and unit != 0x10fc) {
+            var end = index;
+            while (true) {
+                while (end < units.len and units[end] >= 0x10a0 and
+                    units[end] <= 0x10ff and units[end] != 0x10fc)
+                {
+                    end += 1;
+                }
+                if (end + 1 < units.len and units[end] == ' ' and
+                    units[end + 1] >= 0x10a0 and units[end + 1] <= 0x10ff and
+                    units[end + 1] != 0x10fc)
+                {
+                    end += 2;
+                    continue;
+                }
+                break;
+            }
+            starter = units[end - 1];
+            starter_offset = end - 1;
+            previous_input_class = 0;
+            index = end;
+            continue;
+        }
+
         if (codepoint >= 0x80 and inert.isInert(codepoint, form)) {
             // Consecutive inert scalars need no per-unit dispatch. Simple
             // marks (niqqud, harakat, viramas) join the run too; the last
