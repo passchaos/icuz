@@ -986,6 +986,14 @@ pub const Collator = struct {
         // Root entries span at most three scalars; tailored rules can span
         // up to eight.
         const window: usize = if (self.tailoring == null) 3 else 8;
+        if (window == 3) {
+            ensureRootTables();
+            if (root_tables_storage.han_pages_clean and
+                hanBoundaryClean(text, end))
+            {
+                return true;
+            }
+        }
         var cursor = end;
         var checked: usize = 0;
         while (cursor > 0 and checked < window) : (checked += 1) {
@@ -4220,6 +4228,31 @@ fn appendNumeric(
             .variable = false,
         });
     }
+}
+
+/// True when the three scalars ending at `end` are unified ideographs in
+/// U+4E00..U+9FFF. Those pages start no root entry when `han_pages_clean`
+/// holds, and the scalars are NFD-inert, so a prefix ending there cannot be
+/// continued by a contraction or a decomposition.
+inline fn hanBoundaryClean(text: []const u8, end: usize) bool {
+    var cursor = end;
+    var checked: usize = 0;
+    while (checked < 3) : (checked += 1) {
+        if (cursor < 3) return false;
+        const start = cursor - 3;
+        const lead = text[start];
+        if (lead < 0xe4 or lead > 0xe9) return false;
+        // U+4E00 starts at E4 B8 80; E4 with a lower second byte is CJK
+        // Ext A or the Yijing block, whose pages this check does not cover.
+        if (lead == 0xe4 and text[start + 1] < 0xb8) return false;
+        if (text[start + 1] & 0xc0 != 0x80 or
+            text[start + 2] & 0xc0 != 0x80)
+        {
+            return false;
+        }
+        cursor = start;
+    }
+    return true;
 }
 
 /// Order from the two UCA implicit primaries when both inputs start with an
