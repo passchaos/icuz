@@ -124,6 +124,30 @@ inline fn previous(comptime count: u5, bytes: V, half: V) V {
     );
 }
 
+/// Validate the bytes inside a 64-byte prefix starting at a scalar boundary.
+/// A final scalar may need bytes beyond the prefix; the decoder must defer it.
+pub inline fn validPrefix64(a: V, b: V) bool {
+    if (comptime !supported) return false;
+    const first = @shuffle(u8, @as(V, @splat(0)), a, blk: {
+        var mask: [32]i32 = undefined;
+        for (0..16) |i| {
+            mask[i] = @intCast(i);
+            mask[16 + i] = ~@as(i32, @intCast(i));
+        }
+        break :blk mask;
+    });
+    const second = @shuffle(u8, a, b, blk: {
+        var mask: [32]i32 = undefined;
+        for (0..16) |i| {
+            mask[i] = @intCast(16 + i);
+            mask[16 + i] = ~@as(i32, @intCast(i));
+        }
+        break :blk mask;
+    });
+    return clean(errorsWithPrevious(a, previous(1, a, first), previous(2, a, first), previous(3, a, first)) |
+        errorsWithPrevious(b, previous(1, b, second), previous(2, b, second), previous(3, b, second)));
+}
+
 /// Caller selects this path only for inputs of at least 35 bytes. A nonzero
 /// prefix is the length of the first scalar already validated by the caller;
 /// zero means that the first byte is ASCII and its run is still to be scanned.

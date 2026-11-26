@@ -3,9 +3,19 @@ const scalar = @import("../../scalar/root.zig");
 const blocks = @import("../blocks.zig");
 const ascii = @import("../../scalar/validation/scalar.zig");
 const latin = @import("latin_decode.zig");
+const mixed = @import("mixed_decode/root.zig");
 const Error = error{InvalidUtf8};
 
 pub inline fn convert(comptime checked: bool, text: []const u8, output: []u16) Error!usize {
+    if (comptime mixed.supported) {
+        if (text.len >= 64) {
+            const bytes = @as(*align(1) const @Vector(16, u8), @ptrCast(text.ptr)).*;
+            if (mixed.candidate(bytes)) {
+                const result = try mixed.run(checked, text, output);
+                return result.written + try general(checked, text[result.consumed..], output[result.written..]);
+            }
+        }
+    }
     if (comptime latin.supported) {
         // Below 32 bytes, the existing block/tail path amortizes less setup.
         if (text.len >= 32 and text[0] < 0xe0) {

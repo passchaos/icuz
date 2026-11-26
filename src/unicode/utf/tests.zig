@@ -7,6 +7,7 @@ const big_endian = @import("builtin").cpu.arch.endian() == .big;
 test {
     _ = @import("convert/tests/packing.zig");
     _ = @import("convert/tests/boundaries.zig");
+    _ = @import("convert/tests/mixed.zig");
 }
 
 test "UTF conversion rejects unpaired surrogates in every classified span" {

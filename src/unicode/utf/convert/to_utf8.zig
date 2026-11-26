@@ -7,17 +7,38 @@ const Error = error{InvalidUtf16};
 const Run = struct { consumed: usize, written: usize };
 
 // Keep mixed-width packing local across the entire BMP prefix.
-noinline fn bmpRun(units: []const u16, output: []u8, start: usize) Run {
+noinline fn bmpRun(comptime checked: bool, units: []const u16, output: []u8, start: usize) Error!Run {
     var index: usize = 0;
     var written = start;
     while (index + 8 <= units.len) {
+        const unit = units[index];
+        if (unit & 0xf800 == 0xd800) {
+            if (unit >= 0xdc00 or index + 1 == units.len or (checked and units[index + 1] & 0xfc00 != 0xdc00)) return error.InvalidUtf16;
+            const pairs: @Vector(4, u16) = units[index..][0..4].*;
+            if (blocks.encode4(checked, 2, output, written, pairs)) |next| {
+                written = next;
+                index += 4;
+                continue;
+            }
+            const cp: u21 = 0x10000 + (@as(u21, unit - 0xd800) << 10) + (units[index + 1] - 0xdc00);
+            written = blocks.writeScalar(output, written, cp);
+            index += 2;
+            continue;
+        }
         const U = @Vector(8, u16);
         const v = @as(*align(2) const U, @ptrCast(units.ptr + index)).*;
         const surrogates: u8 = @bitCast((v & @as(U, @splat(0xf800))) == @as(U, @splat(0xd800)));
         if (surrogates != 0) {
-            const end = index + @ctz(surrogates);
+            const prefix = @ctz(surrogates);
+            if (prefix >= 4) {
+                const first: @Vector(4, u16) = units[index..][0..4].*;
+                written = bmp.encode4Valid(output, written, first);
+                index += 4;
+                continue;
+            }
+            const end = index + prefix;
             while (index < end) : (index += 1) written = blocks.writeScalar(output, written, units[index]);
-            return .{ .consumed = index, .written = written };
+            continue;
         }
         written = bmp.encode8Valid(output, written, v);
         index += 8;
@@ -77,7 +98,7 @@ fn general(comptime checked: bool, units: []const u16, output: []u8) Error!usize
             while (index < units.len and units[index] < 0x80) {
                 if (comptime bmp.wide_supported) {
                     if (index + 8 <= units.len) {
-                        const run = bmpRun(units[index..], output, written);
+                        const run = try bmpRun(checked, units[index..], output, written);
                         written = run.written;
                         index += run.consumed;
                         continue :input_loop;
@@ -156,7 +177,7 @@ fn general(comptime checked: bool, units: []const u16, output: []u8) Error!usize
         if (comptime bmp.wide_supported) {
             if (index + 8 <= units.len) {
                 if (unit & 0xf800 != 0xd800) {
-                    const run = bmpRun(units[index..], output, written);
+                    const run = try bmpRun(checked, units[index..], output, written);
                     written = run.written;
                     index += run.consumed;
                     continue :input_loop;

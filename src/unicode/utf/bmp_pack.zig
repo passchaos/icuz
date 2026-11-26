@@ -159,6 +159,14 @@ inline fn widthCode(comptime n: usize, units: @Vector(n, u16)) std.meta.Int(.uns
 }
 
 pub inline fn encode(output: []u8, written: usize, units: @Vector(4, u16)) ?usize {
+    return encode4(false, output, written, units);
+}
+
+pub inline fn encode4Valid(output: []u8, written: usize, units: @Vector(4, u16)) usize {
+    return encode4(true, output, written, units) orelse unreachable;
+}
+
+inline fn encode4(comptime valid: bool, output: []u8, written: usize, units: @Vector(4, u16)) ?usize {
     if (comptime !supported) return null;
     const U = @Vector(4, u16);
     const W = @Vector(4, u32);
@@ -168,7 +176,7 @@ pub inline fn encode(output: []u8, written: usize, units: @Vector(4, u16)) ?usiz
         output[written..][0..4].* = bytes;
         return written + 4;
     }
-    if (@reduce(.Or, (units & @as(U, @splat(0xf800))) == @as(U, @splat(0xd800)))) return null;
+    if (!valid and @reduce(.Or, (units & @as(U, @splat(0xf800))) == @as(U, @splat(0xd800)))) return null;
     const code = widthCode(4, units);
     const first = @select(u32, value < @as(W, @splat(0x80)), value, @select(u32, value < @as(W, @splat(0x800)), (value >> @splat(6)) | @as(W, @splat(0xc0)), (value >> @splat(12)) | @as(W, @splat(0xe0))));
     const second = @select(u32, value < @as(W, @splat(0x800)), value & @as(W, @splat(0x3f)), (value >> @splat(6)) & @as(W, @splat(0x3f))) | @as(W, @splat(0x80));
