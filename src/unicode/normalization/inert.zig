@@ -199,20 +199,25 @@ pub inline fn twoByteMarkClass(lead: u8, second: u8, form: data.Form) u8 {
     return two_byte_mark_classes[@intFromEnum(form)][lead - 0xc2][second & 0x3f];
 }
 
-/// Inertness of three-byte scalars with lead 0xE0 (U+0800..U+0FFF), indexed
-/// by the eleven-bit offset from U+0800. This covers Devanagari, Thai, Lao,
-/// Tibetan, Myanmar, and the other Indic scripts.
-const e0_masks: [4][32]u64 = blk: {
-    @setEvalBranchQuota(400_000);
-    var table: [4][32]u64 = [_][32]u64{[_]u64{0} ** 32} ** 4;
+/// Per-scalar class for three-byte scalars with lead 0xE0 (U+0800..U+0FFF),
+/// indexed by the eleven-bit offset from U+0800: zero for inert scalars, the
+/// combining class for simple marks that may join a run in canonical order,
+/// and 0xFF for scalars that need the generic segment machinery. One load
+/// replaces the inert, quick-check, and combining-class lookups.
+const e0_classes: [4][2048]u8 = blk: {
+    @setEvalBranchQuota(1_000_000);
+    var table: [4][2048]u8 = [_][2048]u8{[_]u8{0xff} ** 2048} ** 4;
     for (0..4) |form_index| {
         const form: data.Form = @enumFromInt(form_index);
         for (0x800..0x1000) |codepoint| {
-            if (isInert(@intCast(codepoint), form)) {
-                const low = codepoint - 0x800;
-                table[form_index][low >> 6] |=
-                    @as(u64, 1) << @intCast(low & 0x3f);
+            const value: u21 = @intCast(codepoint);
+            if (isInert(value, form)) {
+                table[form_index][codepoint - 0x800] = 0;
+                continue;
             }
+            if (data.quickCheck(value, form) != .yes) continue;
+            const class = combining_class.forCodepoint(value);
+            if (class != 0) table[form_index][codepoint - 0x800] = class;
         }
     }
     break :blk table;
@@ -221,8 +226,13 @@ const e0_masks: [4][32]u64 = blk: {
 /// `isInert` for a validated three-byte sequence with lead 0xE0 and
 /// `low` = (second & 0x3F) << 6 | (third & 0x3F) - 0x800.
 pub inline fn e0Inert(low: u11, form: data.Form) bool {
-    return (e0_masks[@intFromEnum(form)][low >> 6] >>
-        @intCast(low & 0x3f)) & 1 != 0;
+    return e0_classes[@intFromEnum(form)][low] == 0;
+}
+
+/// Simple-mark class for a validated three-byte scalar with lead 0xE0, or
+/// zero when it is inert and 0xFF when it needs the generic path.
+pub inline fn e0Class(low: u11, form: data.Form) u8 {
+    return e0_classes[@intFromEnum(form)][low];
 }
 
 /// Inertness of three-byte scalars with lead 0xE1 (U+1000..U+1FFF), indexed

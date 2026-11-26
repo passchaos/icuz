@@ -1212,7 +1212,8 @@ fn normalizeFusedInto(
                     const offset = (@as(u32, second & 0x3f) << 6) |
                         (third & 0x3f);
                     const low: u11 = @intCast(offset - 0x800);
-                    if (inert.e0Inert(low, form)) {
+                    const entry = inert.e0Class(low, form);
+                    if (entry == 0) {
                         run_offset = run_end;
                         run_codepoint = 0x800 + @as(u21, low);
                         mark_chain = 0;
@@ -1264,11 +1265,8 @@ fn normalizeFusedInto(
                     // can join the run verbatim as long as the marks stay in
                     // canonical order. The starter remains the last inert
                     // scalar, and `mark_chain` records the trailing class.
-                    const mark: u21 = 0x800 + @as(u21, low);
-                    if (data.quickCheck(mark, form) != .yes) break;
-                    const mark_class = combining_class.forCodepoint(mark);
-                    if (mark_class == 0 or mark_class < mark_chain) break;
-                    mark_chain = mark_class;
+                    if (entry == 0xff or entry < mark_chain) break;
+                    mark_chain = entry;
                     run_end += 3;
                     continue;
                 }
@@ -4040,7 +4038,8 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     const offset = (@as(u32, second & 0x3f) << 6) |
                         (third & 0x3f);
                     const low: u11 = @intCast(offset - 0x800);
-                    if (inert.e0Inert(low, form)) {
+                    const entry = inert.e0Class(low, form);
+                    if (entry == 0) {
                         run_codepoint = 0x800 + @as(u21, low);
                         mark_chain = 0;
                         run_end += 3;
@@ -4089,11 +4088,8 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     // non-decreasing class needs no reordering, so the text
                     // stays normalized; the trailing class is kept for the
                     // next scalar's order check.
-                    const mark: u21 = 0x800 + @as(u21, low);
-                    if (data.quickCheck(mark, form) != .yes) break;
-                    const mark_class = combining_class.forCodepoint(mark);
-                    if (mark_class == 0 or mark_class < mark_chain) break;
-                    mark_chain = mark_class;
+                    if (entry == 0xff or entry < mark_chain) break;
+                    mark_chain = entry;
                     run_end += 3;
                     continue;
                 }
