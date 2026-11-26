@@ -865,6 +865,9 @@ pub const Collator = struct {
         a: []const u8,
         b: []const u8,
     ) ?std.math.Order {
+        if (self.tailoring == null) {
+            if (implicitFirstPrimariesOrder(a, b)) |order| return order;
+        }
         const primaries_a = self.firstRootPrimaries(allocator, a) orelse
             return null;
         const primaries_b = self.firstRootPrimaries(allocator, b) orelse
@@ -893,6 +896,9 @@ pub const Collator = struct {
         a: []const u16,
         b: []const u16,
     ) ?std.math.Order {
+        if (self.tailoring == null) {
+            if (implicitFirstPrimariesOrder16(a, b)) |order| return order;
+        }
         const primaries_a = self.firstRootPrimaries16(allocator, a) orelse
             return null;
         const primaries_b = self.firstRootPrimaries16(allocator, b) orelse
@@ -3696,7 +3702,6 @@ fn appendTailoredLatinSortKey(
     var buffer: [1024]u21 = undefined;
     const source = normalizeNfdLatinInto(&buffer, codepoints) orelse return false;
 
-
     var stack_ces: [512]LatinElement = undefined;
     var ces = ElementBuffer(LatinElement).init(allocator, &stack_ces);
     defer ces.deinit();
@@ -4215,6 +4220,78 @@ fn appendNumeric(
             .variable = false,
         });
     }
+}
+
+/// Order from the two UCA implicit primaries when both inputs start with an
+/// implicit scalar. Such a scalar emits exactly two nonzero primaries, so the
+/// generic first-primary scan cannot find a third; comparing the pair skips
+/// the contraction/expansion machinery and the inert-starter window.
+fn implicitFirstPrimariesOrder(a: []const u8, b: []const u8) ?std.math.Order {
+    ensureRootTables();
+    const decoded_a = scalar.decodeValid(a, 0) orelse return null;
+    const decoded_b = scalar.decodeValid(b, 0) orelse return null;
+    const first_a = decoded_a.codepoint;
+    const first_b = decoded_b.codepoint;
+    // `appendElements` classifies scalars below the direct table and scalars
+    // whose page starts a root entry through the generic path.
+    if (first_a < direct_bmp_limit or first_b < direct_bmp_limit) return null;
+    if (root_tables_storage.page_has_entries[first_a >> 8] or
+        root_tables_storage.page_has_entries[first_b >> 8])
+    {
+        return null;
+    }
+    // A decomposable scalar would be compared through its NFD form.
+    if (!normalization.isNfdInert(first_a) or
+        !normalization.isNfdInert(first_b))
+    {
+        return null;
+    }
+    const weights_a = implicitWeights(first_a);
+    const weights_b = implicitWeights(first_b);
+    if (weights_a.first != weights_b.first) {
+        return if (weights_a.first < weights_b.first) .lt else .gt;
+    }
+    if (weights_a.second != weights_b.second) {
+        return if (weights_a.second < weights_b.second) .lt else .gt;
+    }
+    return null;
+}
+
+/// UTF-16 counterpart of `implicitFirstPrimariesOrder`.
+fn implicitFirstPrimariesOrder16(
+    a: []const u16,
+    b: []const u16,
+) ?std.math.Order {
+    ensureRootTables();
+    const decoded_a = utf16.decodePacked(a, 0);
+    const decoded_b = utf16.decodePacked(b, 0);
+    if (decoded_a == utf16.packed_invalid or
+        decoded_b == utf16.packed_invalid)
+    {
+        return null;
+    }
+    const first_a = utf16.packedCodepoint(decoded_a);
+    const first_b = utf16.packedCodepoint(decoded_b);
+    if (first_a < direct_bmp_limit or first_b < direct_bmp_limit) return null;
+    if (root_tables_storage.page_has_entries[first_a >> 8] or
+        root_tables_storage.page_has_entries[first_b >> 8])
+    {
+        return null;
+    }
+    if (!normalization.isNfdInert(first_a) or
+        !normalization.isNfdInert(first_b))
+    {
+        return null;
+    }
+    const weights_a = implicitWeights(first_a);
+    const weights_b = implicitWeights(first_b);
+    if (weights_a.first != weights_b.first) {
+        return if (weights_a.first < weights_b.first) .lt else .gt;
+    }
+    if (weights_a.second != weights_b.second) {
+        return if (weights_a.second < weights_b.second) .lt else .gt;
+    }
+    return null;
 }
 
 const ImplicitWeights = struct {
