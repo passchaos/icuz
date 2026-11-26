@@ -641,6 +641,8 @@ The [ASCII and batched-decoding profile](docs/performance/utf16-ascii-batches-20
 includes both predecessors and measures the sixteen-scalar Latin decoder.
 The [mixed-window profile](docs/performance/utf16-mixed-windows-2026-11-26.md)
 records general UTF-8 windows and continuous BMP/surrogate conversion.
+The [packing profile](docs/performance/utf16-packing-2026-11-26.md)
+measures smaller BMP tables, shared lane-store bounds, and direct surrogate encoding.
 
 ## Performance notes
 

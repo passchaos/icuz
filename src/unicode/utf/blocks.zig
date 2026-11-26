@@ -14,3 +14,4 @@ pub const writeScalar = encode.writeScalar;
 pub const encode2 = encode.encode2;
 pub const encode3 = encode.encode3;
 pub const encode4 = encode.encode4;
+pub const writeSurrogatePair = encode.writeSurrogatePair;

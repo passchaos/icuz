@@ -20,8 +20,7 @@ noinline fn bmpRun(comptime checked: bool, units: []const u16, output: []u8, sta
                 index += 4;
                 continue;
             }
-            const cp: u21 = 0x10000 + (@as(u21, unit - 0xd800) << 10) + (units[index + 1] - 0xdc00);
-            written = blocks.writeScalar(output, written, cp);
+            written = blocks.writeSurrogatePair(output, written, unit, units[index + 1]);
             index += 2;
             continue;
         }
@@ -194,15 +193,15 @@ fn general(comptime checked: bool, units: []const u16, output: []u8) Error!usize
                 }
             }
         }
-        var cp: u21 = unit;
         index += 1;
         if (unit & 0xf800 == 0xd800) {
             if (checked and (unit >= 0xdc00 or index == units.len or units[index] & 0xfc00 != 0xdc00)) return error.InvalidUtf16;
             const low = units[index];
             index += 1;
-            cp = 0x10000 + (@as(u21, unit - 0xd800) << 10) + (low - 0xdc00);
+            written = blocks.writeSurrogatePair(output, written, unit, low);
+            continue;
         }
-        written = blocks.writeScalar(output, written, cp);
+        written = blocks.writeScalar(output, written, unit);
     }
     return written;
 }

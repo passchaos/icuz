@@ -79,7 +79,6 @@ pub inline fn encode2(comptime n: usize, output: []u8, written: usize, units: @V
 
 pub inline fn encode4(comptime checked: bool, comptime n: usize, output: []u8, written: usize, units: @Vector(n * 2, u16)) ?usize {
     const H = @Vector(n, u16);
-    const W = @Vector(n, u32);
     comptime var high_mask: [n]i32 = undefined;
     comptime var low_mask: [n]i32 = undefined;
     inline for (0..n) |i| {
@@ -90,16 +89,29 @@ pub inline fn encode4(comptime checked: bool, comptime n: usize, output: []u8, w
     const low = @shuffle(u16, units, undefined, low_mask);
     if (!@reduce(.And, (high & @as(H, @splat(0xfc00))) == @as(H, @splat(0xd800)))) return null;
     if (checked and !@reduce(.And, (low & @as(H, @splat(0xfc00))) == @as(H, @splat(0xdc00)))) return null;
-    const cp = (@as(W, @intCast(high - @as(H, @splat(0xd800)))) << @splat(10)) |
-        @as(W, @intCast(low - @as(H, @splat(0xdc00))));
-    const value = cp + @as(W, @splat(0x10000));
-    var words = (value >> @splat(18)) | @as(W, @splat(0xf0)) |
-        (((value >> @splat(12)) & @as(W, @splat(0x3f))) | @as(W, @splat(0x80))) << @splat(8) |
-        (((value >> @splat(6)) & @as(W, @splat(0x3f))) | @as(W, @splat(0x80))) << @splat(16) |
-        ((value & @as(W, @splat(0x3f))) | @as(W, @splat(0x80))) << @splat(24);
+    var words = surrogateWords(n, high, low);
     if (@import("builtin").cpu.arch.endian() == .big) words = @byteSwap(words);
     output[written..][0 .. n * 4].* = @bitCast(words);
     return written + n * 4;
+}
+
+inline fn surrogateWords(comptime n: usize, high: @Vector(n, u16), low: @Vector(n, u16)) @Vector(n, u32) {
+    const U = @Vector(n, u16);
+    const W = @Vector(n, u32);
+    const adjusted = high - @as(U, @splat(0xd7c0));
+    const tail = low & @as(U, @splat(0x3ff));
+    const first = @as(U, @splat(0x80f0)) | (adjusted >> @splat(8)) | ((adjusted & @as(U, @splat(0xfc))) << @splat(6));
+    const second = @as(U, @splat(0x8080)) | ((adjusted & @as(U, @splat(3))) << @splat(4)) |
+        (tail >> @splat(6)) | ((tail & @as(U, @splat(0x3f))) << @splat(8));
+    return @as(W, @intCast(first)) | (@as(W, @intCast(second)) << @splat(16));
+}
+
+pub inline fn writeSurrogatePair(output: []u8, written: usize, high: u16, low: u16) usize {
+    const h: @Vector(1, u16) = @splat(high);
+    const l: @Vector(1, u16) = @splat(low);
+    const values: [1]u32 = surrogateWords(1, h, l);
+    std.mem.writeInt(u32, output[written..][0..4], values[0], .little);
+    return written + 4;
 }
 
 /// Write one valid scalar as UTF-8 at `written` and return the new length.

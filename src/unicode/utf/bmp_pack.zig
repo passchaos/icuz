@@ -5,8 +5,10 @@ pub const supported = builtin.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.cpu.features, .avx) and
     std.Target.x86.featureSetHas(builtin.cpu.features, .ssse3) and builtin.zig_backend == .stage2_llvm;
 const V = @Vector(16, u8);
-const Control = struct { shuffle: V, count: u8 };
-const controls = makeControls();
+const Packing = struct { shuffle: [256]V, counts: [256]u8 };
+const packing = makeControls();
+const controls = packing.shuffle;
+const counts = packing.counts;
 const latin_controls = makeLatinControls();
 pub const wide_supported = supported and std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
 
@@ -88,6 +90,11 @@ inline fn storeLanes(output: []u8, written: usize, encoded: @Vector(32, u8), low
         for (0..16) |i| indices[i] = @intCast(16 + i);
         break :blk indices;
     });
+    if (output.len - written >= low_count + 16) {
+        output[written..][0..16].* = low;
+        output[written + low_count ..][0..16].* = high;
+        return written + low_count + high_count;
+    }
     return store(output, store(output, written, low, low_count), high, high_count);
 }
 
@@ -102,19 +109,14 @@ inline fn store(output: []u8, written: usize, bytes: V, count: usize) usize {
 /// Encode eight BMP scalars after the caller has excluded surrogates.
 pub inline fn encode8Valid(output: []u8, written: usize, units: @Vector(8, u16)) usize {
     const U = @Vector(8, u16);
-    const W = @Vector(8, u32);
     const B = @Vector(32, u8);
     if (@reduce(.And, units < @as(U, @splat(0x100)))) return latin8(output, written, units);
-    const value: W = @intCast(units);
     const code = widthCode(8, units);
-    const first = @select(u32, value < @as(W, @splat(0x80)), value, @select(u32, value < @as(W, @splat(0x800)), (value >> @splat(6)) | @as(W, @splat(0xc0)), (value >> @splat(12)) | @as(W, @splat(0xe0))));
-    const second = @select(u32, value < @as(W, @splat(0x800)), value & @as(W, @splat(0x3f)), (value >> @splat(6)) & @as(W, @splat(0x3f))) | @as(W, @splat(0x80));
-    const third = (value & @as(W, @splat(0x3f))) | @as(W, @splat(0x80));
-    const words = first | (second << @splat(8)) | (third << @splat(16));
-    const low_control = controls[@as(u8, @truncate(code))];
-    const high_control = controls[@as(u8, @truncate(code >> 8))];
-    const low_mask = low_control.shuffle;
-    const high_mask = high_control.shuffle;
+    const words = bmpWords(8, units);
+    const low_code: u8 = @truncate(code);
+    const high_code: u8 = @truncate(code >> 8);
+    const low_mask = controls[low_code];
+    const high_mask = controls[high_code];
     const mask: B = @shuffle(u8, low_mask, high_mask, blk: {
         var indices: [32]i32 = undefined;
         for (0..16) |i| {
@@ -129,12 +131,12 @@ pub inline fn encode8Valid(output: []u8, written: usize, units: @Vector(8, u16))
         : [mask] "x" (mask),
           [bytes] "x" (bytes),
     );
-    return storeLanes(output, written, encoded, low_control.count, high_control.count);
+    return storeLanes(output, written, encoded, counts[low_code], counts[high_code]);
 }
 
-fn makeControls() [256]Control {
+fn makeControls() Packing {
     @setEvalBranchQuota(20000);
-    var result: [256]Control = undefined;
+    var result: Packing = undefined;
     for (0..256) |code| {
         var mask = [_]u8{0x80} ** 16;
         var written: usize = 0;
@@ -145,7 +147,8 @@ fn makeControls() [256]Control {
                 written += 1;
             }
         }
-        result[code] = .{ .shuffle = mask, .count = @intCast(written) };
+        result.shuffle[code] = mask;
+        result.counts[code] = @intCast(written);
     }
     return result;
 }
@@ -156,6 +159,15 @@ inline fn widthCode(comptime n: usize, units: @Vector(n, u16)) std.meta.Int(.uns
     const flags = @select(u16, units >= @as(U, @splat(0x800)), @as(U, @splat(0x8000)), @select(u16, units >= @as(U, @splat(0x80)), @as(U, @splat(0x80)), @as(U, @splat(0))));
     const bytes: @Vector(n * 2, i8) = @bitCast(flags);
     return @bitCast(bytes < @as(@Vector(n * 2, i8), @splat(0)));
+}
+
+inline fn bmpWords(comptime n: usize, units: @Vector(n, u16)) @Vector(n, u32) {
+    const W = @Vector(n, u32);
+    const value: W = @intCast(units);
+    const first = @select(u32, value < @as(W, @splat(0x80)), value, @select(u32, value < @as(W, @splat(0x800)), (value >> @splat(6)) | @as(W, @splat(0xc0)), (value >> @splat(12)) | @as(W, @splat(0xe0))));
+    const second = @select(u32, value < @as(W, @splat(0x800)), value & @as(W, @splat(0x3f)), (value >> @splat(6)) & @as(W, @splat(0x3f))) | @as(W, @splat(0x80));
+    const third = (value & @as(W, @splat(0x3f))) | @as(W, @splat(0x80));
+    return first | (second << @splat(8)) | (third << @splat(16));
 }
 
 pub inline fn encode(output: []u8, written: usize, units: @Vector(4, u16)) ?usize {
@@ -169,8 +181,6 @@ pub inline fn encode4Valid(output: []u8, written: usize, units: @Vector(4, u16))
 inline fn encode4(comptime valid: bool, output: []u8, written: usize, units: @Vector(4, u16)) ?usize {
     if (comptime !supported) return null;
     const U = @Vector(4, u16);
-    const W = @Vector(4, u32);
-    const value: W = @intCast(units);
     if (@reduce(.And, units < @as(U, @splat(0x80)))) {
         const bytes: @Vector(4, u8) = @truncate(units);
         output[written..][0..4].* = bytes;
@@ -178,19 +188,15 @@ inline fn encode4(comptime valid: bool, output: []u8, written: usize, units: @Ve
     }
     if (!valid and @reduce(.Or, (units & @as(U, @splat(0xf800))) == @as(U, @splat(0xd800)))) return null;
     const code = widthCode(4, units);
-    const first = @select(u32, value < @as(W, @splat(0x80)), value, @select(u32, value < @as(W, @splat(0x800)), (value >> @splat(6)) | @as(W, @splat(0xc0)), (value >> @splat(12)) | @as(W, @splat(0xe0))));
-    const second = @select(u32, value < @as(W, @splat(0x800)), value & @as(W, @splat(0x3f)), (value >> @splat(6)) & @as(W, @splat(0x3f))) | @as(W, @splat(0x80));
-    const third = (value & @as(W, @splat(0x3f))) | @as(W, @splat(0x80));
-    const words = first | (second << @splat(8)) | (third << @splat(16));
+    const words = bmpWords(4, units);
     const bytes: V = @bitCast(words);
-    const control = controls[code];
-    const mask = control.shuffle;
+    const mask = controls[code];
     const encoded = asm ("vpshufb %[mask], %[bytes], %[result]"
         : [result] "=x" (-> V),
         : [mask] "x" (mask),
           [bytes] "x" (bytes),
     );
-    return store(output, written, encoded, control.count);
+    return store(output, written, encoded, counts[code]);
 }
 
 fn makeLatinControls() [256]V {
