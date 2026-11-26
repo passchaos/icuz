@@ -14,8 +14,8 @@ nanoseconds per input byte (or per operation) for the same operations.
   shared-machine load swings individual runs by 10-30%.
 - Snapshot: the numbers below were collected at commit `20d21cc`
   (2026-11-26), with the Georgian rows refreshed at `37c0931` and
-  `87f30ff`, the collation contract rows at `0de0c61`, the IDNA row at
-  `48c63a2`, and the Chinese and UTF-16 compare rows at `a2308c1`. Re-run
+  `87f30ff`, the collation contract rows at `0de0c61`, the IDNA rows at
+  `5f95f50`, and the Chinese and UTF-16 compare rows at `a2308c1`. Re-run
   the commands under "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Swedish,
@@ -133,7 +133,8 @@ where the reported unit is the UTF-8 input byte.
 | Katakana-Latin-BGN | 16.652 ns/B | 51.835 ns/B | 3.11x |
 | Arabic shaping | 4.044 ns/B | 5.134 ns/B | 1.27x |
 | spoof bidi skeleton | 97.078 ns/op | 334.337 ns/op | 3.44x |
-| idna toASCII | 205.152 ns/op | 341.113 ns/op | 1.66x |
+| idna toASCII | 205.561 ns/op | 340.320 ns/op | 1.66x |
+| idna toUnicode | 130.051 ns/op | 191.682 ns/op | 1.47x |
 | plural en | 10.358 ns/op | 44.369 ns/op | 4.28x |
 | date full format | 63.415 ns/op | 1658.540 ns/op | 26.15x |
 | char name | 18.699 ns/op | 56.300 ns/op | 3.01x |
