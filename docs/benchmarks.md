@@ -16,7 +16,8 @@ nanoseconds per input byte (or per operation) for the same operations.
   (2026-11-26), with the Georgian rows refreshed at `37c0931` and
   `87f30ff`, the collation contract rows at `0de0c61`, the IDNA, search,
   plural, shaping, and UTF-16 rows at `4475756`, the UTF-16 script rows at
-  `0599f27` and `5ef913c`, and the NFC Japanese row at `250a01c`. Re-run
+  `0599f27` and `5ef913c`, the NFC Japanese row at `250a01c`, and the
+  isNormalized rows at `db7f3e2`. Re-run
   the commands under "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Hebrew,
@@ -56,6 +57,10 @@ where the reported unit is the UTF-8 input byte.
 | NFC Thai (UTF-16) | 0.300 | 0.521 | 1.74x |
 | NFC Amharic (UTF-16) | 0.220 | 0.517 | 2.35x |
 | NFC Korean (UTF-16) | 0.409 | 0.463 | 1.13x |
+| isNormalized ASCII | 0.072 | 0.404 | 5.61x |
+| isNormalized mixed | 0.416 | 0.794 | 1.91x |
+| isNormalized Chinese | 0.241 | 0.470 | 1.95x |
+| isNormalized Georgian | 0.231 | 0.347 | 1.50x |
 | lower ASCII (UTF-16) | 0.113 | 0.852 | 7.54x |
 | lower mixed (UTF-16) | 0.595 | 0.863 | 1.45x |
 | case fold mixed (UTF-16) | 0.709 | 0.893 | 1.26x |
