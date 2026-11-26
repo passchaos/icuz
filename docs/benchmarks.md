@@ -16,7 +16,8 @@ nanoseconds per input byte (or per operation) for the same operations.
   (2026-11-26), with the Georgian rows refreshed at `37c0931` and
   `87f30ff`, the collation contract rows at `0de0c61`, the IDNA, search,
   plural, shaping, and UTF-16 rows at `4475756`, and the UTF-16 script
-  rows at `0599f27`. Re-run the commands under "Reproduce" to refresh them.
+  rows at `0599f27` and `5ef913c`. Re-run the commands under "Reproduce" to
+  refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Hebrew,
   Arabic, Devanagari, Amharic, Swedish, German, Greek, Russian, and the
@@ -54,6 +55,7 @@ where the reported unit is the UTF-8 input byte.
 | NFC Devanagari (UTF-16) | 0.262 | 0.503 | 1.92x |
 | NFC Thai (UTF-16) | 0.300 | 0.521 | 1.74x |
 | NFC Amharic (UTF-16) | 0.220 | 0.517 | 2.35x |
+| NFC Korean (UTF-16) | 0.409 | 0.463 | 1.13x |
 | lower ASCII (UTF-16) | 0.113 | 0.852 | 7.54x |
 | lower mixed (UTF-16) | 0.595 | 0.863 | 1.45x |
 | case fold mixed (UTF-16) | 0.709 | 0.893 | 1.26x |
@@ -185,8 +187,9 @@ against ICU's 0.379 (1.59x), and the UTF-16 row at 0.168 against 0.381
 ## Other scripts (UTF-16)
 
 The UTF-16 normalizer scans Hebrew/Arabic, E0-block (Indic, Thai, Myanmar,
-...), and Ethiopic runs directly, bridging spaces between words; the E0 scan
-also joins simple marks in canonical order so viramas and vowel signs do not
-return to the dispatch. Hebrew and Arabic beat ICU by 1.05-1.09x; the
-mark-heavy blocks do better because ICU's trie pays per unit where the run
-scans a phrase at a time: Devanagari 1.92x, Thai 1.74x, and Amharic 2.35x.
+...), Ethiopic, and Hangul syllable runs directly, bridging spaces between
+words; the E0 scan also joins simple marks in canonical order so viramas and
+vowel signs do not return to the dispatch. Hebrew and Arabic beat ICU by
+1.05-1.09x; the mark-heavy blocks do better because ICU's trie pays per unit
+where the run scans a phrase at a time: Devanagari 1.92x, Thai 1.74x,
+Amharic 2.35x, and Korean 1.13x.
