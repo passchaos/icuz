@@ -15,7 +15,7 @@ nanoseconds per input byte (or per operation) for the same operations.
 - Snapshot: the numbers below were collected at commit `20d21cc`
   (2026-11-26), with the Georgian rows refreshed at `37c0931` and
   `87f30ff`, the collation contract rows at `0de0c61`, the IDNA row at
-  `48c63a2`, and the Chinese compare rows at `ec2c749`. Re-run the commands
+  `48c63a2`, and the Chinese compare rows at `6d7179a`. Re-run the commands
   under "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Swedish,
@@ -77,9 +77,9 @@ where the reported unit is the UTF-8 input byte.
 | UCA sort key Swedish (reuse) | 5.602 ns/B | 8.130 ns/B | 1.45x |
 | UCA sort key German phonebook | 5.780 ns/B | 11.786 ns/B | 2.04x |
 | UCA sort key Chinese pinyin | 1.406 ns/B | 3.685 ns/B | 2.62x |
-| UCA compare mixed (assume valid) | 35.379 ns/op | 48.419 ns/op | 1.37x |
-| UCA compare mixed early (assume valid) | 4.011 ns/op | 8.812 ns/op | 2.20x |
-| UCA compare Chinese long (assume valid) | 118.355 ns/op | 187.232 ns/op | 1.58x |
+| UCA compare mixed (assume valid) | 11.025 ns/op | 48.419 ns/op | 4.39x |
+| UCA compare mixed early (assume valid) | 3.842 ns/op | 8.812 ns/op | 2.29x |
+| UCA compare Chinese long (assume valid) | 105.576 ns/op | 187.232 ns/op | 1.77x |
 | UCA compare Swedish (assume valid) | 6.014 ns/op | 135.340 ns/op | 22.50x |
 
 ### Charset conversion
@@ -139,17 +139,18 @@ where the reported unit is the UTF-8 input byte.
 
 ## Rows that need care
 
-These rows appear slower than ICU but compare different API contracts. The
-fair counterpart is listed in the notes.
+These rows compare different API contracts. The fair counterpart is listed
+in the notes; the validating `UCA compare mixed` row is faster than ICU even
+with the extra validation pass.
 
 | Benchmark | icuz | ICU | Why |
 |---|---|---|---|
 | case fold mixed | 1.406 ns/B | 0.893 ns/B | icuz allocates the output; ICU writes into a caller buffer. Compare `case fold mixed (UTF-16)` at 0.709 ns/B (1.26x faster). |
 | lower mixed | 1.338 ns/B | 0.863 ns/B | Same allocation difference. Compare `lower mixed (UTF-16)` at 0.595 ns/B (1.45x faster). |
 | NFC jamo | 1.147 ns/B | 1.158 ns/B | Same allocation difference. Compare `NFC jamo (reuse)` at 0.975 ns/B (1.19x faster). |
-| UCA compare mixed | 56.643 ns/op | 48.793 ns/op | icuz validates UTF-8 input (ICU takes UTF-16, which needs no validation). Compare `UCA compare mixed (assume valid)` at 35.379 ns/op (1.37x faster). |
-| UCA compare mixed early | 50.302 ns/op | 8.780 ns/op | Same validation difference. Compare `UCA compare mixed early (assume valid)` at 4.011 ns/op (2.20x faster). |
-| UCA compare Chinese long | 1260.723 ns/op | 187.232 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 118.355 ns/op (1.58x faster). |
+| UCA compare mixed | 40.499 ns/op | 48.793 ns/op | icuz validates UTF-8 input (ICU takes UTF-16, which needs no validation) and is still faster. Compare `UCA compare mixed (assume valid)` at 11.025 ns/op (4.39x faster). |
+| UCA compare mixed early | 50.412 ns/op | 8.780 ns/op | Same validation difference. Compare `UCA compare mixed early (assume valid)` at 3.842 ns/op (2.29x faster). |
+| UCA compare Chinese long | 1244.502 ns/op | 187.232 ns/op | Same validation difference. Compare `UCA compare Chinese long (assume valid)` at 105.576 ns/op (1.77x faster). |
 
 ## Georgian
 
