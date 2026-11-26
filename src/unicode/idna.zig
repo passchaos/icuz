@@ -345,6 +345,23 @@ fn convertInner(
     defer if (normalized) |owned| allocator.free(owned);
     const source = normalized orelse mapped_items;
 
+    // A clean domain without A-labels converts to itself for ToUnicode: the
+    // output is the input bytes, so validate the labels in place instead of
+    // building the label array. The byte-level pre-check keeps A-label
+    // domains, which the general pipeline must decode, out of this path;
+    // `validateCleanUnicode` still checks each mapped label, since mapping
+    // can turn an ignored scalar into the ACE prefix.
+    if (!ascii_output and status_clean and normalized == null and
+        !hasAlabel(domain))
+    {
+        if (validateCleanUnicode(source, options)) |had_error| {
+            return .{
+                .text = try allocator.dupe(u8, domain),
+                .had_error = had_error,
+            };
+        }
+    }
+
     var labels = std.ArrayList(Label).empty;
     defer {
         for (labels.items) |label| {
@@ -665,6 +682,42 @@ fn validateLabel(
     }
     if (options.check_joiners and !checkJoiners(label)) return false;
     return checkContextO(label);
+}
+
+/// Validate a clean, already-NFC domain whose labels need no punycode
+/// decoding. Returns the error flag, or null when an A-label requires the
+/// general label pipeline.
+inline fn validateCleanUnicode(source: []const u21, options: Options) ?bool {
+    const domain_has_rtl = blk: {
+        for (source) |codepoint| {
+            switch (bidi.classForCodepoint(codepoint)) {
+                .r, .al, .an => break :blk true,
+                else => {},
+            }
+        }
+        break :blk false;
+    };
+    var had_error = source.len == 0;
+    var start: usize = 0;
+    var index: usize = 0;
+    while (index <= source.len) : (index += 1) {
+        const at_end = index == source.len;
+        if (!at_end and source[index] != '.') continue;
+        const raw = source[start..index];
+        if (raw.len == 0) {
+            // A trailing dot is not an error for ToUnicode; any other empty
+            // label is.
+            if (at_end) break;
+            had_error = true;
+        } else {
+            if (isAlabel(raw)) return null;
+            if (!validateLabel(raw, options, domain_has_rtl, false, true)) {
+                had_error = true;
+            }
+        }
+        start = index + 1;
+    }
+    return had_error;
 }
 
 fn isAlabel(label: []const u21) bool {
