@@ -454,6 +454,20 @@ int main() {
         }
     }
     {
+        UErrorCode status = U_ZERO_ERROR;
+        const UNormalizer2* nfc = unorm2_getNFCInstance(&status);
+        for (int index : {0, 1, 4, 17}) {
+            const auto& u16 = texts[index].u16;
+            std::string label = std::string("isNormalized ") + texts[index].name;
+            bench_bytes(label.c_str(), texts[index].utf8.size(), 8000, [&] {
+                status = U_ZERO_ERROR;
+                UBool ok = unorm2_isNormalized(nfc, u16.data(),
+                    static_cast<int32_t>(u16.size()), &status);
+                (void)ok;
+            });
+        }
+    }
+    {
         const auto& u16 = texts[0].u16;
         std::vector<UChar> out(u16.size() * 2 + 32);
         bench_bytes("lower ASCII", texts[0].utf8.size(), 8000, [&] {
