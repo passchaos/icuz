@@ -1144,9 +1144,6 @@ fn normalizeFusedInto(
                     const second = text[run_end + 1];
                     if ((second & 0xc0) != 0x80) break;
                     if (inert.twoByteInert(lead, second, form)) {
-                        run_offset = run_end;
-                        run_codepoint = (@as(u21, lead & 0x1f) << 6) |
-                            (second & 0x3f);
                         mark_chain = 0;
                         run_end += 2;
                         while (true) {
@@ -1160,10 +1157,6 @@ fn normalizeFusedInto(
                                     next_second,
                                     form,
                                 )) break;
-                                run_offset = run_end;
-                                run_codepoint =
-                                    (@as(u21, next_lead & 0x1f) << 6) |
-                                    (next_second & 0x3f);
                                 run_end += 2;
                             }
                             if (run_end + 3 <= text.len and
@@ -1178,16 +1171,18 @@ fn normalizeFusedInto(
                                     next_second,
                                     form,
                                 )) break;
-                                run_offset = run_end + 1;
-                                run_codepoint =
-                                    (@as(u21, next_lead & 0x1f) << 6) |
-                                    (next_second & 0x3f);
                                 mark_chain = 0;
                                 run_end += 3;
                                 continue;
                             }
                             break;
                         }
+                        // The last inert scalar is two bytes ending at
+                        // `run_end`; decode it once.
+                        run_offset = run_end - 2;
+                        run_codepoint =
+                            (@as(u21, text[run_end - 2] & 0x1f) << 6) |
+                            (text[run_end - 1] & 0x3f);
                         continue;
                     }
                     // Simple marks (Hebrew niqqud, Arabic harakat) join the
@@ -1214,8 +1209,6 @@ fn normalizeFusedInto(
                     const low: u11 = @intCast(offset - 0x800);
                     const entry = inert.e0Class(low, form);
                     if (entry == 0) {
-                        run_offset = run_end;
-                        run_codepoint = 0x800 + @as(u21, low);
                         mark_chain = 0;
                         run_end += 3;
                         while (true) {
@@ -1232,8 +1225,6 @@ fn normalizeFusedInto(
                                     next_offset - 0x800,
                                 );
                                 if (!inert.e0Inert(next_low, form)) break;
-                                run_offset = run_end;
-                                run_codepoint = 0x800 + @as(u21, next_low);
                                 run_end += 3;
                             }
                             if (run_end + 4 <= text.len and
@@ -1251,14 +1242,19 @@ fn normalizeFusedInto(
                                     next_offset - 0x800,
                                 );
                                 if (!inert.e0Inert(next_low, form)) break;
-                                run_offset = run_end + 1;
-                                run_codepoint = 0x800 + @as(u21, next_low);
                                 mark_chain = 0;
                                 run_end += 4;
                                 continue;
                             }
                             break;
                         }
+                        // Every scalar consumed here is three bytes, so the
+                        // last one starts three bytes back; decode it once.
+                        run_offset = run_end - 3;
+                        run_codepoint = @as(u21, @intCast(
+                            (@as(u32, text[run_end - 2] & 0x3f) << 6) |
+                                (text[run_end - 1] & 0x3f),
+                        ));
                         continue;
                     }
                     // A simple mark neither decomposes nor composes, so it
@@ -4005,8 +4001,6 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     const second = text[run_end + 1];
                     if ((second & 0xc0) != 0x80) break;
                     if (inert.twoByteInert(lead, second, form)) {
-                        run_codepoint = (@as(u21, lead & 0x1f) << 6) |
-                            (second & 0x3f);
                         mark_chain = 0;
                         run_end += 2;
                         while (true) {
@@ -4020,9 +4014,6 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                                     next_second,
                                     form,
                                 )) break;
-                                run_codepoint =
-                                    (@as(u21, next_lead & 0x1f) << 6) |
-                                    (next_second & 0x3f);
                                 run_end += 2;
                             }
                             if (run_end + 3 <= text.len and
@@ -4037,15 +4028,17 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                                     next_second,
                                     form,
                                 )) break;
-                                run_codepoint =
-                                    (@as(u21, next_lead & 0x1f) << 6) |
-                                    (next_second & 0x3f);
                                 mark_chain = 0;
                                 run_end += 3;
                                 continue;
                             }
                             break;
                         }
+                        // The last inert scalar is two bytes ending at
+                        // `run_end`; decode it once.
+                        run_codepoint =
+                            (@as(u21, text[run_end - 2] & 0x1f) << 6) |
+                            (text[run_end - 1] & 0x3f);
                         continue;
                     }
                     const mark_class = inert.twoByteMarkClass(
@@ -4068,7 +4061,6 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                     const low: u11 = @intCast(offset - 0x800);
                     const entry = inert.e0Class(low, form);
                     if (entry == 0) {
-                        run_codepoint = 0x800 + @as(u21, low);
                         mark_chain = 0;
                         run_end += 3;
                         while (true) {
@@ -4085,7 +4077,6 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                                     next_offset - 0x800,
                                 );
                                 if (!inert.e0Inert(next_low, form)) break;
-                                run_codepoint = 0x800 + @as(u21, next_low);
                                 run_end += 3;
                             }
                             if (run_end + 4 <= text.len and
@@ -4103,13 +4094,18 @@ fn isNormalizedFormScan(text: []const u8, form: Form) ScanResult {
                                     next_offset - 0x800,
                                 );
                                 if (!inert.e0Inert(next_low, form)) break;
-                                run_codepoint = 0x800 + @as(u21, next_low);
                                 mark_chain = 0;
                                 run_end += 4;
                                 continue;
                             }
                             break;
                         }
+                        // Every scalar consumed here is three bytes, so the
+                        // last one starts three bytes back; decode it once.
+                        run_codepoint = @as(u21, @intCast(
+                            (@as(u32, text[run_end - 2] & 0x3f) << 6) |
+                                (text[run_end - 1] & 0x3f),
+                        ));
                         continue;
                     }
                     // A simple mark neither decomposes nor composes, and a
