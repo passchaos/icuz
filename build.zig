@@ -127,4 +127,24 @@ pub fn build(b: *std.Build) void {
     const install_utf8_bench = b.addInstallArtifact(utf8_bench, .{});
     b.step("bench-utf8-build", "Build the file-driven UTF-8 validation benchmark")
         .dependOn(&install_utf8_bench.step);
+
+    const utf16_bench = b.addExecutable(.{
+        .name = "icuz-utf16-bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/utf16/bench.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .link_libc = true,
+            .imports = &.{.{
+                .name = "utf16",
+                .module = b.createModule(.{
+                    .root_source_file = b.path("src/unicode/utf16.zig"),
+                    .target = target,
+                    .optimize = .ReleaseFast,
+                }),
+            }},
+        }),
+    });
+    b.step("bench-utf16-build", "Build the Unicode conversion benchmark")
+        .dependOn(&b.addInstallArtifact(utf16_bench, .{}).step);
 }

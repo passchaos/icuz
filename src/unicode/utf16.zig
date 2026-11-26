@@ -4,26 +4,13 @@
 //! should convert byte order before constructing the slice.
 
 const std = @import("std");
-const scalar = @import("scalar/root.zig");
+const validation = @import("utf/validate16.zig");
+const transcode = @import("utf/transcode.zig");
 
 pub const Error = error{ InvalidUtf8, InvalidUtf16, OutOfMemory };
 
 /// Validate a UTF-16 slice, including surrogate pairing.
-pub fn validate(units: []const u16) bool {
-    var index: usize = 0;
-    while (index < units.len) {
-        const unit = units[index];
-        if (unit < 0xD800 or unit > 0xDFFF) {
-            index += 1;
-            continue;
-        }
-        if (unit >= 0xDC00 or index + 1 >= units.len) return false;
-        const low = units[index + 1];
-        if (low < 0xDC00 or low > 0xDFFF) return false;
-        index += 2;
-    }
-    return true;
-}
+pub const validate = validation.isValid;
 
 /// Iterate code points from a UTF-16 slice already proven valid.
 pub const Iterator = struct {
@@ -47,24 +34,7 @@ pub const Iterator = struct {
 };
 
 /// Return the number of code points, or null for invalid UTF-16.
-pub fn codepointCount(units: []const u16) ?usize {
-    var index: usize = 0;
-    var count: usize = 0;
-    while (index < units.len) {
-        const unit = units[index];
-        if (unit < 0xD800 or unit > 0xDFFF) {
-            index += 1;
-            count += 1;
-            continue;
-        }
-        if (unit >= 0xDC00 or index + 1 >= units.len) return null;
-        const low = units[index + 1];
-        if (low < 0xDC00 or low > 0xDFFF) return null;
-        index += 2;
-        count += 1;
-    }
-    return count;
-}
+pub const codepointCount = validation.codepointCount;
 
 /// Packed UTF-16 decode: `(codepoint + 1) << 1 | (length - 1)`, or zero for
 /// an invalid sequence. Returning one register keeps the scalar and its unit
@@ -139,49 +109,17 @@ pub fn encodeAlloc(
     return result.toOwnedSlice(allocator);
 }
 
-/// Convert UTF-8 to UTF-16.
-pub fn utf8ToUtf16Alloc(
-    allocator: std.mem.Allocator,
-    text: []const u8,
-) Error![]u16 {
-    if (!scalar.validate.isValid(text)) return error.InvalidUtf8;
+/// Convert UTF-8 to an owned native-endian UTF-16 slice.
+pub const utf8ToUtf16Alloc = transcode.utf8ToUtf16Alloc;
+/// Convert native-endian UTF-16 to an owned UTF-8 slice.
+pub const utf16ToUtf8Alloc = transcode.utf16ToUtf8Alloc;
+/// Append converted UTF-8 to a reusable UTF-16 list, preserving contents on error.
+pub const utf8ToUtf16Into = transcode.utf8ToUtf16Into;
+/// Append converted UTF-16 to a reusable UTF-8 list, preserving contents on error.
+pub const utf16ToUtf8Into = transcode.utf16ToUtf8Into;
 
-    var result = std.ArrayList(u16).empty;
-    errdefer result.deinit(allocator);
-    try result.ensureTotalCapacity(allocator, text.len);
-
-    var iterator = std.unicode.Utf8Iterator{ .bytes = text, .i = 0 };
-    while (iterator.nextCodepoint()) |codepoint| {
-        if (codepoint <= 0xFFFF) {
-            try result.append(allocator, @intCast(codepoint));
-            continue;
-        }
-        const value = codepoint - 0x10000;
-        try result.append(allocator, @intCast(0xD800 + (value >> 10)));
-        try result.append(allocator, @intCast(0xDC00 + (value & 0x3FF)));
-    }
-    return result.toOwnedSlice(allocator);
-}
-
-/// Convert UTF-16 to UTF-8.
-pub fn utf16ToUtf8Alloc(
-    allocator: std.mem.Allocator,
-    units: []const u16,
-) Error![]u8 {
-    if (!validate(units)) return error.InvalidUtf16;
-
-    var result = std.ArrayList(u8).empty;
-    errdefer result.deinit(allocator);
-    try result.ensureTotalCapacity(allocator, units.len);
-
-    var encoded: [4]u8 = undefined;
-    var iterator = Iterator{ .units = units };
-    while (iterator.next()) |codepoint| {
-        const len = std.unicode.utf8Encode(codepoint, &encoded) catch
-            unreachable;
-        try result.appendSlice(allocator, encoded[0..len]);
-    }
-    return result.toOwnedSlice(allocator);
+test {
+    _ = @import("utf/tests.zig");
 }
 
 test "UTF-16 validation and surrogate pairs" {

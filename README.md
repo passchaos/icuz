@@ -52,6 +52,10 @@ need without pulling in a font or layout engine.
   `upperInto`, `foldInto`) and UTF-16 variants in `case.utf16` map into a
   caller-owned list without allocating.
 - UAX #24 script runs.
+- Strict UTF-8/native-endian UTF-16 conversion, validation, and scalar counts.
+  `utf16.utf8ToUtf16Into` and `utf16.utf16ToUtf8Into` append into reusable
+  caller-owned lists and preserve their contents on invalid input or
+  allocation failure; allocating variants return exactly sized output.
 - UAX #29 grapheme, word, and sentence boundaries.
 - ICU break dictionaries for Thai, Lao, Khmer, Burmese, and CJK word
   segmentation, with ICU's candidate-lookahead algorithm (including Thai
@@ -605,6 +609,7 @@ zig build bench
 zig build bench-collation
 zig build bench-collation-build
 zig build bench-utf8-build
+zig build bench-utf16-build
 ```
 
 `unicode-verify` checks committed blob headers, layouts, hashes, generated
@@ -626,6 +631,10 @@ input hashes, and binary hashes. See
 [`docs/performance/utf8-validation-2026-11-26.md`](docs/performance/utf8-validation-2026-11-26.md).
 The expanded short-input profile compares against simdutf 9.5.0 in
 [`docs/performance/utf8-short-validation-2026-11-26.md`](docs/performance/utf8-short-validation-2026-11-26.md).
+`bench-utf16-build` installs the strict conversion benchmark. Its profile in
+[`docs/performance/utf16-conversion-2026-11-26.md`](docs/performance/utf16-conversion-2026-11-26.md)
+compares allocating APIs separately from reused caller buffers against
+simdutf 9.5.0 and ICU 78.3.
 
 ## Performance notes
 
