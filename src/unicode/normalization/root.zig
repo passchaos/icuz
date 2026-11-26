@@ -2655,6 +2655,92 @@ noinline fn tryAccentSegment16(
     return null;
 }
 
+/// True for Hebrew and Arabic letters that are inert under `form` and carry
+/// no decomposition. The Arabic alef forms U+0622..U+0626 decompose under the
+/// decomposed forms and stay on the generic path there. The first test keeps
+/// non-Semitic blocks on two comparisons.
+inline fn semiticLetter16(unit: u16, comptime form: Form) bool {
+    if (unit < 0x05d0 or unit > 0x06ff) return false;
+    if (unit <= 0x05ea) return true;
+    if (unit >= 0x05ef and unit <= 0x05f2) return true;
+    if (unit < 0x0620 or unit > 0x064a) return false;
+    const compose = form == .nfc or form == .nfkc;
+    return compose or unit < 0x0622 or unit > 0x0626;
+}
+
+/// Scan a UTF-16 run of inert Hebrew/Arabic letters, bridging one space
+/// between words, and return the offset one past the run. Kept out of line so
+/// the main dispatch stays small.
+noinline fn semiticRunEnd16(
+    units: []const u16,
+    start: usize,
+    comptime form: Form,
+) usize {
+    var end = start;
+    while (true) {
+        while (end < units.len and semiticLetter16(units[end], form)) {
+            end += 1;
+        }
+        if (end + 1 < units.len and units[end] == ' ' and
+            semiticLetter16(units[end + 1], form))
+        {
+            end += 2;
+            continue;
+        }
+        return end;
+    }
+}
+
+/// Scan a UTF-16 run of inert E0-block scalars (Indic, Thai, Lao, Tibetan,
+/// Myanmar, ...), bridging one space between words. Simple marks stop the run
+/// so the generic path keeps their ordering state.
+noinline fn e0RunEnd16(
+    units: []const u16,
+    start: usize,
+    comptime form: Form,
+) usize {
+    var end = start;
+    while (true) {
+        while (end < units.len and units[end] >= 0x800 and
+            units[end] <= 0xfff and
+            inert.e0Class(@intCast(units[end] - 0x800), form) == 0)
+        {
+            end += 1;
+        }
+        if (end + 1 < units.len and units[end] == ' ' and
+            units[end + 1] >= 0x800 and units[end + 1] <= 0xfff and
+            inert.e0Class(@intCast(units[end + 1] - 0x800), form) == 0)
+        {
+            end += 2;
+            continue;
+        }
+        return end;
+    }
+}
+
+/// True for Ethiopic letters, which are inert under every form. The
+/// combining marks U+135D..U+135F keep the generic mark path.
+inline fn ethiopicLetter16(unit: u16) bool {
+    return unit >= 0x1200 and unit <= 0x137f and
+        !(unit >= 0x135d and unit <= 0x135f);
+}
+
+/// Scan a UTF-16 run of inert Ethiopic letters, bridging one space between
+/// words.
+noinline fn ethiopicRunEnd16(units: []const u16, start: usize) usize {
+    var end = start;
+    while (true) {
+        while (end < units.len and ethiopicLetter16(units[end])) end += 1;
+        if (end + 1 < units.len and units[end] == ' ' and
+            ethiopicLetter16(units[end + 1]))
+        {
+            end += 2;
+            continue;
+        }
+        return end;
+    }
+}
+
 /// Fused UTF-16 normalizer: the scan mirrors the UTF-8 path but decodes and
 /// emits UTF-16 units directly, avoiding a codepoint intermediate.
 ///
@@ -2877,6 +2963,40 @@ fn normalizeFusedUtf16Into(
         }
 
         if (codepoint >= 0x80 and inert.isInert(codepoint, form)) {
+            // Hebrew and Arabic letters are inert starters too; niqqud and
+            // harakat sit outside these ranges and keep the generic mark
+            // path. The check sits inside the run entry so the dispatch
+            // chain stays unchanged for the other scripts.
+            if (semiticLetter16(unit, form)) {
+                const end = semiticRunEnd16(units, index, form);
+                starter = units[end - 1];
+                starter_offset = end - 1;
+                previous_input_class = 0;
+                index = end;
+                continue;
+            }
+            // The E0 and Ethiopic blocks hold inert letters with marks
+            // between them; the marks stop the run and keep the generic mark
+            // path.
+            if (unit >= 0x800 and unit <= 0x137f) {
+                if (unit <= 0xfff) {
+                    if (inert.e0Class(@intCast(unit - 0x800), form) == 0) {
+                        const end = e0RunEnd16(units, index, form);
+                        starter = units[end - 1];
+                        starter_offset = end - 1;
+                        previous_input_class = 0;
+                        index = end;
+                        continue;
+                    }
+                } else if (unit >= 0x1200 and ethiopicLetter16(unit)) {
+                    const end = ethiopicRunEnd16(units, index);
+                    starter = units[end - 1];
+                    starter_offset = end - 1;
+                    previous_input_class = 0;
+                    index = end;
+                    continue;
+                }
+            }
             // Consecutive inert scalars need no per-unit dispatch. Simple
             // marks (niqqud, harakat, viramas) join the run too; the last
             // inert scalar stays the starter and `mark_chain` records the
