@@ -2920,6 +2920,31 @@ fn normalizeFusedUtf16Into(
             index = cursor;
             continue;
         }
+        // Precomposed Hangul syllables are inert under the composed forms.
+        // The last syllable stays the starter because a trailing jamo T
+        // composes with an LV syllable.
+        if (compose and unit >= 0xac00 and unit <= 0xd7a3) {
+            var cursor = index;
+            while (true) {
+                while (cursor < units.len and units[cursor] >= 0xac00 and
+                    units[cursor] <= 0xd7a3)
+                {
+                    cursor += 1;
+                }
+                if (cursor + 1 < units.len and units[cursor] == ' ' and
+                    units[cursor + 1] >= 0xac00 and units[cursor + 1] <= 0xd7a3)
+                {
+                    cursor += 2;
+                    continue;
+                }
+                break;
+            }
+            starter = units[cursor - 1];
+            starter_offset = cursor - 1;
+            previous_input_class = 0;
+            index = cursor;
+            continue;
+        }
         if (!compatibility) {
             const inert_punctuation = isInertCjkPunctuation(unit);
             if (inert_punctuation) {
