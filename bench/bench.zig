@@ -2495,6 +2495,13 @@ pub fn main() !void {
         amharic_runtime,
         allocator,
     );
+    benchNormalization("NFC Korean", korean_runtime, allocator, false);
+    benchNormalizationInto("NFC Korean (reuse)", korean_runtime, allocator);
+    benchNormalizationUtf16Into(
+        "NFC Korean (utf16 reuse)",
+        korean_runtime,
+        allocator,
+    );
     benchNormalization("NFC mixed", mixed_runtime, allocator, false);
     benchNormalizationInto("NFC mixed (reuse)", mixed_runtime, allocator);
     benchNormalizationInto("NFC Chinese (reuse)", chinese_runtime, allocator);
