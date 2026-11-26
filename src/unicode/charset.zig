@@ -1094,7 +1094,7 @@ fn utf8ToUtf16IntoEndian(
                 const first = input[index];
                 const second = input[index + 1];
                 const third = input[index + 2];
-                if (((second | third) & 0xc0) != 0x80) break;
+                if ((second & 0xc0) != 0x80 or (third & 0xc0) != 0x80) break;
                 const codepoint = (@as(u21, first & 0x0f) << 12) |
                     (@as(u21, second & 0x3f) << 6) | (third & 0x3f);
                 if (codepoint < 0x800 or
@@ -2505,6 +2505,11 @@ test "UTF encodings and malformed input" {
 test "UTF-8 three-byte runs convert with and without malformed input" {
     const testing = @import("std").testing;
     const allocator = testing.allocator;
+    inline for ([_]Encoding{ .utf16_le, .utf16_be }) |encoding| {
+        for ([_][]const u8{ "\xe4\x00\x80", "\xe4\x80\x00", "\xe4A\x80", "\xe4\x80A" }) |input| {
+            try testing.expectError(error.InvalidSequence, encodeAlloc(allocator, input, encoding, .{ .on_error = .strict }));
+        }
+    }
 
     // More than one 48-byte vector block of BMP three-byte sequences, plus
     // an ASCII tail so the scalar paths still run.
