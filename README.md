@@ -635,6 +635,8 @@ The expanded short-input profile compares against simdutf 9.5.0 in
 [`docs/performance/utf16-conversion-2026-11-26.md`](docs/performance/utf16-conversion-2026-11-26.md)
 compares allocating APIs separately from reused caller buffers against
 simdutf 9.5.0 and ICU 78.3.
+The [variable-width follow-up](docs/performance/utf16-variable-width-2026-11-26.md)
+compares directly with `7f3939c` and interleaves libraries for each corpus.
 
 ## Performance notes
 

@@ -3,7 +3,46 @@ const blocks = @import("../blocks.zig");
 const bmp = @import("../bmp_pack.zig");
 const Error = error{InvalidUtf16};
 
-pub fn convert(comptime checked: bool, units: []const u16, output: []u8) Error!usize {
+const Run = struct { consumed: usize, written: usize };
+
+// Keep mixed-width packing local across the entire BMP prefix.
+noinline fn bmpRun(units: []const u16, output: []u8, start: usize) Run {
+    var index: usize = 0;
+    var written = start;
+    while (index + 8 <= units.len) {
+        const U = @Vector(8, u16);
+        const v = @as(*align(2) const U, @ptrCast(units.ptr + index)).*;
+        const surrogates: u8 = @bitCast((v & @as(U, @splat(0xf800))) == @as(U, @splat(0xd800)));
+        if (surrogates != 0) {
+            const end = index + @ctz(surrogates);
+            while (index < end) : (index += 1) written = blocks.writeScalar(output, written, units[index]);
+            return .{ .consumed = index, .written = written };
+        }
+        written = bmp.encode8Valid(output, written, v);
+        index += 8;
+    }
+    while (index < units.len and units[index] & 0xf800 != 0xd800) : (index += 1) written = blocks.writeScalar(output, written, units[index]);
+    return .{ .consumed = index, .written = written };
+}
+
+pub inline fn convert(comptime checked: bool, units: []const u16, output: []u8) Error!usize {
+    var index: usize = 0;
+    if (units.len >= 256 and units[0] < 0x80) {
+        while (index + 32 <= units.len) {
+            const U = @Vector(32, u16);
+            const v = @as(*align(2) const U, @ptrCast(units.ptr + index)).*;
+            if (!@reduce(.And, v < @as(U, @splat(0x80)))) break;
+            const bytes: @Vector(32, u8) = @truncate(v);
+            output[index..][0..32].* = bytes;
+            index += 32;
+        }
+    }
+    if (index == units.len) return index;
+    if (checked and units.len < 256) return @call(.always_inline, general, .{ checked, units, output });
+    return index + try @call(.never_inline, general, .{ checked, units[index..], output[index..] });
+}
+
+fn general(comptime checked: bool, units: []const u16, output: []u8) Error!usize {
     var index: usize = 0;
     var written: usize = 0;
     input_loop: while (index < units.len) {
@@ -25,15 +64,24 @@ pub fn convert(comptime checked: bool, units: []const u16, output: []u8) Error!u
                 index += 16;
                 written += 16;
             }
+            if (comptime bmp.wide_supported) {
+                if (index + 16 <= units.len) {
+                    const v = @as(*align(2) const @Vector(16, u16), @ptrCast(units.ptr + index)).*;
+                    if (@reduce(.And, v < @as(@Vector(16, u16), @splat(0x100)))) {
+                        const run = bmp.latinRun(units[index..], output, written);
+                        index += run.consumed;
+                        written = run.written;
+                        continue;
+                    }
+                }
+            }
             while (index < units.len and units[index] < 0x80) {
                 if (comptime bmp.wide_supported) {
                     if (index + 8 <= units.len) {
-                        const v = @as(*align(2) const @Vector(8, u16), @ptrCast(units.ptr + index)).*;
-                        if (bmp.encode8(output, written, v)) |next| {
-                            written = next;
-                            index += 8;
-                            continue :input_loop;
-                        }
+                        const run = bmpRun(units[index..], output, written);
+                        written = run.written;
+                        index += run.consumed;
+                        continue :input_loop;
                     }
                 }
                 if (comptime bmp.supported) {
@@ -51,6 +99,17 @@ pub fn convert(comptime checked: bool, units: []const u16, output: []u8) Error!u
                 written += 1;
             }
             continue;
+        }
+        if (comptime bmp.wide_supported) {
+            if (unit < 0x100 and index + 16 <= units.len) {
+                const v = @as(*align(2) const @Vector(16, u16), @ptrCast(units.ptr + index)).*;
+                if (@reduce(.And, v < @as(@Vector(16, u16), @splat(0x100)))) {
+                    const run = bmp.latinRun(units[index..], output, written);
+                    index += run.consumed;
+                    written = run.written;
+                    continue;
+                }
+            }
         }
         if (unit < 0x800) {
             inline for (.{ 16, 4 }) |n| {
@@ -97,10 +156,10 @@ pub fn convert(comptime checked: bool, units: []const u16, output: []u8) Error!u
         }
         if (comptime bmp.wide_supported) {
             if (index + 8 <= units.len) {
-                const v = @as(*align(2) const @Vector(8, u16), @ptrCast(units.ptr + index)).*;
-                if (bmp.encode8(output, written, v)) |next| {
-                    written = next;
-                    index += 8;
+                if (unit & 0xf800 != 0xd800) {
+                    const run = bmpRun(units[index..], output, written);
+                    written = run.written;
+                    index += run.consumed;
                     continue :input_loop;
                 }
             }

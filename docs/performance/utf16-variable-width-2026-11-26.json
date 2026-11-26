@@ -1,0 +1,5271 @@
+{
+  "cpu": 2,
+  "rounds": 5,
+  "trials": 5,
+  "interleave_cases": true,
+  "versions": [
+    "simdutf 9.5.0 (haswell), ICU 78.3"
+  ],
+  "bytes_per_trial": 8388608,
+  "binaries": {
+    "icuz": "/home/passchaos/project-z/icuz/zig-out/bin/icuz-utf16-bench",
+    "external": "/tmp/icuz-transcode-external",
+    "baseline": "/tmp/icuz-utf16-7f3939c"
+  },
+  "samples": {
+    "icuz": [
+      {
+        "ascii-32/utf8-to-utf16/alloc": {
+          "input_bytes": 56,
+          "ns_op": 27.494506,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/alloc": {
+          "input_bytes": 56,
+          "ns_op": 25.319962,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/reuse": {
+          "input_bytes": 56,
+          "ns_op": 4.760528,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/reuse": {
+          "input_bytes": 56,
+          "ns_op": 8.783219,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/alloc": {
+          "input_bytes": 168,
+          "ns_op": 27.994132,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/alloc": {
+          "input_bytes": 168,
+          "ns_op": 30.983818,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/reuse": {
+          "input_bytes": 168,
+          "ns_op": 7.259333,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/reuse": {
+          "input_bytes": 168,
+          "ns_op": 11.775815,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 243.149209,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 345.261364,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 98.080534,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 152.110178,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/alloc": {
+          "input_bytes": 52,
+          "ns_op": 52.880851,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/alloc": {
+          "input_bytes": 52,
+          "ns_op": 32.855281,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/reuse": {
+          "input_bytes": 52,
+          "ns_op": 37.104396,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/reuse": {
+          "input_bytes": 52,
+          "ns_op": 12.054749,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/alloc": {
+          "input_bytes": 156,
+          "ns_op": 129.425604,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/alloc": {
+          "input_bytes": 156,
+          "ns_op": 53.432819,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/reuse": {
+          "input_bytes": 156,
+          "ns_op": 111.352538,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/reuse": {
+          "input_bytes": 156,
+          "ns_op": 25.290536,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 2964.994123,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 942.835945,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 2732.211557,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 527.555338,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/alloc": {
+          "input_bytes": 36,
+          "ns_op": 26.25657,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/alloc": {
+          "input_bytes": 36,
+          "ns_op": 23.866005,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/reuse": {
+          "input_bytes": 36,
+          "ns_op": 12.19221,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/reuse": {
+          "input_bytes": 36,
+          "ns_op": 10.609576,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 34.651612,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 23.262609,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 13.473101,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 10.751124,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 554.690802,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 382.151663,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 358.825832,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 272.246086,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/alloc": {
+          "input_bytes": 106,
+          "ns_op": 91.971783,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/alloc": {
+          "input_bytes": 106,
+          "ns_op": 66.221881,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/reuse": {
+          "input_bytes": 106,
+          "ns_op": 84.813033,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/reuse": {
+          "input_bytes": 106,
+          "ns_op": 47.727612,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/alloc": {
+          "input_bytes": 212,
+          "ns_op": 168.015012,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/alloc": {
+          "input_bytes": 212,
+          "ns_op": 116.727684,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/reuse": {
+          "input_bytes": 212,
+          "ns_op": 161.686464,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/reuse": {
+          "input_bytes": 212,
+          "ns_op": 87.970026,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 2680.549039,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 1966.489897,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 2381.169542,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 1689.308526,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/alloc": {
+          "input_bytes": 48,
+          "ns_op": 29.879316,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/alloc": {
+          "input_bytes": 48,
+          "ns_op": 23.218303,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/reuse": {
+          "input_bytes": 48,
+          "ns_op": 12.643143,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/reuse": {
+          "input_bytes": 48,
+          "ns_op": 9.484859,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 46.496944,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 36.639819,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 26.297216,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 18.423387,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 831.16683,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 720.340998,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 591.139432,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 401.829256,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/alloc": {
+          "input_bytes": 31,
+          "ns_op": 29.135835,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/alloc": {
+          "input_bytes": 31,
+          "ns_op": 28.089457,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/reuse": {
+          "input_bytes": 31,
+          "ns_op": 5.273004,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/reuse": {
+          "input_bytes": 31,
+          "ns_op": 11.734568,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/alloc": {
+          "input_bytes": 32,
+          "ns_op": 20.911747,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.093067,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/reuse": {
+          "input_bytes": 32,
+          "ns_op": 5.55558,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/reuse": {
+          "input_bytes": 32,
+          "ns_op": 4.76944,
+          "output_size": 32
+        }
+      },
+      {
+        "ascii-32/utf8-to-utf16/alloc": {
+          "input_bytes": 56,
+          "ns_op": 26.669417,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/alloc": {
+          "input_bytes": 56,
+          "ns_op": 25.369663,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/reuse": {
+          "input_bytes": 56,
+          "ns_op": 4.760521,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/reuse": {
+          "input_bytes": 56,
+          "ns_op": 8.789527,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/alloc": {
+          "input_bytes": 168,
+          "ns_op": 27.920872,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/alloc": {
+          "input_bytes": 168,
+          "ns_op": 30.983558,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/reuse": {
+          "input_bytes": 168,
+          "ns_op": 7.442261,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/reuse": {
+          "input_bytes": 168,
+          "ns_op": 11.776596,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 242.56917,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 347.576087,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 98.126976,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 152.965909,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/alloc": {
+          "input_bytes": 52,
+          "ns_op": 52.904952,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/alloc": {
+          "input_bytes": 52,
+          "ns_op": 33.055821,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/reuse": {
+          "input_bytes": 52,
+          "ns_op": 37.141564,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/reuse": {
+          "input_bytes": 52,
+          "ns_op": 12.079476,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/alloc": {
+          "input_bytes": 156,
+          "ns_op": 129.347219,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/alloc": {
+          "input_bytes": 156,
+          "ns_op": 53.410448,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/reuse": {
+          "input_bytes": 156,
+          "ns_op": 110.998512,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/reuse": {
+          "input_bytes": 156,
+          "ns_op": 25.245607,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 2964.768854,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 943.079334,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 2732.734574,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 528.024486,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/alloc": {
+          "input_bytes": 36,
+          "ns_op": 46.205067,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/alloc": {
+          "input_bytes": 36,
+          "ns_op": 41.920512,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/reuse": {
+          "input_bytes": 36,
+          "ns_op": 22.507403,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/reuse": {
+          "input_bytes": 36,
+          "ns_op": 19.359306,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 67.199506,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 40.818313,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 23.942991,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 21.260995,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 559.928571,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 380.593444,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 359.062622,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 271.232877,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/alloc": {
+          "input_bytes": 106,
+          "ns_op": 157.274916,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/alloc": {
+          "input_bytes": 106,
+          "ns_op": 122.237702,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/reuse": {
+          "input_bytes": 106,
+          "ns_op": 135.814676,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/reuse": {
+          "input_bytes": 106,
+          "ns_op": 92.219202,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/alloc": {
+          "input_bytes": 212,
+          "ns_op": 283.702537,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/alloc": {
+          "input_bytes": 212,
+          "ns_op": 210.588152,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/reuse": {
+          "input_bytes": 212,
+          "ns_op": 262.053275,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/reuse": {
+          "input_bytes": 212,
+          "ns_op": 167.48936,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 4603.57516,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 3636.711681,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 4373.393297,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 3033.988172,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/alloc": {
+          "input_bytes": 48,
+          "ns_op": 56.53891,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/alloc": {
+          "input_bytes": 48,
+          "ns_op": 41.116948,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/reuse": {
+          "input_bytes": 48,
+          "ns_op": 23.6283,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/reuse": {
+          "input_bytes": 48,
+          "ns_op": 19.064665,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 85.004738,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 67.739366,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 44.078329,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 33.966492,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 829.82045,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 717.943738,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 585.21184,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 401.862035,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/alloc": {
+          "input_bytes": 31,
+          "ns_op": 29.223496,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/alloc": {
+          "input_bytes": 31,
+          "ns_op": 28.03537,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/reuse": {
+          "input_bytes": 31,
+          "ns_op": 5.271016,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/reuse": {
+          "input_bytes": 31,
+          "ns_op": 11.37378,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/alloc": {
+          "input_bytes": 32,
+          "ns_op": 20.897129,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.090912,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/reuse": {
+          "input_bytes": 32,
+          "ns_op": 5.51947,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/reuse": {
+          "input_bytes": 32,
+          "ns_op": 4.768127,
+          "output_size": 32
+        }
+      },
+      {
+        "ascii-32/utf8-to-utf16/alloc": {
+          "input_bytes": 56,
+          "ns_op": 28.45343,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/alloc": {
+          "input_bytes": 56,
+          "ns_op": 25.337386,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/reuse": {
+          "input_bytes": 56,
+          "ns_op": 4.760534,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/reuse": {
+          "input_bytes": 56,
+          "ns_op": 8.788339,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/alloc": {
+          "input_bytes": 168,
+          "ns_op": 27.98526,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/alloc": {
+          "input_bytes": 168,
+          "ns_op": 31.394116,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/reuse": {
+          "input_bytes": 168,
+          "ns_op": 7.517083,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/reuse": {
+          "input_bytes": 168,
+          "ns_op": 11.78645,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 245.08251,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 348.62747,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 98.550889,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 156.535079,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/alloc": {
+          "input_bytes": 52,
+          "ns_op": 53.129464,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/alloc": {
+          "input_bytes": 52,
+          "ns_op": 33.068709,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/reuse": {
+          "input_bytes": 52,
+          "ns_op": 37.117004,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/reuse": {
+          "input_bytes": 52,
+          "ns_op": 12.081305,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/alloc": {
+          "input_bytes": 156,
+          "ns_op": 129.986685,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/alloc": {
+          "input_bytes": 156,
+          "ns_op": 53.414446,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/reuse": {
+          "input_bytes": 156,
+          "ns_op": 111.143548,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/reuse": {
+          "input_bytes": 156,
+          "ns_op": 24.655292,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 2978.228697,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 1637.934378,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 2736.185113,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 528.571499,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/alloc": {
+          "input_bytes": 36,
+          "ns_op": 26.222573,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/alloc": {
+          "input_bytes": 36,
+          "ns_op": 23.862353,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/reuse": {
+          "input_bytes": 36,
+          "ns_op": 12.136201,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/reuse": {
+          "input_bytes": 36,
+          "ns_op": 11.641244,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 34.727899,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 23.243159,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 13.499794,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 10.776376,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 557.501468,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 380.494618,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 358.568004,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 271.753425,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/alloc": {
+          "input_bytes": 106,
+          "ns_op": 91.314366,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/alloc": {
+          "input_bytes": 106,
+          "ns_op": 66.132252,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/reuse": {
+          "input_bytes": 106,
+          "ns_op": 84.350822,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/reuse": {
+          "input_bytes": 106,
+          "ns_op": 47.631095,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/alloc": {
+          "input_bytes": 212,
+          "ns_op": 167.907274,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/alloc": {
+          "input_bytes": 212,
+          "ns_op": 116.43889,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/reuse": {
+          "input_bytes": 212,
+          "ns_op": 162.201198,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/reuse": {
+          "input_bytes": 212,
+          "ns_op": 88.463506,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 2692.471168,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 1973.179399,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 2390.412026,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 1680.450468,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/alloc": {
+          "input_bytes": 48,
+          "ns_op": 29.945097,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/alloc": {
+          "input_bytes": 48,
+          "ns_op": 23.257133,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/reuse": {
+          "input_bytes": 48,
+          "ns_op": 12.699603,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/reuse": {
+          "input_bytes": 48,
+          "ns_op": 9.544209,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 46.4582,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 36.621932,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 26.227384,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 18.598105,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 826.697652,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 717.008317,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 587.774951,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 401.874266,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/alloc": {
+          "input_bytes": 31,
+          "ns_op": 29.311807,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/alloc": {
+          "input_bytes": 31,
+          "ns_op": 28.062631,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/reuse": {
+          "input_bytes": 31,
+          "ns_op": 5.27435,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/reuse": {
+          "input_bytes": 31,
+          "ns_op": 11.503585,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/alloc": {
+          "input_bytes": 32,
+          "ns_op": 20.967445,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.116859,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/reuse": {
+          "input_bytes": 32,
+          "ns_op": 5.600105,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/reuse": {
+          "input_bytes": 32,
+          "ns_op": 4.780621,
+          "output_size": 32
+        }
+      },
+      {
+        "ascii-32/utf8-to-utf16/alloc": {
+          "input_bytes": 56,
+          "ns_op": 26.887801,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/alloc": {
+          "input_bytes": 56,
+          "ns_op": 25.330503,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/reuse": {
+          "input_bytes": 56,
+          "ns_op": 4.760568,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/reuse": {
+          "input_bytes": 56,
+          "ns_op": 8.79157,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/alloc": {
+          "input_bytes": 168,
+          "ns_op": 28.061444,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/alloc": {
+          "input_bytes": 168,
+          "ns_op": 31.061063,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/reuse": {
+          "input_bytes": 168,
+          "ns_op": 7.177321,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/reuse": {
+          "input_bytes": 168,
+          "ns_op": 11.778599,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 245.54002,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 346.91749,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 98.223814,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 152.126976,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/alloc": {
+          "input_bytes": 52,
+          "ns_op": 52.972657,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/alloc": {
+          "input_bytes": 52,
+          "ns_op": 33.075087,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/reuse": {
+          "input_bytes": 52,
+          "ns_op": 37.237436,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/reuse": {
+          "input_bytes": 52,
+          "ns_op": 12.085198,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/alloc": {
+          "input_bytes": 156,
+          "ns_op": 129.633589,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/alloc": {
+          "input_bytes": 156,
+          "ns_op": 53.357633,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/reuse": {
+          "input_bytes": 156,
+          "ns_op": 111.445168,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/reuse": {
+          "input_bytes": 156,
+          "ns_op": 25.306622,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 2967.169931,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 944.478452,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 2731.874633,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 700.269344,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/alloc": {
+          "input_bytes": 36,
+          "ns_op": 26.488915,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/alloc": {
+          "input_bytes": 36,
+          "ns_op": 23.897853,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/reuse": {
+          "input_bytes": 36,
+          "ns_op": 12.164384,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/reuse": {
+          "input_bytes": 36,
+          "ns_op": 10.215359,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 34.63793,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 23.342672,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 13.480722,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 10.788409,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 557.59638,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 382.184932,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 358.742172,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 271.437867,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/alloc": {
+          "input_bytes": 106,
+          "ns_op": 91.87998,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/alloc": {
+          "input_bytes": 106,
+          "ns_op": 66.263227,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/reuse": {
+          "input_bytes": 106,
+          "ns_op": 85.324425,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/reuse": {
+          "input_bytes": 106,
+          "ns_op": 47.790806,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/alloc": {
+          "input_bytes": 212,
+          "ns_op": 173.359103,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/alloc": {
+          "input_bytes": 212,
+          "ns_op": 116.643778,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/reuse": {
+          "input_bytes": 212,
+          "ns_op": 164.120779,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/reuse": {
+          "input_bytes": 212,
+          "ns_op": 88.185781,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 2707.598817,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 2004.947758,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 2372.093642,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 1658.758502,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/alloc": {
+          "input_bytes": 48,
+          "ns_op": 29.931164,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/alloc": {
+          "input_bytes": 48,
+          "ns_op": 23.240487,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/reuse": {
+          "input_bytes": 48,
+          "ns_op": 12.606711,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/reuse": {
+          "input_bytes": 48,
+          "ns_op": 9.490158,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 46.544924,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 38.126635,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 26.308992,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 18.455608,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 830.858121,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 723.081213,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 593.422211,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 403.162916,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/alloc": {
+          "input_bytes": 31,
+          "ns_op": 29.225673,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/alloc": {
+          "input_bytes": 31,
+          "ns_op": 28.032539,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/reuse": {
+          "input_bytes": 31,
+          "ns_op": 5.272221,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/reuse": {
+          "input_bytes": 31,
+          "ns_op": 11.732694,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/alloc": {
+          "input_bytes": 32,
+          "ns_op": 20.897835,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.087376,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/reuse": {
+          "input_bytes": 32,
+          "ns_op": 5.561138,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/reuse": {
+          "input_bytes": 32,
+          "ns_op": 4.784782,
+          "output_size": 32
+        }
+      },
+      {
+        "ascii-32/utf8-to-utf16/alloc": {
+          "input_bytes": 56,
+          "ns_op": 26.687388,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/alloc": {
+          "input_bytes": 56,
+          "ns_op": 25.291269,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/reuse": {
+          "input_bytes": 56,
+          "ns_op": 4.774106,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/reuse": {
+          "input_bytes": 56,
+          "ns_op": 8.783579,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/alloc": {
+          "input_bytes": 168,
+          "ns_op": 28.046643,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/alloc": {
+          "input_bytes": 168,
+          "ns_op": 31.064448,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/reuse": {
+          "input_bytes": 168,
+          "ns_op": 7.015621,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/reuse": {
+          "input_bytes": 168,
+          "ns_op": 11.777057,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 244.922431,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 344.699605,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 98.022727,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 152.985178,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/alloc": {
+          "input_bytes": 52,
+          "ns_op": 53.059125,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/alloc": {
+          "input_bytes": 52,
+          "ns_op": 32.900948,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/reuse": {
+          "input_bytes": 52,
+          "ns_op": 37.150236,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/reuse": {
+          "input_bytes": 52,
+          "ns_op": 12.095103,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/alloc": {
+          "input_bytes": 156,
+          "ns_op": 129.328752,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/alloc": {
+          "input_bytes": 156,
+          "ns_op": 53.444517,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/reuse": {
+          "input_bytes": 156,
+          "ns_op": 111.427464,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/reuse": {
+          "input_bytes": 156,
+          "ns_op": 25.40896,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 2967.073947,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 942.818315,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 2733.487757,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 527.907933,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/alloc": {
+          "input_bytes": 36,
+          "ns_op": 26.256618,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/alloc": {
+          "input_bytes": 36,
+          "ns_op": 23.872816,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/reuse": {
+          "input_bytes": 36,
+          "ns_op": 12.173683,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/reuse": {
+          "input_bytes": 36,
+          "ns_op": 10.152466,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 34.623511,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 23.20675,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 13.374584,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 10.614928,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 556.846869,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 381.063112,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 358.691292,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 272.357143,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/alloc": {
+          "input_bytes": 106,
+          "ns_op": 91.968182,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/alloc": {
+          "input_bytes": 106,
+          "ns_op": 66.286162,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/reuse": {
+          "input_bytes": 106,
+          "ns_op": 84.685419,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/reuse": {
+          "input_bytes": 106,
+          "ns_op": 47.804592,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/alloc": {
+          "input_bytes": 212,
+          "ns_op": 168.532248,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/alloc": {
+          "input_bytes": 212,
+          "ns_op": 116.519309,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/reuse": {
+          "input_bytes": 212,
+          "ns_op": 164.518828,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/reuse": {
+          "input_bytes": 212,
+          "ns_op": 88.155328,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 3844.273041,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 1962.650074,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 2394.049778,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 1660.075899,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/alloc": {
+          "input_bytes": 48,
+          "ns_op": 30.736361,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/alloc": {
+          "input_bytes": 48,
+          "ns_op": 23.259421,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/reuse": {
+          "input_bytes": 48,
+          "ns_op": 12.655823,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/reuse": {
+          "input_bytes": 48,
+          "ns_op": 9.51363,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 46.515432,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 36.622412,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 26.268188,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 18.863838,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 825.476517,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 720.67319,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 587.982387,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 401.667808,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/alloc": {
+          "input_bytes": 31,
+          "ns_op": 29.169922,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/alloc": {
+          "input_bytes": 31,
+          "ns_op": 28.803817,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/reuse": {
+          "input_bytes": 31,
+          "ns_op": 5.272284,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/reuse": {
+          "input_bytes": 31,
+          "ns_op": 11.444823,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/alloc": {
+          "input_bytes": 32,
+          "ns_op": 20.953236,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/alloc": {
+          "input_bytes": 32,
+          "ns_op": 20.91153,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/reuse": {
+          "input_bytes": 32,
+          "ns_op": 5.50486,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/reuse": {
+          "input_bytes": 32,
+          "ns_op": 4.781097,
+          "output_size": 32
+        }
+      }
+    ],
+    "external": [
+      {
+        "ascii-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 56,
+          "ns_op": 12.50002,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 56,
+          "ns_op": 10.428209,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/icu": {
+          "input_bytes": 56,
+          "ns_op": 37.035809,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/icu": {
+          "input_bytes": 56,
+          "ns_op": 38.258385,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 168,
+          "ns_op": 10.176019,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 168,
+          "ns_op": 13.806196,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/icu": {
+          "input_bytes": 168,
+          "ns_op": 95.112573,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/icu": {
+          "input_bytes": 168,
+          "ns_op": 93.836898,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4144,
+          "ns_op": 110.769763,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4144,
+          "ns_op": 198.13587,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4144,
+          "ns_op": 2097.468379,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4144,
+          "ns_op": 2088.132411,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 52,
+          "ns_op": 39.424928,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 52,
+          "ns_op": 23.550065,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/icu": {
+          "input_bytes": 52,
+          "ns_op": 37.966842,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/icu": {
+          "input_bytes": 52,
+          "ns_op": 28.772965,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 156,
+          "ns_op": 88.510052,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 156,
+          "ns_op": 35.370093,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/icu": {
+          "input_bytes": 156,
+          "ns_op": 91.853904,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/icu": {
+          "input_bytes": 156,
+          "ns_op": 70.439365,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4108,
+          "ns_op": 1901.89716,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4108,
+          "ns_op": 620.993144,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4108,
+          "ns_op": 2185.667483,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4108,
+          "ns_op": 1684.786484,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 36,
+          "ns_op": 23.410628,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 36,
+          "ns_op": 18.534603,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/icu": {
+          "input_bytes": 36,
+          "ns_op": 24.014016,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/icu": {
+          "input_bytes": 36,
+          "ns_op": 18.818566,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 82.132283,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 32.480122,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/icu": {
+          "input_bytes": 144,
+          "ns_op": 87.667903,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/icu": {
+          "input_bytes": 144,
+          "ns_op": 63.409242,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 956.694227,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 411.481409,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4104,
+          "ns_op": 2077.004892,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4104,
+          "ns_op": 1388.569961,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 106,
+          "ns_op": 68.208802,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 106,
+          "ns_op": 46.796113,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/icu": {
+          "input_bytes": 106,
+          "ns_op": 68.011246,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/icu": {
+          "input_bytes": 106,
+          "ns_op": 51.633585,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 212,
+          "ns_op": 122.240876,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 212,
+          "ns_op": 78.44076,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/icu": {
+          "input_bytes": 212,
+          "ns_op": 124.164451,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/icu": {
+          "input_bytes": 212,
+          "ns_op": 91.785129,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4134,
+          "ns_op": 1920.686545,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4134,
+          "ns_op": 1029.413997,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4134,
+          "ns_op": 2262.080828,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4134,
+          "ns_op": 1640.53721,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 48,
+          "ns_op": 31.269069,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 48,
+          "ns_op": 32.800718,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/icu": {
+          "input_bytes": 48,
+          "ns_op": 59.718491,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/icu": {
+          "input_bytes": 48,
+          "ns_op": 28.527615,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 99.321317,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 73.427353,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/icu": {
+          "input_bytes": 144,
+          "ns_op": 154.329299,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/icu": {
+          "input_bytes": 144,
+          "ns_op": 82.247279,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 2348.130137,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 1977.2182,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4104,
+          "ns_op": 3678.392857,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4104,
+          "ns_op": 1951.792564,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/simdutf": {
+          "input_bytes": 31,
+          "ns_op": 11.872875,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/simdutf": {
+          "input_bytes": 31,
+          "ns_op": 11.395876,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/icu": {
+          "input_bytes": 31,
+          "ns_op": 24.046914,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/icu": {
+          "input_bytes": 31,
+          "ns_op": 22.474424,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/simdutf": {
+          "input_bytes": 32,
+          "ns_op": 22.163677,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/simdutf": {
+          "input_bytes": 32,
+          "ns_op": 19.852917,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/icu": {
+          "input_bytes": 32,
+          "ns_op": 39.100456,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/icu": {
+          "input_bytes": 32,
+          "ns_op": 21.234291,
+          "output_size": 32
+        }
+      },
+      {
+        "ascii-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 56,
+          "ns_op": 12.569735,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 56,
+          "ns_op": 10.802965,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/icu": {
+          "input_bytes": 56,
+          "ns_op": 36.905258,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/icu": {
+          "input_bytes": 56,
+          "ns_op": 35.477596,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 168,
+          "ns_op": 10.137126,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 168,
+          "ns_op": 13.866398,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/icu": {
+          "input_bytes": 168,
+          "ns_op": 95.071277,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/icu": {
+          "input_bytes": 168,
+          "ns_op": 93.139129,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4144,
+          "ns_op": 110.858202,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4144,
+          "ns_op": 198.521245,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4144,
+          "ns_op": 2099.366107,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4144,
+          "ns_op": 2090.718379,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 52,
+          "ns_op": 38.470397,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 52,
+          "ns_op": 23.741332,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/icu": {
+          "input_bytes": 52,
+          "ns_op": 38.109621,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/icu": {
+          "input_bytes": 52,
+          "ns_op": 28.980232,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 156,
+          "ns_op": 88.322615,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 156,
+          "ns_op": 35.196232,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/icu": {
+          "input_bytes": 156,
+          "ns_op": 93.116936,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/icu": {
+          "input_bytes": 156,
+          "ns_op": 69.914753,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4108,
+          "ns_op": 1897.721352,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4108,
+          "ns_op": 615.876592,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4108,
+          "ns_op": 2184.589618,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4108,
+          "ns_op": 1646.834476,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 36,
+          "ns_op": 39.997653,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 36,
+          "ns_op": 35.350748,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/icu": {
+          "input_bytes": 36,
+          "ns_op": 45.979371,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/icu": {
+          "input_bytes": 36,
+          "ns_op": 37.034259,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 140.318502,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 61.016737,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/icu": {
+          "input_bytes": 144,
+          "ns_op": 161.325025,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/icu": {
+          "input_bytes": 144,
+          "ns_op": 114.545593,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 1628.334149,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 409.350783,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4104,
+          "ns_op": 2082.054305,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4104,
+          "ns_op": 1394.084638,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 106,
+          "ns_op": 112.65882,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 106,
+          "ns_op": 81.432339,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/icu": {
+          "input_bytes": 106,
+          "ns_op": 124.511316,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/icu": {
+          "input_bytes": 106,
+          "ns_op": 92.98188,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 212,
+          "ns_op": 172.215654,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 212,
+          "ns_op": 143.433052,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/icu": {
+          "input_bytes": 212,
+          "ns_op": 233.834412,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/icu": {
+          "input_bytes": 212,
+          "ns_op": 171.779898,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4134,
+          "ns_op": 2436.703302,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4134,
+          "ns_op": 1992.012321,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4134,
+          "ns_op": 4456.01725,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4134,
+          "ns_op": 3104.699852,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 48,
+          "ns_op": 61.350419,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 48,
+          "ns_op": 53.987715,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/icu": {
+          "input_bytes": 48,
+          "ns_op": 96.847043,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/icu": {
+          "input_bytes": 48,
+          "ns_op": 59.665688,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 180.98613,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 145.034229,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/icu": {
+          "input_bytes": 144,
+          "ns_op": 254.580527,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/icu": {
+          "input_bytes": 144,
+          "ns_op": 152.93458,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 2357.225538,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 1963.772505,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4104,
+          "ns_op": 3670.721135,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4104,
+          "ns_op": 1981.722603,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/simdutf": {
+          "input_bytes": 31,
+          "ns_op": 12.042738,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/simdutf": {
+          "input_bytes": 31,
+          "ns_op": 11.407554,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/icu": {
+          "input_bytes": 31,
+          "ns_op": 24.284597,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/icu": {
+          "input_bytes": 31,
+          "ns_op": 22.350466,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/simdutf": {
+          "input_bytes": 32,
+          "ns_op": 22.124096,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/simdutf": {
+          "input_bytes": 32,
+          "ns_op": 19.520023,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/icu": {
+          "input_bytes": 32,
+          "ns_op": 37.675484,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/icu": {
+          "input_bytes": 32,
+          "ns_op": 21.244389,
+          "output_size": 32
+        }
+      },
+      {
+        "ascii-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 56,
+          "ns_op": 12.474258,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 56,
+          "ns_op": 10.442569,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/icu": {
+          "input_bytes": 56,
+          "ns_op": 37.002363,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/icu": {
+          "input_bytes": 56,
+          "ns_op": 37.300148,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 168,
+          "ns_op": 9.8972,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 168,
+          "ns_op": 13.806216,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/icu": {
+          "input_bytes": 168,
+          "ns_op": 95.30163,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/icu": {
+          "input_bytes": 168,
+          "ns_op": 92.62521,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4144,
+          "ns_op": 110.740613,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4144,
+          "ns_op": 198.15415,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4144,
+          "ns_op": 2101.974802,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4144,
+          "ns_op": 2087.411067,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 52,
+          "ns_op": 39.93405,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 52,
+          "ns_op": 23.860562,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/icu": {
+          "input_bytes": 52,
+          "ns_op": 39.409332,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/icu": {
+          "input_bytes": 52,
+          "ns_op": 28.18919,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 156,
+          "ns_op": 87.504045,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 156,
+          "ns_op": 35.824429,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/icu": {
+          "input_bytes": 156,
+          "ns_op": 92.339185,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/icu": {
+          "input_bytes": 156,
+          "ns_op": 72.521228,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4108,
+          "ns_op": 1899.853085,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4108,
+          "ns_op": 619.916259,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4108,
+          "ns_op": 2205.945152,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4108,
+          "ns_op": 1683.837904,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 36,
+          "ns_op": 23.511338,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 36,
+          "ns_op": 18.137518,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/icu": {
+          "input_bytes": 36,
+          "ns_op": 23.759682,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/icu": {
+          "input_bytes": 36,
+          "ns_op": 18.946802,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 81.793096,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 32.536564,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/icu": {
+          "input_bytes": 144,
+          "ns_op": 87.682563,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/icu": {
+          "input_bytes": 144,
+          "ns_op": 63.502455,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 949.172701,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 522.44863,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4104,
+          "ns_op": 2077.291585,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4104,
+          "ns_op": 1391.35274,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 106,
+          "ns_op": 69.045882,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 106,
+          "ns_op": 47.831381,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/icu": {
+          "input_bytes": 106,
+          "ns_op": 67.377282,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/icu": {
+          "input_bytes": 106,
+          "ns_op": 50.515018,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 212,
+          "ns_op": 121.371361,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 212,
+          "ns_op": 77.764178,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/icu": {
+          "input_bytes": 212,
+          "ns_op": 126.106601,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/icu": {
+          "input_bytes": 212,
+          "ns_op": 92.767944,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4134,
+          "ns_op": 1920.671759,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4134,
+          "ns_op": 1030.775259,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4134,
+          "ns_op": 2345.034007,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4134,
+          "ns_op": 1675.0483,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 48,
+          "ns_op": 31.339296,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 48,
+          "ns_op": 29.113532,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/icu": {
+          "input_bytes": 48,
+          "ns_op": 54.702847,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/icu": {
+          "input_bytes": 48,
+          "ns_op": 29.135109,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 100.923988,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 77.892831,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/icu": {
+          "input_bytes": 144,
+          "ns_op": 154.906204,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/icu": {
+          "input_bytes": 144,
+          "ns_op": 83.082878,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 2347.319472,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 1977.202055,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4104,
+          "ns_op": 3699.398239,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4104,
+          "ns_op": 1980.406067,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/simdutf": {
+          "input_bytes": 31,
+          "ns_op": 12.694749,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/simdutf": {
+          "input_bytes": 31,
+          "ns_op": 17.785233,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/icu": {
+          "input_bytes": 31,
+          "ns_op": 24.169279,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/icu": {
+          "input_bytes": 31,
+          "ns_op": 22.635776,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/simdutf": {
+          "input_bytes": 32,
+          "ns_op": 22.056282,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/simdutf": {
+          "input_bytes": 32,
+          "ns_op": 19.989487,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/icu": {
+          "input_bytes": 32,
+          "ns_op": 40.083202,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/icu": {
+          "input_bytes": 32,
+          "ns_op": 21.850777,
+          "output_size": 32
+        }
+      },
+      {
+        "ascii-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 56,
+          "ns_op": 12.599822,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 56,
+          "ns_op": 10.531303,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/icu": {
+          "input_bytes": 56,
+          "ns_op": 37.046076,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/icu": {
+          "input_bytes": 56,
+          "ns_op": 35.229385,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 168,
+          "ns_op": 10.185152,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 168,
+          "ns_op": 13.806397,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/icu": {
+          "input_bytes": 168,
+          "ns_op": 95.374429,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/icu": {
+          "input_bytes": 168,
+          "ns_op": 96.208904,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4144,
+          "ns_op": 110.762352,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4144,
+          "ns_op": 198.20998,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4144,
+          "ns_op": 2118.549901,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4144,
+          "ns_op": 2087.797925,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 52,
+          "ns_op": 38.680137,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 52,
+          "ns_op": 23.568619,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/icu": {
+          "input_bytes": 52,
+          "ns_op": 38.236252,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/icu": {
+          "input_bytes": 52,
+          "ns_op": 29.233816,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 156,
+          "ns_op": 87.543637,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 156,
+          "ns_op": 36.020475,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/icu": {
+          "input_bytes": 156,
+          "ns_op": 169.590854,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/icu": {
+          "input_bytes": 156,
+          "ns_op": 73.067878,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4108,
+          "ns_op": 1898.113614,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4108,
+          "ns_op": 617.282566,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4108,
+          "ns_op": 2195.676787,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4108,
+          "ns_op": 1731.821254,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 36,
+          "ns_op": 23.56194,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 36,
+          "ns_op": 18.53747,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/icu": {
+          "input_bytes": 36,
+          "ns_op": 23.954205,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/icu": {
+          "input_bytes": 36,
+          "ns_op": 18.797744,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 85.133313,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 32.626875,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/icu": {
+          "input_bytes": 144,
+          "ns_op": 88.834672,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/icu": {
+          "input_bytes": 144,
+          "ns_op": 89.552855,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 948.564579,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 408.41683,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4104,
+          "ns_op": 2079.709883,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4104,
+          "ns_op": 1390.706458,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 106,
+          "ns_op": 69.204658,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 106,
+          "ns_op": 47.394973,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/icu": {
+          "input_bytes": 106,
+          "ns_op": 67.186449,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/icu": {
+          "input_bytes": 106,
+          "ns_op": 50.687845,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 212,
+          "ns_op": 122.007582,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 212,
+          "ns_op": 77.39168,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/icu": {
+          "input_bytes": 212,
+          "ns_op": 124.830924,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/icu": {
+          "input_bytes": 212,
+          "ns_op": 90.945688,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4134,
+          "ns_op": 1929.000986,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4134,
+          "ns_op": 1034.530803,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4134,
+          "ns_op": 2275.603253,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4134,
+          "ns_op": 1657.201084,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 48,
+          "ns_op": 31.314382,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 48,
+          "ns_op": 42.364759,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/icu": {
+          "input_bytes": 48,
+          "ns_op": 58.10599,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/icu": {
+          "input_bytes": 48,
+          "ns_op": 28.758769,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 99.468397,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 76.377794,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/icu": {
+          "input_bytes": 144,
+          "ns_op": 153.659045,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/icu": {
+          "input_bytes": 144,
+          "ns_op": 82.610224,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 2350.908513,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 1985.293542,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4104,
+          "ns_op": 3762.462329,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4104,
+          "ns_op": 1954.363014,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/simdutf": {
+          "input_bytes": 31,
+          "ns_op": 12.122964,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/simdutf": {
+          "input_bytes": 31,
+          "ns_op": 11.486227,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/icu": {
+          "input_bytes": 31,
+          "ns_op": 24.22061,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/icu": {
+          "input_bytes": 31,
+          "ns_op": 22.565935,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/simdutf": {
+          "input_bytes": 32,
+          "ns_op": 22.023167,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/simdutf": {
+          "input_bytes": 32,
+          "ns_op": 19.798695,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/icu": {
+          "input_bytes": 32,
+          "ns_op": 38.791695,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/icu": {
+          "input_bytes": 32,
+          "ns_op": 21.251785,
+          "output_size": 32
+        }
+      },
+      {
+        "ascii-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 56,
+          "ns_op": 12.53197,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 56,
+          "ns_op": 10.537311,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/icu": {
+          "input_bytes": 56,
+          "ns_op": 37.115924,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/icu": {
+          "input_bytes": 56,
+          "ns_op": 39.836598,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 168,
+          "ns_op": 9.89722,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 168,
+          "ns_op": 13.806317,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/icu": {
+          "input_bytes": 168,
+          "ns_op": 95.335236,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/icu": {
+          "input_bytes": 168,
+          "ns_op": 93.981034,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4144,
+          "ns_op": 110.838933,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4144,
+          "ns_op": 198.172431,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4144,
+          "ns_op": 2099.528656,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4144,
+          "ns_op": 2090.933794,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 52,
+          "ns_op": 39.748839,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 52,
+          "ns_op": 23.657263,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/icu": {
+          "input_bytes": 52,
+          "ns_op": 38.713741,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/icu": {
+          "input_bytes": 52,
+          "ns_op": 28.360472,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 156,
+          "ns_op": 88.589032,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 156,
+          "ns_op": 35.361836,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/icu": {
+          "input_bytes": 156,
+          "ns_op": 93.169323,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/icu": {
+          "input_bytes": 156,
+          "ns_op": 69.76094,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4108,
+          "ns_op": 1900.079334,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4108,
+          "ns_op": 621.494613,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4108,
+          "ns_op": 2173.634182,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4108,
+          "ns_op": 1681.015181,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 36,
+          "ns_op": 23.349135,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 36,
+          "ns_op": 18.315828,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/icu": {
+          "input_bytes": 36,
+          "ns_op": 23.829716,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/icu": {
+          "input_bytes": 36,
+          "ns_op": 18.775698,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 84.250747,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 32.474869,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/icu": {
+          "input_bytes": 144,
+          "ns_op": 88.081282,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/icu": {
+          "input_bytes": 144,
+          "ns_op": 63.357486,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 951.297456,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 421.57681,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4104,
+          "ns_op": 2081.242172,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4104,
+          "ns_op": 1392.01908,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 106,
+          "ns_op": 69.873839,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 106,
+          "ns_op": 47.01812,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/icu": {
+          "input_bytes": 106,
+          "ns_op": 67.721407,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/icu": {
+          "input_bytes": 106,
+          "ns_op": 49.852597,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 212,
+          "ns_op": 121.740775,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 212,
+          "ns_op": 75.782577,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/icu": {
+          "input_bytes": 212,
+          "ns_op": 124.83795,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/icu": {
+          "input_bytes": 212,
+          "ns_op": 92.663314,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4134,
+          "ns_op": 1925.578117,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4134,
+          "ns_op": 1033.696895,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4134,
+          "ns_op": 2284.807294,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4134,
+          "ns_op": 1699.953179,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/simdutf": {
+          "input_bytes": 48,
+          "ns_op": 31.505825,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/simdutf": {
+          "input_bytes": 48,
+          "ns_op": 34.799258,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/icu": {
+          "input_bytes": 48,
+          "ns_op": 55.321712,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/icu": {
+          "input_bytes": 48,
+          "ns_op": 28.865497,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 99.627013,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/simdutf": {
+          "input_bytes": 144,
+          "ns_op": 85.539963,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/icu": {
+          "input_bytes": 144,
+          "ns_op": 151.661534,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/icu": {
+          "input_bytes": 144,
+          "ns_op": 82.870069,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 2350.477984,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/simdutf": {
+          "input_bytes": 4104,
+          "ns_op": 1986.516634,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/icu": {
+          "input_bytes": 4104,
+          "ns_op": 3675.681996,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/icu": {
+          "input_bytes": 4104,
+          "ns_op": 1995.359589,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/simdutf": {
+          "input_bytes": 31,
+          "ns_op": 12.094582,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/simdutf": {
+          "input_bytes": 31,
+          "ns_op": 11.057158,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/icu": {
+          "input_bytes": 31,
+          "ns_op": 24.156933,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/icu": {
+          "input_bytes": 31,
+          "ns_op": 22.663588,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/simdutf": {
+          "input_bytes": 32,
+          "ns_op": 22.04298,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/simdutf": {
+          "input_bytes": 32,
+          "ns_op": 19.716984,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/icu": {
+          "input_bytes": 32,
+          "ns_op": 39.727867,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/icu": {
+          "input_bytes": 32,
+          "ns_op": 21.534298,
+          "output_size": 32
+        }
+      }
+    ],
+    "baseline": [
+      {
+        "ascii-32/utf8-to-utf16/alloc": {
+          "input_bytes": 56,
+          "ns_op": 23.908703,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/alloc": {
+          "input_bytes": 56,
+          "ns_op": 22.994439,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/reuse": {
+          "input_bytes": 56,
+          "ns_op": 4.510074,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/reuse": {
+          "input_bytes": 56,
+          "ns_op": 5.628989,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/alloc": {
+          "input_bytes": 168,
+          "ns_op": 24.654811,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/alloc": {
+          "input_bytes": 168,
+          "ns_op": 28.973905,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/reuse": {
+          "input_bytes": 168,
+          "ns_op": 6.325022,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/reuse": {
+          "input_bytes": 168,
+          "ns_op": 8.784487,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 235.657609,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 356.320652,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 97.214921,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 140.616601,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/alloc": {
+          "input_bytes": 52,
+          "ns_op": 63.473962,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/alloc": {
+          "input_bytes": 52,
+          "ns_op": 36.847705,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/reuse": {
+          "input_bytes": 52,
+          "ns_op": 47.119868,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/reuse": {
+          "input_bytes": 52,
+          "ns_op": 17.58737,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/alloc": {
+          "input_bytes": 156,
+          "ns_op": 157.037045,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/alloc": {
+          "input_bytes": 156,
+          "ns_op": 76.116527,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/reuse": {
+          "input_bytes": 156,
+          "ns_op": 128.683521,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/reuse": {
+          "input_bytes": 156,
+          "ns_op": 49.618191,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 3465.977473,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 1664.040646,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 3230.554848,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 1307.407444,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/alloc": {
+          "input_bytes": 36,
+          "ns_op": 23.748429,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/alloc": {
+          "input_bytes": 36,
+          "ns_op": 24.202441,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/reuse": {
+          "input_bytes": 36,
+          "ns_op": 12.936614,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/reuse": {
+          "input_bytes": 36,
+          "ns_op": 9.313069,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 31.694133,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 22.698785,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 12.922031,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 10.372489,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 550.6091,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 371.889922,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 359.996086,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 256.446673,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/alloc": {
+          "input_bytes": 106,
+          "ns_op": 94.609487,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/alloc": {
+          "input_bytes": 106,
+          "ns_op": 84.172814,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/reuse": {
+          "input_bytes": 106,
+          "ns_op": 87.605785,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/reuse": {
+          "input_bytes": 106,
+          "ns_op": 67.946788,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/alloc": {
+          "input_bytes": 212,
+          "ns_op": 171.308052,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/alloc": {
+          "input_bytes": 212,
+          "ns_op": 164.35276,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/reuse": {
+          "input_bytes": 212,
+          "ns_op": 161.597452,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/reuse": {
+          "input_bytes": 212,
+          "ns_op": 139.942024,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 2964.540168,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 3071.489404,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 2990.302612,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 2807.067028,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/alloc": {
+          "input_bytes": 48,
+          "ns_op": 27.419428,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/alloc": {
+          "input_bytes": 48,
+          "ns_op": 22.772187,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/reuse": {
+          "input_bytes": 48,
+          "ns_op": 12.2396,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/reuse": {
+          "input_bytes": 48,
+          "ns_op": 9.73671,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 44.077162,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 34.691815,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 25.745133,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 17.850448,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 824.078278,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 706.198141,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 584.766634,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 391.197652,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/alloc": {
+          "input_bytes": 31,
+          "ns_op": 27.231759,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/alloc": {
+          "input_bytes": 31,
+          "ns_op": 27.401072,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/reuse": {
+          "input_bytes": 31,
+          "ns_op": 5.269069,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/reuse": {
+          "input_bytes": 31,
+          "ns_op": 11.919534,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.727737,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.061096,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/reuse": {
+          "input_bytes": 32,
+          "ns_op": 5.181816,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/reuse": {
+          "input_bytes": 32,
+          "ns_op": 4.518459,
+          "output_size": 32
+        }
+      },
+      {
+        "ascii-32/utf8-to-utf16/alloc": {
+          "input_bytes": 56,
+          "ns_op": 23.92385,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/alloc": {
+          "input_bytes": 56,
+          "ns_op": 23.002917,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/reuse": {
+          "input_bytes": 56,
+          "ns_op": 4.50996,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/reuse": {
+          "input_bytes": 56,
+          "ns_op": 5.69148,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/alloc": {
+          "input_bytes": 168,
+          "ns_op": 24.631919,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/alloc": {
+          "input_bytes": 168,
+          "ns_op": 29.002984,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/reuse": {
+          "input_bytes": 168,
+          "ns_op": 7.049888,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/reuse": {
+          "input_bytes": 168,
+          "ns_op": 8.786209,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 235.523221,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 350.214921,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 97.221344,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 141.057312,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/alloc": {
+          "input_bytes": 52,
+          "ns_op": 63.011673,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/alloc": {
+          "input_bytes": 52,
+          "ns_op": 36.684129,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/reuse": {
+          "input_bytes": 52,
+          "ns_op": 47.322256,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/reuse": {
+          "input_bytes": 52,
+          "ns_op": 18.002678,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/alloc": {
+          "input_bytes": 156,
+          "ns_op": 157.006323,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/alloc": {
+          "input_bytes": 156,
+          "ns_op": 76.175162,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/reuse": {
+          "input_bytes": 156,
+          "ns_op": 126.411619,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/reuse": {
+          "input_bytes": 156,
+          "ns_op": 50.289086,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 3441.826151,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 1662.788443,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 3201.774731,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 1301.13859,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/alloc": {
+          "input_bytes": 36,
+          "ns_op": 23.738087,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/alloc": {
+          "input_bytes": 36,
+          "ns_op": 24.210968,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/reuse": {
+          "input_bytes": 36,
+          "ns_op": 12.994387,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/reuse": {
+          "input_bytes": 36,
+          "ns_op": 9.723285,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 60.729461,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 37.298675,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 22.476036,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 18.73461,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 927.438845,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 683.154599,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 586.590509,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 457.842955,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/alloc": {
+          "input_bytes": 106,
+          "ns_op": 152.034308,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/alloc": {
+          "input_bytes": 106,
+          "ns_op": 154.680971,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/reuse": {
+          "input_bytes": 106,
+          "ns_op": 136.923449,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/reuse": {
+          "input_bytes": 106,
+          "ns_op": 126.124506,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/alloc": {
+          "input_bytes": 212,
+          "ns_op": 289.675824,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/alloc": {
+          "input_bytes": 212,
+          "ns_op": 292.576577,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/reuse": {
+          "input_bytes": 212,
+          "ns_op": 265.988172,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/reuse": {
+          "input_bytes": 212,
+          "ns_op": 252.898251,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 5009.774273,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 5391.678167,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 4755.029078,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 5154.068014,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/alloc": {
+          "input_bytes": 48,
+          "ns_op": 51.251828,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/alloc": {
+          "input_bytes": 48,
+          "ns_op": 37.593178,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/reuse": {
+          "input_bytes": 48,
+          "ns_op": 22.47864,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/reuse": {
+          "input_bytes": 48,
+          "ns_op": 17.886062,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 79.788959,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 63.991692,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 45.01387,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 34.128832,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 1275.246575,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 1114.929061,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 863.451076,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 610.103229,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/alloc": {
+          "input_bytes": 31,
+          "ns_op": 27.160514,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/alloc": {
+          "input_bytes": 31,
+          "ns_op": 27.33031,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/reuse": {
+          "input_bytes": 31,
+          "ns_op": 5.269217,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/reuse": {
+          "input_bytes": 31,
+          "ns_op": 12.159933,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.68409,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.049686,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/reuse": {
+          "input_bytes": 32,
+          "ns_op": 5.136112,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/reuse": {
+          "input_bytes": 32,
+          "ns_op": 4.519417,
+          "output_size": 32
+        }
+      },
+      {
+        "ascii-32/utf8-to-utf16/alloc": {
+          "input_bytes": 56,
+          "ns_op": 23.908749,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/alloc": {
+          "input_bytes": 56,
+          "ns_op": 23.121746,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/reuse": {
+          "input_bytes": 56,
+          "ns_op": 4.510448,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/reuse": {
+          "input_bytes": 56,
+          "ns_op": 5.607573,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/alloc": {
+          "input_bytes": 168,
+          "ns_op": 24.635985,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/alloc": {
+          "input_bytes": 168,
+          "ns_op": 28.999059,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/reuse": {
+          "input_bytes": 168,
+          "ns_op": 7.804754,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/reuse": {
+          "input_bytes": 168,
+          "ns_op": 8.778859,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 235.630929,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 351.338439,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 97.328557,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 140.369565,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/alloc": {
+          "input_bytes": 52,
+          "ns_op": 63.100775,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/alloc": {
+          "input_bytes": 52,
+          "ns_op": 36.685722,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/reuse": {
+          "input_bytes": 52,
+          "ns_op": 47.115145,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/reuse": {
+          "input_bytes": 52,
+          "ns_op": 17.557386,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/alloc": {
+          "input_bytes": 156,
+          "ns_op": 157.222379,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/alloc": {
+          "input_bytes": 156,
+          "ns_op": 136.264203,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/reuse": {
+          "input_bytes": 156,
+          "ns_op": 132.325591,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/reuse": {
+          "input_bytes": 156,
+          "ns_op": 50.780726,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 3462.67189,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 1662.751714,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 3226.071988,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 1316.9476,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/alloc": {
+          "input_bytes": 36,
+          "ns_op": 23.898646,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/alloc": {
+          "input_bytes": 36,
+          "ns_op": 24.283697,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/reuse": {
+          "input_bytes": 36,
+          "ns_op": 12.897634,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/reuse": {
+          "input_bytes": 36,
+          "ns_op": 9.377459,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 31.604662,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 22.744309,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 12.930631,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 10.369056,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 551.152642,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 372.1091,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 359.75636,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 256.09002,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/alloc": {
+          "input_bytes": 106,
+          "ns_op": 96.425187,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/alloc": {
+          "input_bytes": 106,
+          "ns_op": 83.955432,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/reuse": {
+          "input_bytes": 106,
+          "ns_op": 88.339538,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/reuse": {
+          "input_bytes": 106,
+          "ns_op": 67.571907,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/alloc": {
+          "input_bytes": 212,
+          "ns_op": 177.241154,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/alloc": {
+          "input_bytes": 212,
+          "ns_op": 164.310554,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/reuse": {
+          "input_bytes": 212,
+          "ns_op": 160.746361,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/reuse": {
+          "input_bytes": 212,
+          "ns_op": 139.843788,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 3328.682109,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 3108.730902,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 2991.837851,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 2958.207984,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/alloc": {
+          "input_bytes": 48,
+          "ns_op": 27.465937,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/alloc": {
+          "input_bytes": 48,
+          "ns_op": 22.782516,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/reuse": {
+          "input_bytes": 48,
+          "ns_op": 23.773069,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/reuse": {
+          "input_bytes": 48,
+          "ns_op": 18.538927,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 43.598259,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 34.547825,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 25.848388,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 19.637158,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 829.761742,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 706.272505,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 584.704501,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 391.81409,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/alloc": {
+          "input_bytes": 31,
+          "ns_op": 27.280765,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/alloc": {
+          "input_bytes": 31,
+          "ns_op": 27.476197,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/reuse": {
+          "input_bytes": 31,
+          "ns_op": 5.277336,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/reuse": {
+          "input_bytes": 31,
+          "ns_op": 11.89667,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.862171,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.116234,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/reuse": {
+          "input_bytes": 32,
+          "ns_op": 5.21904,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/reuse": {
+          "input_bytes": 32,
+          "ns_op": 4.52383,
+          "output_size": 32
+        }
+      },
+      {
+        "ascii-32/utf8-to-utf16/alloc": {
+          "input_bytes": 56,
+          "ns_op": 24.415685,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/alloc": {
+          "input_bytes": 56,
+          "ns_op": 23.369289,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/reuse": {
+          "input_bytes": 56,
+          "ns_op": 4.509793,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/reuse": {
+          "input_bytes": 56,
+          "ns_op": 5.750881,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/alloc": {
+          "input_bytes": 168,
+          "ns_op": 24.717776,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/alloc": {
+          "input_bytes": 168,
+          "ns_op": 29.013619,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/reuse": {
+          "input_bytes": 168,
+          "ns_op": 6.549748,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/reuse": {
+          "input_bytes": 168,
+          "ns_op": 8.778939,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 237.371047,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 356.063735,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 97.215909,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 143.218874,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/alloc": {
+          "input_bytes": 52,
+          "ns_op": 62.065026,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/alloc": {
+          "input_bytes": 52,
+          "ns_op": 36.959366,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/reuse": {
+          "input_bytes": 52,
+          "ns_op": 47.723393,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/reuse": {
+          "input_bytes": 52,
+          "ns_op": 18.548733,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/alloc": {
+          "input_bytes": 156,
+          "ns_op": 158.09806,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/alloc": {
+          "input_bytes": 156,
+          "ns_op": 76.677459,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/reuse": {
+          "input_bytes": 156,
+          "ns_op": 133.836293,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/reuse": {
+          "input_bytes": 156,
+          "ns_op": 50.96011,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 3497.195397,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 1658.06905,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 3289.481881,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 1341.779138,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/alloc": {
+          "input_bytes": 36,
+          "ns_op": 23.752987,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/alloc": {
+          "input_bytes": 36,
+          "ns_op": 24.322802,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/reuse": {
+          "input_bytes": 36,
+          "ns_op": 13.074862,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/reuse": {
+          "input_bytes": 36,
+          "ns_op": 9.327514,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 31.731469,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 22.763278,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 12.902891,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 10.359924,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 551.734834,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 373.12818,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 358.330724,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 255.97456,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/alloc": {
+          "input_bytes": 106,
+          "ns_op": 94.924902,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/alloc": {
+          "input_bytes": 106,
+          "ns_op": 84.139113,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/reuse": {
+          "input_bytes": 106,
+          "ns_op": 88.261584,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/reuse": {
+          "input_bytes": 106,
+          "ns_op": 68.058885,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/alloc": {
+          "input_bytes": 212,
+          "ns_op": 173.190836,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/alloc": {
+          "input_bytes": 212,
+          "ns_op": 167.344849,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/reuse": {
+          "input_bytes": 212,
+          "ns_op": 163.432749,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/reuse": {
+          "input_bytes": 212,
+          "ns_op": 140.582946,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 2988.725973,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 3114.356333,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 3002.681124,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 3014.150813,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/alloc": {
+          "input_bytes": 48,
+          "ns_op": 28.025148,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/alloc": {
+          "input_bytes": 48,
+          "ns_op": 23.000109,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/reuse": {
+          "input_bytes": 48,
+          "ns_op": 12.277515,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/reuse": {
+          "input_bytes": 48,
+          "ns_op": 9.651921,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 43.635819,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 34.57972,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 25.776273,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 19.630274,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 823.62818,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 707.32045,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 584.77593,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 390.086595,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/alloc": {
+          "input_bytes": 31,
+          "ns_op": 27.535288,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/alloc": {
+          "input_bytes": 31,
+          "ns_op": 27.402302,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/reuse": {
+          "input_bytes": 31,
+          "ns_op": 5.273441,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/reuse": {
+          "input_bytes": 31,
+          "ns_op": 11.873285,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.724152,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.059341,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/reuse": {
+          "input_bytes": 32,
+          "ns_op": 5.176186,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/reuse": {
+          "input_bytes": 32,
+          "ns_op": 4.523457,
+          "output_size": 32
+        }
+      },
+      {
+        "ascii-32/utf8-to-utf16/alloc": {
+          "input_bytes": 56,
+          "ns_op": 23.975233,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/alloc": {
+          "input_bytes": 56,
+          "ns_op": 23.031943,
+          "output_size": 56
+        },
+        "ascii-32/utf8-to-utf16/reuse": {
+          "input_bytes": 56,
+          "ns_op": 4.509833,
+          "output_size": 56
+        },
+        "ascii-32/utf16-to-utf8/reuse": {
+          "input_bytes": 56,
+          "ns_op": 5.704151,
+          "output_size": 56
+        },
+        "ascii-128/utf8-to-utf16/alloc": {
+          "input_bytes": 168,
+          "ns_op": 24.626712,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/alloc": {
+          "input_bytes": 168,
+          "ns_op": 29.050729,
+          "output_size": 168
+        },
+        "ascii-128/utf8-to-utf16/reuse": {
+          "input_bytes": 168,
+          "ns_op": 6.390111,
+          "output_size": 168
+        },
+        "ascii-128/utf16-to-utf8/reuse": {
+          "input_bytes": 168,
+          "ns_op": 8.784186,
+          "output_size": 168
+        },
+        "ascii-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 242.886364,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4144,
+          "ns_op": 355.073123,
+          "output_size": 4144
+        },
+        "ascii-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 97.600791,
+          "output_size": 4144
+        },
+        "ascii-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4144,
+          "ns_op": 142.454051,
+          "output_size": 4144
+        },
+        "latin-32/utf8-to-utf16/alloc": {
+          "input_bytes": 52,
+          "ns_op": 64.381815,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/alloc": {
+          "input_bytes": 52,
+          "ns_op": 36.631017,
+          "output_size": 52
+        },
+        "latin-32/utf8-to-utf16/reuse": {
+          "input_bytes": 52,
+          "ns_op": 47.285689,
+          "output_size": 40
+        },
+        "latin-32/utf16-to-utf8/reuse": {
+          "input_bytes": 52,
+          "ns_op": 18.367278,
+          "output_size": 52
+        },
+        "latin-128/utf8-to-utf16/alloc": {
+          "input_bytes": 156,
+          "ns_op": 158.242966,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/alloc": {
+          "input_bytes": 156,
+          "ns_op": 76.195842,
+          "output_size": 156
+        },
+        "latin-128/utf8-to-utf16/reuse": {
+          "input_bytes": 156,
+          "ns_op": 128.592491,
+          "output_size": 120
+        },
+        "latin-128/utf16-to-utf8/reuse": {
+          "input_bytes": 156,
+          "ns_op": 50.186153,
+          "output_size": 156
+        },
+        "latin-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 3438.701763,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4108,
+          "ns_op": 1650.673359,
+          "output_size": 4108
+        },
+        "latin-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 3233.186092,
+          "output_size": 3160
+        },
+        "latin-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4108,
+          "ns_op": 1301.421156,
+          "output_size": 4108
+        },
+        "chinese-32/utf8-to-utf16/alloc": {
+          "input_bytes": 36,
+          "ns_op": 23.771685,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/alloc": {
+          "input_bytes": 36,
+          "ns_op": 24.24046,
+          "output_size": 36
+        },
+        "chinese-32/utf8-to-utf16/reuse": {
+          "input_bytes": 36,
+          "ns_op": 12.969805,
+          "output_size": 12
+        },
+        "chinese-32/utf16-to-utf8/reuse": {
+          "input_bytes": 36,
+          "ns_op": 9.668744,
+          "output_size": 36
+        },
+        "chinese-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 31.697909,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 22.719298,
+          "output_size": 144
+        },
+        "chinese-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 12.909637,
+          "output_size": 48
+        },
+        "chinese-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 10.184674,
+          "output_size": 144
+        },
+        "chinese-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 554.11546,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 371.625734,
+          "output_size": 4104
+        },
+        "chinese-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 359.194716,
+          "output_size": 1368
+        },
+        "chinese-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 256.219667,
+          "output_size": 4104
+        },
+        "mixed-32/utf8-to-utf16/alloc": {
+          "input_bytes": 106,
+          "ns_op": 95.178298,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/alloc": {
+          "input_bytes": 106,
+          "ns_op": 85.77822,
+          "output_size": 106
+        },
+        "mixed-32/utf8-to-utf16/reuse": {
+          "input_bytes": 106,
+          "ns_op": 88.347246,
+          "output_size": 66
+        },
+        "mixed-32/utf16-to-utf8/reuse": {
+          "input_bytes": 106,
+          "ns_op": 67.87111,
+          "output_size": 106
+        },
+        "mixed-128/utf8-to-utf16/alloc": {
+          "input_bytes": 212,
+          "ns_op": 177.88794,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/alloc": {
+          "input_bytes": 212,
+          "ns_op": 164.756192,
+          "output_size": 212
+        },
+        "mixed-128/utf8-to-utf16/reuse": {
+          "input_bytes": 212,
+          "ns_op": 164.082213,
+          "output_size": 132
+        },
+        "mixed-128/utf16-to-utf8/reuse": {
+          "input_bytes": 212,
+          "ns_op": 141.742241,
+          "output_size": 212
+        },
+        "mixed-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 2985.504189,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4134,
+          "ns_op": 3081.410054,
+          "output_size": 4134
+        },
+        "mixed-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 3005.651552,
+          "output_size": 2574
+        },
+        "mixed-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4134,
+          "ns_op": 2808.559882,
+          "output_size": 4134
+        },
+        "emoji-32/utf8-to-utf16/alloc": {
+          "input_bytes": 48,
+          "ns_op": 28.010243,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/alloc": {
+          "input_bytes": 48,
+          "ns_op": 23.016874,
+          "output_size": 48
+        },
+        "emoji-32/utf8-to-utf16/reuse": {
+          "input_bytes": 48,
+          "ns_op": 12.265464,
+          "output_size": 24
+        },
+        "emoji-32/utf16-to-utf8/reuse": {
+          "input_bytes": 48,
+          "ns_op": 10.168275,
+          "output_size": 48
+        },
+        "emoji-128/utf8-to-utf16/alloc": {
+          "input_bytes": 144,
+          "ns_op": 43.731057,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/alloc": {
+          "input_bytes": 144,
+          "ns_op": 34.551464,
+          "output_size": 144
+        },
+        "emoji-128/utf8-to-utf16/reuse": {
+          "input_bytes": 144,
+          "ns_op": 25.767964,
+          "output_size": 72
+        },
+        "emoji-128/utf16-to-utf8/reuse": {
+          "input_bytes": 144,
+          "ns_op": 19.710732,
+          "output_size": 144
+        },
+        "emoji-4096/utf8-to-utf16/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 824.875734,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/alloc": {
+          "input_bytes": 4104,
+          "ns_op": 707.277886,
+          "output_size": 4104
+        },
+        "emoji-4096/utf8-to-utf16/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 584.931507,
+          "output_size": 2052
+        },
+        "emoji-4096/utf16-to-utf8/reuse": {
+          "input_bytes": 4104,
+          "ns_op": 390.15362,
+          "output_size": 4104
+        },
+        "tiny-ascii-31/utf8-to-utf16/alloc": {
+          "input_bytes": 31,
+          "ns_op": 27.35599,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/alloc": {
+          "input_bytes": 31,
+          "ns_op": 27.449379,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf8-to-utf16/reuse": {
+          "input_bytes": 31,
+          "ns_op": 5.270905,
+          "output_size": 31
+        },
+        "tiny-ascii-31/utf16-to-utf8/reuse": {
+          "input_bytes": 31,
+          "ns_op": 12.158093,
+          "output_size": 31
+        },
+        "tiny-emoji-31/utf8-to-utf16/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.750557,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/alloc": {
+          "input_bytes": 32,
+          "ns_op": 18.059597,
+          "output_size": 32
+        },
+        "tiny-emoji-31/utf8-to-utf16/reuse": {
+          "input_bytes": 32,
+          "ns_op": 5.166924,
+          "output_size": 16
+        },
+        "tiny-emoji-31/utf16-to-utf8/reuse": {
+          "input_bytes": 32,
+          "ns_op": 4.523689,
+          "output_size": 32
+        }
+      }
+    ]
+  },
+  "binary_sha256": {
+    "icuz": "e9be86ed19f4b0db7851f62c6136b75b17a841cc642c4bed0bfe3631528fa05c",
+    "external": "6e4fcf41dfe433a810f113ddf553e114b4c168b9cdb38ddc2c7a0f2a2ae19619",
+    "baseline": "b0e06e46135033020b602638987be43ff10eb0a612c802d2b11f5ef02d79f747"
+  },
+  "source_sha256": {
+    "build.zig": "d4c6f33f2588051ece3c8c73ca8ae817778b6b009e32014e0871c1b228e701ad",
+    "bench/utf8/compare.py": "e987122f8cf659c8957c3a09cd8d7ee9a834309dd287922a179742d3f66fd7e5",
+    "src/unicode/utf16.zig": "e4d4126c2d81e4b6258c240e9310ba412a0198acab8321e6180d22ba484e0df5",
+    "src/unicode/utf/blocks.zig": "4e8afeab7005a42f3ff93621a6104e96ead27d3ac6dfb7fe462a913e2f819e73",
+    "src/unicode/utf/bmp_pack.zig": "a7d2a2cf72427a8facaed45dcf7adc1fdd0416fbdeae33c5cc06c477007e902f",
+    "src/unicode/utf/convert/latin_decode.zig": "75db4c0bc97eac81e9e8ad938c37bbb27626bd2cca1ddaad8c1e71113de3169e",
+    "src/unicode/utf/convert/packing_tests.zig": "fd558bc05066b2e88e6b46b853691359d92a128996a9e0eacf24d3537a68b370",
+    "src/unicode/utf/convert/to_utf16.zig": "f1997c66f100b42972d4a18572635158c7baa5c40836aa7dbb6fe8d776c8e1d5",
+    "src/unicode/utf/convert/to_utf8.zig": "d83a65a97af1af1539257c0b2ec14b3df8ad822fe629c9747d2fff277dbe2090",
+    "src/unicode/utf/decode_blocks.zig": "7d0858fa87fcc7ff820df8bf38bbbb9e06f1cc0fe1f1408330e75faffb598b13",
+    "src/unicode/utf/encode_blocks.zig": "38878c25871d79ecdd3266c8c056dbb94b4645645fff775d36527a798347f702",
+    "src/unicode/utf/tests.zig": "238efeac575caf60ef1908b376db93a53df8a86c7f9b4e687e3bd6505c253ec0",
+    "src/unicode/utf/transcode.zig": "3e174269fabdcfdaf76c7f0a1985287dff692d23201e14f20f1e1159e9f83654",
+    "src/unicode/utf/validate16.zig": "47085083cdd4a60e83c15fe742b6ece2c1cf78dd86bbc151204e856e1e75cdc0",
+    "src/unicode/scalar/cursor.zig": "77a82a18f34f05edc2af8ea96fb5597c1bad3118422d5c4a969728b3647bf775",
+    "src/unicode/scalar/root.zig": "1ddbbe10d403f20f6ece01c586f8a94d980a05fe83326ae6c9407eb38fdf88bb",
+    "src/unicode/scalar/validate.zig": "5073c8d3d0b84aba57d41bcb2ea19c23d00e9730c1725a1de2d82f351bbcbf29",
+    "src/unicode/scalar/validation/avx2.zig": "17fc7621c4573be17a5de32544d64f0e771951d0cb40b29590c3cbb4a467f8d6",
+    "src/unicode/scalar/validation/scalar.zig": "3d5f0b8cc5d7e42fc68365162bec7c82e124f53f0f8fa64d45e76ff1dc361afb",
+    "src/unicode/scalar/validation/tests.zig": "67d7e7959873824b897bcf80530d1916f9edd382280f3e4dcc010bc47c4ca143",
+    "src/unicode/scalar/validation/vector.zig": "9425b39b8896ff6ed9b0a08fc6655de6b9850a1eac9d91834a1613e81d318822",
+    "bench/utf16/bench.zig": "1b48faaa99d01d8769f7a9a01c6adae3f39389aa3bc5890acfa2708936f2438b",
+    "bench/utf16/compare.cpp": "2eced3238ec4c68c50eefd7b92ee4cf98eeb665b84036876ed68859805056088",
+    "bench/utf16/compare.py": "b1d6726822d29b6ccfa8177bd780c90451ee55438d39da412fa648e479b5ba51"
+  },
+  "inputs": {
+    "ascii-32": {
+      "bytes": 56,
+      "utf16_units": 56,
+      "sha256": "bff7973f9c24dd5096dbffaa9ef8978ac4fe0321ee6573c12c7e7a1de6a56fea"
+    },
+    "ascii-128": {
+      "bytes": 168,
+      "utf16_units": 168,
+      "sha256": "ec4478da5f200daf669a8e3028fc8850f2ffeb4009b6191b76c884d57b0afa4b"
+    },
+    "ascii-4096": {
+      "bytes": 4144,
+      "utf16_units": 4144,
+      "sha256": "ca294895a6ecc38abe166f6e7f77b7731c2726573f452b2e145c292c2d5a0f3a"
+    },
+    "latin-32": {
+      "bytes": 52,
+      "utf16_units": 40,
+      "sha256": "5f60756737a2bbdce57ac5fa451ac7e31ae51c18b0cb8257694d8c281ba1c26d"
+    },
+    "latin-128": {
+      "bytes": 156,
+      "utf16_units": 120,
+      "sha256": "bc939d04e9d580831923d3ee54d0a7d556a53e530c82c85004c630cee7318256"
+    },
+    "latin-4096": {
+      "bytes": 4108,
+      "utf16_units": 3160,
+      "sha256": "c70f846985befeee33be972bfbf6879e017761e531b0881aad537c86b4b0c8a0"
+    },
+    "chinese-32": {
+      "bytes": 36,
+      "utf16_units": 12,
+      "sha256": "37dfa23f72945064c3a9b43e82fc3e650eeb5ab9ab171c24ecd1aeda3027c752"
+    },
+    "chinese-128": {
+      "bytes": 144,
+      "utf16_units": 48,
+      "sha256": "78dff5e2a2b623d483666273652c62046d8d3f299542e481270d7adc6e08c033"
+    },
+    "chinese-4096": {
+      "bytes": 4104,
+      "utf16_units": 1368,
+      "sha256": "f691255b9ca8da10dcd951466fd5e7f342cb898e2c0958394db0dd6d8e5b5aa7"
+    },
+    "mixed-32": {
+      "bytes": 106,
+      "utf16_units": 66,
+      "sha256": "3751fc760949781ecacba495455150428efc0331794eff29d2449f244b499faf"
+    },
+    "mixed-128": {
+      "bytes": 212,
+      "utf16_units": 132,
+      "sha256": "5d7df78571bdaf4d33c30a9d1c8349114d4e94140a5a4c6f721ee9b2bfbd271d"
+    },
+    "mixed-4096": {
+      "bytes": 4134,
+      "utf16_units": 2574,
+      "sha256": "55b3974224ff60248cdead3fcc84cab955dce038999e77c5655449898768ea83"
+    },
+    "emoji-32": {
+      "bytes": 48,
+      "utf16_units": 24,
+      "sha256": "5068c78388a70a3c0b4102b3a8cc89dee3a25d4060387d458e1570560134f630"
+    },
+    "emoji-128": {
+      "bytes": 144,
+      "utf16_units": 72,
+      "sha256": "8e0d3dcec6598f7653e81684ceb4edebebc67e20204a7cef08d8d9cbe757436f"
+    },
+    "emoji-4096": {
+      "bytes": 4104,
+      "utf16_units": 2052,
+      "sha256": "02f8faaee0871c53e7eee84039f7198d495669f2a0820e03a817afe2fc17701b"
+    },
+    "tiny-ascii-31": {
+      "bytes": 31,
+      "utf16_units": 31,
+      "sha256": "ce32c090e5e13b6e5967e71e0d0025ca61fb6bcd54502221e354535ee7504fbe"
+    },
+    "tiny-emoji-31": {
+      "bytes": 32,
+      "utf16_units": 16,
+      "sha256": "88bae5eaa541ed5df706988ebea3fad696716f45b3ae1dfb22556efbd9c87025"
+    }
+  }
+}

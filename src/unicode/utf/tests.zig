@@ -4,6 +4,28 @@ const conversion = @import("transcode.zig");
 const validation = @import("validate16.zig");
 const big_endian = @import("builtin").cpu.arch.endian() == .big;
 
+test {
+    _ = @import("convert/packing_tests.zig");
+}
+
+test "UTF conversion rejects unpaired surrogates in every classified span" {
+    const a = std.testing.allocator;
+    var output = std.ArrayList(u8).empty;
+    defer output.deinit(a);
+    try output.ensureTotalCapacity(a, 256);
+    var failed = std.testing.FailingAllocator.init(a, .{ .fail_index = 0 });
+    for ([_]u16{ 0xd800, 0xdbff, 0xdc00, 0xdfff }) |bad| {
+        for (0..33) |position| {
+            var units = [_]u16{0x41} ** 33;
+            units[position] = bad;
+            output.clearRetainingCapacity();
+            try output.appendSlice(a, "prefix");
+            try std.testing.expectError(error.InvalidUtf16, conversion.utf16ToUtf8Into(failed.allocator(), &units, &output));
+            try std.testing.expectEqualStrings("prefix", output.items);
+        }
+    }
+}
+
 test "UTF conversion stays inside guarded input and exact output buffers" {
     if (comptime @import("builtin").os.tag != .linux or @import("builtin").cpu.arch.endian() != .little) return error.SkipZigTest;
     const page = std.heap.pageSize();
@@ -50,46 +72,6 @@ test "UTF conversion stays inside guarded input and exact output buffers" {
         var narrow = std.ArrayList(u8){ .items = bytes[0..0], .capacity = bytes.len };
         try std.testing.expectError(error.InvalidUtf16, conversion.utf16ToUtf8Into(failed.allocator(), units, &narrow));
         try std.testing.expectEqual(@as(usize, 0), narrow.items.len);
-    }
-}
-
-test "UTF conversion packs every BMP width combination into exact buffers" {
-    const values = [_]u16{ 0x00, 0x7f, 0x80, 0x7ff, 0x800, 0xd7ff, 0xe000, 0xffff };
-    var output_storage: [32]u8 = undefined;
-    var expected: [12]u8 = undefined;
-    var units: [4]u16 = undefined;
-    var failed = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
-    for (0..4096) |number| {
-        var value = number;
-        for (&units) |*unit| {
-            unit.* = values[value % values.len];
-            value /= values.len;
-        }
-        var little_units = units;
-        if (comptime big_endian) for (&little_units) |*unit| {
-            unit.* = @byteSwap(unit.*);
-        };
-        const count = try std.unicode.utf16LeToUtf8(&expected, &little_units);
-        for ([_]usize{ count, output_storage.len }) |capacity| {
-            var output = std.ArrayList(u8){ .items = output_storage[0..0], .capacity = capacity };
-            try conversion.utf16ToUtf8Into(failed.allocator(), &units, &output);
-            try std.testing.expectEqualSlices(u8, expected[0..count], output.items);
-        }
-    }
-    for (0..256) |mask| {
-        var latin: [8]u16 = undefined;
-        for (&latin, 0..) |*unit, i| unit.* = if ((mask >> @intCast(i)) & 1 != 0) @intCast(0x80 + (i * 17)) else @intCast(i * 13);
-        var reference_bytes: [16]u8 = undefined;
-        var little_latin = latin;
-        if (comptime big_endian) for (&little_latin) |*unit| {
-            unit.* = @byteSwap(unit.*);
-        };
-        const count = try std.unicode.utf16LeToUtf8(&reference_bytes, &little_latin);
-        for ([_]usize{ count, output_storage.len }) |capacity| {
-            var output = std.ArrayList(u8){ .items = output_storage[0..0], .capacity = capacity };
-            try conversion.utf16ToUtf8Into(failed.allocator(), &latin, &output);
-            try std.testing.expectEqualSlices(u8, reference_bytes[0..count], output.items);
-        }
     }
 }
 

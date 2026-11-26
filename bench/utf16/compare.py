@@ -30,7 +30,6 @@ def run(binary, paths, cpu):
                 "input_bytes": int(size), "ns_op": float(ns), "output_size": int(output_size)}
         elif line.startswith("simdutf "):
             versions.append(line)
-            print(line)
     if not rows:
         raise RuntimeError(f"no results from {binary}")
     return rows, versions
@@ -40,9 +39,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--icuz", required=True)
     parser.add_argument("--baseline")
+    parser.add_argument("--baseline-reuse", action="store_true",
+                        help="The baseline also provides the reusable-buffer API")
     parser.add_argument("--external", required=True)
     parser.add_argument("--cpu", type=int, default=2)
     parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument("--interleave-cases", action="store_true",
+                        help="Run libraries sequentially for each input to reduce load drift")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.rounds < 1:
@@ -64,10 +67,18 @@ def main():
             order = list(binaries)
             if number % 2:
                 order.reverse()
+            current = {library: {} for library in order}
+            groups = [[path] for path in paths] if args.interleave_cases else [paths]
+            for group in groups:
+                for library in order:
+                    rows, current_versions = run(binaries[library], group, args.cpu)
+                    if current[library].keys() & rows.keys():
+                        raise RuntimeError(f"duplicate conversion rows from {library}")
+                    current[library].update(rows)
+                    versions.extend(current_versions)
             for library in order:
-                rows, current_versions = run(binaries[library], paths, args.cpu)
-                versions.extend(current_versions)
-                contracts = ("simdutf", "icu") if library == "external" else ("alloc",) if library == "baseline" else ("alloc", "reuse")
+                rows = current[library]
+                contracts = ("simdutf", "icu") if library == "external" else ("alloc",) if library == "baseline" and not args.baseline_reuse else ("alloc", "reuse")
                 required = {f"{name}/{direction}/{contract}" for name, _ in inputs
                             for direction in ("utf8-to-utf16", "utf16-to-utf8") for contract in contracts}
                 if set(rows) != required:
@@ -80,9 +91,12 @@ def main():
                         raise RuntimeError(f"wrong conversion result: {library} {key}")
                 samples[library].append(rows)
     root = Path(__file__).resolve().parents[2]
-    sources = [root / "src/unicode/utf16.zig", *sorted((root / "src/unicode/utf").rglob("*.zig")),
+    sources = [root / "build.zig", root / "bench/utf8/compare.py",
+               root / "src/unicode/utf16.zig", *sorted((root / "src/unicode/utf").rglob("*.zig")),
+               *sorted((root / "src/unicode/scalar").rglob("*.zig")),
                *sorted(Path(__file__).parent.glob("*.*"))]
     data = {"cpu": args.cpu, "rounds": args.rounds, "trials": 5,
+            "interleave_cases": args.interleave_cases,
             "versions": sorted(set(versions)), "bytes_per_trial": 8 * 1024 * 1024,
             "binaries": binaries, "samples": samples,
             "binary_sha256": {name: hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -92,6 +106,8 @@ def main():
             "inputs": {name: {"bytes": len(text), "utf16_units": len(text.decode().encode("utf-16-le"))//2,
                               "sha256": hashlib.sha256(text).hexdigest()} for name, text in inputs}}
     args.output.write_text(json.dumps(data, indent=2) + "\n")
+    for version in sorted(set(versions)):
+        print(version)
     for name, text in inputs:
         for direction in ("utf8-to-utf16", "utf16-to-utf8"):
             prefix = name + "/" + direction + "/"

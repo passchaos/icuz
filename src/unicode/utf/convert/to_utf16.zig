@@ -2,9 +2,26 @@
 const scalar = @import("../../scalar/root.zig");
 const blocks = @import("../blocks.zig");
 const ascii = @import("../../scalar/validation/scalar.zig");
+const latin = @import("latin_decode.zig");
 const Error = error{InvalidUtf8};
 
-pub fn convert(comptime checked: bool, text: []const u8, output: []u16) Error!usize {
+pub inline fn convert(comptime checked: bool, text: []const u8, output: []u16) Error!usize {
+    if (comptime latin.supported) {
+        // Below 32 bytes, the existing block/tail path amortizes less setup.
+        if (text.len >= 32 and text[0] < 0xe0) {
+            const B = @Vector(16, u8);
+            const bytes = @as(*align(1) const B, @ptrCast(text.ptr)).*;
+            if (@reduce(.Or, bytes >= @as(B, @splat(0x80))) and @reduce(.And, bytes < @as(B, @splat(0xe0)))) {
+                const run = latin.run(checked, text, output) orelse return error.InvalidUtf8;
+                return run.written + try general(checked, text[run.consumed..], output[run.written..]);
+            }
+        }
+    }
+    if (checked and text.len < 256) return @call(.always_inline, general, .{ checked, text, output });
+    return @call(.never_inline, general, .{ checked, text, output });
+}
+
+fn general(comptime checked: bool, text: []const u8, output: []u16) Error!usize {
     var index: usize = 0;
     var written: usize = 0;
     input_loop: while (index < text.len) {
