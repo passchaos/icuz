@@ -15,8 +15,8 @@ nanoseconds per input byte (or per operation) for the same operations.
 - Snapshot: the numbers below were collected at commit `20d21cc`
   (2026-11-26), with the Georgian rows refreshed at `37c0931` and
   `87f30ff`, the collation contract rows at `0de0c61`, the IDNA row at
-  `48c63a2`, and the Chinese compare rows at `6d7179a`. Re-run the commands
-  under "Reproduce" to refresh them.
+  `48c63a2`, and the Chinese and UTF-16 compare rows at `a2308c1`. Re-run
+  the commands under "Reproduce" to refresh them.
 - Inputs: ASCII, mixed-script prose (Latin + CJK + emoji + combining marks +
   Hebrew + Arabic + Devanagari + Hangul), Chinese, Japanese, Thai, Swedish,
   German, Greek, Russian, and the conformance corpora.
@@ -81,6 +81,8 @@ where the reported unit is the UTF-8 input byte.
 | UCA compare mixed early (assume valid) | 3.842 ns/op | 8.812 ns/op | 2.29x |
 | UCA compare Chinese long (assume valid) | 105.576 ns/op | 187.232 ns/op | 1.77x |
 | UCA compare Swedish (assume valid) | 6.014 ns/op | 135.340 ns/op | 22.50x |
+| UCA compare mixed (UTF-16) | 5.093 ns/op | 48.793 ns/op | 9.58x |
+| UCA compare mixed early (UTF-16) | 2.765 ns/op | 8.780 ns/op | 3.18x |
 
 ### Charset conversion
 
