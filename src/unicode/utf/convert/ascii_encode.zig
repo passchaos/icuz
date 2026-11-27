@@ -54,6 +54,25 @@ pub fn partialPrefix(units: []const u16, output: []u8) usize {
 
 inline fn prefixFrom(comptime copied: usize, comptime partial: bool, units: []const u16, output: []u8) usize {
     var index: usize = copied;
+    // Two independent thirty-two-unit checks keep the widest ASCII windows
+    // at one branch per sixty-four units without a sixty-four-lane reduce.
+    {
+        const U = @Vector(32, u16);
+        while (index + 64 <= units.len) {
+            const a = load(32, units, index);
+            const b = load(32, units, index + 32);
+            if (!@reduce(.And, a < @as(U, @splat(0x80)))) {
+                if (!partial and index == 0) return 0;
+                return if (partial) mixedBody(32, a, output, index) else mixed(32, a, output, index);
+            }
+            store(32, output, index, a);
+            if (!@reduce(.And, b < @as(U, @splat(0x80)))) {
+                return if (partial) mixedBody(32, b, output, index + 32) else mixed(32, b, output, index + 32);
+            }
+            store(32, output, index + 32, b);
+            index += 64;
+        }
+    }
     inline for (.{ 32, 16, 8, 4 }) |n| {
         const U = @Vector(n, u16);
         while (index + n <= units.len) {
