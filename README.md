@@ -654,6 +654,8 @@ The [sixteen-unit BMP profile](docs/performance/utf-bmp-16unit-2026-11-27.md)
 measures the wide mixed-run packer and the stripped benchmark configuration.
 The [ICU 78.3 suite validation](docs/performance/icu78-suite-validation-2026-11-27.md)
 re-checks every fair-comparison row against the latest ICU release.
+The [UTF-16 validation profile](docs/performance/utf16-validation-2026-11-27.md)
+adds the pair-mask validator and its simdutf comparison.
 
 ## Performance notes
 

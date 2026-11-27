@@ -1,0 +1,700 @@
+{
+ "date": "2026-11-27",
+ "cpu": 2,
+ "rounds": 3,
+ "trials": 5,
+ "commit": "192ef2c",
+ "libraries": {
+  "old": {
+   "description": "previous 16-unit scan validator"
+  },
+  "new": {
+   "description": "32-unit pair-mask validator with 16-unit short stage"
+  },
+  "simdutf": {
+   "version": "9.5.0 haswell",
+   "source": "/tmp/icuz-simdutf-9.5.0",
+   "commit": "9064366fa571fac03bcd28db35af597e97fba842"
+  }
+ },
+ "rounds_data": {
+  "old": [
+   {
+    "ascii-4096.bin": {
+     "units": 4144,
+     "ns_op": 150.41996
+    },
+    "latin-4096.bin": {
+     "units": 3160,
+     "ns_op": 120.791635
+    },
+    "chinese-4096.bin": {
+     "units": 1368,
+     "ns_op": 59.592955
+    },
+    "mixed-4096.bin": {
+     "units": 2574,
+     "ns_op": 143.135973
+    },
+    "emoji-4096.bin": {
+     "units": 2052,
+     "ns_op": 203.202789
+    },
+    "mixed-random-4096.bin": {
+     "units": 2346,
+     "ns_op": 205.542657
+    },
+    "mixed-transitions-4096.bin": {
+     "units": 2051,
+     "ns_op": 186.829829
+    },
+    "mixed-surrogate-heavy-4096.bin": {
+     "units": 2049,
+     "ns_op": 169.106253
+    },
+    "mixed-sparse-4096.bin": {
+     "units": 3914,
+     "ns_op": 151.508166
+    },
+    "mixed-dense-to-sparse-4096.bin": {
+     "units": 3819,
+     "ns_op": 156.997268
+    },
+    "mixed-sparse-65536.bin": {
+     "units": 62090,
+     "ns_op": 2374.6335
+    },
+    "mixed-dense-to-sparse-65536.bin": {
+     "units": 61988,
+     "ns_op": 2347.2465
+    },
+    "mixed-random-65536.bin": {
+     "units": 38011,
+     "ns_op": 3109.8235
+    },
+    "mixed-surrogate-heavy-65536.bin": {
+     "units": 32809,
+     "ns_op": 2679.9735
+    },
+    "tiny-ascii-31.bin": {
+     "units": 31,
+     "ns_op": 8.112376
+    },
+    "tiny-emoji-31.bin": {
+     "units": 16,
+     "ns_op": 1.749947
+    },
+    "mixed-32.bin": {
+     "units": 66,
+     "ns_op": 4.825775
+    },
+    "mixed-128.bin": {
+     "units": 132,
+     "ns_op": 9.547836
+    }
+   },
+   {
+    "ascii-4096.bin": {
+     "units": 4144,
+     "ns_op": 139.079545
+    },
+    "latin-4096.bin": {
+     "units": 3160,
+     "ns_op": 111.788244
+    },
+    "chinese-4096.bin": {
+     "units": 1368,
+     "ns_op": 50.084475
+    },
+    "mixed-4096.bin": {
+     "units": 2574,
+     "ns_op": 135.954266
+    },
+    "emoji-4096.bin": {
+     "units": 2052,
+     "ns_op": 193.067515
+    },
+    "mixed-random-4096.bin": {
+     "units": 2346,
+     "ns_op": 200.450629
+    },
+    "mixed-transitions-4096.bin": {
+     "units": 2051,
+     "ns_op": 182.112958
+    },
+    "mixed-surrogate-heavy-4096.bin": {
+     "units": 2049,
+     "ns_op": 164.903762
+    },
+    "mixed-sparse-4096.bin": {
+     "units": 3914,
+     "ns_op": 147.70742
+    },
+    "mixed-dense-to-sparse-4096.bin": {
+     "units": 3819,
+     "ns_op": 153.097905
+    },
+    "mixed-sparse-65536.bin": {
+     "units": 62090,
+     "ns_op": 2394.5915
+    },
+    "mixed-dense-to-sparse-65536.bin": {
+     "units": 61988,
+     "ns_op": 2354.475
+    },
+    "mixed-random-65536.bin": {
+     "units": 38011,
+     "ns_op": 3118.952
+    },
+    "mixed-surrogate-heavy-65536.bin": {
+     "units": 32809,
+     "ns_op": 2704.678
+    },
+    "tiny-ascii-31.bin": {
+     "units": 31,
+     "ns_op": 8.077373
+    },
+    "tiny-emoji-31.bin": {
+     "units": 16,
+     "ns_op": 1.750587
+    },
+    "mixed-32.bin": {
+     "units": 66,
+     "ns_op": 4.826271
+    },
+    "mixed-128.bin": {
+     "units": 132,
+     "ns_op": 9.577561
+    }
+   },
+   {
+    "ascii-4096.bin": {
+     "units": 4144,
+     "ns_op": 139.140316
+    },
+    "latin-4096.bin": {
+     "units": 3160,
+     "ns_op": 111.741522
+    },
+    "chinese-4096.bin": {
+     "units": 1368,
+     "ns_op": 48.366601
+    },
+    "mixed-4096.bin": {
+     "units": 2574,
+     "ns_op": 135.963781
+    },
+    "emoji-4096.bin": {
+     "units": 2052,
+     "ns_op": 193.579256
+    },
+    "mixed-random-4096.bin": {
+     "units": 2346,
+     "ns_op": 200.452867
+    },
+    "mixed-transitions-4096.bin": {
+     "units": 2051,
+     "ns_op": 182.028606
+    },
+    "mixed-surrogate-heavy-4096.bin": {
+     "units": 2049,
+     "ns_op": 164.910601
+    },
+    "mixed-sparse-4096.bin": {
+     "units": 3914,
+     "ns_op": 147.760616
+    },
+    "mixed-dense-to-sparse-4096.bin": {
+     "units": 3819,
+     "ns_op": 152.992259
+    },
+    "mixed-sparse-65536.bin": {
+     "units": 62090,
+     "ns_op": 2372.7055
+    },
+    "mixed-dense-to-sparse-65536.bin": {
+     "units": 61988,
+     "ns_op": 2364.243
+    },
+    "mixed-random-65536.bin": {
+     "units": 38011,
+     "ns_op": 3102.0585
+    },
+    "mixed-surrogate-heavy-65536.bin": {
+     "units": 32809,
+     "ns_op": 2677.593
+    },
+    "tiny-ascii-31.bin": {
+     "units": 31,
+     "ns_op": 8.006626
+    },
+    "tiny-emoji-31.bin": {
+     "units": 16,
+     "ns_op": 1.749922
+    },
+    "mixed-32.bin": {
+     "units": 66,
+     "ns_op": 4.855319
+    },
+    "mixed-128.bin": {
+     "units": 132,
+     "ns_op": 9.588419
+    }
+   }
+  ],
+  "new": [
+   {
+    "ascii-4096.bin": {
+     "units": 4144,
+     "ns_op": 73.626976
+    },
+    "latin-4096.bin": {
+     "units": 3160,
+     "ns_op": 62.761869
+    },
+    "chinese-4096.bin": {
+     "units": 1368,
+     "ns_op": 29.526908
+    },
+    "mixed-4096.bin": {
+     "units": 2574,
+     "ns_op": 96.28054
+    },
+    "emoji-4096.bin": {
+     "units": 2052,
+     "ns_op": 108.700098
+    },
+    "mixed-random-4096.bin": {
+     "units": 2346,
+     "ns_op": 123.668811
+    },
+    "mixed-transitions-4096.bin": {
+     "units": 2051,
+     "ns_op": 113.895599
+    },
+    "mixed-surrogate-heavy-4096.bin": {
+     "units": 2049,
+     "ns_op": 113.715681
+    },
+    "mixed-sparse-4096.bin": {
+     "units": 3914,
+     "ns_op": 101.848343
+    },
+    "mixed-dense-to-sparse-4096.bin": {
+     "units": 3819,
+     "ns_op": 93.386157
+    },
+    "mixed-sparse-65536.bin": {
+     "units": 62090,
+     "ns_op": 2034.381
+    },
+    "mixed-dense-to-sparse-65536.bin": {
+     "units": 61988,
+     "ns_op": 2021.576
+    },
+    "mixed-random-65536.bin": {
+     "units": 38011,
+     "ns_op": 2160.131
+    },
+    "mixed-surrogate-heavy-65536.bin": {
+     "units": 32809,
+     "ns_op": 2279.0275
+    },
+    "tiny-ascii-31.bin": {
+     "units": 31,
+     "ns_op": 6.109372
+    },
+    "tiny-emoji-31.bin": {
+     "units": 16,
+     "ns_op": 1.87339
+    },
+    "mixed-32.bin": {
+     "units": 66,
+     "ns_op": 4.418859
+    },
+    "mixed-128.bin": {
+     "units": 132,
+     "ns_op": 9.008702
+    }
+   },
+   {
+    "ascii-4096.bin": {
+     "units": 4144,
+     "ns_op": 73.603755
+    },
+    "latin-4096.bin": {
+     "units": 3160,
+     "ns_op": 63.205727
+    },
+    "chinese-4096.bin": {
+     "units": 1368,
+     "ns_op": 27.823875
+    },
+    "mixed-4096.bin": {
+     "units": 2574,
+     "ns_op": 94.015654
+    },
+    "emoji-4096.bin": {
+     "units": 2052,
+     "ns_op": 108.767613
+    },
+    "mixed-random-4096.bin": {
+     "units": 2346,
+     "ns_op": 123.701259
+    },
+    "mixed-transitions-4096.bin": {
+     "units": 2051,
+     "ns_op": 113.890954
+    },
+    "mixed-surrogate-heavy-4096.bin": {
+     "units": 2049,
+     "ns_op": 113.702003
+    },
+    "mixed-sparse-4096.bin": {
+     "units": 3914,
+     "ns_op": 101.988801
+    },
+    "mixed-dense-to-sparse-4096.bin": {
+     "units": 3819,
+     "ns_op": 93.349271
+    },
+    "mixed-sparse-65536.bin": {
+     "units": 62090,
+     "ns_op": 2061.17
+    },
+    "mixed-dense-to-sparse-65536.bin": {
+     "units": 61988,
+     "ns_op": 2024.278
+    },
+    "mixed-random-65536.bin": {
+     "units": 38011,
+     "ns_op": 2178.507
+    },
+    "mixed-surrogate-heavy-65536.bin": {
+     "units": 32809,
+     "ns_op": 2296.5225
+    },
+    "tiny-ascii-31.bin": {
+     "units": 31,
+     "ns_op": 6.120798
+    },
+    "tiny-emoji-31.bin": {
+     "units": 16,
+     "ns_op": 1.878813
+    },
+    "mixed-32.bin": {
+     "units": 66,
+     "ns_op": 4.419567
+    },
+    "mixed-128.bin": {
+     "units": 132,
+     "ns_op": 8.998206
+    }
+   },
+   {
+    "ascii-4096.bin": {
+     "units": 4144,
+     "ns_op": 78.083992
+    },
+    "latin-4096.bin": {
+     "units": 3160,
+     "ns_op": 67.547099
+    },
+    "chinese-4096.bin": {
+     "units": 1368,
+     "ns_op": 31.365297
+    },
+    "mixed-4096.bin": {
+     "units": 2574,
+     "ns_op": 95.798036
+    },
+    "emoji-4096.bin": {
+     "units": 2052,
+     "ns_op": 108.452299
+    },
+    "mixed-random-4096.bin": {
+     "units": 2346,
+     "ns_op": 123.676923
+    },
+    "mixed-transitions-4096.bin": {
+     "units": 2051,
+     "ns_op": 113.910269
+    },
+    "mixed-surrogate-heavy-4096.bin": {
+     "units": 2049,
+     "ns_op": 113.649243
+    },
+    "mixed-sparse-4096.bin": {
+     "units": 3914,
+     "ns_op": 101.636491
+    },
+    "mixed-dense-to-sparse-4096.bin": {
+     "units": 3819,
+     "ns_op": 93.369308
+    },
+    "mixed-sparse-65536.bin": {
+     "units": 62090,
+     "ns_op": 2032.223
+    },
+    "mixed-dense-to-sparse-65536.bin": {
+     "units": 61988,
+     "ns_op": 2016.8205
+    },
+    "mixed-random-65536.bin": {
+     "units": 38011,
+     "ns_op": 2166.292
+    },
+    "mixed-surrogate-heavy-65536.bin": {
+     "units": 32809,
+     "ns_op": 2279.732
+    },
+    "tiny-ascii-31.bin": {
+     "units": 31,
+     "ns_op": 6.097147
+    },
+    "tiny-emoji-31.bin": {
+     "units": 16,
+     "ns_op": 1.857401
+    },
+    "mixed-32.bin": {
+     "units": 66,
+     "ns_op": 4.41926
+    },
+    "mixed-128.bin": {
+     "units": 132,
+     "ns_op": 8.902644
+    }
+   }
+  ],
+  "simdutf": [
+   {
+    "ascii-4096.bin": {
+     "units": 4144,
+     "ns_op": 171.149209
+    },
+    "latin-4096.bin": {
+     "units": 3160,
+     "ns_op": 129.331952
+    },
+    "chinese-4096.bin": {
+     "units": 1368,
+     "ns_op": 59.829093
+    },
+    "mixed-4096.bin": {
+     "units": 2574,
+     "ns_op": 118.025783
+    },
+    "emoji-4096.bin": {
+     "units": 2052,
+     "ns_op": 132.948875
+    },
+    "mixed-random-4096.bin": {
+     "units": 2346,
+     "ns_op": 137.102937
+    },
+    "mixed-transitions-4096.bin": {
+     "units": 2051,
+     "ns_op": 120.82934
+    },
+    "mixed-surrogate-heavy-4096.bin": {
+     "units": 2049,
+     "ns_op": 124.440889
+    },
+    "mixed-sparse-4096.bin": {
+     "units": 3914,
+     "ns_op": 155.782081
+    },
+    "mixed-dense-to-sparse-4096.bin": {
+     "units": 3819,
+     "ns_op": 154.330146
+    },
+    "mixed-sparse-65536.bin": {
+     "units": 62090,
+     "ns_op": 2465.5555
+    },
+    "mixed-dense-to-sparse-65536.bin": {
+     "units": 61988,
+     "ns_op": 2487.8575
+    },
+    "mixed-random-65536.bin": {
+     "units": 38011,
+     "ns_op": 2275.1945
+    },
+    "mixed-surrogate-heavy-65536.bin": {
+     "units": 32809,
+     "ns_op": 2316.493
+    },
+    "tiny-ascii-31.bin": {
+     "units": 31,
+     "ns_op": 21.190436
+    },
+    "tiny-emoji-31.bin": {
+     "units": 16,
+     "ns_op": 22.889969
+    },
+    "mixed-32.bin": {
+     "units": 66,
+     "ns_op": 7.349701
+    },
+    "mixed-128.bin": {
+     "units": 132,
+     "ns_op": 11.276239
+    }
+   },
+   {
+    "ascii-4096.bin": {
+     "units": 4144,
+     "ns_op": 175.368083
+    },
+    "latin-4096.bin": {
+     "units": 3160,
+     "ns_op": 136.108892
+    },
+    "chinese-4096.bin": {
+     "units": 1368,
+     "ns_op": 58.019733
+    },
+    "mixed-4096.bin": {
+     "units": 2574,
+     "ns_op": 117.69736
+    },
+    "emoji-4096.bin": {
+     "units": 2052,
+     "ns_op": 133.25
+    },
+    "mixed-random-4096.bin": {
+     "units": 2346,
+     "ns_op": 137.081399
+    },
+    "mixed-transitions-4096.bin": {
+     "units": 2051,
+     "ns_op": 120.852078
+    },
+    "mixed-surrogate-heavy-4096.bin": {
+     "units": 2049,
+     "ns_op": 124.290425
+    },
+    "mixed-sparse-4096.bin": {
+     "units": 3914,
+     "ns_op": 155.69622
+    },
+    "mixed-dense-to-sparse-4096.bin": {
+     "units": 3819,
+     "ns_op": 154.358379
+    },
+    "mixed-sparse-65536.bin": {
+     "units": 62090,
+     "ns_op": 2466.135
+    },
+    "mixed-dense-to-sparse-65536.bin": {
+     "units": 61988,
+     "ns_op": 2481.974
+    },
+    "mixed-random-65536.bin": {
+     "units": 38011,
+     "ns_op": 2275.8515
+    },
+    "mixed-surrogate-heavy-65536.bin": {
+     "units": 32809,
+     "ns_op": 2314.9895
+    },
+    "tiny-ascii-31.bin": {
+     "units": 31,
+     "ns_op": 20.967007
+    },
+    "tiny-emoji-31.bin": {
+     "units": 16,
+     "ns_op": 10.551407
+    },
+    "mixed-32.bin": {
+     "units": 66,
+     "ns_op": 7.206373
+    },
+    "mixed-128.bin": {
+     "units": 132,
+     "ns_op": 11.527034
+    }
+   },
+   {
+    "ascii-4096.bin": {
+     "units": 4144,
+     "ns_op": 171.078557
+    },
+    "latin-4096.bin": {
+     "units": 3160,
+     "ns_op": 128.302185
+    },
+    "chinese-4096.bin": {
+     "units": 1368,
+     "ns_op": 59.402968
+    },
+    "mixed-4096.bin": {
+     "units": 2574,
+     "ns_op": 118.15132
+    },
+    "emoji-4096.bin": {
+     "units": 2052,
+     "ns_op": 133.283268
+    },
+    "mixed-random-4096.bin": {
+     "units": 2346,
+     "ns_op": 137.375105
+    },
+    "mixed-transitions-4096.bin": {
+     "units": 2051,
+     "ns_op": 120.785819
+    },
+    "mixed-surrogate-heavy-4096.bin": {
+     "units": 2049,
+     "ns_op": 124.238398
+    },
+    "mixed-sparse-4096.bin": {
+     "units": 3914,
+     "ns_op": 155.776015
+    },
+    "mixed-dense-to-sparse-4096.bin": {
+     "units": 3819,
+     "ns_op": 154.379781
+    },
+    "mixed-sparse-65536.bin": {
+     "units": 62090,
+     "ns_op": 2464.319
+    },
+    "mixed-dense-to-sparse-65536.bin": {
+     "units": 61988,
+     "ns_op": 2474.448
+    },
+    "mixed-random-65536.bin": {
+     "units": 38011,
+     "ns_op": 2276.285
+    },
+    "mixed-surrogate-heavy-65536.bin": {
+     "units": 32809,
+     "ns_op": 2316.106
+    },
+    "tiny-ascii-31.bin": {
+     "units": 31,
+     "ns_op": 20.988732
+    },
+    "tiny-emoji-31.bin": {
+     "units": 16,
+     "ns_op": 8.785667
+    },
+    "mixed-32.bin": {
+     "units": 66,
+     "ns_op": 7.260055
+    },
+    "mixed-128.bin": {
+     "units": 132,
+     "ns_op": 11.52609
+    }
+   }
+  ]
+ },
+ "harness_sha256": {
+  "validate16_bench.zig": "858f564b5c950160b8fbdf7223a243d556c12f98e705883a3d8ae9cf4a18ac2b",
+  "validate16_bench.cpp": "f26730a1bda0c15f478b82e7960c1acb0758515a9058d138feb7c0679444c6cf",
+  "src/unicode/utf/validate16.zig": "cc3a46ff2c53e72e129e80aa4155dba1868a4974c54ffcd5830114e5b94aa5ab"
+ },
+ "note": "Each harness converts the same UTF-8 file to UTF-16 with its own standard converter; unit counts match. Values are ns per validate call, minimum across rounds and five trials."
+}
