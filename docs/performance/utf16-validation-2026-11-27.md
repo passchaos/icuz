@@ -12,6 +12,12 @@ This is a new comparison area: the previous profiles compared UTF-8
 validation, normalization, collation, segmentation, and conversion, but not
 UTF-16 validation against simdutf.
 
+The same pair-mask scan now also computes the exact UTF-8 size and scalar
+count, replacing the old carry-chain scan. `utf8Size` is 1.12-1.69x faster
+on medium and large inputs and `codepointCount` is 1.19-3.07x faster, which
+speeds up the owned conversion path's size pass (for example emoji-4096
+allocation 699.3 to 585.9 ns, surrogate-heavy 64 KiB 62.5 to 55.4 µs).
+
 ## Method and provenance
 
 - Intel Core i9-13900K, logical CPU 2, Linux x86-64; Zig 0.16.0 ReleaseFast
@@ -87,6 +93,42 @@ difference is under 0.2 ns and treated as noise. The thinnest simdutf
 margins (surrogate-heavy 1.02x, random 1.05x, transitions 1.06x) sit inside
 the project's ten-percent parity band; the larger margins are outside it.
 
+## Size and count scans
+
+`utf8Size` (validating size) and `codepointCount` use the same thirty-two
+unit pair masks plus a sixteen-unit stage. The count per window is
+`width + popcount(non_ascii) + popcount(three) - 2 * popcount(leads)`;
+a trailing lead surrogate is deferred to the next window exactly like the
+validator. Values are ns per call, minimum across three rounds.
+
+| Corpus | Old size ns | New size ns | Size ratio | Old count ns | New count ns | Count ratio |
+|---|---:|---:|---:|---:|---:|---:|
+| ascii-4096.bin | 424.72 | 296.60 | 1.43x | 459.71 | 149.67 | 3.07x |
+| chinese-4096.bin | 217.66 | 129.01 | 1.69x | 165.31 | 58.41 | 2.83x |
+| emoji-4096.bin | 528.16 | 315.28 | 1.68x | 384.87 | 194.85 | 1.98x |
+| latin-4096.bin | 711.33 | 428.13 | 1.66x | 372.54 | 123.39 | 3.02x |
+| mixed-128.bin | 30.50 | 24.36 | 1.25x | 18.41 | 15.08 | 1.22x |
+| mixed-32.bin | 15.61 | 12.52 | 1.25x | 9.70 | 8.17 | 1.19x |
+| mixed-4096.bin | 592.71 | 365.36 | 1.62x | 329.71 | 167.27 | 1.97x |
+| mixed-dense-to-sparse-4096.bin | 478.54 | 333.91 | 1.43x | 423.74 | 173.77 | 2.44x |
+| mixed-dense-to-sparse-65536.bin | 5719.32 | 5099.12 | 1.12x | 6157.72 | 2836.33 | 2.17x |
+| mixed-random-4096.bin | 572.07 | 376.64 | 1.52x | 395.32 | 243.87 | 1.62x |
+| mixed-random-65536.bin | 8524.02 | 6026.37 | 1.41x | 5610.68 | 3919.28 | 1.43x |
+| mixed-sparse-4096.bin | 467.88 | 333.95 | 1.40x | 423.55 | 172.75 | 2.45x |
+| mixed-sparse-65536.bin | 7504.92 | 5158.50 | 1.45x | 6702.66 | 2865.22 | 2.34x |
+| mixed-surrogate-heavy-4096.bin | 479.64 | 323.97 | 1.48x | 330.58 | 205.49 | 1.61x |
+| mixed-surrogate-heavy-65536.bin | 7159.72 | 5658.33 | 1.27x | 4823.63 | 3762.13 | 1.28x |
+| mixed-transitions-4096.bin | 497.84 | 331.58 | 1.50x | 354.19 | 217.87 | 1.63x |
+| tiny-ascii-31.bin | 16.81 | 17.53 | 0.96x | 11.88 | 13.02 | 0.91x |
+| tiny-emoji-31.bin | 4.85 | 5.20 | 0.93x | 3.95 | 3.75 | 1.05x |
+
+The owned conversion path calls `utf8Size` before converting, so the
+allocation rows improve with it. An interleaved A/B against the previous
+scan measured mixed-random 64 KiB UTF-16-to-UTF-8 allocation at 85.4 to
+79.9 µs, surrogate-heavy at 62.5 to 55.4 µs, emoji-4096 at 699.3 to
+585.9 ns, and ASCII-4096 at 288.9 to 259.0 ns. Reuse rows are unchanged
+because the warmed caller-buffer path does not run the size pass.
+
 ## Reproduce
 
 ```sh
@@ -106,13 +148,13 @@ order for three rounds and take the per-row minimum.
 
 ## Validation
 
-- Native ReleaseSafe UTF module: 64/64 passed, including a new differential
-  test that compares `isValid` with a scalar oracle over exhaustive
-  surrogate-focused sequences, 20,000 randomized sequences through 160
-  units, and pairs or lone surrogates at every position of every length
-  through 130 units.
-- Full library Debug test step: 539 passed, two environment-gated skips
-  (541 total).
+- Native ReleaseSafe UTF module: 65/65 passed, including differential
+  tests that compare `isValid`, `utf8Size`, and `codepointCount` with
+  scalar oracles over exhaustive surrogate-focused sequences, 20,000
+  randomized sequences through 160 units, and pairs or lone surrogates at
+  every position of every length through 130 units.
+- Full library Debug test step: 540 passed, two environment-gated skips
+  (542 total).
 - AArch64 and big-endian PowerPC64 ReleaseSafe compile-only checks passed;
   the scalar tail covers non-little-endian targets.
 - Formatting checked before sampling.
