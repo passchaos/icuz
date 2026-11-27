@@ -9,12 +9,12 @@ pub const Run = struct { consumed: usize, written: usize };
 
 pub inline fn run(comptime checked: bool, units: []const u16, output: []u8, start: usize) Error!Run {
     if (checked and units.len < 256) return ShortPairs.convert(checked, units, output, start);
-    // Select once for long buffers so dense loops carry no ASCII-run checks.
+    // Classify long buffers at entry before selecting a local run kernel.
     if (units.len >= 256) {
         const U = @Vector(32, u16);
         const v = @as(*align(2) const U, @ptrCast(units.ptr)).*;
         const ascii_mask: u32 = @bitCast(v < @as(U, @splat(0x80)));
-        if (@popCount(ascii_mask) >= 24) return mixedRun(checked, true, units, output, start);
+        if (@popCount(ascii_mask) >= 24) return sparseRun(checked, units, output, start);
         if (checked or units.len < 8192) {
             // Keep scalar-first dispatch for checked or smaller pair-dense buffers.
             const surrogate_mask: u32 = @bitCast((v & @as(U, @splat(0xf800))) == @as(U, @splat(0xd800)));
@@ -24,11 +24,40 @@ pub inline fn run(comptime checked: bool, units: []const u16, output: []u8, star
             }
         }
     }
-    return mixedRun(checked, false, units, output, start);
+    // Exact prevalidated outputs reveal globally sparse text without a scan.
+    // Spare capacity only affects dispatch; both kernels have the same bounds.
+    if (!checked and units.len >= 256 and output.len - start - units.len < units.len / 4) {
+        return mixedRun(checked, true, units, output, start);
+    }
+    return mixedRun(checked, checked, units, output, start);
+}
+
+noinline fn sparseRun(comptime checked: bool, units: []const u16, output: []u8, start: usize) Error!Run {
+    var index: usize = 0;
+    var written = start;
+    while (index < units.len) {
+        const unit = units[index];
+        if (unit < 0x80) {
+            const count = @call(.always_inline, ascii.partialPrefix, .{ units[index..], output[written..] });
+            index += count;
+            written += count;
+            if (count < 32) return .{ .consumed = index, .written = written };
+            continue;
+        }
+        if (unit & 0xf800 == 0xd800) {
+            if (unit >= 0xdc00 or index + 1 == units.len or (checked and units[index + 1] & 0xfc00 != 0xdc00)) return error.InvalidUtf16;
+            written = blocks.writeSurrogatePair(output, written, unit, units[index + 1]);
+            index += 2;
+        } else {
+            written = blocks.writeScalar(output, written, unit);
+            index += 1;
+        }
+    }
+    return .{ .consumed = index, .written = written };
 }
 
 // Keep mixed-width packing local across BMP and surrogate boundaries.
-noinline fn mixedRun(comptime checked: bool, comptime ascii_runs: bool, units: []const u16, output: []u8, start: usize) align(64) Error!Run {
+noinline fn mixedRun(comptime checked: bool, comptime adaptive: bool, units: []const u16, output: []u8, start: usize) align(64) Error!Run {
     var index: usize = 0;
     var written = start;
     while (index + 8 <= units.len) {
@@ -36,22 +65,15 @@ noinline fn mixedRun(comptime checked: bool, comptime ascii_runs: bool, units: [
         if (unit & 0xf800 != 0xd800) {
             const U = @Vector(8, u16);
             const v = @as(*align(2) const U, @ptrCast(units.ptr + index)).*;
-            if (ascii_runs and unit < 0x80 and @reduce(.And, v < @as(U, @splat(0x80))) and index + 32 <= units.len) {
-                const A = @Vector(32, u16);
-                const ascii_units = @as(*align(2) const A, @ptrCast(units.ptr + index)).*;
-                if (@reduce(.And, ascii_units < @as(A, @splat(0x80)))) {
-                    const bytes: @Vector(32, u8) = @truncate(ascii_units);
-                    output[written..][0..32].* = bytes;
-                    const count = @call(.never_inline, ascii.after32, .{ units[index..], output[written..] });
-                    index += count;
-                    written += count;
-                    continue;
-                }
-            }
             const surrogates: u8 = @bitCast((v & @as(U, @splat(0xf800))) == @as(U, @splat(0xd800)));
             if (surrogates == 0) {
-                written = bmp.encode8Valid(output, written, v);
+                const next = bmp.encode8Valid(output, written, v);
                 index += 8;
+                if (adaptive and next == written + 8 and index + 8 <= units.len) {
+                    const following = @as(*align(2) const U, @ptrCast(units.ptr + index)).*;
+                    if (@reduce(.Or, following) < 0x80) return .{ .consumed = index, .written = next };
+                }
+                written = next;
                 continue;
             }
             const prefix = @ctz(surrogates);

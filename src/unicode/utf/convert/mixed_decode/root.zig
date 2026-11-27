@@ -16,6 +16,16 @@ pub inline fn candidate(bytes: B) bool {
         (starts == 0x1111 and values[0] >= 0xf0));
 }
 
+/// Classify a bounded 64-byte window after an ASCII run.
+pub inline fn denseCandidate(text: []const u8) bool {
+    const a = @as(*align(1) const V, @ptrCast(text.ptr)).*;
+    const b = @as(*align(1) const V, @ptrCast(text.ptr + 32)).*;
+    const high_a: u32 = @bitCast(a >= @as(V, @splat(0x80)));
+    const high_b: u32 = @bitCast(b >= @as(V, @splat(0x80)));
+    const first: [32]u8 = a;
+    return @as(usize, @popCount(high_a)) + @popCount(high_b) > 32 and candidate(first[0..16].*);
+}
+
 inline fn shuffle(bytes: B, mask: B) B {
     return asm ("vpshufb %[mask], %[bytes], %[result]"
         : [result] "=x" (-> B),

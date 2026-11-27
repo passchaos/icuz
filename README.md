@@ -647,6 +647,9 @@ The [sparse-run profile](docs/performance/utf16-sparse-runs-2026-11-26.md)
 adds deterministic irregular inputs through 64 KiB and measures specialized ASCII runs.
 The [unified-window profile](docs/performance/utf8-unified-windows-2026-11-26.md)
 records lower branch-miss counts and shared BMP/supplementary decoding.
+The [phase-switch profile](docs/performance/utf-phase-switching-2026-11-26.md)
+adds dense-to-sparse and sparse-to-dense inputs, adaptive UTF-16 runs, and
+density-gated UTF-8 window reentry after ASCII prefixes.
 
 ## Performance notes
 

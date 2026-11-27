@@ -44,7 +44,19 @@ test "UTF conversion stays inside guarded input and exact output buffers" {
         try std.testing.expectEqual(std.posix.E.SUCCESS, std.posix.errno(std.os.linux.mprotect(memory.ptr + 2 * page, page, .{})));
     }
     var failed = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
-    const patterns = [_][]const u8{ "A", "é", "éx", "世", "😀", "aé世😀" };
+    const patterns = [_][]const u8{
+        "A",
+        "é",
+        "éx",
+        "世",
+        "😀",
+        "aé世😀",
+        ("A" ** 96) ++ ("aé世😀" ** 16),
+        ("aé世😀" ** 16) ++ ("A" ** 96),
+        ("A" ** 96) ++ ("é" ** 80),
+        ("A" ** 96) ++ ("世" ** 54),
+        ("A" ** 96) ++ ("😀" ** 40),
+    };
     var expected: [512]u16 = undefined;
     var prefix_expected: [512]u16 = undefined;
     const decoder = @import("convert/mixed_decode/root.zig");
@@ -63,6 +75,9 @@ test "UTF conversion stays inside guarded input and exact output buffers" {
             try std.testing.expectEqualSlices(u16, expected[0..count], wide.items);
             // Place the exact input and output ends directly before guards.
             const units: []u16 = @alignCast(std.mem.bytesAsSlice(u16, wide_memory[2 * page - count * 2 .. 2 * page]));
+            var exact_wide = std.ArrayList(u16){ .items = units[0..0], .capacity = units.len };
+            try conversion.utf8ToUtf16Into(failed.allocator(), text, &exact_wide);
+            try std.testing.expectEqualSlices(u16, expected[0..count], exact_wide.items);
             if (comptime decoder.supported) {
                 if (length >= 64) {
                     inline for (.{ true, false }) |checked| {
@@ -99,6 +114,14 @@ test "UTF conversion stays inside guarded input and exact output buffers" {
         const storage = narrow_memory[2 * page - length - 6 .. 2 * page];
         const bytes = storage[6..];
         @memcpy(storage[0..6], "prefix");
+        for (0..length + 1) |position| {
+            if (position < length) units[position] = 0x800;
+            const count = ascii.partialPrefix(units, bytes);
+            try std.testing.expectEqual(position, count);
+            try std.testing.expectEqualSlices(u8, expected_ascii[0..count], bytes[0..count]);
+            try std.testing.expectEqualStrings("prefix", storage[0..6]);
+            if (position < length) units[position] = 'A';
+        }
         for (32..length + 1) |position| {
             if (position < length) units[position] = 0x800;
             @memcpy(bytes[0..32], expected_ascii[0..32]);

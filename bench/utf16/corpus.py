@@ -51,3 +51,8 @@ def cases():
         sizes = (128, 4096, 65536) if kind == "random" else (4096, 65536)
         for minimum in sizes:
             yield f"mixed-{kind}-{minimum}", irregular(kind, minimum)
+    for minimum in (4096, 65536):
+        dense_prefix = irregular("random", 256)
+        sparse_prefix = irregular("sparse", 256)
+        yield f"mixed-dense-to-sparse-{minimum}", dense_prefix + irregular("sparse", minimum - len(dense_prefix))
+        yield f"mixed-sparse-to-dense-{minimum}", sparse_prefix + irregular("random", minimum - len(sparse_prefix))

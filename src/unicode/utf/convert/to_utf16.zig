@@ -70,6 +70,17 @@ fn general(comptime checked: bool, text: []const u8, output: []u16) Error!usize 
                 index += 1;
                 written += 1;
             }
+            if (comptime mixed.supported) {
+                if (index + 64 <= text.len) {
+                    // Reclassify once after an ASCII run. A dense window can
+                    // enter mixed decoding; short bursts keep the ASCII path.
+                    if (mixed.denseCandidate(text[index..])) {
+                        const result = try mixed.run(checked, text[index..], output[written..]);
+                        index += result.consumed;
+                        written += result.written;
+                    }
+                }
+            }
             continue;
         }
         if (text[index] >= 0xc2 and text[index] < 0xe0 and

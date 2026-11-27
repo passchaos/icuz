@@ -1,0 +1,383 @@
+{
+  "cpu": 2,
+  "iterations": 30000,
+  "rounds": 3,
+  "events": [
+    "cpu_core/cycles/u",
+    "cpu_core/instructions/u",
+    "cpu_core/branches/u",
+    "cpu_core/branch-misses/u"
+  ],
+  "order": "6cc9f7f/current, reversed in alternate rounds",
+  "contracts": "strict checked conversion in warmed caller buffers",
+  "compiler": "Zig 0.16.0 ReleaseFast native LLVM, -fstrip for both revisions and directions",
+  "binaries": {
+    "utf16-to-utf8": {
+      "6cc9f7f": "/tmp/icuz-phase-counters/utf16-to-utf8-6cc9f7f",
+      "current": "/tmp/icuz-phase-counters/utf16-to-utf8-current"
+    },
+    "utf8-to-utf16": {
+      "6cc9f7f": "/tmp/icuz-phase-counters/utf8-to-utf16-6cc9f7f",
+      "current": "/tmp/icuz-phase-counters/utf8-to-utf16-current"
+    }
+  },
+  "binary_sha256": {
+    "utf16-to-utf8": {
+      "6cc9f7f": "0a05eb9d30e49b976734ad9b6b5cbf16ebd287337be71d1b8bdfd14e8d1e2882",
+      "current": "5fb273b8f7317c5405417e11756a1437b7486e60c2acb715cc56b4ebf21b3fca"
+    },
+    "utf8-to-utf16": {
+      "6cc9f7f": "ab5be7bbd6fef89328c2be30291d5f70a4e12ed17884c32cfbf1604cbf230668",
+      "current": "6bd1da16a2190a29ae169d68915eef0bd329b5ade1b11b1a068064fcd1cb697a"
+    }
+  },
+  "harness_sha256": {
+    "bench/utf16/profile/bench.zig": "6632db44015e8347270de1487b9adbb48984abcbca996d083b611b021ab90a80",
+    "bench/utf16/profile/to_utf8.zig": "278cd416dac4b87aec7405443f76c79e1fd8d51314a078b790ae537bfac05fb6"
+  },
+  "source_sha256": {
+    "6cc9f7f": {
+      "src/unicode/utf16.zig": "e4d4126c2d81e4b6258c240e9310ba412a0198acab8321e6180d22ba484e0df5",
+      "src/unicode/utf/blocks.zig": "0ac35cc51fa812e17f6cc986d65f828a6d27fd2927b29867df17c038da2762d6",
+      "src/unicode/utf/bmp_pack.zig": "9d25270eee469ed3b80d64c60feec4e77c169bc1ba53a8dab8cf451ac22921fc",
+      "src/unicode/utf/convert/ascii_encode.zig": "32d2eae0f7759659ad70f6ae631248ff236c0ed3edcf3b3e35b8c80c272f758e",
+      "src/unicode/utf/convert/bmp_encode.zig": "b2eeb4d9a31e38eca97559fb8ca9e13b4e90547286531219c680455e4794f7d2",
+      "src/unicode/utf/convert/latin_decode.zig": "baf282a97ba4f87911aadfcda5cbb7f8b13f21c1b112a308ec5bfa63aeede614",
+      "src/unicode/utf/convert/mixed_decode/root.zig": "982e6f2a973ec1816d69ee1fa4b76382f649d75e6936e98e6b769ff7f5082378",
+      "src/unicode/utf/convert/mixed_decode/tables.zig": "55bbf2b6cad3504dd91cecb1bbe99d084bddeae4f4f0f96a8e9bbe1d5fabe6e6",
+      "src/unicode/utf/convert/tests/boundaries.zig": "803de4e810d41e75dab530c6753ca2d71d63d6fcafa1f73e4308cd37f1338e72",
+      "src/unicode/utf/convert/tests/mixed.zig": "db26ae72e51d96b58f11d3f69d5b9e5307626c53bf4fb5557f5784cc08aa156f",
+      "src/unicode/utf/convert/tests/packing.zig": "a4abb255681830df4e1de1923156c09b1d27013775da210556b074cc9700b438",
+      "src/unicode/utf/convert/tests/surrogates.zig": "41252b50cf0d9aae7d3ae1a463ef19f6dcc094c31440c9582e8390bb86a03997",
+      "src/unicode/utf/convert/to_utf16.zig": "08bcbb59d44a3525c555afdbd5f78db171753195d8281bdbbba43704519e604a",
+      "src/unicode/utf/convert/to_utf8.zig": "521b94333b4d23c395b2d642517e65f0415e10da150dbd152813a99159fa12f5",
+      "src/unicode/utf/decode_blocks.zig": "7d0858fa87fcc7ff820df8bf38bbbb9e06f1cc0fe1f1408330e75faffb598b13",
+      "src/unicode/utf/encode_blocks.zig": "4e253b6d57eaabba6be0e8bbd38fc9576c6910950bccb5c1441885a6d763d618",
+      "src/unicode/utf/tests.zig": "56650fa0632c5797808870190040ced99f453ab1fbaf6b09a40e027bf49c8918",
+      "src/unicode/utf/transcode.zig": "d011f81f12457bbb2117874868fb1f8f209314a6d560cbb34f5cb85a2dea621e",
+      "src/unicode/utf/validate16.zig": "47085083cdd4a60e83c15fe742b6ece2c1cf78dd86bbc151204e856e1e75cdc0",
+      "src/unicode/scalar/cursor.zig": "77a82a18f34f05edc2af8ea96fb5597c1bad3118422d5c4a969728b3647bf775",
+      "src/unicode/scalar/root.zig": "1ddbbe10d403f20f6ece01c586f8a94d980a05fe83326ae6c9407eb38fdf88bb",
+      "src/unicode/scalar/validate.zig": "5073c8d3d0b84aba57d41bcb2ea19c23d00e9730c1725a1de2d82f351bbcbf29",
+      "src/unicode/scalar/validation/avx2.zig": "6b3ad4bf9878af6ac1a8c438de5e6448f0a79f52c29044910ea86b9eeb24789f",
+      "src/unicode/scalar/validation/scalar.zig": "3d5f0b8cc5d7e42fc68365162bec7c82e124f53f0f8fa64d45e76ff1dc361afb",
+      "src/unicode/scalar/validation/tests.zig": "67d7e7959873824b897bcf80530d1916f9edd382280f3e4dcc010bc47c4ca143",
+      "src/unicode/scalar/validation/vector.zig": "9425b39b8896ff6ed9b0a08fc6655de6b9850a1eac9d91834a1613e81d318822"
+    },
+    "current": {
+      "src/unicode/utf16.zig": "e4d4126c2d81e4b6258c240e9310ba412a0198acab8321e6180d22ba484e0df5",
+      "src/unicode/utf/blocks.zig": "0ac35cc51fa812e17f6cc986d65f828a6d27fd2927b29867df17c038da2762d6",
+      "src/unicode/utf/bmp_pack.zig": "9d25270eee469ed3b80d64c60feec4e77c169bc1ba53a8dab8cf451ac22921fc",
+      "src/unicode/utf/convert/ascii_encode.zig": "3eb25722910c21e0fdc5d0838f818bb1bb0be0c1c9073fbdd41b393ac90512af",
+      "src/unicode/utf/convert/bmp_encode.zig": "6473916f78a7674289300974ba4999c63f7c67306bfd192a1f30f2d46ed1fd98",
+      "src/unicode/utf/convert/latin_decode.zig": "baf282a97ba4f87911aadfcda5cbb7f8b13f21c1b112a308ec5bfa63aeede614",
+      "src/unicode/utf/convert/mixed_decode/root.zig": "982e6f2a973ec1816d69ee1fa4b76382f649d75e6936e98e6b769ff7f5082378",
+      "src/unicode/utf/convert/mixed_decode/tables.zig": "55bbf2b6cad3504dd91cecb1bbe99d084bddeae4f4f0f96a8e9bbe1d5fabe6e6",
+      "src/unicode/utf/convert/tests/boundaries.zig": "51922bf3ab8647b46aaf8abf86fd4eb688b29e9eeb3c60a2bd419de180655ad8",
+      "src/unicode/utf/convert/tests/mixed.zig": "db26ae72e51d96b58f11d3f69d5b9e5307626c53bf4fb5557f5784cc08aa156f",
+      "src/unicode/utf/convert/tests/packing.zig": "a4abb255681830df4e1de1923156c09b1d27013775da210556b074cc9700b438",
+      "src/unicode/utf/convert/tests/surrogates.zig": "41252b50cf0d9aae7d3ae1a463ef19f6dcc094c31440c9582e8390bb86a03997",
+      "src/unicode/utf/convert/to_utf16.zig": "121041b898fbdc2f23a1a1fb0aa713e9e12effa7734bfea2af6bbddd9d44f67b",
+      "src/unicode/utf/convert/to_utf8.zig": "521b94333b4d23c395b2d642517e65f0415e10da150dbd152813a99159fa12f5",
+      "src/unicode/utf/decode_blocks.zig": "7d0858fa87fcc7ff820df8bf38bbbb9e06f1cc0fe1f1408330e75faffb598b13",
+      "src/unicode/utf/encode_blocks.zig": "4e253b6d57eaabba6be0e8bbd38fc9576c6910950bccb5c1441885a6d763d618",
+      "src/unicode/utf/tests.zig": "699722746fdfe9ae212a6cec634709cb647f29f88a9947a9d9973d1b90e0fc4f",
+      "src/unicode/utf/transcode.zig": "d011f81f12457bbb2117874868fb1f8f209314a6d560cbb34f5cb85a2dea621e",
+      "src/unicode/utf/validate16.zig": "47085083cdd4a60e83c15fe742b6ece2c1cf78dd86bbc151204e856e1e75cdc0",
+      "src/unicode/scalar/cursor.zig": "77a82a18f34f05edc2af8ea96fb5597c1bad3118422d5c4a969728b3647bf775",
+      "src/unicode/scalar/root.zig": "1ddbbe10d403f20f6ece01c586f8a94d980a05fe83326ae6c9407eb38fdf88bb",
+      "src/unicode/scalar/validate.zig": "5073c8d3d0b84aba57d41bcb2ea19c23d00e9730c1725a1de2d82f351bbcbf29",
+      "src/unicode/scalar/validation/avx2.zig": "6b3ad4bf9878af6ac1a8c438de5e6448f0a79f52c29044910ea86b9eeb24789f",
+      "src/unicode/scalar/validation/scalar.zig": "3d5f0b8cc5d7e42fc68365162bec7c82e124f53f0f8fa64d45e76ff1dc361afb",
+      "src/unicode/scalar/validation/tests.zig": "67d7e7959873824b897bcf80530d1916f9edd382280f3e4dcc010bc47c4ca143",
+      "src/unicode/scalar/validation/vector.zig": "9425b39b8896ff6ed9b0a08fc6655de6b9850a1eac9d91834a1613e81d318822"
+    }
+  },
+  "input_sha256": {
+    "mixed-sparse-65536": "93ba8014a4b66bcac5d85d33fe9e6200d8d4f52951ae35014f5e268ad423b60f",
+    "mixed-dense-to-sparse-65536": "a9671412948646e176dcf1b2346e3de985297644905b6f9b138b02df3197b52a",
+    "mixed-sparse-to-dense-65536": "f82903f05b30709a37ae49a42a3896c3e90edf173e0f9e10f71810ae44e4e9aa"
+  },
+  "counts": {
+    "utf16-to-utf8": {
+      "mixed-sparse-65536": {
+        "6cc9f7f": [
+          {
+            "cycles": 1060987275,
+            "instructions": 4368867034,
+            "branches": 528617556,
+            "branch-misses": 21133
+          },
+          {
+            "cycles": 1082643433,
+            "instructions": 4365942249,
+            "branches": 528263669,
+            "branch-misses": 33046
+          },
+          {
+            "cycles": 1084846263,
+            "instructions": 4360573568,
+            "branches": 527638402,
+            "branch-misses": 21045
+          }
+        ],
+        "current": [
+          {
+            "cycles": 847935267,
+            "instructions": 3449780891,
+            "branches": 565405780,
+            "branch-misses": 27735
+          },
+          {
+            "cycles": 847436670,
+            "instructions": 3449620726,
+            "branches": 565379524,
+            "branch-misses": 41658
+          },
+          {
+            "cycles": 848588732,
+            "instructions": 3449635961,
+            "branches": 565382024,
+            "branch-misses": 20149
+          }
+        ]
+      },
+      "mixed-dense-to-sparse-65536": {
+        "6cc9f7f": [
+          {
+            "cycles": 2423312065,
+            "instructions": 8375353247,
+            "branches": 1606545663,
+            "branch-misses": 26582021
+          },
+          {
+            "cycles": 2431187473,
+            "instructions": 8375412676,
+            "branches": 1606557049,
+            "branch-misses": 26712588
+          },
+          {
+            "cycles": 2422198331,
+            "instructions": 8376059129,
+            "branches": 1606681057,
+            "branch-misses": 26620399
+          }
+        ],
+        "current": [
+          {
+            "cycles": 864188293,
+            "instructions": 3521632889,
+            "branches": 575427424,
+            "branch-misses": 23703
+          },
+          {
+            "cycles": 853377005,
+            "instructions": 3521495697,
+            "branches": 575405001,
+            "branch-misses": 21063
+          },
+          {
+            "cycles": 854175381,
+            "instructions": 3521984033,
+            "branches": 575484795,
+            "branch-misses": 23944
+          }
+        ]
+      },
+      "mixed-sparse-to-dense-65536": {
+        "6cc9f7f": [
+          {
+            "cycles": 8172229173,
+            "instructions": 19404305782,
+            "branches": 2382438689,
+            "branch-misses": 145857525
+          },
+          {
+            "cycles": 8225541902,
+            "instructions": 19403975376,
+            "branches": 2382398116,
+            "branch-misses": 147768756
+          },
+          {
+            "cycles": 8224005581,
+            "instructions": 19403828169,
+            "branches": 2382380056,
+            "branch-misses": 147413231
+          }
+        ],
+        "current": [
+          {
+            "cycles": 6793287075,
+            "instructions": 16580533730,
+            "branches": 2208989444,
+            "branch-misses": 121941068
+          },
+          {
+            "cycles": 6816678589,
+            "instructions": 16581544695,
+            "branches": 2209124124,
+            "branch-misses": 122941059
+          },
+          {
+            "cycles": 6714926475,
+            "instructions": 16580777528,
+            "branches": 2209021888,
+            "branch-misses": 121143324
+          }
+        ]
+      }
+    },
+    "utf8-to-utf16": {
+      "mixed-sparse-65536": {
+        "6cc9f7f": [
+          {
+            "cycles": 873809684,
+            "instructions": 4976417651,
+            "branches": 941595162,
+            "branch-misses": 70096
+          },
+          {
+            "cycles": 889653108,
+            "instructions": 4976238786,
+            "branches": 941561328,
+            "branch-misses": 109726
+          },
+          {
+            "cycles": 899907376,
+            "instructions": 4975820021,
+            "branches": 941482090,
+            "branch-misses": 24813
+          }
+        ],
+        "current": [
+          {
+            "cycles": 903500604,
+            "instructions": 5138457118,
+            "branches": 962260817,
+            "branch-misses": 54871
+          },
+          {
+            "cycles": 900882969,
+            "instructions": 5138679610,
+            "branches": 962302475,
+            "branch-misses": 42240
+          },
+          {
+            "cycles": 887146402,
+            "instructions": 5138691419,
+            "branches": 962304684,
+            "branch-misses": 58117
+          }
+        ]
+      },
+      "mixed-sparse-to-dense-65536": {
+        "6cc9f7f": [
+          {
+            "cycles": 25366279306,
+            "instructions": 44058248504,
+            "branches": 9388851847,
+            "branch-misses": 608096610
+          },
+          {
+            "cycles": 25307220247,
+            "instructions": 44058193183,
+            "branches": 9388840037,
+            "branch-misses": 607576383
+          },
+          {
+            "cycles": 25800237518,
+            "instructions": 44058211593,
+            "branches": 9388844088,
+            "branch-misses": 620849128
+          }
+        ],
+        "current": [
+          {
+            "cycles": 3993290188,
+            "instructions": 15840623026,
+            "branches": 1599889266,
+            "branch-misses": 1724382
+          },
+          {
+            "cycles": 3940029687,
+            "instructions": 15841881741,
+            "branches": 1600016378,
+            "branch-misses": 1377995
+          },
+          {
+            "cycles": 3958949723,
+            "instructions": 15841013624,
+            "branches": 1599928713,
+            "branch-misses": 1206928
+          }
+        ]
+      }
+    }
+  },
+  "raw_csv": {
+    "utf16-to-utf8": {
+      "mixed-sparse-65536": {
+        "6cc9f7f": [
+          "# started on Thu Nov 26 23:39:58 2026\n\n1060987275,,cpu_core/cycles/u,266741808,99.00,,\n4368867034,,cpu_core/instructions/u,266741808,99.00,,\n528617556,,cpu_core/branches/u,266741808,99.00,,\n21133,,cpu_core/branch-misses/u,266741808,99.00,,\n",
+          "# started on Thu Nov 26 23:39:59 2026\n\n1082643433,,cpu_core/cycles/u,272562323,99.00,,\n4365942249,,cpu_core/instructions/u,272562323,99.00,,\n528263669,,cpu_core/branches/u,272562323,99.00,,\n33046,,cpu_core/branch-misses/u,272562323,99.00,,\n",
+          "# started on Thu Nov 26 23:39:59 2026\n\n1084846263,,cpu_core/cycles/u,273419027,100.00,,\n4360573568,,cpu_core/instructions/u,273419027,100.00,,\n527638402,,cpu_core/branches/u,273419027,100.00,,\n21045,,cpu_core/branch-misses/u,273419027,100.00,,\n"
+        ],
+        "current": [
+          "# started on Thu Nov 26 23:39:59 2026\n\n847935267,,cpu_core/cycles/u,213047283,99.00,,\n3449780891,,cpu_core/instructions/u,213047283,99.00,,\n565405780,,cpu_core/branches/u,213047283,99.00,,\n27735,,cpu_core/branch-misses/u,213047283,99.00,,\n",
+          "# started on Thu Nov 26 23:39:59 2026\n\n847436670,,cpu_core/cycles/u,212955164,99.00,,\n3449620726,,cpu_core/instructions/u,212955164,99.00,,\n565379524,,cpu_core/branches/u,212955164,99.00,,\n41658,,cpu_core/branch-misses/u,212955164,99.00,,\n",
+          "# started on Thu Nov 26 23:40:00 2026\n\n848588732,,cpu_core/cycles/u,213647884,99.00,,\n3449635961,,cpu_core/instructions/u,213647884,99.00,,\n565382024,,cpu_core/branches/u,213647884,99.00,,\n20149,,cpu_core/branch-misses/u,213647884,99.00,,\n"
+        ]
+      },
+      "mixed-dense-to-sparse-65536": {
+        "6cc9f7f": [
+          "# started on Thu Nov 26 23:40:00 2026\n\n2423312065,,cpu_core/cycles/u,608882156,99.00,,\n8375353247,,cpu_core/instructions/u,608882156,99.00,,\n1606545663,,cpu_core/branches/u,608882156,99.00,,\n26582021,,cpu_core/branch-misses/u,608882156,99.00,,\n",
+          "# started on Thu Nov 26 23:40:01 2026\n\n2431187473,,cpu_core/cycles/u,610989700,99.00,,\n8375412676,,cpu_core/instructions/u,610989700,99.00,,\n1606557049,,cpu_core/branches/u,610989700,99.00,,\n26712588,,cpu_core/branch-misses/u,610989700,99.00,,\n",
+          "# started on Thu Nov 26 23:40:02 2026\n\n2422198331,,cpu_core/cycles/u,608902078,99.00,,\n8376059129,,cpu_core/instructions/u,608902078,99.00,,\n1606681057,,cpu_core/branches/u,608902078,99.00,,\n26620399,,cpu_core/branch-misses/u,608902078,99.00,,\n"
+        ],
+        "current": [
+          "# started on Thu Nov 26 23:40:01 2026\n\n864188293,,cpu_core/cycles/u,217389500,99.00,,\n3521632889,,cpu_core/instructions/u,217389500,99.00,,\n575427424,,cpu_core/branches/u,217389500,99.00,,\n23703,,cpu_core/branch-misses/u,217389500,99.00,,\n",
+          "# started on Thu Nov 26 23:40:01 2026\n\n853377005,,cpu_core/cycles/u,214603478,99.00,,\n3521495697,,cpu_core/instructions/u,214603478,99.00,,\n575405001,,cpu_core/branches/u,214603478,99.00,,\n21063,,cpu_core/branch-misses/u,214603478,99.00,,\n",
+          "# started on Thu Nov 26 23:40:02 2026\n\n854175381,,cpu_core/cycles/u,215058588,99.00,,\n3521984033,,cpu_core/instructions/u,215058588,99.00,,\n575484795,,cpu_core/branches/u,215058588,99.00,,\n23944,,cpu_core/branch-misses/u,215058588,99.00,,\n"
+        ]
+      },
+      "mixed-sparse-to-dense-65536": {
+        "6cc9f7f": [
+          "# started on Thu Nov 26 23:40:03 2026\n\n8172229173,,cpu_core/cycles/u,2053464695,99.00,,\n19404305782,,cpu_core/instructions/u,2053464695,99.00,,\n2382438689,,cpu_core/branches/u,2053464695,99.00,,\n145857525,,cpu_core/branch-misses/u,2053464695,99.00,,\n",
+          "# started on Thu Nov 26 23:40:08 2026\n\n8225541902,,cpu_core/cycles/u,2066690450,99.00,,\n19403975376,,cpu_core/instructions/u,2066690450,99.00,,\n2382398116,,cpu_core/branches/u,2066690450,99.00,,\n147768756,,cpu_core/branch-misses/u,2066690450,99.00,,\n",
+          "# started on Thu Nov 26 23:40:10 2026\n\n8224005581,,cpu_core/cycles/u,2066058192,99.00,,\n19403828169,,cpu_core/instructions/u,2066058192,99.00,,\n2382380056,,cpu_core/branches/u,2066058192,99.00,,\n147413231,,cpu_core/branch-misses/u,2066058192,99.00,,\n"
+        ],
+        "current": [
+          "# started on Thu Nov 26 23:40:05 2026\n\n6793287075,,cpu_core/cycles/u,1707321662,99.00,,\n16580533730,,cpu_core/instructions/u,1707321662,99.00,,\n2208989444,,cpu_core/branches/u,1707321662,99.00,,\n121941068,,cpu_core/branch-misses/u,1707321662,99.00,,\n",
+          "# started on Thu Nov 26 23:40:06 2026\n\n6816678589,,cpu_core/cycles/u,1713755413,99.00,,\n16581544695,,cpu_core/instructions/u,1713755413,99.00,,\n2209124124,,cpu_core/branches/u,1713755413,99.00,,\n122941059,,cpu_core/branch-misses/u,1713755413,99.00,,\n",
+          "# started on Thu Nov 26 23:40:12 2026\n\n6714926475,,cpu_core/cycles/u,1687864666,99.00,,\n16580777528,,cpu_core/instructions/u,1687864666,99.00,,\n2209021888,,cpu_core/branches/u,1687864666,99.00,,\n121143324,,cpu_core/branch-misses/u,1687864666,99.00,,\n"
+        ]
+      }
+    },
+    "utf8-to-utf16": {
+      "mixed-sparse-65536": {
+        "6cc9f7f": [
+          "# started on Thu Nov 26 23:40:14 2026\n\n873809684,,cpu_core/cycles/u,219599532,99.00,,\n4976417651,,cpu_core/instructions/u,219599532,99.00,,\n941595162,,cpu_core/branches/u,219599532,99.00,,\n70096,,cpu_core/branch-misses/u,219599532,99.00,,\n",
+          "# started on Thu Nov 26 23:40:15 2026\n\n889653108,,cpu_core/cycles/u,223697829,99.00,,\n4976238786,,cpu_core/instructions/u,223697829,99.00,,\n941561328,,cpu_core/branches/u,223697829,99.00,,\n109726,,cpu_core/branch-misses/u,223697829,99.00,,\n",
+          "# started on Thu Nov 26 23:40:15 2026\n\n899907376,,cpu_core/cycles/u,226308342,99.00,,\n4975820021,,cpu_core/instructions/u,226308342,99.00,,\n941482090,,cpu_core/branches/u,226308342,99.00,,\n24813,,cpu_core/branch-misses/u,226308342,99.00,,\n"
+        ],
+        "current": [
+          "# started on Thu Nov 26 23:40:14 2026\n\n903500604,,cpu_core/cycles/u,227203193,99.00,,\n5138457118,,cpu_core/instructions/u,227203193,99.00,,\n962260817,,cpu_core/branches/u,227203193,99.00,,\n54871,,cpu_core/branch-misses/u,227203193,99.00,,\n",
+          "# started on Thu Nov 26 23:40:14 2026\n\n900882969,,cpu_core/cycles/u,226831932,99.00,,\n5138679610,,cpu_core/instructions/u,226831932,99.00,,\n962302475,,cpu_core/branches/u,226831932,99.00,,\n42240,,cpu_core/branch-misses/u,226831932,99.00,,\n",
+          "# started on Thu Nov 26 23:40:15 2026\n\n887146402,,cpu_core/cycles/u,223821750,99.00,,\n5138691419,,cpu_core/instructions/u,223821750,99.00,,\n962304684,,cpu_core/branches/u,223821750,99.00,,\n58117,,cpu_core/branch-misses/u,223821750,99.00,,\n"
+        ]
+      },
+      "mixed-sparse-to-dense-65536": {
+        "6cc9f7f": [
+          "# started on Thu Nov 26 23:40:15 2026\n\n25366279306,,cpu_core/cycles/u,6371086193,99.00,,\n44058248504,,cpu_core/instructions/u,6371086193,99.00,,\n9388851847,,cpu_core/branches/u,6371086193,99.00,,\n608096610,,cpu_core/branch-misses/u,6371086193,99.00,,\n",
+          "# started on Thu Nov 26 23:40:24 2026\n\n25307220247,,cpu_core/cycles/u,6356205074,99.00,,\n44058193183,,cpu_core/instructions/u,6356205074,99.00,,\n9388840037,,cpu_core/branches/u,6356205074,99.00,,\n607576383,,cpu_core/branch-misses/u,6356205074,99.00,,\n",
+          "# started on Thu Nov 26 23:40:30 2026\n\n25800237518,,cpu_core/cycles/u,6480919599,99.00,,\n44058211593,,cpu_core/instructions/u,6480919599,99.00,,\n9388844088,,cpu_core/branches/u,6480919599,99.00,,\n620849128,,cpu_core/branch-misses/u,6480919599,99.00,,\n"
+        ],
+        "current": [
+          "# started on Thu Nov 26 23:40:22 2026\n\n3993290188,,cpu_core/cycles/u,1004751661,99.00,,\n15840623026,,cpu_core/instructions/u,1004751661,99.00,,\n1599889266,,cpu_core/branches/u,1004751661,99.00,,\n1724382,,cpu_core/branch-misses/u,1004751661,99.00,,\n",
+          "# started on Thu Nov 26 23:40:23 2026\n\n3940029687,,cpu_core/cycles/u,990426632,99.00,,\n15841881741,,cpu_core/instructions/u,990426632,99.00,,\n1600016378,,cpu_core/branches/u,990426632,99.00,,\n1377995,,cpu_core/branch-misses/u,990426632,99.00,,\n",
+          "# started on Thu Nov 26 23:40:37 2026\n\n3958949723,,cpu_core/cycles/u,995758165,99.00,,\n15841013624,,cpu_core/instructions/u,995758165,99.00,,\n1599928713,,cpu_core/branches/u,995758165,99.00,,\n1206928,,cpu_core/branch-misses/u,995758165,99.00,,\n"
+        ]
+      }
+    }
+  }
+}
