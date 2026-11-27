@@ -129,6 +129,18 @@ scan measured mixed-random 64 KiB UTF-16-to-UTF-8 allocation at 85.4 to
 585.9 ns, and ASCII-4096 at 288.9 to 259.0 ns. Reuse rows are unchanged
 because the warmed caller-buffer path does not run the size pass.
 
+### UTF-8 to UTF-16 size pass
+
+`utf16SizeValid` sizes UTF-8 text for owned UTF-16 allocation and for the
+insufficient-capacity append path. It now samples the first block:
+ASCII-leading text uses a movemask fast path that skips both masks on
+pure-ASCII blocks, while non-ASCII-leading text keeps the plain two-mask
+loop. An interleaved A/B measured ASCII-4096 allocation at 243.3 to
+189.6 ns (1.28x), mixed-sparse-4096 at 663.4 to 638.0 ns, and
+mixed-sparse 64 KiB at 39.3 to 38.7 µs. Chinese, emoji, and Latin rows are
+unchanged because they take the plain loop, so the fast path does not
+trade one workload for another.
+
 ## Reproduce
 
 ```sh

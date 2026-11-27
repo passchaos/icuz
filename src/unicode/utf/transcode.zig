@@ -1,5 +1,6 @@
 //! Strict conversion into native-endian UTF-16 and UTF-8 buffers.
 const std = @import("std");
+const builtin = @import("builtin");
 const scalar = @import("../scalar/root.zig");
 const validation = @import("validate16.zig");
 const toUtf16 = @import("convert/to_utf16.zig").convert;
@@ -7,6 +8,8 @@ const toUtf8 = @import("convert/to_utf8.zig").convert;
 const toUtf8Valid = @import("convert/to_utf8.zig").convertValid;
 const ascii16 = @import("convert/ascii_encode.zig");
 pub const Error = error{ InvalidUtf8, InvalidUtf16, OutOfMemory };
+const byte_mask_ok = builtin.cpu.arch == .x86_64 and builtin.zig_backend == .stage2_llvm and
+    std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
 
 /// Append converted UTF-8. Invalid input and allocation failure leave the
 /// existing contents unchanged. Capacity can be reused between calls.
@@ -67,8 +70,26 @@ fn utf16SizeValid(text: []const u8) usize {
     var count = text.len;
     var offset: usize = 0;
     const V = @Vector(32, u8);
+    if (comptime byte_mask_ok) {
+        // ASCII-leading text stays on a branch-cheap loop; non-ASCII-leading
+        // text avoids the per-block check entirely.
+        if (text.len >= 32 and byteHighMask(loadBytes(text.ptr)) == 0) {
+            while (offset + 32 <= text.len) : (offset += 32) {
+                const v = loadBytes(text.ptr + offset);
+                if (byteHighMask(v) == 0) continue;
+                const cont: u32 = @bitCast((v & @as(V, @splat(0xc0))) == @as(V, @splat(0x80)));
+                const four: u32 = @bitCast(v >= @as(V, @splat(0xf0)));
+                count = count - @popCount(cont) + @popCount(four);
+            }
+            for (text[offset..]) |byte| {
+                if (byte & 0xc0 == 0x80) count -= 1;
+                if (byte >= 0xf0) count += 1;
+            }
+            return count;
+        }
+    }
     while (offset + 32 <= text.len) : (offset += 32) {
-        const v = @as(*align(1) const V, @ptrCast(text.ptr + offset)).*;
+        const v = loadBytes(text.ptr + offset);
         const cont: u32 = @bitCast((v & @as(V, @splat(0xc0))) == @as(V, @splat(0x80)));
         const four: u32 = @bitCast(v >= @as(V, @splat(0xf0)));
         count = count - @popCount(cont) + @popCount(four);
@@ -78,4 +99,15 @@ fn utf16SizeValid(text: []const u8) usize {
         if (byte >= 0xf0) count += 1;
     }
     return count;
+}
+
+inline fn loadBytes(ptr: [*]const u8) @Vector(32, u8) {
+    return @as(*align(1) const @Vector(32, u8), @ptrCast(ptr)).*;
+}
+
+inline fn byteHighMask(v: @Vector(32, u8)) u32 {
+    return asm ("vpmovmskb %[bytes], %[result]"
+        : [result] "=r" (-> u32),
+        : [bytes] "x" (v),
+    );
 }
