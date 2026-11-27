@@ -650,6 +650,8 @@ records lower branch-miss counts and shared BMP/supplementary decoding.
 The [phase-switch profile](docs/performance/utf-phase-switching-2026-11-26.md)
 adds dense-to-sparse and sparse-to-dense inputs, adaptive UTF-16 runs, and
 density-gated UTF-8 window reentry after ASCII prefixes.
+The [sixteen-unit BMP profile](docs/performance/utf-bmp-16unit-2026-11-27.md)
+measures the wide mixed-run packer and the stripped benchmark configuration.
 
 ## Performance notes
 

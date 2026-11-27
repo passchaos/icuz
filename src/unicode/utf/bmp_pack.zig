@@ -10,6 +10,8 @@ const packing = makeControls();
 const controls = packing.shuffle;
 const counts = packing.counts;
 const latin_controls = makeLatinControls();
+const Control16 = struct { shuffle: V, count: u8 };
+const controls16 = makeControls16();
 pub const wide_supported = supported and std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
 
 pub const Run = struct { consumed: usize, written: usize };
@@ -132,6 +134,98 @@ pub inline fn encode8Valid(output: []u8, written: usize, units: @Vector(8, u16))
           [bytes] "x" (bytes),
     );
     return storeLanes(output, written, encoded, counts[low_code], counts[high_code]);
+}
+
+/// Encode sixteen non-surrogate BMP scalars in four table-driven lanes.
+/// The caller must leave at least 52 bytes of output room so each lane can
+/// store a full vector before advancing by its exact byte count. Kept out of
+/// line so the mixed-run loop that calls it stays compact.
+pub noinline fn encode16(output: []u8, written: usize, units: @Vector(16, u16)) usize {
+    const U = @Vector(16, u16);
+    const t2 = (units & @as(U, @splat(0x007f))) |
+        ((units & @as(U, @splat(0x003f))) << @splat(8)) |
+        @as(U, @splat(0x8000));
+    const s4 = ((units >> @splat(12)) | @as(U, @splat(0x00e0))) |
+        ((((units >> @splat(6)) & @as(U, @splat(0x003f))) | @as(U, @splat(0x00c0))) << @splat(8)) ^
+        @select(u16, units < @as(U, @splat(0x800)), @as(U, @splat(0)), @as(U, @splat(0x4000)));
+    const t2b: @Vector(32, u8) = @bitCast(t2);
+    const s4b: @Vector(32, u8) = @bitCast(s4);
+    // Interleave each unit's two lead/continuation words into four-byte groups.
+    const low: @Vector(32, u8) = @shuffle(u8, t2b, s4b, interleave(0));
+    const high: @Vector(32, u8) = @shuffle(u8, t2b, s4b, interleave(16));
+    const code = codeMask16(units);
+    var pos = written;
+    pos = storeChunk(output, pos, half(false, low), @truncate(code));
+    pos = storeChunk(output, pos, half(true, low), @truncate(code >> 8));
+    pos = storeChunk(output, pos, half(false, high), @truncate(code >> 16));
+    pos = storeChunk(output, pos, half(true, high), @truncate(code >> 24));
+    return pos;
+}
+
+fn interleave(comptime first: usize) [32]i32 {
+    var indices: [32]i32 = undefined;
+    for (0..8) |i| {
+        indices[i * 4] = @intCast(first + i * 2);
+        indices[i * 4 + 1] = @intCast(first + i * 2 + 1);
+        indices[i * 4 + 2] = ~@as(i32, @intCast(first + i * 2));
+        indices[i * 4 + 3] = ~@as(i32, @intCast(first + i * 2 + 1));
+    }
+    return indices;
+}
+
+inline fn half(comptime upper: bool, bytes: @Vector(32, u8)) V {
+    return @shuffle(u8, bytes, undefined, blk: {
+        var indices: [16]i32 = undefined;
+        for (0..16) |i| indices[i] = @intCast((if (upper) 16 else 0) + i);
+        break :blk indices;
+    });
+}
+
+inline fn codeMask16(units: @Vector(16, u16)) u32 {
+    const U = @Vector(16, u16);
+    const flags = @select(u16, units < @as(U, @splat(0x80)), @as(U, @splat(0x0080)), @as(U, @splat(0))) |
+        @select(u16, units < @as(U, @splat(0x800)), @as(U, @splat(0x8000)), @as(U, @splat(0)));
+    const bytes: @Vector(32, u8) = @bitCast(flags);
+    return asm ("vpmovmskb %[bytes], %[result]"
+        : [result] "=r" (-> u32),
+        : [bytes] "x" (bytes),
+    );
+}
+
+inline fn storeChunk(output: []u8, written: usize, source: V, code: u8) usize {
+    const entry = controls16[code];
+    output[written..][0..16].* = asm ("vpshufb %[mask], %[bytes], %[result]"
+        : [result] "=x" (-> V),
+        : [mask] "x" (entry.shuffle),
+          [bytes] "x" (source),
+    );
+    return written + entry.count;
+}
+
+fn makeControls16() [256]Control16 {
+    @setEvalBranchQuota(20000);
+    var result: [256]Control16 = undefined;
+    for (0..256) |code| {
+        var mask = [_]u8{0x80} ** 16;
+        var count: usize = 0;
+        for (0..4) |lane| {
+            const kind = (code >> (lane * 2)) & 3;
+            // Codes: 11 ASCII, 10 two-byte, 00 three-byte. Code 01 cannot be
+            // produced because every ASCII unit is also below 0x800; give it
+            // the three-byte layout so all table entries stay defined.
+            const source: []const u8 = switch (kind) {
+                3 => &.{0},
+                2 => &.{ 3, 1 },
+                else => &.{ 2, 3, 1 },
+            };
+            for (source) |byte| {
+                mask[count] = @intCast(lane * 4 + byte);
+                count += 1;
+            }
+        }
+        result[code] = .{ .shuffle = mask, .count = @intCast(count) };
+    }
+    return result;
 }
 
 fn makeControls() Packing {

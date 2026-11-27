@@ -134,6 +134,9 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("bench/utf16/bench.zig"),
             .target = target,
             .optimize = .ReleaseFast,
+            // Match the external release controls and keep hot-loop layout
+            // independent of debug-info codegen.
+            .strip = true,
             .link_libc = true,
             .imports = &.{.{
                 .name = "utf16",
@@ -141,6 +144,7 @@ pub fn build(b: *std.Build) void {
                     .root_source_file = b.path("src/unicode/utf16.zig"),
                     .target = target,
                     .optimize = .ReleaseFast,
+                    .strip = true,
                 }),
             }},
         }),

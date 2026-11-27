@@ -67,6 +67,25 @@ noinline fn mixedRun(comptime checked: bool, comptime adaptive: bool, units: []c
             const v = @as(*align(2) const U, @ptrCast(units.ptr + index)).*;
             const surrogates: u8 = @bitCast((v & @as(U, @splat(0xf800))) == @as(U, @splat(0xd800)));
             if (surrogates == 0) {
+                if (comptime bmp.wide_supported) {
+                    // A clean eight-unit prefix makes a full BMP window likely,
+                    // so surrogate-dense text never pays for this probe.
+                    if (index + 16 <= units.len and output.len - written >= 64) {
+                        const W = @Vector(16, u16);
+                        const wide = @as(*align(2) const W, @ptrCast(units.ptr + index)).*;
+                        const wide_surrogates: u16 = @bitCast((wide & @as(W, @splat(0xf800))) == @as(W, @splat(0xd800)));
+                        if (wide_surrogates == 0) {
+                            const next = bmp.encode16(output, written, wide);
+                            index += 16;
+                            if (adaptive and next == written + 16 and index + 8 <= units.len) {
+                                const following = @as(*align(2) const @Vector(8, u16), @ptrCast(units.ptr + index)).*;
+                                if (@reduce(.Or, following) < 0x80) return .{ .consumed = index, .written = next };
+                            }
+                            written = next;
+                            continue;
+                        }
+                    }
+                }
                 const next = bmp.encode8Valid(output, written, v);
                 index += 8;
                 if (adaptive and next == written + 8 and index + 8 <= units.len) {

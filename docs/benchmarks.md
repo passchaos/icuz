@@ -13,6 +13,10 @@ The strict UTF-8/native UTF-16 [phase-switch profile](performance/utf-phase-swit
 compares 30 identical corpora with simdutf 9.5.0 and ICU 78.3, keeping owned
 allocations and warmed caller-buffer conversion as separate contracts.
 
+The [sixteen-unit BMP profile](performance/utf-bmp-16unit-2026-11-27.md)
+refreshes the same 30 corpora with the wide mixed-run packer and pins the
+stripped release configuration used for the benchmark executable.
+
 The UTF-8 validation and corrected long Chinese comparison profile in
 [`performance/utf8-validation-2026-11-26.md`](performance/utf8-validation-2026-11-26.md)
 adds simdutf 9.0.0 and ICU 78.3 comparisons. The former long Chinese ICU
