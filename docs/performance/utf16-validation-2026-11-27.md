@@ -77,6 +77,10 @@ The previous validator was 1.15-1.6x slower than simdutf on every
 surrogate-containing corpus (emoji 0.62x, transitions 0.66x, random 0.68x,
 surrogate-heavy 0.75-0.86x). The pair-mask scan removes the per-window carry
 chain and doubles the window width, and the remaining rows are now ahead.
+A sixty-four-unit stage with 64-bit pair masks was measured and rejected:
+it was 0.69-0.94x on most corpora, because the 64-bit mask handling and
+register pressure outweighed the halved loop overhead. The thirty-two-unit
+stage plus the sixteen-unit short stage is the local optimum.
 `tiny-emoji-31` is the only row where the new scan is marginally slower than
 the old one (1.75 vs 1.86 ns, one sixteen-unit iteration each); the absolute
 difference is under 0.2 ns and treated as noise. The thinnest simdutf
