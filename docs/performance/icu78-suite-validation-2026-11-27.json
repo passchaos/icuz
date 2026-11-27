@@ -1,0 +1,4293 @@
+{
+ "date": "2026-11-27",
+ "cpu": 4,
+ "rounds": 3,
+ "commit": "7593916",
+ "icu": {
+  "version": "78.3",
+  "package": "/home/passchaos/.cache/rattler/cache/bld/pkgs/icu-78.3-h33c6efd_0",
+  "compiler": "g++ 13 -O2 -std=c++17"
+ },
+ "icuz": {
+  "build": "zig build bench (ReleaseFast)",
+  "rounds": [
+   {
+    "General_Category": {
+     "value": 0.355,
+     "unit": "ns/op"
+    },
+    "Alphabetic": {
+     "value": 0.413,
+     "unit": "ns/op"
+    },
+    "Uppercase": {
+     "value": 0.412,
+     "unit": "ns/op"
+    },
+    "Lowercase": {
+     "value": 0.412,
+     "unit": "ns/op"
+    },
+    "Math": {
+     "value": 0.412,
+     "unit": "ns/op"
+    },
+    "Canonical_Combining_Class": {
+     "value": 0.355,
+     "unit": "ns/op"
+    },
+    "NFC_Quick_Check": {
+     "value": 0.414,
+     "unit": "ns/op"
+    },
+    "Script": {
+     "value": 0.355,
+     "unit": "ns/op"
+    },
+    "Bidi_Class": {
+     "value": 0.355,
+     "unit": "ns/op"
+    },
+    "Line_Break": {
+     "value": 0.354,
+     "unit": "ns/op"
+    },
+    "UnicodeSet build Alphabetic": {
+     "value": 0.016,
+     "unit": "ms"
+    },
+    "UnicodeSet contains": {
+     "value": 0.452,
+     "unit": "ns/op"
+    },
+    "UnicodeSet parse Alphabetic": {
+     "value": 0.016,
+     "unit": "ms"
+    },
+    "UnicodeSet build Script Greek": {
+     "value": 0.005,
+     "unit": "ms"
+    },
+    "UnicodeSet build complement": {
+     "value": 0.037,
+     "unit": "ms"
+    },
+    "UnicodeSet contains complement": {
+     "value": 0.452,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver [a]": {
+     "value": 25.9,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver Alphabetic": {
+     "value": 444.14,
+     "unit": "ns/op"
+    },
+    "UnicodeSet difference": {
+     "value": 1565.58,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver Uppercase": {
+     "value": 20191.915,
+     "unit": "ns/op"
+    },
+    "UCA sort key ASCII": {
+     "value": 2.299,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed": {
+     "value": 5.898,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish root": {
+     "value": 4.822,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish": {
+     "value": 5.637,
+     "unit": "ns/B"
+    },
+    "UCA sort key German phonebook": {
+     "value": 5.86,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese root": {
+     "value": 0.977,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin": {
+     "value": 1.354,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese stroke": {
+     "value": 1.338,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese zhuyin": {
+     "value": 1.337,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long": {
+     "value": 2.238,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long pinyin": {
+     "value": 2.792,
+     "unit": "ns/B"
+    },
+    "UCA sort key ASCII (cp)": {
+     "value": 1.492,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed (cp)": {
+     "value": 4.761,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese root (cp)": {
+     "value": 0.619,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin (cp)": {
+     "value": 0.943,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish (cp)": {
+     "value": 4.374,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish root (cp)": {
+     "value": 3.547,
+     "unit": "ns/B"
+    },
+    "UCA sort key ASCII (reuse)": {
+     "value": 2.142,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed (reuse)": {
+     "value": 5.718,
+     "unit": "ns/B"
+    },
+    "UCA sort key German phonebook (reuse)": {
+     "value": 5.8,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish (reuse)": {
+     "value": 5.498,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin (reuse)": {
+     "value": 1.299,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long (reuse)": {
+     "value": 0.791,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long pinyin (reuse)": {
+     "value": 1.29,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin (utf16)": {
+     "value": 1.353,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed (utf16)": {
+     "value": 5.253,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish (utf16)": {
+     "value": 5.205,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish (collator)": {
+     "value": 5.609,
+     "unit": "ns/B"
+    },
+    "UCA compare mixed": {
+     "value": 26.076,
+     "unit": "ns/op"
+    },
+    "UCA compare Swedish": {
+     "value": 30.587,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed (alloc)": {
+     "value": 26.499,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed early": {
+     "value": 25.854,
+     "unit": "ns/op"
+    },
+    "UCA compare Chinese long": {
+     "value": 708.188,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed (assume valid)": {
+     "value": 12.029,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed early (assume valid)": {
+     "value": 4.014,
+     "unit": "ns/op"
+    },
+    "UCA compare Chinese long (assume valid)": {
+     "value": 119.139,
+     "unit": "ns/op"
+    },
+    "UCA compare Swedish (assume valid)": {
+     "value": 6.014,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed (utf16)": {
+     "value": 5.262,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed early (utf16)": {
+     "value": 3.008,
+     "unit": "ns/op"
+    },
+    "UCA compare Swedish (utf16)": {
+     "value": 10.024,
+     "unit": "ns/op"
+    },
+    "UCA sort key Chinese pinyin (collator)": {
+     "value": 1.345,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE ASCII (alloc)": {
+     "value": 0.341,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE ASCII": {
+     "value": 0.171,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE Chinese": {
+     "value": 0.128,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-8 ASCII": {
+     "value": 0.135,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-8 Chinese": {
+     "value": 0.12,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-32LE ASCII": {
+     "value": 0.11,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-32LE Chinese": {
+     "value": 0.219,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-8 ASCII": {
+     "value": 0.146,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-8 Chinese": {
+     "value": 0.147,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-32LE ASCII": {
+     "value": 0.188,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-32LE Chinese": {
+     "value": 0.069,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-16LE ASCII": {
+     "value": 0.209,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-16LE Chinese": {
+     "value": 0.076,
+     "unit": "ns/B"
+    },
+    "windows-1252 -> UTF-8 accents": {
+     "value": 0.706,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> windows-1252 accents": {
+     "value": 0.806,
+     "unit": "ns/B"
+    },
+    "IBM866 -> UTF-8 Russian": {
+     "value": 0.642,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-16LE Chinese": {
+     "value": 0.674,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> GBK Chinese": {
+     "value": 0.462,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> windows-1252 ASCII": {
+     "value": 0.125,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> GBK Chinese": {
+     "value": 0.8,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> Shift_JIS Japanese": {
+     "value": 0.843,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> EUC-KR Korean": {
+     "value": 0.771,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-8 Chinese": {
+     "value": 1.328,
+     "unit": "ns/B"
+    },
+    "Latin-ASCII ASCII": {
+     "value": 0.372,
+     "unit": "ns/B"
+    },
+    "Latin-ASCII Swedish": {
+     "value": 8.595,
+     "unit": "ns/B"
+    },
+    "Fullwidth-Halfwidth": {
+     "value": 4.027,
+     "unit": "ns/B"
+    },
+    "Georgian-Latin-BGN": {
+     "value": 7.052,
+     "unit": "ns/B"
+    },
+    "Russian-Latin-BGN": {
+     "value": 13.841,
+     "unit": "ns/B"
+    },
+    "Greek-Latin-BGN": {
+     "value": 11.941,
+     "unit": "ns/B"
+    },
+    "Katakana-Latin-BGN": {
+     "value": 16.143,
+     "unit": "ns/B"
+    },
+    "Amharic-Latin-BGN": {
+     "value": 9.924,
+     "unit": "ns/B"
+    },
+    "Ukrainian-Latin-BGN": {
+     "value": 11.408,
+     "unit": "ns/B"
+    },
+    "decimal number": {
+     "value": 71.929,
+     "unit": "ns/op"
+    },
+    "parse decimal": {
+     "value": 36.023,
+     "unit": "ns/op"
+    },
+    "parse decimal de": {
+     "value": 36.045,
+     "unit": "ns/op"
+    },
+    "search word": {
+     "value": 18.683,
+     "unit": "ns/op"
+    },
+    "search missing": {
+     "value": 87.844,
+     "unit": "ns/op"
+    },
+    "search Swedish": {
+     "value": 24.525,
+     "unit": "ns/op"
+    },
+    "search missing Swedish": {
+     "value": 488.859,
+     "unit": "ns/op"
+    },
+    "scientific number": {
+     "value": 86.567,
+     "unit": "ns/op"
+    },
+    "compact number": {
+     "value": 121.256,
+     "unit": "ns/op"
+    },
+    "currency name": {
+     "value": 135.769,
+     "unit": "ns/op"
+    },
+    "currency standard": {
+     "value": 132.394,
+     "unit": "ns/op"
+    },
+    "accounting currency": {
+     "value": 136.009,
+     "unit": "ns/op"
+    },
+    "number skeleton": {
+     "value": 140.773,
+     "unit": "ns/op"
+    },
+    "canonicalize en-US": {
+     "value": 60.316,
+     "unit": "ns/op"
+    },
+    "canonicalize zh-hant-tw": {
+     "value": 72.298,
+     "unit": "ns/op"
+    },
+    "canonicalize sh-RS": {
+     "value": 73.715,
+     "unit": "ns/op"
+    },
+    "canonicalize sr-Latn-RS": {
+     "value": 59.15,
+     "unit": "ns/op"
+    },
+    "Arabic shaping": {
+     "value": 4.181,
+     "unit": "ns/B"
+    },
+    "Arabic shaping (utf16)": {
+     "value": 3.748,
+     "unit": "ns/B"
+    },
+    "spoof bidi skeleton": {
+     "value": 96.76,
+     "unit": "ns/op"
+    },
+    "idna toASCII": {
+     "value": 206.361,
+     "unit": "ns/op"
+    },
+    "idna toUnicode": {
+     "value": 126.565,
+     "unit": "ns/op"
+    },
+    "list format 4 items": {
+     "value": 72.678,
+     "unit": "ns/op"
+    },
+    "relative time": {
+     "value": 101.541,
+     "unit": "ns/op"
+    },
+    "unit format": {
+     "value": 118.52,
+     "unit": "ns/op"
+    },
+    "date full format": {
+     "value": 62.352,
+     "unit": "ns/op"
+    },
+    "detect UTF-8 English": {
+     "value": 48.072,
+     "unit": "ns/B"
+    },
+    "detect GBK Chinese": {
+     "value": 38.857,
+     "unit": "ns/B"
+    },
+    "char name": {
+     "value": 18.535,
+     "unit": "ns/op"
+    },
+    "find by name": {
+     "value": 126.2,
+     "unit": "ns/op"
+    },
+    "title ASCII": {
+     "value": 2.827,
+     "unit": "ns/B"
+    },
+    "title mixed": {
+     "value": 8.382,
+     "unit": "ns/B"
+    },
+    "title German": {
+     "value": 4.177,
+     "unit": "ns/B"
+    },
+    "plural en": {
+     "value": 9.387,
+     "unit": "ns/op"
+    },
+    "plural ru": {
+     "value": 28.509,
+     "unit": "ns/op"
+    },
+    "ordinal en": {
+     "value": 19.533,
+     "unit": "ns/op"
+    },
+    "bidi ASCII": {
+     "value": 165.655,
+     "unit": "ns/op"
+    },
+    "bidi mixed": {
+     "value": 623.624,
+     "unit": "ns/op"
+    },
+    "bidi RTL": {
+     "value": 885.685,
+     "unit": "ns/op"
+    },
+    "literal find": {
+     "value": 0.276,
+     "unit": "us/scan"
+    },
+    "class find": {
+     "value": 0.776,
+     "unit": "us/scan"
+    },
+    "case-insensitive find": {
+     "value": 0.722,
+     "unit": "us/scan"
+    },
+    "required literal miss": {
+     "value": 0.203,
+     "unit": "us/scan"
+    },
+    "literal alternation find": {
+     "value": 0.468,
+     "unit": "us/scan"
+    },
+    "literal matches": {
+     "value": 5.793,
+     "unit": "ns/op"
+    },
+    "literal matches miss": {
+     "value": 4.009,
+     "unit": "ns/op"
+    },
+    "class matches miss": {
+     "value": 9.651,
+     "unit": "ns/op"
+    },
+    "literal lookingAt": {
+     "value": 5.42,
+     "unit": "ns/op"
+    },
+    "literal lookingAt miss": {
+     "value": 4.812,
+     "unit": "ns/op"
+    },
+    "compile literal": {
+     "value": 354.655,
+     "unit": "ns/op"
+    },
+    "compile class": {
+     "value": 731.304,
+     "unit": "ns/op"
+    },
+    "compile alternation": {
+     "value": 516.114,
+     "unit": "ns/op"
+    },
+    "compile lookbehind": {
+     "value": 541.596,
+     "unit": "ns/op"
+    },
+    "compile word boundary": {
+     "value": 499.13,
+     "unit": "ns/op"
+    },
+    "compile word class": {
+     "value": 830.3,
+     "unit": "ns/op"
+    },
+    "matcher create": {
+     "value": 109.748,
+     "unit": "ns/op"
+    },
+    "matcher create class": {
+     "value": 129.603,
+     "unit": "ns/op"
+    },
+    "grapheme ASCII": {
+     "value": 0.887,
+     "unit": "ns/B"
+    },
+    "grapheme mixed": {
+     "value": 2.239,
+     "unit": "ns/B"
+    },
+    "word ASCII": {
+     "value": 1.629,
+     "unit": "ns/B"
+    },
+    "word mixed": {
+     "value": 4.035,
+     "unit": "ns/B"
+    },
+    "word Thai dictionary": {
+     "value": 7.927,
+     "unit": "ns/B"
+    },
+    "word CJK dictionary": {
+     "value": 14.346,
+     "unit": "ns/B"
+    },
+    "line break ASCII": {
+     "value": 2.75,
+     "unit": "ns/B"
+    },
+    "line break mixed": {
+     "value": 2.547,
+     "unit": "ns/B"
+    },
+    "line break Chinese": {
+     "value": 2.472,
+     "unit": "ns/B"
+    },
+    "line break e+marks": {
+     "value": 2.811,
+     "unit": "ns/B"
+    },
+    "line break jamo": {
+     "value": 1.761,
+     "unit": "ns/B"
+    },
+    "sentence ASCII": {
+     "value": 1.466,
+     "unit": "ns/B"
+    },
+    "sentence mixed": {
+     "value": 1.733,
+     "unit": "ns/B"
+    },
+    "isNormalized ASCII": {
+     "value": 0.072,
+     "unit": "ns/B"
+    },
+    "isNormalized mixed": {
+     "value": 0.416,
+     "unit": "ns/B"
+    },
+    "NFC ASCII": {
+     "value": 0.059,
+     "unit": "ns/B"
+    },
+    "isNormalized Chinese": {
+     "value": 0.242,
+     "unit": "ns/B"
+    },
+    "NFC Chinese": {
+     "value": 0.223,
+     "unit": "ns/B"
+    },
+    "isNormalized Georgian": {
+     "value": 0.231,
+     "unit": "ns/B"
+    },
+    "NFC Georgian": {
+     "value": 0.239,
+     "unit": "ns/B"
+    },
+    "NFC Georgian (utf16 reuse)": {
+     "value": 0.169,
+     "unit": "ns/B"
+    },
+    "NFC Hebrew (utf16 reuse)": {
+     "value": 0.531,
+     "unit": "ns/B"
+    },
+    "NFC Arabic (utf16 reuse)": {
+     "value": 0.513,
+     "unit": "ns/B"
+    },
+    "NFC Devanagari (utf16 reuse)": {
+     "value": 0.259,
+     "unit": "ns/B"
+    },
+    "NFC Thai (utf16 reuse)": {
+     "value": 0.293,
+     "unit": "ns/B"
+    },
+    "NFC Amharic (utf16 reuse)": {
+     "value": 0.23,
+     "unit": "ns/B"
+    },
+    "NFC Korean": {
+     "value": 0.607,
+     "unit": "ns/B"
+    },
+    "NFC Korean (reuse)": {
+     "value": 0.602,
+     "unit": "ns/B"
+    },
+    "NFC Korean (utf16 reuse)": {
+     "value": 0.426,
+     "unit": "ns/B"
+    },
+    "NFC mixed": {
+     "value": 1.166,
+     "unit": "ns/B"
+    },
+    "NFC mixed (reuse)": {
+     "value": 1.046,
+     "unit": "ns/B"
+    },
+    "NFC Chinese (reuse)": {
+     "value": 0.219,
+     "unit": "ns/B"
+    },
+    "NFC precomposed": {
+     "value": 0.572,
+     "unit": "ns/B"
+    },
+    "NFC e+marks": {
+     "value": 4.5,
+     "unit": "ns/B"
+    },
+    "NFC e+marks (reuse)": {
+     "value": 4.438,
+     "unit": "ns/B"
+    },
+    "NFC Japanese": {
+     "value": 0.34,
+     "unit": "ns/B"
+    },
+    "NFC Japanese (reuse)": {
+     "value": 0.349,
+     "unit": "ns/B"
+    },
+    "NFC Japanese (utf16 reuse)": {
+     "value": 0.31,
+     "unit": "ns/B"
+    },
+    "NFC jamo": {
+     "value": 1.145,
+     "unit": "ns/B"
+    },
+    "NFC jamo (reuse)": {
+     "value": 0.904,
+     "unit": "ns/B"
+    },
+    "NFC mixed (utf16 reuse)": {
+     "value": 0.877,
+     "unit": "ns/B"
+    },
+    "NFC mixed (utf16)": {
+     "value": 0.985,
+     "unit": "ns/B"
+    },
+    "NFC Japanese (utf16)": {
+     "value": 0.321,
+     "unit": "ns/B"
+    },
+    "NFC e+marks (utf16 reuse)": {
+     "value": 4.303,
+     "unit": "ns/B"
+    },
+    "NFC jamo (utf16 reuse)": {
+     "value": 0.808,
+     "unit": "ns/B"
+    },
+    "NFC Chinese (utf16 reuse)": {
+     "value": 0.171,
+     "unit": "ns/B"
+    },
+    "isNormalized mixed (utf16)": {
+     "value": 0.306,
+     "unit": "ns/B"
+    },
+    "isNormalized e+marks (utf16)": {
+     "value": 0.168,
+     "unit": "ns/B"
+    },
+    "isNormalized Chinese (utf16)": {
+     "value": 0.201,
+     "unit": "ns/B"
+    },
+    "NFC mixed codepoints": {
+     "value": 2.872,
+     "unit": "ns/B"
+    },
+    "lower ASCII": {
+     "value": 0.154,
+     "unit": "ns/B"
+    },
+    "case fold ASCII": {
+     "value": 0.161,
+     "unit": "ns/B"
+    },
+    "lower mixed": {
+     "value": 1.336,
+     "unit": "ns/B"
+    },
+    "case fold mixed": {
+     "value": 1.408,
+     "unit": "ns/B"
+    },
+    "full lower ASCII": {
+     "value": 0.207,
+     "unit": "ns/B"
+    },
+    "full upper ASCII": {
+     "value": 0.21,
+     "unit": "ns/B"
+    },
+    "full lower mixed": {
+     "value": 1.446,
+     "unit": "ns/B"
+    },
+    "full upper mixed": {
+     "value": 1.455,
+     "unit": "ns/B"
+    },
+    "full lower German": {
+     "value": 0.783,
+     "unit": "ns/B"
+    },
+    "full upper German": {
+     "value": 0.938,
+     "unit": "ns/B"
+    },
+    "full lower Greek sigma": {
+     "value": 1.395,
+     "unit": "ns/B"
+    },
+    "lower mixed (utf16)": {
+     "value": 0.606,
+     "unit": "ns/B"
+    },
+    "case fold mixed (utf16)": {
+     "value": 0.706,
+     "unit": "ns/B"
+    },
+    "lower ASCII (utf16)": {
+     "value": 0.121,
+     "unit": "ns/B"
+    }
+   },
+   {
+    "General_Category": {
+     "value": 0.357,
+     "unit": "ns/op"
+    },
+    "Alphabetic": {
+     "value": 0.411,
+     "unit": "ns/op"
+    },
+    "Uppercase": {
+     "value": 0.412,
+     "unit": "ns/op"
+    },
+    "Lowercase": {
+     "value": 0.412,
+     "unit": "ns/op"
+    },
+    "Math": {
+     "value": 0.412,
+     "unit": "ns/op"
+    },
+    "Canonical_Combining_Class": {
+     "value": 0.356,
+     "unit": "ns/op"
+    },
+    "NFC_Quick_Check": {
+     "value": 0.414,
+     "unit": "ns/op"
+    },
+    "Script": {
+     "value": 0.355,
+     "unit": "ns/op"
+    },
+    "Bidi_Class": {
+     "value": 0.355,
+     "unit": "ns/op"
+    },
+    "Line_Break": {
+     "value": 0.357,
+     "unit": "ns/op"
+    },
+    "UnicodeSet build Alphabetic": {
+     "value": 0.016,
+     "unit": "ms"
+    },
+    "UnicodeSet contains": {
+     "value": 0.451,
+     "unit": "ns/op"
+    },
+    "UnicodeSet parse Alphabetic": {
+     "value": 0.015,
+     "unit": "ms"
+    },
+    "UnicodeSet build Script Greek": {
+     "value": 0.005,
+     "unit": "ms"
+    },
+    "UnicodeSet build complement": {
+     "value": 0.042,
+     "unit": "ms"
+    },
+    "UnicodeSet contains complement": {
+     "value": 0.452,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver [a]": {
+     "value": 25.984,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver Alphabetic": {
+     "value": 454.33,
+     "unit": "ns/op"
+    },
+    "UnicodeSet difference": {
+     "value": 1571.39,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver Uppercase": {
+     "value": 20208.34,
+     "unit": "ns/op"
+    },
+    "UCA sort key ASCII": {
+     "value": 2.325,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed": {
+     "value": 5.97,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish root": {
+     "value": 4.864,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish": {
+     "value": 5.649,
+     "unit": "ns/B"
+    },
+    "UCA sort key German phonebook": {
+     "value": 5.891,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese root": {
+     "value": 1.006,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin": {
+     "value": 1.342,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese stroke": {
+     "value": 1.348,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese zhuyin": {
+     "value": 1.366,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long": {
+     "value": 2.255,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long pinyin": {
+     "value": 2.762,
+     "unit": "ns/B"
+    },
+    "UCA sort key ASCII (cp)": {
+     "value": 1.501,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed (cp)": {
+     "value": 4.617,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese root (cp)": {
+     "value": 0.625,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin (cp)": {
+     "value": 0.959,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish (cp)": {
+     "value": 4.345,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish root (cp)": {
+     "value": 3.527,
+     "unit": "ns/B"
+    },
+    "UCA sort key ASCII (reuse)": {
+     "value": 2.127,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed (reuse)": {
+     "value": 5.593,
+     "unit": "ns/B"
+    },
+    "UCA sort key German phonebook (reuse)": {
+     "value": 5.698,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish (reuse)": {
+     "value": 5.547,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin (reuse)": {
+     "value": 1.246,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long (reuse)": {
+     "value": 0.787,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long pinyin (reuse)": {
+     "value": 1.29,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin (utf16)": {
+     "value": 1.364,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed (utf16)": {
+     "value": 5.35,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish (utf16)": {
+     "value": 5.163,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish (collator)": {
+     "value": 5.545,
+     "unit": "ns/B"
+    },
+    "UCA compare mixed": {
+     "value": 25.844,
+     "unit": "ns/op"
+    },
+    "UCA compare Swedish": {
+     "value": 30.588,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed (alloc)": {
+     "value": 27.511,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed early": {
+     "value": 25.908,
+     "unit": "ns/op"
+    },
+    "UCA compare Chinese long": {
+     "value": 707.495,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed (assume valid)": {
+     "value": 10.776,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed early (assume valid)": {
+     "value": 4.023,
+     "unit": "ns/op"
+    },
+    "UCA compare Chinese long (assume valid)": {
+     "value": 119.151,
+     "unit": "ns/op"
+    },
+    "UCA compare Swedish (assume valid)": {
+     "value": 6.014,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed (utf16)": {
+     "value": 5.134,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed early (utf16)": {
+     "value": 2.766,
+     "unit": "ns/op"
+    },
+    "UCA compare Swedish (utf16)": {
+     "value": 10.022,
+     "unit": "ns/op"
+    },
+    "UCA sort key Chinese pinyin (collator)": {
+     "value": 1.333,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE ASCII (alloc)": {
+     "value": 0.342,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE ASCII": {
+     "value": 0.166,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE Chinese": {
+     "value": 0.127,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-8 ASCII": {
+     "value": 0.133,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-8 Chinese": {
+     "value": 0.121,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-32LE ASCII": {
+     "value": 0.118,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-32LE Chinese": {
+     "value": 0.18,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-8 ASCII": {
+     "value": 0.146,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-8 Chinese": {
+     "value": 0.147,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-32LE ASCII": {
+     "value": 0.191,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-32LE Chinese": {
+     "value": 0.065,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-16LE ASCII": {
+     "value": 0.209,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-16LE Chinese": {
+     "value": 0.076,
+     "unit": "ns/B"
+    },
+    "windows-1252 -> UTF-8 accents": {
+     "value": 0.658,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> windows-1252 accents": {
+     "value": 0.794,
+     "unit": "ns/B"
+    },
+    "IBM866 -> UTF-8 Russian": {
+     "value": 0.479,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-16LE Chinese": {
+     "value": 0.668,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> GBK Chinese": {
+     "value": 0.462,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> windows-1252 ASCII": {
+     "value": 0.143,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> GBK Chinese": {
+     "value": 0.803,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> Shift_JIS Japanese": {
+     "value": 0.816,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> EUC-KR Korean": {
+     "value": 0.767,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-8 Chinese": {
+     "value": 1.325,
+     "unit": "ns/B"
+    },
+    "Latin-ASCII ASCII": {
+     "value": 0.369,
+     "unit": "ns/B"
+    },
+    "Latin-ASCII Swedish": {
+     "value": 8.622,
+     "unit": "ns/B"
+    },
+    "Fullwidth-Halfwidth": {
+     "value": 4.043,
+     "unit": "ns/B"
+    },
+    "Georgian-Latin-BGN": {
+     "value": 7.1,
+     "unit": "ns/B"
+    },
+    "Russian-Latin-BGN": {
+     "value": 14.009,
+     "unit": "ns/B"
+    },
+    "Greek-Latin-BGN": {
+     "value": 13.755,
+     "unit": "ns/B"
+    },
+    "Katakana-Latin-BGN": {
+     "value": 16.269,
+     "unit": "ns/B"
+    },
+    "Amharic-Latin-BGN": {
+     "value": 10.01,
+     "unit": "ns/B"
+    },
+    "Ukrainian-Latin-BGN": {
+     "value": 11.497,
+     "unit": "ns/B"
+    },
+    "decimal number": {
+     "value": 68.489,
+     "unit": "ns/op"
+    },
+    "parse decimal": {
+     "value": 35.526,
+     "unit": "ns/op"
+    },
+    "parse decimal de": {
+     "value": 35.401,
+     "unit": "ns/op"
+    },
+    "search word": {
+     "value": 20.556,
+     "unit": "ns/op"
+    },
+    "search missing": {
+     "value": 88.0,
+     "unit": "ns/op"
+    },
+    "search Swedish": {
+     "value": 24.62,
+     "unit": "ns/op"
+    },
+    "search missing Swedish": {
+     "value": 488.387,
+     "unit": "ns/op"
+    },
+    "scientific number": {
+     "value": 88.66,
+     "unit": "ns/op"
+    },
+    "compact number": {
+     "value": 120.73,
+     "unit": "ns/op"
+    },
+    "currency name": {
+     "value": 135.255,
+     "unit": "ns/op"
+    },
+    "currency standard": {
+     "value": 133.256,
+     "unit": "ns/op"
+    },
+    "accounting currency": {
+     "value": 137.856,
+     "unit": "ns/op"
+    },
+    "number skeleton": {
+     "value": 142.721,
+     "unit": "ns/op"
+    },
+    "canonicalize en-US": {
+     "value": 59.438,
+     "unit": "ns/op"
+    },
+    "canonicalize zh-hant-tw": {
+     "value": 71.944,
+     "unit": "ns/op"
+    },
+    "canonicalize sh-RS": {
+     "value": 73.18,
+     "unit": "ns/op"
+    },
+    "canonicalize sr-Latn-RS": {
+     "value": 59.688,
+     "unit": "ns/op"
+    },
+    "Arabic shaping": {
+     "value": 4.355,
+     "unit": "ns/B"
+    },
+    "Arabic shaping (utf16)": {
+     "value": 3.843,
+     "unit": "ns/B"
+    },
+    "spoof bidi skeleton": {
+     "value": 97.24,
+     "unit": "ns/op"
+    },
+    "idna toASCII": {
+     "value": 206.181,
+     "unit": "ns/op"
+    },
+    "idna toUnicode": {
+     "value": 126.956,
+     "unit": "ns/op"
+    },
+    "list format 4 items": {
+     "value": 71.838,
+     "unit": "ns/op"
+    },
+    "relative time": {
+     "value": 102.589,
+     "unit": "ns/op"
+    },
+    "unit format": {
+     "value": 119.751,
+     "unit": "ns/op"
+    },
+    "date full format": {
+     "value": 62.999,
+     "unit": "ns/op"
+    },
+    "detect UTF-8 English": {
+     "value": 48.108,
+     "unit": "ns/B"
+    },
+    "detect GBK Chinese": {
+     "value": 38.347,
+     "unit": "ns/B"
+    },
+    "char name": {
+     "value": 18.508,
+     "unit": "ns/op"
+    },
+    "find by name": {
+     "value": 129.55,
+     "unit": "ns/op"
+    },
+    "title ASCII": {
+     "value": 2.827,
+     "unit": "ns/B"
+    },
+    "title mixed": {
+     "value": 8.399,
+     "unit": "ns/B"
+    },
+    "title German": {
+     "value": 4.209,
+     "unit": "ns/B"
+    },
+    "plural en": {
+     "value": 9.384,
+     "unit": "ns/op"
+    },
+    "plural ru": {
+     "value": 28.773,
+     "unit": "ns/op"
+    },
+    "ordinal en": {
+     "value": 19.615,
+     "unit": "ns/op"
+    },
+    "bidi ASCII": {
+     "value": 167.421,
+     "unit": "ns/op"
+    },
+    "bidi mixed": {
+     "value": 638.84,
+     "unit": "ns/op"
+    },
+    "bidi RTL": {
+     "value": 886.767,
+     "unit": "ns/op"
+    },
+    "literal find": {
+     "value": 0.276,
+     "unit": "us/scan"
+    },
+    "class find": {
+     "value": 0.781,
+     "unit": "us/scan"
+    },
+    "case-insensitive find": {
+     "value": 0.719,
+     "unit": "us/scan"
+    },
+    "required literal miss": {
+     "value": 0.204,
+     "unit": "us/scan"
+    },
+    "literal alternation find": {
+     "value": 0.526,
+     "unit": "us/scan"
+    },
+    "literal matches": {
+     "value": 5.798,
+     "unit": "ns/op"
+    },
+    "literal matches miss": {
+     "value": 4.01,
+     "unit": "ns/op"
+    },
+    "class matches miss": {
+     "value": 10.596,
+     "unit": "ns/op"
+    },
+    "literal lookingAt": {
+     "value": 5.414,
+     "unit": "ns/op"
+    },
+    "literal lookingAt miss": {
+     "value": 4.827,
+     "unit": "ns/op"
+    },
+    "compile literal": {
+     "value": 354.295,
+     "unit": "ns/op"
+    },
+    "compile class": {
+     "value": 725.293,
+     "unit": "ns/op"
+    },
+    "compile alternation": {
+     "value": 511.138,
+     "unit": "ns/op"
+    },
+    "compile lookbehind": {
+     "value": 537.749,
+     "unit": "ns/op"
+    },
+    "compile word boundary": {
+     "value": 496.052,
+     "unit": "ns/op"
+    },
+    "compile word class": {
+     "value": 825.382,
+     "unit": "ns/op"
+    },
+    "matcher create": {
+     "value": 104.611,
+     "unit": "ns/op"
+    },
+    "matcher create class": {
+     "value": 129.084,
+     "unit": "ns/op"
+    },
+    "grapheme ASCII": {
+     "value": 0.904,
+     "unit": "ns/B"
+    },
+    "grapheme mixed": {
+     "value": 2.273,
+     "unit": "ns/B"
+    },
+    "word ASCII": {
+     "value": 1.664,
+     "unit": "ns/B"
+    },
+    "word mixed": {
+     "value": 4.151,
+     "unit": "ns/B"
+    },
+    "word Thai dictionary": {
+     "value": 7.988,
+     "unit": "ns/B"
+    },
+    "word CJK dictionary": {
+     "value": 14.408,
+     "unit": "ns/B"
+    },
+    "line break ASCII": {
+     "value": 2.785,
+     "unit": "ns/B"
+    },
+    "line break mixed": {
+     "value": 2.527,
+     "unit": "ns/B"
+    },
+    "line break Chinese": {
+     "value": 2.398,
+     "unit": "ns/B"
+    },
+    "line break e+marks": {
+     "value": 3.006,
+     "unit": "ns/B"
+    },
+    "line break jamo": {
+     "value": 1.753,
+     "unit": "ns/B"
+    },
+    "sentence ASCII": {
+     "value": 1.458,
+     "unit": "ns/B"
+    },
+    "sentence mixed": {
+     "value": 1.676,
+     "unit": "ns/B"
+    },
+    "isNormalized ASCII": {
+     "value": 0.072,
+     "unit": "ns/B"
+    },
+    "isNormalized mixed": {
+     "value": 0.416,
+     "unit": "ns/B"
+    },
+    "NFC ASCII": {
+     "value": 0.057,
+     "unit": "ns/B"
+    },
+    "isNormalized Chinese": {
+     "value": 0.25,
+     "unit": "ns/B"
+    },
+    "NFC Chinese": {
+     "value": 0.216,
+     "unit": "ns/B"
+    },
+    "isNormalized Georgian": {
+     "value": 0.232,
+     "unit": "ns/B"
+    },
+    "NFC Georgian": {
+     "value": 0.24,
+     "unit": "ns/B"
+    },
+    "NFC Georgian (utf16 reuse)": {
+     "value": 0.168,
+     "unit": "ns/B"
+    },
+    "NFC Hebrew (utf16 reuse)": {
+     "value": 0.544,
+     "unit": "ns/B"
+    },
+    "NFC Arabic (utf16 reuse)": {
+     "value": 0.518,
+     "unit": "ns/B"
+    },
+    "NFC Devanagari (utf16 reuse)": {
+     "value": 0.258,
+     "unit": "ns/B"
+    },
+    "NFC Thai (utf16 reuse)": {
+     "value": 0.288,
+     "unit": "ns/B"
+    },
+    "NFC Amharic (utf16 reuse)": {
+     "value": 0.231,
+     "unit": "ns/B"
+    },
+    "NFC Korean": {
+     "value": 0.608,
+     "unit": "ns/B"
+    },
+    "NFC Korean (reuse)": {
+     "value": 0.618,
+     "unit": "ns/B"
+    },
+    "NFC Korean (utf16 reuse)": {
+     "value": 0.43,
+     "unit": "ns/B"
+    },
+    "NFC mixed": {
+     "value": 1.155,
+     "unit": "ns/B"
+    },
+    "NFC mixed (reuse)": {
+     "value": 1.029,
+     "unit": "ns/B"
+    },
+    "NFC Chinese (reuse)": {
+     "value": 0.224,
+     "unit": "ns/B"
+    },
+    "NFC precomposed": {
+     "value": 0.573,
+     "unit": "ns/B"
+    },
+    "NFC e+marks": {
+     "value": 4.527,
+     "unit": "ns/B"
+    },
+    "NFC e+marks (reuse)": {
+     "value": 4.425,
+     "unit": "ns/B"
+    },
+    "NFC Japanese": {
+     "value": 0.334,
+     "unit": "ns/B"
+    },
+    "NFC Japanese (reuse)": {
+     "value": 0.34,
+     "unit": "ns/B"
+    },
+    "NFC Japanese (utf16 reuse)": {
+     "value": 0.328,
+     "unit": "ns/B"
+    },
+    "NFC jamo": {
+     "value": 1.146,
+     "unit": "ns/B"
+    },
+    "NFC jamo (reuse)": {
+     "value": 0.91,
+     "unit": "ns/B"
+    },
+    "NFC mixed (utf16 reuse)": {
+     "value": 0.864,
+     "unit": "ns/B"
+    },
+    "NFC mixed (utf16)": {
+     "value": 1.005,
+     "unit": "ns/B"
+    },
+    "NFC Japanese (utf16)": {
+     "value": 0.315,
+     "unit": "ns/B"
+    },
+    "NFC e+marks (utf16 reuse)": {
+     "value": 4.293,
+     "unit": "ns/B"
+    },
+    "NFC jamo (utf16 reuse)": {
+     "value": 0.853,
+     "unit": "ns/B"
+    },
+    "NFC Chinese (utf16 reuse)": {
+     "value": 0.168,
+     "unit": "ns/B"
+    },
+    "isNormalized mixed (utf16)": {
+     "value": 0.306,
+     "unit": "ns/B"
+    },
+    "isNormalized e+marks (utf16)": {
+     "value": 0.175,
+     "unit": "ns/B"
+    },
+    "isNormalized Chinese (utf16)": {
+     "value": 0.201,
+     "unit": "ns/B"
+    },
+    "NFC mixed codepoints": {
+     "value": 2.909,
+     "unit": "ns/B"
+    },
+    "lower ASCII": {
+     "value": 0.154,
+     "unit": "ns/B"
+    },
+    "case fold ASCII": {
+     "value": 0.16,
+     "unit": "ns/B"
+    },
+    "lower mixed": {
+     "value": 1.338,
+     "unit": "ns/B"
+    },
+    "case fold mixed": {
+     "value": 1.409,
+     "unit": "ns/B"
+    },
+    "full lower ASCII": {
+     "value": 0.207,
+     "unit": "ns/B"
+    },
+    "full upper ASCII": {
+     "value": 0.215,
+     "unit": "ns/B"
+    },
+    "full lower mixed": {
+     "value": 1.451,
+     "unit": "ns/B"
+    },
+    "full upper mixed": {
+     "value": 1.474,
+     "unit": "ns/B"
+    },
+    "full lower German": {
+     "value": 0.794,
+     "unit": "ns/B"
+    },
+    "full upper German": {
+     "value": 0.922,
+     "unit": "ns/B"
+    },
+    "full lower Greek sigma": {
+     "value": 1.386,
+     "unit": "ns/B"
+    },
+    "lower mixed (utf16)": {
+     "value": 0.606,
+     "unit": "ns/B"
+    },
+    "case fold mixed (utf16)": {
+     "value": 0.703,
+     "unit": "ns/B"
+    },
+    "lower ASCII (utf16)": {
+     "value": 0.119,
+     "unit": "ns/B"
+    }
+   },
+   {
+    "General_Category": {
+     "value": 0.358,
+     "unit": "ns/op"
+    },
+    "Alphabetic": {
+     "value": 0.42,
+     "unit": "ns/op"
+    },
+    "Uppercase": {
+     "value": 0.412,
+     "unit": "ns/op"
+    },
+    "Lowercase": {
+     "value": 0.412,
+     "unit": "ns/op"
+    },
+    "Math": {
+     "value": 0.413,
+     "unit": "ns/op"
+    },
+    "Canonical_Combining_Class": {
+     "value": 0.355,
+     "unit": "ns/op"
+    },
+    "NFC_Quick_Check": {
+     "value": 0.414,
+     "unit": "ns/op"
+    },
+    "Script": {
+     "value": 0.355,
+     "unit": "ns/op"
+    },
+    "Bidi_Class": {
+     "value": 0.355,
+     "unit": "ns/op"
+    },
+    "Line_Break": {
+     "value": 0.355,
+     "unit": "ns/op"
+    },
+    "UnicodeSet build Alphabetic": {
+     "value": 0.013,
+     "unit": "ms"
+    },
+    "UnicodeSet contains": {
+     "value": 0.451,
+     "unit": "ns/op"
+    },
+    "UnicodeSet parse Alphabetic": {
+     "value": 0.014,
+     "unit": "ms"
+    },
+    "UnicodeSet build Script Greek": {
+     "value": 0.004,
+     "unit": "ms"
+    },
+    "UnicodeSet build complement": {
+     "value": 0.033,
+     "unit": "ms"
+    },
+    "UnicodeSet contains complement": {
+     "value": 0.452,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver [a]": {
+     "value": 26.46,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver Alphabetic": {
+     "value": 478.84,
+     "unit": "ns/op"
+    },
+    "UnicodeSet difference": {
+     "value": 1525.705,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver Uppercase": {
+     "value": 20285.075,
+     "unit": "ns/op"
+    },
+    "UCA sort key ASCII": {
+     "value": 2.284,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed": {
+     "value": 5.934,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish root": {
+     "value": 4.83,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish": {
+     "value": 5.582,
+     "unit": "ns/B"
+    },
+    "UCA sort key German phonebook": {
+     "value": 5.957,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese root": {
+     "value": 0.979,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin": {
+     "value": 1.331,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese stroke": {
+     "value": 1.373,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese zhuyin": {
+     "value": 1.345,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long": {
+     "value": 2.243,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long pinyin": {
+     "value": 2.789,
+     "unit": "ns/B"
+    },
+    "UCA sort key ASCII (cp)": {
+     "value": 1.487,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed (cp)": {
+     "value": 4.747,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese root (cp)": {
+     "value": 0.635,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin (cp)": {
+     "value": 0.955,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish (cp)": {
+     "value": 4.355,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish root (cp)": {
+     "value": 3.531,
+     "unit": "ns/B"
+    },
+    "UCA sort key ASCII (reuse)": {
+     "value": 2.122,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed (reuse)": {
+     "value": 5.66,
+     "unit": "ns/B"
+    },
+    "UCA sort key German phonebook (reuse)": {
+     "value": 5.675,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish (reuse)": {
+     "value": 5.479,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin (reuse)": {
+     "value": 1.266,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long (reuse)": {
+     "value": 0.793,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long pinyin (reuse)": {
+     "value": 1.291,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin (utf16)": {
+     "value": 1.377,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed (utf16)": {
+     "value": 5.454,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish (utf16)": {
+     "value": 5.176,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish (collator)": {
+     "value": 5.607,
+     "unit": "ns/B"
+    },
+    "UCA compare mixed": {
+     "value": 26.74,
+     "unit": "ns/op"
+    },
+    "UCA compare Swedish": {
+     "value": 30.614,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed (alloc)": {
+     "value": 26.94,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed early": {
+     "value": 25.882,
+     "unit": "ns/op"
+    },
+    "UCA compare Chinese long": {
+     "value": 705.719,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed (assume valid)": {
+     "value": 12.529,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed early (assume valid)": {
+     "value": 4.017,
+     "unit": "ns/op"
+    },
+    "UCA compare Chinese long (assume valid)": {
+     "value": 119.556,
+     "unit": "ns/op"
+    },
+    "UCA compare Swedish (assume valid)": {
+     "value": 6.014,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed (utf16)": {
+     "value": 5.012,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed early (utf16)": {
+     "value": 3.007,
+     "unit": "ns/op"
+    },
+    "UCA compare Swedish (utf16)": {
+     "value": 10.022,
+     "unit": "ns/op"
+    },
+    "UCA sort key Chinese pinyin (collator)": {
+     "value": 1.303,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE ASCII (alloc)": {
+     "value": 0.351,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE ASCII": {
+     "value": 0.162,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE Chinese": {
+     "value": 0.154,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-8 ASCII": {
+     "value": 0.134,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-8 Chinese": {
+     "value": 0.121,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-32LE ASCII": {
+     "value": 0.113,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-32LE Chinese": {
+     "value": 0.18,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-8 ASCII": {
+     "value": 0.146,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-8 Chinese": {
+     "value": 0.147,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-32LE ASCII": {
+     "value": 0.167,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-32LE Chinese": {
+     "value": 0.07,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-16LE ASCII": {
+     "value": 0.209,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-16LE Chinese": {
+     "value": 0.077,
+     "unit": "ns/B"
+    },
+    "windows-1252 -> UTF-8 accents": {
+     "value": 0.702,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> windows-1252 accents": {
+     "value": 0.767,
+     "unit": "ns/B"
+    },
+    "IBM866 -> UTF-8 Russian": {
+     "value": 0.54,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-16LE Chinese": {
+     "value": 0.668,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> GBK Chinese": {
+     "value": 0.461,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> windows-1252 ASCII": {
+     "value": 0.125,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> GBK Chinese": {
+     "value": 0.805,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> Shift_JIS Japanese": {
+     "value": 0.856,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> EUC-KR Korean": {
+     "value": 0.774,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-8 Chinese": {
+     "value": 1.329,
+     "unit": "ns/B"
+    },
+    "Latin-ASCII ASCII": {
+     "value": 0.371,
+     "unit": "ns/B"
+    },
+    "Latin-ASCII Swedish": {
+     "value": 8.638,
+     "unit": "ns/B"
+    },
+    "Fullwidth-Halfwidth": {
+     "value": 4.075,
+     "unit": "ns/B"
+    },
+    "Georgian-Latin-BGN": {
+     "value": 7.201,
+     "unit": "ns/B"
+    },
+    "Russian-Latin-BGN": {
+     "value": 14.037,
+     "unit": "ns/B"
+    },
+    "Greek-Latin-BGN": {
+     "value": 11.873,
+     "unit": "ns/B"
+    },
+    "Katakana-Latin-BGN": {
+     "value": 16.081,
+     "unit": "ns/B"
+    },
+    "Amharic-Latin-BGN": {
+     "value": 9.927,
+     "unit": "ns/B"
+    },
+    "Ukrainian-Latin-BGN": {
+     "value": 11.421,
+     "unit": "ns/B"
+    },
+    "decimal number": {
+     "value": 67.841,
+     "unit": "ns/op"
+    },
+    "parse decimal": {
+     "value": 36.148,
+     "unit": "ns/op"
+    },
+    "parse decimal de": {
+     "value": 36.044,
+     "unit": "ns/op"
+    },
+    "search word": {
+     "value": 20.813,
+     "unit": "ns/op"
+    },
+    "search missing": {
+     "value": 88.041,
+     "unit": "ns/op"
+    },
+    "search Swedish": {
+     "value": 24.473,
+     "unit": "ns/op"
+    },
+    "search missing Swedish": {
+     "value": 488.799,
+     "unit": "ns/op"
+    },
+    "scientific number": {
+     "value": 88.372,
+     "unit": "ns/op"
+    },
+    "compact number": {
+     "value": 121.264,
+     "unit": "ns/op"
+    },
+    "currency name": {
+     "value": 136.903,
+     "unit": "ns/op"
+    },
+    "currency standard": {
+     "value": 132.341,
+     "unit": "ns/op"
+    },
+    "accounting currency": {
+     "value": 135.794,
+     "unit": "ns/op"
+    },
+    "number skeleton": {
+     "value": 141.262,
+     "unit": "ns/op"
+    },
+    "canonicalize en-US": {
+     "value": 60.335,
+     "unit": "ns/op"
+    },
+    "canonicalize zh-hant-tw": {
+     "value": 71.54,
+     "unit": "ns/op"
+    },
+    "canonicalize sh-RS": {
+     "value": 73.821,
+     "unit": "ns/op"
+    },
+    "canonicalize sr-Latn-RS": {
+     "value": 58.113,
+     "unit": "ns/op"
+    },
+    "Arabic shaping": {
+     "value": 4.244,
+     "unit": "ns/B"
+    },
+    "Arabic shaping (utf16)": {
+     "value": 3.711,
+     "unit": "ns/B"
+    },
+    "spoof bidi skeleton": {
+     "value": 96.755,
+     "unit": "ns/op"
+    },
+    "idna toASCII": {
+     "value": 206.87,
+     "unit": "ns/op"
+    },
+    "idna toUnicode": {
+     "value": 126.144,
+     "unit": "ns/op"
+    },
+    "list format 4 items": {
+     "value": 71.86,
+     "unit": "ns/op"
+    },
+    "relative time": {
+     "value": 101.011,
+     "unit": "ns/op"
+    },
+    "unit format": {
+     "value": 118.825,
+     "unit": "ns/op"
+    },
+    "date full format": {
+     "value": 62.518,
+     "unit": "ns/op"
+    },
+    "detect UTF-8 English": {
+     "value": 47.721,
+     "unit": "ns/B"
+    },
+    "detect GBK Chinese": {
+     "value": 38.267,
+     "unit": "ns/B"
+    },
+    "char name": {
+     "value": 18.51,
+     "unit": "ns/op"
+    },
+    "find by name": {
+     "value": 127.945,
+     "unit": "ns/op"
+    },
+    "title ASCII": {
+     "value": 2.866,
+     "unit": "ns/B"
+    },
+    "title mixed": {
+     "value": 8.601,
+     "unit": "ns/B"
+    },
+    "title German": {
+     "value": 4.224,
+     "unit": "ns/B"
+    },
+    "plural en": {
+     "value": 9.453,
+     "unit": "ns/op"
+    },
+    "plural ru": {
+     "value": 28.652,
+     "unit": "ns/op"
+    },
+    "ordinal en": {
+     "value": 20.247,
+     "unit": "ns/op"
+    },
+    "bidi ASCII": {
+     "value": 165.527,
+     "unit": "ns/op"
+    },
+    "bidi mixed": {
+     "value": 640.118,
+     "unit": "ns/op"
+    },
+    "bidi RTL": {
+     "value": 910.147,
+     "unit": "ns/op"
+    },
+    "literal find": {
+     "value": 0.278,
+     "unit": "us/scan"
+    },
+    "class find": {
+     "value": 0.784,
+     "unit": "us/scan"
+    },
+    "case-insensitive find": {
+     "value": 0.729,
+     "unit": "us/scan"
+    },
+    "required literal miss": {
+     "value": 0.202,
+     "unit": "us/scan"
+    },
+    "literal alternation find": {
+     "value": 0.469,
+     "unit": "us/scan"
+    },
+    "literal matches": {
+     "value": 5.806,
+     "unit": "ns/op"
+    },
+    "literal matches miss": {
+     "value": 4.012,
+     "unit": "ns/op"
+    },
+    "class matches miss": {
+     "value": 10.399,
+     "unit": "ns/op"
+    },
+    "literal lookingAt": {
+     "value": 5.349,
+     "unit": "ns/op"
+    },
+    "literal lookingAt miss": {
+     "value": 4.808,
+     "unit": "ns/op"
+    },
+    "compile literal": {
+     "value": 354.396,
+     "unit": "ns/op"
+    },
+    "compile class": {
+     "value": 725.358,
+     "unit": "ns/op"
+    },
+    "compile alternation": {
+     "value": 515.145,
+     "unit": "ns/op"
+    },
+    "compile lookbehind": {
+     "value": 541.157,
+     "unit": "ns/op"
+    },
+    "compile word boundary": {
+     "value": 499.324,
+     "unit": "ns/op"
+    },
+    "compile word class": {
+     "value": 828.559,
+     "unit": "ns/op"
+    },
+    "matcher create": {
+     "value": 108.003,
+     "unit": "ns/op"
+    },
+    "matcher create class": {
+     "value": 127.073,
+     "unit": "ns/op"
+    },
+    "grapheme ASCII": {
+     "value": 0.929,
+     "unit": "ns/B"
+    },
+    "grapheme mixed": {
+     "value": 2.217,
+     "unit": "ns/B"
+    },
+    "word ASCII": {
+     "value": 1.656,
+     "unit": "ns/B"
+    },
+    "word mixed": {
+     "value": 4.12,
+     "unit": "ns/B"
+    },
+    "word Thai dictionary": {
+     "value": 7.933,
+     "unit": "ns/B"
+    },
+    "word CJK dictionary": {
+     "value": 14.578,
+     "unit": "ns/B"
+    },
+    "line break ASCII": {
+     "value": 2.807,
+     "unit": "ns/B"
+    },
+    "line break mixed": {
+     "value": 2.533,
+     "unit": "ns/B"
+    },
+    "line break Chinese": {
+     "value": 2.512,
+     "unit": "ns/B"
+    },
+    "line break e+marks": {
+     "value": 2.825,
+     "unit": "ns/B"
+    },
+    "line break jamo": {
+     "value": 1.755,
+     "unit": "ns/B"
+    },
+    "sentence ASCII": {
+     "value": 2.257,
+     "unit": "ns/B"
+    },
+    "sentence mixed": {
+     "value": 1.698,
+     "unit": "ns/B"
+    },
+    "isNormalized ASCII": {
+     "value": 0.072,
+     "unit": "ns/B"
+    },
+    "isNormalized mixed": {
+     "value": 0.417,
+     "unit": "ns/B"
+    },
+    "NFC ASCII": {
+     "value": 0.059,
+     "unit": "ns/B"
+    },
+    "isNormalized Chinese": {
+     "value": 0.249,
+     "unit": "ns/B"
+    },
+    "NFC Chinese": {
+     "value": 0.219,
+     "unit": "ns/B"
+    },
+    "isNormalized Georgian": {
+     "value": 0.232,
+     "unit": "ns/B"
+    },
+    "NFC Georgian": {
+     "value": 0.239,
+     "unit": "ns/B"
+    },
+    "NFC Georgian (utf16 reuse)": {
+     "value": 0.167,
+     "unit": "ns/B"
+    },
+    "NFC Hebrew (utf16 reuse)": {
+     "value": 0.539,
+     "unit": "ns/B"
+    },
+    "NFC Arabic (utf16 reuse)": {
+     "value": 0.517,
+     "unit": "ns/B"
+    },
+    "NFC Devanagari (utf16 reuse)": {
+     "value": 0.271,
+     "unit": "ns/B"
+    },
+    "NFC Thai (utf16 reuse)": {
+     "value": 0.289,
+     "unit": "ns/B"
+    },
+    "NFC Amharic (utf16 reuse)": {
+     "value": 0.46,
+     "unit": "ns/B"
+    },
+    "NFC Korean": {
+     "value": 0.942,
+     "unit": "ns/B"
+    },
+    "NFC Korean (reuse)": {
+     "value": 0.711,
+     "unit": "ns/B"
+    },
+    "NFC Korean (utf16 reuse)": {
+     "value": 0.448,
+     "unit": "ns/B"
+    },
+    "NFC mixed": {
+     "value": 2.703,
+     "unit": "ns/B"
+    },
+    "NFC mixed (reuse)": {
+     "value": 2.257,
+     "unit": "ns/B"
+    },
+    "NFC Chinese (reuse)": {
+     "value": 0.448,
+     "unit": "ns/B"
+    },
+    "NFC precomposed": {
+     "value": 1.134,
+     "unit": "ns/B"
+    },
+    "NFC e+marks": {
+     "value": 9.304,
+     "unit": "ns/B"
+    },
+    "NFC e+marks (reuse)": {
+     "value": 8.98,
+     "unit": "ns/B"
+    },
+    "NFC Japanese": {
+     "value": 0.62,
+     "unit": "ns/B"
+    },
+    "NFC Japanese (reuse)": {
+     "value": 0.63,
+     "unit": "ns/B"
+    },
+    "NFC Japanese (utf16 reuse)": {
+     "value": 0.592,
+     "unit": "ns/B"
+    },
+    "NFC jamo": {
+     "value": 2.324,
+     "unit": "ns/B"
+    },
+    "NFC jamo (reuse)": {
+     "value": 1.829,
+     "unit": "ns/B"
+    },
+    "NFC mixed (utf16 reuse)": {
+     "value": 1.701,
+     "unit": "ns/B"
+    },
+    "NFC mixed (utf16)": {
+     "value": 2.356,
+     "unit": "ns/B"
+    },
+    "NFC Japanese (utf16)": {
+     "value": 0.574,
+     "unit": "ns/B"
+    },
+    "NFC e+marks (utf16 reuse)": {
+     "value": 8.375,
+     "unit": "ns/B"
+    },
+    "NFC jamo (utf16 reuse)": {
+     "value": 1.615,
+     "unit": "ns/B"
+    },
+    "NFC Chinese (utf16 reuse)": {
+     "value": 0.266,
+     "unit": "ns/B"
+    },
+    "isNormalized mixed (utf16)": {
+     "value": 0.529,
+     "unit": "ns/B"
+    },
+    "isNormalized e+marks (utf16)": {
+     "value": 0.33,
+     "unit": "ns/B"
+    },
+    "isNormalized Chinese (utf16)": {
+     "value": 0.264,
+     "unit": "ns/B"
+    },
+    "NFC mixed codepoints": {
+     "value": 5.558,
+     "unit": "ns/B"
+    },
+    "lower ASCII": {
+     "value": 0.259,
+     "unit": "ns/B"
+    },
+    "case fold ASCII": {
+     "value": 0.267,
+     "unit": "ns/B"
+    },
+    "lower mixed": {
+     "value": 1.71,
+     "unit": "ns/B"
+    },
+    "case fold mixed": {
+     "value": 1.915,
+     "unit": "ns/B"
+    },
+    "full lower ASCII": {
+     "value": 0.327,
+     "unit": "ns/B"
+    },
+    "full upper ASCII": {
+     "value": 0.334,
+     "unit": "ns/B"
+    },
+    "full lower mixed": {
+     "value": 1.952,
+     "unit": "ns/B"
+    },
+    "full upper mixed": {
+     "value": 1.95,
+     "unit": "ns/B"
+    },
+    "full lower German": {
+     "value": 1.209,
+     "unit": "ns/B"
+    },
+    "full upper German": {
+     "value": 1.62,
+     "unit": "ns/B"
+    },
+    "full lower Greek sigma": {
+     "value": 2.837,
+     "unit": "ns/B"
+    },
+    "lower mixed (utf16)": {
+     "value": 0.973,
+     "unit": "ns/B"
+    },
+    "case fold mixed (utf16)": {
+     "value": 1.183,
+     "unit": "ns/B"
+    },
+    "lower ASCII (utf16)": {
+     "value": 0.22,
+     "unit": "ns/B"
+    }
+   }
+  ]
+ },
+ "icu78": {
+  "rounds": [
+   {
+    "General_Category": {
+     "value": 6.023,
+     "unit": "ns/op"
+    },
+    "Alphabetic": {
+     "value": 6.922,
+     "unit": "ns/op"
+    },
+    "Uppercase": {
+     "value": 8.245,
+     "unit": "ns/op"
+    },
+    "Lowercase": {
+     "value": 8.829,
+     "unit": "ns/op"
+    },
+    "Math": {
+     "value": 6.824,
+     "unit": "ns/op"
+    },
+    "Canonical_Combining_Class": {
+     "value": 8.583,
+     "unit": "ns/op"
+    },
+    "Script": {
+     "value": 7.509,
+     "unit": "ns/op"
+    },
+    "Bidi_Class": {
+     "value": 6.514,
+     "unit": "ns/op"
+    },
+    "Line_Break": {
+     "value": 7.096,
+     "unit": "ns/op"
+    },
+    "UnicodeSet contains": {
+     "value": 17.4,
+     "unit": "ns/op"
+    },
+    "UnicodeSet contains complement": {
+     "value": 17.356,
+     "unit": "ns/op"
+    },
+    "UnicodeSet difference": {
+     "value": 3383.23,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver Alphabetic": {
+     "value": 110037.092,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver [a]": {
+     "value": 80.144,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver Uppercase": {
+     "value": 39960.363,
+     "unit": "ns/op"
+    },
+    "UCA sort key ASCII": {
+     "value": 8.155,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed": {
+     "value": 6.746,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish root": {
+     "value": 9.359,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish": {
+     "value": 7.497,
+     "unit": "ns/B"
+    },
+    "UCA sort key German phonebook": {
+     "value": 9.921,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin": {
+     "value": 3.509,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese stroke": {
+     "value": 3.566,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese zhuyin": {
+     "value": 3.468,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long": {
+     "value": 3.704,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long pinyin": {
+     "value": 3.446,
+     "unit": "ns/B"
+    },
+    "UCA compare Chinese long": {
+     "value": 1199.061,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed early": {
+     "value": 10.334,
+     "unit": "ns/op"
+    },
+    "UCA compare Swedish": {
+     "value": 136.059,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed": {
+     "value": 51.497,
+     "unit": "ns/op"
+    },
+    "NFC ascii": {
+     "value": 0.504,
+     "unit": "ns/B"
+    },
+    "NFC mixed": {
+     "value": 1.398,
+     "unit": "ns/B"
+    },
+    "NFC chinese_long": {
+     "value": 0.392,
+     "unit": "ns/B"
+    },
+    "NFC e_marks": {
+     "value": 8.969,
+     "unit": "ns/B"
+    },
+    "NFC jamo": {
+     "value": 1.086,
+     "unit": "ns/B"
+    },
+    "NFC japanese": {
+     "value": 0.379,
+     "unit": "ns/B"
+    },
+    "NFC georgian": {
+     "value": 0.441,
+     "unit": "ns/B"
+    },
+    "NFC thai": {
+     "value": 0.531,
+     "unit": "ns/B"
+    },
+    "NFC hebrew": {
+     "value": 0.623,
+     "unit": "ns/B"
+    },
+    "NFC arabic": {
+     "value": 0.55,
+     "unit": "ns/B"
+    },
+    "NFC devanagari": {
+     "value": 0.521,
+     "unit": "ns/B"
+    },
+    "NFC amharic": {
+     "value": 0.49,
+     "unit": "ns/B"
+    },
+    "NFC korean": {
+     "value": 0.488,
+     "unit": "ns/B"
+    },
+    "isNormalized ascii": {
+     "value": 0.405,
+     "unit": "ns/B"
+    },
+    "isNormalized mixed": {
+     "value": 0.847,
+     "unit": "ns/B"
+    },
+    "isNormalized chinese": {
+     "value": 0.481,
+     "unit": "ns/B"
+    },
+    "isNormalized georgian": {
+     "value": 0.35,
+     "unit": "ns/B"
+    },
+    "lower ASCII": {
+     "value": 0.897,
+     "unit": "ns/B"
+    },
+    "case fold ASCII": {
+     "value": 0.885,
+     "unit": "ns/B"
+    },
+    "lower mixed": {
+     "value": 0.955,
+     "unit": "ns/B"
+    },
+    "case fold mixed": {
+     "value": 1.024,
+     "unit": "ns/B"
+    },
+    "lower German": {
+     "value": 1.304,
+     "unit": "ns/B"
+    },
+    "upper German": {
+     "value": 1.865,
+     "unit": "ns/B"
+    },
+    "lower Greek sigma": {
+     "value": 2.645,
+     "unit": "ns/B"
+    },
+    "bidi ascii": {
+     "value": 760.711,
+     "unit": "ns/op"
+    },
+    "bidi mixed": {
+     "value": 750.634,
+     "unit": "ns/op"
+    },
+    "search word": {
+     "value": 411.972,
+     "unit": "ns/op"
+    },
+    "search missing": {
+     "value": 3282.412,
+     "unit": "ns/op"
+    },
+    "search Swedish": {
+     "value": 378.466,
+     "unit": "ns/op"
+    },
+    "search missing Swedish": {
+     "value": 8562.485,
+     "unit": "ns/op"
+    },
+    "UTF-8 -> GBK Chinese": {
+     "value": 1.263,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> Shift_JIS Japanese": {
+     "value": 1.108,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> EUC-KR Korean": {
+     "value": 1.277,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE ASCII": {
+     "value": 0.571,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE Chinese": {
+     "value": 0.617,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-16 Chinese": {
+     "value": 1.505,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-8 Chinese": {
+     "value": 2.441,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-32LE ASCII": {
+     "value": 3.074,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-32LE Chinese": {
+     "value": 2.138,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-8 ASCII": {
+     "value": 4.358,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-8 Chinese": {
+     "value": 1.891,
+     "unit": "ns/B"
+    },
+    "IBM866 -> UTF-8 Russian": {
+     "value": 1.098,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-8 ASCII": {
+     "value": 0.573,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-8 Chinese": {
+     "value": 0.371,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-32LE ASCII": {
+     "value": 0.527,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-32LE Chinese": {
+     "value": 0.198,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-16LE ASCII": {
+     "value": 0.599,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-16LE Chinese": {
+     "value": 0.273,
+     "unit": "ns/B"
+    },
+    "windows-1252 -> UTF-8 accents": {
+     "value": 1.204,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> windows-1252 accents": {
+     "value": 1.13,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-16LE Chinese": {
+     "value": 2.283,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> GBK Chinese": {
+     "value": 1.432,
+     "unit": "ns/B"
+    },
+    "detect UTF-8 English": {
+     "value": 247.105,
+     "unit": "ns/B"
+    },
+    "detect GBK Chinese": {
+     "value": 127.395,
+     "unit": "ns/B"
+    },
+    "char name": {
+     "value": 55.796,
+     "unit": "ns/op"
+    },
+    "find by name": {
+     "value": 37352.847,
+     "unit": "ns/op"
+    },
+    "title ASCII": {
+     "value": 10.368,
+     "unit": "ns/B"
+    },
+    "title mixed": {
+     "value": 12.372,
+     "unit": "ns/B"
+    },
+    "title German": {
+     "value": 7.737,
+     "unit": "ns/B"
+    },
+    "plural en": {
+     "value": 42.496,
+     "unit": "ns/op"
+    },
+    "plural ru": {
+     "value": 115.201,
+     "unit": "ns/op"
+    },
+    "ordinal en": {
+     "value": 80.176,
+     "unit": "ns/op"
+    },
+    "Latin-ASCII Swedish": {
+     "value": 183.474,
+     "unit": "ns/B"
+    },
+    "Fullwidth-Halfwidth": {
+     "value": 9.16,
+     "unit": "ns/B"
+    },
+    "Russian-Latin-BGN": {
+     "value": 48.575,
+     "unit": "ns/B"
+    },
+    "Greek-Latin-BGN": {
+     "value": 78.929,
+     "unit": "ns/B"
+    },
+    "Katakana-Latin-BGN": {
+     "value": 46.061,
+     "unit": "ns/B"
+    },
+    "Amharic-Latin-BGN": {
+     "value": 28.667,
+     "unit": "ns/B"
+    },
+    "Ukrainian-Latin-BGN": {
+     "value": 44.203,
+     "unit": "ns/B"
+    },
+    "grapheme ASCII": {
+     "value": 13.062,
+     "unit": "ns/B"
+    },
+    "grapheme mixed": {
+     "value": 7.784,
+     "unit": "ns/B"
+    },
+    "word ASCII": {
+     "value": 6.248,
+     "unit": "ns/B"
+    },
+    "word mixed": {
+     "value": 8.604,
+     "unit": "ns/B"
+    },
+    "word Thai dictionary": {
+     "value": 18.364,
+     "unit": "ns/B"
+    },
+    "word CJK dictionary": {
+     "value": 39.583,
+     "unit": "ns/B"
+    },
+    "line break ASCII": {
+     "value": 4.343,
+     "unit": "ns/B"
+    },
+    "line break mixed": {
+     "value": 3.57,
+     "unit": "ns/B"
+    },
+    "line break chinese": {
+     "value": 4.768,
+     "unit": "ns/B"
+    },
+    "line break e_marks": {
+     "value": 4.08,
+     "unit": "ns/B"
+    },
+    "line break jamo": {
+     "value": 2.612,
+     "unit": "ns/B"
+    },
+    "sentence ASCII": {
+     "value": 3.686,
+     "unit": "ns/B"
+    },
+    "sentence mixed": {
+     "value": 2.775,
+     "unit": "ns/B"
+    },
+    "literal find": {
+     "value": 645.702,
+     "unit": "ns/op"
+    },
+    "class find": {
+     "value": 736.722,
+     "unit": "ns/op"
+    },
+    "case-insensitive find": {
+     "value": 1194.38,
+     "unit": "ns/op"
+    },
+    "required literal miss": {
+     "value": 308231.875,
+     "unit": "ns/op"
+    },
+    "literal alternation find": {
+     "value": 866.288,
+     "unit": "ns/op"
+    },
+    "literal matches": {
+     "value": 22.327,
+     "unit": "ns/op"
+    },
+    "literal matches miss": {
+     "value": 18.245,
+     "unit": "ns/op"
+    },
+    "class matches miss": {
+     "value": 20.071,
+     "unit": "ns/op"
+    },
+    "literal lookingAt": {
+     "value": 21.785,
+     "unit": "ns/op"
+    },
+    "literal lookingAt miss": {
+     "value": 17.498,
+     "unit": "ns/op"
+    },
+    "compile literal": {
+     "value": 1433.987,
+     "unit": "ns/op"
+    },
+    "compile class": {
+     "value": 3235.009,
+     "unit": "ns/op"
+    },
+    "compile alternation": {
+     "value": 1694.352,
+     "unit": "ns/op"
+    },
+    "compile lookbehind": {
+     "value": 1704.382,
+     "unit": "ns/op"
+    },
+    "compile word boundary": {
+     "value": 1591.99,
+     "unit": "ns/op"
+    },
+    "compile word class": {
+     "value": 5035.462,
+     "unit": "ns/op"
+    },
+    "list format 4 items": {
+     "value": 276.808,
+     "unit": "ns/op"
+    },
+    "relative time": {
+     "value": 266.864,
+     "unit": "ns/op"
+    },
+    "date full format": {
+     "value": 1137.449,
+     "unit": "ns/op"
+    },
+    "Arabic shaping": {
+     "value": 4.726,
+     "unit": "ns/B"
+    },
+    "spoof bidi skeleton": {
+     "value": 293.012,
+     "unit": "ns/op"
+    },
+    "idna toASCII": {
+     "value": 334.556,
+     "unit": "ns/op"
+    },
+    "idna toUnicode": {
+     "value": 194.851,
+     "unit": "ns/op"
+    },
+    "decimal number": {
+     "value": 273.943,
+     "unit": "ns/op"
+    },
+    "parse decimal": {
+     "value": 563.512,
+     "unit": "ns/op"
+    },
+    "scientific number": {
+     "value": 323.077,
+     "unit": "ns/op"
+    },
+    "currency standard": {
+     "value": 271.974,
+     "unit": "ns/op"
+    },
+    "accounting currency": {
+     "value": 278.167,
+     "unit": "ns/op"
+    },
+    "currency name": {
+     "value": 372.117,
+     "unit": "ns/op"
+    }
+   },
+   {
+    "General_Category": {
+     "value": 5.994,
+     "unit": "ns/op"
+    },
+    "Alphabetic": {
+     "value": 6.892,
+     "unit": "ns/op"
+    },
+    "Uppercase": {
+     "value": 8.243,
+     "unit": "ns/op"
+    },
+    "Lowercase": {
+     "value": 8.841,
+     "unit": "ns/op"
+    },
+    "Math": {
+     "value": 6.856,
+     "unit": "ns/op"
+    },
+    "Canonical_Combining_Class": {
+     "value": 8.568,
+     "unit": "ns/op"
+    },
+    "Script": {
+     "value": 7.504,
+     "unit": "ns/op"
+    },
+    "Bidi_Class": {
+     "value": 6.514,
+     "unit": "ns/op"
+    },
+    "Line_Break": {
+     "value": 7.08,
+     "unit": "ns/op"
+    },
+    "UnicodeSet contains": {
+     "value": 17.336,
+     "unit": "ns/op"
+    },
+    "UnicodeSet contains complement": {
+     "value": 17.292,
+     "unit": "ns/op"
+    },
+    "UnicodeSet difference": {
+     "value": 3505.747,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver Alphabetic": {
+     "value": 109571.795,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver [a]": {
+     "value": 81.199,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver Uppercase": {
+     "value": 39763.967,
+     "unit": "ns/op"
+    },
+    "UCA sort key ASCII": {
+     "value": 8.188,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed": {
+     "value": 6.542,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish root": {
+     "value": 9.078,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish": {
+     "value": 7.234,
+     "unit": "ns/B"
+    },
+    "UCA sort key German phonebook": {
+     "value": 9.797,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin": {
+     "value": 3.46,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese stroke": {
+     "value": 3.444,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese zhuyin": {
+     "value": 3.528,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long": {
+     "value": 3.712,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long pinyin": {
+     "value": 3.425,
+     "unit": "ns/B"
+    },
+    "UCA compare Chinese long": {
+     "value": 1198.531,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed early": {
+     "value": 9.813,
+     "unit": "ns/op"
+    },
+    "UCA compare Swedish": {
+     "value": 135.568,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed": {
+     "value": 50.275,
+     "unit": "ns/op"
+    },
+    "NFC ascii": {
+     "value": 0.505,
+     "unit": "ns/B"
+    },
+    "NFC mixed": {
+     "value": 1.385,
+     "unit": "ns/B"
+    },
+    "NFC chinese_long": {
+     "value": 0.393,
+     "unit": "ns/B"
+    },
+    "NFC e_marks": {
+     "value": 8.941,
+     "unit": "ns/B"
+    },
+    "NFC jamo": {
+     "value": 1.109,
+     "unit": "ns/B"
+    },
+    "NFC japanese": {
+     "value": 0.378,
+     "unit": "ns/B"
+    },
+    "NFC georgian": {
+     "value": 0.395,
+     "unit": "ns/B"
+    },
+    "NFC thai": {
+     "value": 0.529,
+     "unit": "ns/B"
+    },
+    "NFC hebrew": {
+     "value": 0.635,
+     "unit": "ns/B"
+    },
+    "NFC arabic": {
+     "value": 0.577,
+     "unit": "ns/B"
+    },
+    "NFC devanagari": {
+     "value": 0.528,
+     "unit": "ns/B"
+    },
+    "NFC amharic": {
+     "value": 0.537,
+     "unit": "ns/B"
+    },
+    "NFC korean": {
+     "value": 0.506,
+     "unit": "ns/B"
+    },
+    "isNormalized ascii": {
+     "value": 0.405,
+     "unit": "ns/B"
+    },
+    "isNormalized mixed": {
+     "value": 0.835,
+     "unit": "ns/B"
+    },
+    "isNormalized chinese": {
+     "value": 0.471,
+     "unit": "ns/B"
+    },
+    "isNormalized georgian": {
+     "value": 0.359,
+     "unit": "ns/B"
+    },
+    "lower ASCII": {
+     "value": 0.907,
+     "unit": "ns/B"
+    },
+    "case fold ASCII": {
+     "value": 0.899,
+     "unit": "ns/B"
+    },
+    "lower mixed": {
+     "value": 0.981,
+     "unit": "ns/B"
+    },
+    "case fold mixed": {
+     "value": 1.05,
+     "unit": "ns/B"
+    },
+    "lower German": {
+     "value": 1.366,
+     "unit": "ns/B"
+    },
+    "upper German": {
+     "value": 1.889,
+     "unit": "ns/B"
+    },
+    "lower Greek sigma": {
+     "value": 2.612,
+     "unit": "ns/B"
+    },
+    "bidi ascii": {
+     "value": 700.91,
+     "unit": "ns/op"
+    },
+    "bidi mixed": {
+     "value": 741.647,
+     "unit": "ns/op"
+    },
+    "search word": {
+     "value": 388.612,
+     "unit": "ns/op"
+    },
+    "search missing": {
+     "value": 3299.14,
+     "unit": "ns/op"
+    },
+    "search Swedish": {
+     "value": 368.531,
+     "unit": "ns/op"
+    },
+    "search missing Swedish": {
+     "value": 8633.387,
+     "unit": "ns/op"
+    },
+    "UTF-8 -> GBK Chinese": {
+     "value": 1.22,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> Shift_JIS Japanese": {
+     "value": 1.069,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> EUC-KR Korean": {
+     "value": 1.244,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE ASCII": {
+     "value": 0.554,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE Chinese": {
+     "value": 0.603,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-16 Chinese": {
+     "value": 1.5,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-8 Chinese": {
+     "value": 2.442,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-32LE ASCII": {
+     "value": 3.069,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-32LE Chinese": {
+     "value": 2.133,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-8 ASCII": {
+     "value": 4.355,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-8 Chinese": {
+     "value": 1.89,
+     "unit": "ns/B"
+    },
+    "IBM866 -> UTF-8 Russian": {
+     "value": 1.093,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-8 ASCII": {
+     "value": 0.573,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-8 Chinese": {
+     "value": 0.372,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-32LE ASCII": {
+     "value": 0.53,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-32LE Chinese": {
+     "value": 0.199,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-16LE ASCII": {
+     "value": 0.588,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-16LE Chinese": {
+     "value": 0.272,
+     "unit": "ns/B"
+    },
+    "windows-1252 -> UTF-8 accents": {
+     "value": 1.168,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> windows-1252 accents": {
+     "value": 1.207,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-16LE Chinese": {
+     "value": 2.324,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> GBK Chinese": {
+     "value": 1.437,
+     "unit": "ns/B"
+    },
+    "detect UTF-8 English": {
+     "value": 248.266,
+     "unit": "ns/B"
+    },
+    "detect GBK Chinese": {
+     "value": 123.136,
+     "unit": "ns/B"
+    },
+    "char name": {
+     "value": 54.907,
+     "unit": "ns/op"
+    },
+    "find by name": {
+     "value": 37315.241,
+     "unit": "ns/op"
+    },
+    "title ASCII": {
+     "value": 10.435,
+     "unit": "ns/B"
+    },
+    "title mixed": {
+     "value": 11.971,
+     "unit": "ns/B"
+    },
+    "title German": {
+     "value": 7.655,
+     "unit": "ns/B"
+    },
+    "plural en": {
+     "value": 46.216,
+     "unit": "ns/op"
+    },
+    "plural ru": {
+     "value": 115.564,
+     "unit": "ns/op"
+    },
+    "ordinal en": {
+     "value": 80.781,
+     "unit": "ns/op"
+    },
+    "Latin-ASCII Swedish": {
+     "value": 182.332,
+     "unit": "ns/B"
+    },
+    "Fullwidth-Halfwidth": {
+     "value": 9.338,
+     "unit": "ns/B"
+    },
+    "Russian-Latin-BGN": {
+     "value": 48.661,
+     "unit": "ns/B"
+    },
+    "Greek-Latin-BGN": {
+     "value": 78.881,
+     "unit": "ns/B"
+    },
+    "Katakana-Latin-BGN": {
+     "value": 46.03,
+     "unit": "ns/B"
+    },
+    "Amharic-Latin-BGN": {
+     "value": 28.63,
+     "unit": "ns/B"
+    },
+    "Ukrainian-Latin-BGN": {
+     "value": 44.261,
+     "unit": "ns/B"
+    },
+    "grapheme ASCII": {
+     "value": 13.025,
+     "unit": "ns/B"
+    },
+    "grapheme mixed": {
+     "value": 7.628,
+     "unit": "ns/B"
+    },
+    "word ASCII": {
+     "value": 6.248,
+     "unit": "ns/B"
+    },
+    "word mixed": {
+     "value": 8.59,
+     "unit": "ns/B"
+    },
+    "word Thai dictionary": {
+     "value": 18.61,
+     "unit": "ns/B"
+    },
+    "word CJK dictionary": {
+     "value": 39.555,
+     "unit": "ns/B"
+    },
+    "line break ASCII": {
+     "value": 4.354,
+     "unit": "ns/B"
+    },
+    "line break mixed": {
+     "value": 3.571,
+     "unit": "ns/B"
+    },
+    "line break chinese": {
+     "value": 4.779,
+     "unit": "ns/B"
+    },
+    "line break e_marks": {
+     "value": 4.06,
+     "unit": "ns/B"
+    },
+    "line break jamo": {
+     "value": 2.588,
+     "unit": "ns/B"
+    },
+    "sentence ASCII": {
+     "value": 3.685,
+     "unit": "ns/B"
+    },
+    "sentence mixed": {
+     "value": 2.834,
+     "unit": "ns/B"
+    },
+    "literal find": {
+     "value": 645.192,
+     "unit": "ns/op"
+    },
+    "class find": {
+     "value": 714.375,
+     "unit": "ns/op"
+    },
+    "case-insensitive find": {
+     "value": 1190.465,
+     "unit": "ns/op"
+    },
+    "required literal miss": {
+     "value": 311723.615,
+     "unit": "ns/op"
+    },
+    "literal alternation find": {
+     "value": 864.602,
+     "unit": "ns/op"
+    },
+    "literal matches": {
+     "value": 22.704,
+     "unit": "ns/op"
+    },
+    "literal matches miss": {
+     "value": 17.992,
+     "unit": "ns/op"
+    },
+    "class matches miss": {
+     "value": 19.812,
+     "unit": "ns/op"
+    },
+    "literal lookingAt": {
+     "value": 21.818,
+     "unit": "ns/op"
+    },
+    "literal lookingAt miss": {
+     "value": 17.439,
+     "unit": "ns/op"
+    },
+    "compile literal": {
+     "value": 1430.312,
+     "unit": "ns/op"
+    },
+    "compile class": {
+     "value": 3253.262,
+     "unit": "ns/op"
+    },
+    "compile alternation": {
+     "value": 1697.313,
+     "unit": "ns/op"
+    },
+    "compile lookbehind": {
+     "value": 1704.483,
+     "unit": "ns/op"
+    },
+    "compile word boundary": {
+     "value": 1585.335,
+     "unit": "ns/op"
+    },
+    "compile word class": {
+     "value": 5034.622,
+     "unit": "ns/op"
+    },
+    "list format 4 items": {
+     "value": 268.681,
+     "unit": "ns/op"
+    },
+    "relative time": {
+     "value": 268.077,
+     "unit": "ns/op"
+    },
+    "date full format": {
+     "value": 1149.476,
+     "unit": "ns/op"
+    },
+    "Arabic shaping": {
+     "value": 5.027,
+     "unit": "ns/B"
+    },
+    "spoof bidi skeleton": {
+     "value": 293.171,
+     "unit": "ns/op"
+    },
+    "idna toASCII": {
+     "value": 333.6,
+     "unit": "ns/op"
+    },
+    "idna toUnicode": {
+     "value": 192.422,
+     "unit": "ns/op"
+    },
+    "decimal number": {
+     "value": 269.468,
+     "unit": "ns/op"
+    },
+    "parse decimal": {
+     "value": 562.493,
+     "unit": "ns/op"
+    },
+    "scientific number": {
+     "value": 321.488,
+     "unit": "ns/op"
+    },
+    "currency standard": {
+     "value": 277.644,
+     "unit": "ns/op"
+    },
+    "accounting currency": {
+     "value": 279.841,
+     "unit": "ns/op"
+    },
+    "currency name": {
+     "value": 367.303,
+     "unit": "ns/op"
+    }
+   },
+   {
+    "General_Category": {
+     "value": 6.019,
+     "unit": "ns/op"
+    },
+    "Alphabetic": {
+     "value": 6.913,
+     "unit": "ns/op"
+    },
+    "Uppercase": {
+     "value": 8.263,
+     "unit": "ns/op"
+    },
+    "Lowercase": {
+     "value": 8.829,
+     "unit": "ns/op"
+    },
+    "Math": {
+     "value": 6.841,
+     "unit": "ns/op"
+    },
+    "Canonical_Combining_Class": {
+     "value": 8.601,
+     "unit": "ns/op"
+    },
+    "Script": {
+     "value": 7.521,
+     "unit": "ns/op"
+    },
+    "Bidi_Class": {
+     "value": 6.533,
+     "unit": "ns/op"
+    },
+    "Line_Break": {
+     "value": 7.098,
+     "unit": "ns/op"
+    },
+    "UnicodeSet contains": {
+     "value": 17.376,
+     "unit": "ns/op"
+    },
+    "UnicodeSet contains complement": {
+     "value": 17.375,
+     "unit": "ns/op"
+    },
+    "UnicodeSet difference": {
+     "value": 3470.355,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver Alphabetic": {
+     "value": 109965.515,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver [a]": {
+     "value": 79.925,
+     "unit": "ns/op"
+    },
+    "UnicodeSet closeOver Uppercase": {
+     "value": 39930.342,
+     "unit": "ns/op"
+    },
+    "UCA sort key ASCII": {
+     "value": 8.118,
+     "unit": "ns/B"
+    },
+    "UCA sort key mixed": {
+     "value": 6.387,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish root": {
+     "value": 9.117,
+     "unit": "ns/B"
+    },
+    "UCA sort key Swedish": {
+     "value": 7.259,
+     "unit": "ns/B"
+    },
+    "UCA sort key German phonebook": {
+     "value": 9.912,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese pinyin": {
+     "value": 3.413,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese stroke": {
+     "value": 3.458,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese zhuyin": {
+     "value": 3.495,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long": {
+     "value": 3.745,
+     "unit": "ns/B"
+    },
+    "UCA sort key Chinese long pinyin": {
+     "value": 3.431,
+     "unit": "ns/B"
+    },
+    "UCA compare Chinese long": {
+     "value": 1199.738,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed early": {
+     "value": 9.075,
+     "unit": "ns/op"
+    },
+    "UCA compare Swedish": {
+     "value": 136.413,
+     "unit": "ns/op"
+    },
+    "UCA compare mixed": {
+     "value": 51.948,
+     "unit": "ns/op"
+    },
+    "NFC ascii": {
+     "value": 0.49,
+     "unit": "ns/B"
+    },
+    "NFC mixed": {
+     "value": 1.364,
+     "unit": "ns/B"
+    },
+    "NFC chinese_long": {
+     "value": 0.396,
+     "unit": "ns/B"
+    },
+    "NFC e_marks": {
+     "value": 8.99,
+     "unit": "ns/B"
+    },
+    "NFC jamo": {
+     "value": 1.096,
+     "unit": "ns/B"
+    },
+    "NFC japanese": {
+     "value": 0.383,
+     "unit": "ns/B"
+    },
+    "NFC georgian": {
+     "value": 0.402,
+     "unit": "ns/B"
+    },
+    "NFC thai": {
+     "value": 0.541,
+     "unit": "ns/B"
+    },
+    "NFC hebrew": {
+     "value": 0.66,
+     "unit": "ns/B"
+    },
+    "NFC arabic": {
+     "value": 0.546,
+     "unit": "ns/B"
+    },
+    "NFC devanagari": {
+     "value": 0.511,
+     "unit": "ns/B"
+    },
+    "NFC amharic": {
+     "value": 0.541,
+     "unit": "ns/B"
+    },
+    "NFC korean": {
+     "value": 0.497,
+     "unit": "ns/B"
+    },
+    "isNormalized ascii": {
+     "value": 0.404,
+     "unit": "ns/B"
+    },
+    "isNormalized mixed": {
+     "value": 0.837,
+     "unit": "ns/B"
+    },
+    "isNormalized chinese": {
+     "value": 0.486,
+     "unit": "ns/B"
+    },
+    "isNormalized georgian": {
+     "value": 0.357,
+     "unit": "ns/B"
+    },
+    "lower ASCII": {
+     "value": 0.907,
+     "unit": "ns/B"
+    },
+    "case fold ASCII": {
+     "value": 0.893,
+     "unit": "ns/B"
+    },
+    "lower mixed": {
+     "value": 0.96,
+     "unit": "ns/B"
+    },
+    "case fold mixed": {
+     "value": 1.059,
+     "unit": "ns/B"
+    },
+    "lower German": {
+     "value": 1.351,
+     "unit": "ns/B"
+    },
+    "upper German": {
+     "value": 1.878,
+     "unit": "ns/B"
+    },
+    "lower Greek sigma": {
+     "value": 2.602,
+     "unit": "ns/B"
+    },
+    "bidi ascii": {
+     "value": 816.153,
+     "unit": "ns/op"
+    },
+    "bidi mixed": {
+     "value": 743.48,
+     "unit": "ns/op"
+    },
+    "search word": {
+     "value": 386.49,
+     "unit": "ns/op"
+    },
+    "search missing": {
+     "value": 3296.225,
+     "unit": "ns/op"
+    },
+    "search Swedish": {
+     "value": 373.233,
+     "unit": "ns/op"
+    },
+    "search missing Swedish": {
+     "value": 8565.181,
+     "unit": "ns/op"
+    },
+    "UTF-8 -> GBK Chinese": {
+     "value": 1.25,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> Shift_JIS Japanese": {
+     "value": 1.092,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> EUC-KR Korean": {
+     "value": 1.255,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE ASCII": {
+     "value": 0.568,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-16LE Chinese": {
+     "value": 0.623,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-16 Chinese": {
+     "value": 1.538,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-8 Chinese": {
+     "value": 2.457,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-32LE ASCII": {
+     "value": 3.093,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> UTF-32LE Chinese": {
+     "value": 2.143,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-8 ASCII": {
+     "value": 4.352,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-8 Chinese": {
+     "value": 1.889,
+     "unit": "ns/B"
+    },
+    "IBM866 -> UTF-8 Russian": {
+     "value": 1.117,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-8 ASCII": {
+     "value": 0.546,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-8 Chinese": {
+     "value": 0.371,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-32LE ASCII": {
+     "value": 0.528,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> UTF-32LE Chinese": {
+     "value": 0.201,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-16LE ASCII": {
+     "value": 0.592,
+     "unit": "ns/B"
+    },
+    "UTF-32LE -> UTF-16LE Chinese": {
+     "value": 0.273,
+     "unit": "ns/B"
+    },
+    "windows-1252 -> UTF-8 accents": {
+     "value": 1.189,
+     "unit": "ns/B"
+    },
+    "UTF-8 -> windows-1252 accents": {
+     "value": 1.165,
+     "unit": "ns/B"
+    },
+    "GBK -> UTF-16LE Chinese": {
+     "value": 2.315,
+     "unit": "ns/B"
+    },
+    "UTF-16LE -> GBK Chinese": {
+     "value": 1.492,
+     "unit": "ns/B"
+    },
+    "detect UTF-8 English": {
+     "value": 248.797,
+     "unit": "ns/B"
+    },
+    "detect GBK Chinese": {
+     "value": 127.862,
+     "unit": "ns/B"
+    },
+    "char name": {
+     "value": 55.769,
+     "unit": "ns/op"
+    },
+    "find by name": {
+     "value": 37337.291,
+     "unit": "ns/op"
+    },
+    "title ASCII": {
+     "value": 10.355,
+     "unit": "ns/B"
+    },
+    "title mixed": {
+     "value": 11.865,
+     "unit": "ns/B"
+    },
+    "title German": {
+     "value": 7.656,
+     "unit": "ns/B"
+    },
+    "plural en": {
+     "value": 46.994,
+     "unit": "ns/op"
+    },
+    "plural ru": {
+     "value": 115.987,
+     "unit": "ns/op"
+    },
+    "ordinal en": {
+     "value": 78.765,
+     "unit": "ns/op"
+    },
+    "Latin-ASCII Swedish": {
+     "value": 183.351,
+     "unit": "ns/B"
+    },
+    "Fullwidth-Halfwidth": {
+     "value": 9.335,
+     "unit": "ns/B"
+    },
+    "Russian-Latin-BGN": {
+     "value": 48.849,
+     "unit": "ns/B"
+    },
+    "Greek-Latin-BGN": {
+     "value": 78.893,
+     "unit": "ns/B"
+    },
+    "Katakana-Latin-BGN": {
+     "value": 46.007,
+     "unit": "ns/B"
+    },
+    "Amharic-Latin-BGN": {
+     "value": 28.686,
+     "unit": "ns/B"
+    },
+    "Ukrainian-Latin-BGN": {
+     "value": 44.309,
+     "unit": "ns/B"
+    },
+    "grapheme ASCII": {
+     "value": 12.941,
+     "unit": "ns/B"
+    },
+    "grapheme mixed": {
+     "value": 7.753,
+     "unit": "ns/B"
+    },
+    "word ASCII": {
+     "value": 6.317,
+     "unit": "ns/B"
+    },
+    "word mixed": {
+     "value": 8.532,
+     "unit": "ns/B"
+    },
+    "word Thai dictionary": {
+     "value": 18.33,
+     "unit": "ns/B"
+    },
+    "word CJK dictionary": {
+     "value": 39.247,
+     "unit": "ns/B"
+    },
+    "line break ASCII": {
+     "value": 4.365,
+     "unit": "ns/B"
+    },
+    "line break mixed": {
+     "value": 3.638,
+     "unit": "ns/B"
+    },
+    "line break chinese": {
+     "value": 4.785,
+     "unit": "ns/B"
+    },
+    "line break e_marks": {
+     "value": 4.064,
+     "unit": "ns/B"
+    },
+    "line break jamo": {
+     "value": 2.595,
+     "unit": "ns/B"
+    },
+    "sentence ASCII": {
+     "value": 3.682,
+     "unit": "ns/B"
+    },
+    "sentence mixed": {
+     "value": 2.79,
+     "unit": "ns/B"
+    },
+    "literal find": {
+     "value": 640.585,
+     "unit": "ns/op"
+    },
+    "class find": {
+     "value": 730.045,
+     "unit": "ns/op"
+    },
+    "case-insensitive find": {
+     "value": 1191.618,
+     "unit": "ns/op"
+    },
+    "required literal miss": {
+     "value": 313143.198,
+     "unit": "ns/op"
+    },
+    "literal alternation find": {
+     "value": 884.952,
+     "unit": "ns/op"
+    },
+    "literal matches": {
+     "value": 22.814,
+     "unit": "ns/op"
+    },
+    "literal matches miss": {
+     "value": 18.16,
+     "unit": "ns/op"
+    },
+    "class matches miss": {
+     "value": 20.283,
+     "unit": "ns/op"
+    },
+    "literal lookingAt": {
+     "value": 21.87,
+     "unit": "ns/op"
+    },
+    "literal lookingAt miss": {
+     "value": 17.441,
+     "unit": "ns/op"
+    },
+    "compile literal": {
+     "value": 1440.892,
+     "unit": "ns/op"
+    },
+    "compile class": {
+     "value": 3248.807,
+     "unit": "ns/op"
+    },
+    "compile alternation": {
+     "value": 1700.451,
+     "unit": "ns/op"
+    },
+    "compile lookbehind": {
+     "value": 1741.801,
+     "unit": "ns/op"
+    },
+    "compile word boundary": {
+     "value": 1585.565,
+     "unit": "ns/op"
+    },
+    "compile word class": {
+     "value": 5025.057,
+     "unit": "ns/op"
+    },
+    "list format 4 items": {
+     "value": 271.85,
+     "unit": "ns/op"
+    },
+    "relative time": {
+     "value": 268.582,
+     "unit": "ns/op"
+    },
+    "date full format": {
+     "value": 1137.855,
+     "unit": "ns/op"
+    },
+    "Arabic shaping": {
+     "value": 5.004,
+     "unit": "ns/B"
+    },
+    "spoof bidi skeleton": {
+     "value": 292.48,
+     "unit": "ns/op"
+    },
+    "idna toASCII": {
+     "value": 332.938,
+     "unit": "ns/op"
+    },
+    "idna toUnicode": {
+     "value": 192.101,
+     "unit": "ns/op"
+    },
+    "decimal number": {
+     "value": 270.697,
+     "unit": "ns/op"
+    },
+    "parse decimal": {
+     "value": 566.258,
+     "unit": "ns/op"
+    },
+    "scientific number": {
+     "value": 328.038,
+     "unit": "ns/op"
+    },
+    "currency standard": {
+     "value": 275.532,
+     "unit": "ns/op"
+    },
+    "accounting currency": {
+     "value": 278.949,
+     "unit": "ns/op"
+    },
+    "currency name": {
+     "value": 370.118,
+     "unit": "ns/op"
+    }
+   }
+  ]
+ },
+ "harness_sha256": {
+  "bench/bench.zig": "5a3815ef9c0f621784c9b17a15a4b813253c54350d874ae1fad4e98580a4b080",
+  "bench/icu_bench.cpp": "6baac05f27da64bffaee5c26d1d65f0493ed806a0556ed4eb88b68a092624969"
+ },
+ "output_sha256": {
+  "icu78-bench-1.txt": "84fbcc46ca3cd2fc8cfdf3c6e6520b921799d6fbc300ed6728f6198afc6ba01e",
+  "icu78-bench-2.txt": "edc021ee82f5a43fde80f877cb6cbcabc9946a71446f8ad18359df7ce452254d",
+  "icu78-bench-3.txt": "98fad631e114088c7574e3f9b2b0066fd1877fc7062de40766ae6e9dbe30e6fd",
+  "icuz-bench-1.txt": "202cbfbe0a2efd7785a8dab8a56022c0b84e351bc4006dd08dbe9f6827824942",
+  "icuz-bench-2.txt": "e1058a89df060557fcc02ca1ab23871bc3446490d66c3ead18bbabd40a6d5c0e",
+  "icuz-bench-3.txt": "7d22cc630702b8d6c0c878694cc8a116cdc021adb7a93b7d04cb09fed3b9f78f"
+ },
+ "note": "Three alternating rounds; each table value is the minimum across rounds for the same row name and unit. Both harnesses generate identical inputs."
+}

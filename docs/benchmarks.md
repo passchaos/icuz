@@ -9,6 +9,10 @@ The latest validation profile compares short and medium inputs with
 simdutf 9.5.0 and refreshes validating collation against ICU 78.3 in
 [`performance/utf8-short-validation-2026-11-26.md`](performance/utf8-short-validation-2026-11-26.md).
 
+The [ICU 78.3 suite validation](performance/icu78-suite-validation-2026-11-27.md)
+re-runs the fair-comparison microbenchmarks at commit `7593916` against the
+latest ICU release; icuz leads all 81 mapped rows, thinnest 1.06x.
+
 The strict UTF-8/native UTF-16 [phase-switch profile](performance/utf-phase-switching-2026-11-26.md)
 compares 30 identical corpora with simdutf 9.5.0 and ICU 78.3, keeping owned
 allocations and warmed caller-buffer conversion as separate contracts.

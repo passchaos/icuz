@@ -652,6 +652,8 @@ adds dense-to-sparse and sparse-to-dense inputs, adaptive UTF-16 runs, and
 density-gated UTF-8 window reentry after ASCII prefixes.
 The [sixteen-unit BMP profile](docs/performance/utf-bmp-16unit-2026-11-27.md)
 measures the wide mixed-run packer and the stripped benchmark configuration.
+The [ICU 78.3 suite validation](docs/performance/icu78-suite-validation-2026-11-27.md)
+re-checks every fair-comparison row against the latest ICU release.
 
 ## Performance notes
 
