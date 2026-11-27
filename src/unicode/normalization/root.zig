@@ -1492,13 +1492,14 @@ fn normalizeFusedInto(
 }
 
 /// Specialize the fused scan per form so quick-check shifts, inert slots,
-/// and the compose/compatibility switches fold to constants.
+/// and the compose/compatibility switches fold to constants. Cache-line
+/// aligned so the inlined loops keep their layout as unrelated code grows.
 fn normalizeFused(
     allocator: std.mem.Allocator,
     text: []const u8,
     form: Form,
     output: *std.ArrayList(u8),
-) Error!bool {
+) align(64) Error!bool {
     return switch (form) {
         inline else => |specialized| normalizeFusedInto(
             specialized,
@@ -2668,15 +2669,45 @@ inline fn semiticLetter16(unit: u16, comptime form: Form) bool {
     return compose or unit < 0x0622 or unit > 0x0626;
 }
 
+/// Vector form of `semiticLetter16` for sixteen units.
+inline fn semiticLane16(comptime form: Form, v: @Vector(16, u16)) @Vector(16, bool) {
+    const U = @Vector(16, u16);
+    const hebrew = (v >= @as(U, @splat(0x05d0))) & (v <= @as(U, @splat(0x05ea)));
+    const hebrew_marks = (v >= @as(U, @splat(0x05ef))) & (v <= @as(U, @splat(0x05f2)));
+    const arabic_range = (v >= @as(U, @splat(0x0620))) & (v <= @as(U, @splat(0x064a)));
+    const compose = form == .nfc or form == .nfkc;
+    const arabic = if (compose)
+        arabic_range
+    else
+        arabic_range & ((v < @as(U, @splat(0x0622))) | (v > @as(U, @splat(0x0626))));
+    return hebrew | hebrew_marks | arabic;
+}
+
 /// Scan a UTF-16 run of inert Hebrew/Arabic letters, bridging one space
-/// between words, and return the offset one past the run. Kept out of line so
-/// the main dispatch stays small.
+/// between words, and return the offset one past the run. Whole windows of
+/// letters and single spaces advance at once; the scalar loop finishes the
+/// window that contains a mark, a double space, or a non-letter.
 noinline fn semiticRunEnd16(
     units: []const u16,
     start: usize,
     comptime form: Form,
 ) usize {
     var end = start;
+    const V = @Vector(16, u16);
+    while (end + 16 <= units.len) {
+        const v = @as(*align(2) const V, @ptrCast(units.ptr + end)).*;
+        const letters = semiticLane16(form, v);
+        const spaces = v == @as(V, @splat(' '));
+        if (!@reduce(.And, letters | spaces)) break;
+        const space_mask: u16 = @bitCast(spaces);
+        if (space_mask & (space_mask >> 1) != 0) break;
+        if (end > start and units[end - 1] == ' ' and units[end] == ' ') break;
+        if (units[end + 15] == ' ') {
+            if (end + 16 == units.len) break;
+            if (!semiticLetter16(units[end + 16], form)) break;
+        }
+        end += 16;
+    }
     while (true) {
         while (end < units.len and semiticLetter16(units[end], form)) {
             end += 1;
@@ -6142,4 +6173,68 @@ fn utf8ToCodepointsAlloc(
         try list.append(allocator, value);
     }
     return list.toOwnedSlice(allocator);
+}
+
+test "vectorized Semitic run scan matches the scalar scan" {
+    const testing = @import("std").testing;
+    const scalarScan = struct {
+        fn scan(units: []const u16, start: usize, comptime form: Form) usize {
+            var end = start;
+            while (true) {
+                while (end < units.len and semiticLetter16(units[end], form)) end += 1;
+                if (end + 1 < units.len and units[end] == ' ' and
+                    semiticLetter16(units[end + 1], form))
+                {
+                    end += 2;
+                    continue;
+                }
+                return end;
+            }
+        }
+    }.scan;
+    const alphabet = [_]u16{
+        0x05d0, 0x05ea, 0x05ef, 0x05f2, 0x0620, 0x064a, 0x0622, 0x0623,
+        0x0626, 0x05b8, 0x064f, ' ',    ' ',    '.',    'A',    0x0627,
+    };
+    var units: [96]u16 = undefined;
+    var state: u64 = 0x9e37_79b9_7f4a_7c15;
+    var checked: usize = 0;
+    while (checked < 30_000) : (checked += 1) {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        const length = @as(usize, @intCast(state % (units.len + 1)));
+        for (0..length) |i| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            units[i] = alphabet[@as(usize, @intCast(state % alphabet.len))];
+        }
+        if (length == 0) continue;
+        // The scanner's caller starts on a letter; mirror that contract for
+        // each form, since NFD rejects the decomposing Arabic alef forms.
+        inline for (.{ .nfc, .nfd }) |form| {
+            var start: usize = 0;
+            while (start < length and !semiticLetter16(units[start], form)) start += 1;
+            if (start < length) {
+                try testing.expectEqual(
+                    scalarScan(&units, start, form),
+                    semiticRunEnd16(&units, start, form),
+                );
+            }
+        }
+    }
+}
+
+test "long Semitic phrases match the scalar normalization path" {
+    const arabic = "\u{0645}\u{0631}\u{062d}\u{0628}\u{0627} \u{0628}\u{0627}\u{0644}\u{0639}\u{0627}\u{0644}\u{0645} \u{0647}\u{0630}\u{0627} \u{0646}\u{0635} \u{0639}\u{0631}\u{0628}\u{064a} \u{0644}\u{0644}\u{0627}\u{062e}\u{062a}\u{0628}\u{0627}\u{0631}. ";
+    const hebrew = "\u{05e9}\u{05dc}\u{05d5}\u{05dd} \u{05e2}\u{05d5}\u{05dc}\u{05dd} \u{05d6}\u{05d4} \u{05d8}\u{05e7}\u{05e1}\u{05d8} \u{05e2}\u{05d1}\u{05e8}\u{05d9} \u{05dc}\u{05d1}\u{05d3}\u{05d9}\u{05e7}\u{05d4}. ";
+    try expectNormalized(arabic ** 8, arabic ** 8);
+    try expectNormalized(hebrew ** 8, hebrew ** 8);
+    try expectNormalized(arabic ** 4 ++ "  " ++ arabic ** 4, arabic ** 4 ++ "  " ++ arabic ** 4);
+    try expectNormalized(arabic ** 6 ++ "\u{0627}\u{0654}", arabic ** 6 ++ "\u{0623}");
+    try expectNormalized(
+        hebrew ** 6 ++ "\u{05e9}\u{05c1}\u{05b8}",
+        hebrew ** 6 ++ "\u{05e9}\u{05b8}\u{05c1}",
+    );
 }
