@@ -31,7 +31,10 @@ pub fn markers(buffer: []u21, lam: bool, tashkeel: bool) usize {
             read += lanes;
             continue;
         }
-        for (buffer[read..][0..lanes]) |codepoint| {
+        for (slots[read..][0..lanes]) |slot| {
+            // Scalar reads also see the storage padding bits, so mask them
+            // before comparing or publishing a value.
+            const codepoint: u21 = @truncate(slot & 0x1f_ffff);
             if ((lam and codepoint == LAMALEF_SPACE_SUB) or
                 (tashkeel and codepoint == TASHKEEL_SPACE_SUB))
             {
@@ -43,7 +46,7 @@ pub fn markers(buffer: []u21, lam: bool, tashkeel: bool) usize {
         read += lanes;
     }
     while (read < buffer.len) : (read += 1) {
-        const codepoint = buffer[read];
+        const codepoint: u21 = @truncate(slots[read] & 0x1f_ffff);
         if ((lam and codepoint == LAMALEF_SPACE_SUB) or
             (tashkeel and codepoint == TASHKEEL_SPACE_SUB))
         {
