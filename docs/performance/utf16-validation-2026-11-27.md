@@ -79,7 +79,9 @@ surrogate-heavy 0.75-0.86x). The pair-mask scan removes the per-window carry
 chain and doubles the window width, and the remaining rows are now ahead.
 `tiny-emoji-31` is the only row where the new scan is marginally slower than
 the old one (1.75 vs 1.86 ns, one sixteen-unit iteration each); the absolute
-difference is under 0.2 ns and treated as noise.
+difference is under 0.2 ns and treated as noise. The thinnest simdutf
+margins (surrogate-heavy 1.02x, random 1.05x, transitions 1.06x) sit inside
+the project's ten-percent parity band; the larger margins are outside it.
 
 ## Reproduce
 
